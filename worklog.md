@@ -92,3 +92,26 @@ Work Log:
 Stage Summary:
 - Deliverable: "پرده · PARDEH v1" preview — completely new identity, fully RTL Persian, fake-poster demo, zero console errors.
 - Next (awaiting user): feedback on this direction; if approved → full development phase (Next.js + Electron shell, real catalog, player, downloads) on this design system.
+
+---
+Task ID: 6
+Agent: Super Z (main)
+Task: User rejected PARDEH too — specifically the STRUCTURE/LAYOUT ("از این مدل ساختار و چیدمان..کلا همه چی رو از بیخ دیلیت کن دوباره بساز"). Delete everything from root and rebuild with a fundamentally different structure.
+
+Work Log:
+- Deleted ALL previous deliverables (pardeh-ui.html + shots). Root cause identified: all 6 rejected designs shared the same dashboard formula (sidebar + hero card + horizontal rows). This iteration changes the paradigm itself.
+- New concept: "AKRAN · اکران — اکران خصوصی تو" (private screening). Structure: NO sidebar, NO hero card, NO card rows.
+  1) Floating transparent top nav (logo right, centered links, actions left; solid blur on scroll)
+  2) 100vh fullscreen Spotlight Stage: 5 swappable CSS-art backdrops (Oppenheimer fire sun / Dune moon+dunes / Interstellar ringed planet / Avatar bioluminescent / Batman noir glow), giant 72px Persian titles, meta chips, gold CTAs
+  3) Bottom Filmstrip Dock: 5 clickable thumbnails switching the whole stage via JS (+ keyboard ←/→, Persian ۰۱/۰۵ index)
+  4) Library Poster Wall: 6-col grid of 12 CSS-art posters with hover ring+play+info overlay
+  5) Interactive filter chips (همه/فیلم/سریال/علمی‌تخیلی/اکشن/درام/جنایی) actually filtering the grid
+  6) 3 wide collection banners + minimal footer
+- Skin: true-black + champagne gold (#E3B94C) on ivory text — premiere/luxury vibe, distinct from all prior skins (aqua glass/brown/aurora/crimson).
+- Fixed during QA: stray CJK char breaking .b-op rule; Interstellar ring misalignment; enlarged Oppenheimer sun+glow.
+- Verified via agent-browser @1440x900: stage switch (click + keyboard), hover overlay (gold ring + play FAB + info), chip filtering (series → 5 items, RTL-aligned), scrolled nav solid, 0 console errors.
+- Artifacts: download/akran-ui.html (+ preview-stage/spotlight/hover/filter/fullpage PNGs).
+
+Stage Summary:
+- Deliverable: "AKRAN · اکران v1" — structurally new cinema-first UI, RTL Persian, fake poster demo, fully interactive preview.
+- Next (awaiting user): verdict on this structure; if approved → full dev phase (Next.js + Electron shell, player, downloads, real catalog).
