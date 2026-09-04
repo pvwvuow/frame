@@ -1,6 +1,6 @@
 "use client";
 
-import { Minus, Square, X, Aperture } from "lucide-react";
+import { Minus, Square, X, Aperture, Droplets } from "lucide-react";
 import { Timecode } from "./timecode";
 
 /* ---------- Electron title bar — Windows style ---------- */
@@ -37,7 +37,7 @@ export function TitleBar() {
 }
 
 /* ---------- bottom OSD status bar — camera deck style ---------- */
-export function StatusBar({ playing }: { playing: string }) {
+export function StatusBar({ playing, onSwitchSkin }: { playing: string; onSwitchSkin?: () => void }) {
   return (
     <div className="relative z-40 flex h-9 shrink-0 items-center gap-4 border-t border-line bg-coal2/95 px-4 font-mono text-[10px] tracking-wider text-faint">
       <span className="flex items-center gap-1.5 text-mut">
@@ -56,6 +56,18 @@ export function StatusBar({ playing }: { playing: string }) {
         <span className="inline-block size-2 bg-burn shadow-[0_0_8px_rgba(255,122,31,0.9)]" />
         <span className="text-amber/80">GHAB v0.2</span>
       </span>
+      {onSwitchSkin && (
+        <button
+          onClick={onSwitchSkin}
+          dir="rtl"
+          className="btn-ghost ms-3 flex h-6.5 shrink-0 items-center gap-1.5 !rounded-full !px-3 !text-[10px] font-bold"
+          style={{ fontFamily: "var(--font-fa)" }}
+          title="تغییر پوستهٔ طراحی"
+        >
+          <Droplets size={11} className="text-flare" />
+          پوستهٔ Liquid
+        </button>
+      )}
     </div>
   );
 }

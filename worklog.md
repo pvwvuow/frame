@@ -21,3 +21,20 @@ Stage Summary:
 - Old Liquid Glass design fully replaced (nova components deleted).
 - Design tokens and texture layers reusable for the upcoming Electron build.
 - Next step (pending user go-ahead): full development (real catalog, player, downloads, Electron shell).
+
+---
+Task ID: 2
+Agent: Super Z (main)
+Task: Third UI iteration — fuse BOTH GitHub references (oc_liquid_glass × cavalry-field-kit) into a new "Liquid Cinema" skin; user found the pure Field Kit skin too dry/stiff; keep old skin accessible.
+
+Work Log:
+- Appended AURA design system to globals.css: midnight aurora backdrop (4 drifting nebula blobs), glass surfaces (.glass/.glass-deep with backdrop-blur+saturate), liquid gradient rims (.lg-rim mask-composite), cursor-tracking specular sheen (.lg-sheen + --mx/--my), dual halo hover (aqua glow + warm film halation), liquid gradient CTA (.btn-liquid with sheen sweep + pulse rings), glass pills/search/progress strip (sprocket soul), cool cyan leak + warm amber leak, godrays, 35mm grain, cool scrollbars, Space Grotesk display font token.
+- Built src/components/aura/: atmosphere (aurora + film DNA + trackSheen helper), chrome (glass titlebar w/ droplet logo + status bar w/ skin switch), sidebar (floating 86px glass rail, active glass pill, user droplet), topbar (sticky floating glass command bar: search + Ctrl+K + genre pills + 4K·HDR badge + abyss fade under), hero (mouse-parallax backdrop via framer-motion springs, floating tilted poster, glass info panel w/ liquid play button, A-CAM stock telemetry), cards (PosterCard glass frame p-1.5 + rim + sheen + outlined rank numerals, ContinueCard w/ sprocket strip, RowHeader liquid style), detail-modal (glass-deep sheet, episodes w/ progress strips, cast pills), AuraApp (composition + toast droplet).
+- Preserved old design: src/components/fieldkit/FieldKitApp.tsx (moved page content); page.tsx now a skin switcher (AnimatePresence fade) — Aura default, Field Kit one click away; switch buttons live INSIDE both status bars (no floating overlap).
+- Fixed: sticky topbar fade (pointer-events-none wrapper + gradient), modal poster stretch (items-start), stock label moved to end side, 3 TS warnings (Kind cast, string.toLocaleString args).
+- Verified via agent-browser @1440x900: hero, rows, ranks, modal, chips, both skins switch cleanly; fresh load has zero console/hydration errors; tsc clean for src (pre-existing examples/skills errors unrelated); eslint clean.
+
+Stage Summary:
+- Deliverable: "GHAB · LIQUID CINEMA" — fusion skin #1 default (Liquid Glass depth × Field Kit film soul) + preserved Field Kit skin, switchable from status bar.
+- Reusable pieces: aura component library + AURA CSS token block for the upcoming Electron build.
+- Next (awaiting user): full development phase (player, downloads, real catalog, Electron shell) on the chosen skin.
