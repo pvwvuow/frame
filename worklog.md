@@ -56,3 +56,22 @@ Work Log:
 Stage Summary:
 - Deliverable: "GHAB · Cinema OS v0.3" — polished Field Kit (warm darkroom) as the single final skin, richer ambient space, UX flaws fixed, fonts self-hosted.
 - Next (awaiting user): full development phase on this skin (real catalog, player, downloads, Electron shell).
+
+---
+Task ID: 4
+Agent: Super Z (main)
+Task: User rejected all previous skins ("این هیچ") — design a COMPLETELY NEW, professional UI/UX from scratch (5th iteration). No refinement, full reinvention.
+
+Work Log:
+- Defined new identity "LUMINA · Cinema OS": obsidian deep-space shell (#05050A) + living aurora field (violet/cyan/rose blobs, 36-52s drifts) + projector beam + 14 twinkling stars + 35mm grain + vignette — answers the old "خشکه" complaint with a cinematic ambient depth, totally different mood from brown Field Kit.
+- Downloaded Space Grotesk variable woff2 (local, offline-ready) for EN display; kept Vazirmatn + IBM Plex Mono (OSD micro-labels).
+- Rewrote globals.css from scratch: LUMINA token system (iris/sky/aqua/rose), glass + glass-deep panes, prism rim (mask-composite gradient hairline), prism gradient CTA w/ sheen sweep, rank numerals (stroke → gradient fill on hover), orb-play spring pop, progress w/ glowing head dot, toast/sheet/player/dock/cmdbar systems, reduced-motion guards.
+- Built src/components/lumina/ (9 files): atmosphere (field/aurora/beam/stars/grain/vignette), chrome (Windows titlebar: live clock + net OSD + win controls), sidebar (floating glass dock RTL right: nav, library counts, local-cache meter, premium user chip), topbar (sticky glass cmdbar: search+Ctrl K, genre pills, 4K·HDR10+ badge, bell), hero (full-bleed billboard: mouse-parallax backdrop+poster, Ken Burns, FINAL solid + ORBIT ghost typography, meta chips incl. green match%, prism CTA), cards (RankCard w/ giant numerals, PosterCard, ContinueCard 16:9 w/ progress, CollectionBanner, RTL-aware reel arrows), player-bar (floating glass now-playing: ticking timecode hms(), pause toggle, volume, PiP), detail-modal (glass sheet: backdrop hero, episodes w/ per-ep progress, cast pills), LuminaApp (composition, genre filter, my-list set, toast system, demo download toast).
+- Reused existing fake catalog (titles.ts) + 29 AI posters/7 backdrops; hero = FINAL ORBIT w/ hero-galaxy backdrop.
+- Fixed: stale .next CSS cache (kill + rm -rf .next + restart), Tailwind v4 important syntax (72 conversions `!u` → `u!` via scripts/fix_important.py), dock/player/main RTL sides, coll-scrim direction, storage OSD dir=ltr, toast bidi text (۲٫۱ گیگابایت), aurora opacity boost.
+- Verified @1440x900 via agent-browser: hero/rows/ranks/collection/series render, chip filter + empty state, modal opens (ESC closes), player bar opens w/ ticking timecode, reel hover arrows, toasts slide bottom-left; console clean; tsc + eslint clean.
+
+Stage Summary:
+- Deliverable: "GHAB · LUMINA — Cinema OS v1.0" — brand-new ambient-cinema skin, sole skin on / (Field Kit components remain unused on disk).
+- Signature elements: aurora ambient field, prism gradient, floating glass dock + now-playing bar, ranked numerals, ghost display type.
+- Next (awaiting user): full development phase (player, downloads, real catalog, Electron shell) on chosen direction.

@@ -1,7 +1,7 @@
 "use client";
 
-import { FieldKitApp } from "@/components/fieldkit/FieldKitApp";
+import { LuminaApp } from "@/components/lumina/LuminaApp";
 
 export default function Page() {
-  return <FieldKitApp />;
+  return <LuminaApp />;
 }
