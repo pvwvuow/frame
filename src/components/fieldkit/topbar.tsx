@@ -9,7 +9,7 @@ export function TopBar({
   onChip: (c: string) => void;
 }) {
   return (
-    <div className="relative z-20 flex items-center gap-4 border-b border-line/70 bg-coal/60 px-6 py-3 backdrop-blur-sm">
+    <div className="topbar-fade relative z-30 flex items-center gap-4 border-b border-line/60 bg-coal/70 px-6 py-3 backdrop-blur-md">
       {/* search — camera OSD style */}
       <label className="osd-search flex h-10 max-w-[440px] flex-1 items-center gap-2.5 rounded-sm px-3.5">
         <Search size={15} className="shrink-0 text-faint" />

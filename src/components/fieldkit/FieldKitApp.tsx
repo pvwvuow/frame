@@ -1,7 +1,7 @@
 "use client";
 
 /* ------------------------------------------------------------------
-   Field Kit skin — the previous "film lab" design, preserved as-is.
+   Field Kit skin — the chosen "film lab / darkroom" design.
    Aesthetic source: sammularczyk/cavalry-field-kit
 ------------------------------------------------------------------- */
 
@@ -16,7 +16,15 @@ import { ContinueCard, PosterCard, Reel, RowHeader } from "@/components/fieldkit
 import { DetailModal } from "@/components/fieldkit/detail-modal";
 import { ALL, CONTINUE, HERO, SERIES, TREND, type Title } from "@/lib/titles";
 
-export function FieldKitApp({ onSwitchSkin }: { onSwitchSkin?: () => void }) {
+/* gentle rise-on-scroll for each shelf */
+const rise = {
+  initial: { opacity: 0, y: 20 },
+  whileInView: { opacity: 1, y: 0 },
+  viewport: { once: true, margin: "-70px" },
+  transition: { duration: 0.55, ease: [0.22, 1, 0.36, 1] as const },
+};
+
+export function FieldKitApp() {
   const [nav, setNav] = useState<NavId>("home");
   const [chip, setChip] = useState("همه");
   const [open, setOpen] = useState<Title | null>(null);
@@ -55,7 +63,7 @@ export function FieldKitApp({ onSwitchSkin }: { onSwitchSkin?: () => void }) {
 
           <div className="space-y-10 px-8 py-8">
             {/* continue watching */}
-            <section aria-label="ادامه تماشا">
+            <motion.section aria-label="ادامه تماشا" {...rise}>
               <RowHeader reel="REEL 01" title="ادامهٔ تماشا" en="RESUME" hint="همه" />
               <Reel>
                 {CONTINUE.map((t) => (
@@ -64,11 +72,11 @@ export function FieldKitApp({ onSwitchSkin }: { onSwitchSkin?: () => void }) {
                   </div>
                 ))}
               </Reel>
-            </section>
+            </motion.section>
 
             {/* trending films */}
             {showFilms && trend.length > 0 && (
-              <section aria-label="ترند این هفته">
+              <motion.section aria-label="ترند این هفته" {...rise}>
                 <RowHeader reel="REEL 02" title="ترندِ این هفته" en="TRENDING" hint="همهٔ فیلم‌ها" />
                 <Reel>
                   {trend.map((t, i) => (
@@ -77,12 +85,12 @@ export function FieldKitApp({ onSwitchSkin }: { onSwitchSkin?: () => void }) {
                     </div>
                   ))}
                 </Reel>
-              </section>
+              </motion.section>
             )}
 
             {/* series */}
             {showSeries && series.length > 0 && (
-              <section aria-label="سریال‌های جدید">
+              <motion.section aria-label="سریال‌های جدید" {...rise}>
                 <RowHeader reel="REEL 03" title="سریال‌های تازه رسیده" en="NEW SERIES" hint="همهٔ سریال‌ها" />
                 <Reel>
                   {series.map((t) => (
@@ -91,25 +99,25 @@ export function FieldKitApp({ onSwitchSkin }: { onSwitchSkin?: () => void }) {
                     </div>
                   ))}
                 </Reel>
-              </section>
+              </motion.section>
             )}
 
             {/* browse-all grid (when a genre chip narrows things down) */}
             {chip !== "همه" && ALL.filter((t) => t.genres.some((g) => g.includes(chip))).length > 0 && (
-              <section aria-label="نتایج دسته‌بندی">
+              <motion.section aria-label="نتایج دسته‌بندی" {...rise}>
                 <RowHeader reel="REEL 04" title={`دستهٔ «${chip}»`} en="GENRE BIN" />
                 <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 xl:grid-cols-6">
                   {ALL.filter((t) => t.genres.some((g) => g.includes(chip))).map((t) => (
                     <PosterCard key={t.id} t={t} onOpen={setOpen} onToast={showToast} />
                   ))}
                 </div>
-              </section>
+              </motion.section>
             )}
 
             {/* trailer strip — darkroom footer note */}
             <footer className="burn-edge mt-4 flex flex-wrap items-center gap-x-6 gap-y-2 rounded-md border border-line bg-panel/50 px-5 py-4">
               <span className="font-mono text-[9px] tracking-[0.26em] text-faint" dir="ltr">
-                GHAB · FIELD KIT BUILD 0.2.0 — DEMO REEL
+                GHAB · FIELD KIT BUILD 0.3.0 — DEMO REEL
               </span>
               <span className="text-[11.5px] text-faint" dir="rtl">
                 تمام پوسترها و اطلاعات این پیش‌نمایش، دادهٔ نمایشی (دمو) هستند.
@@ -122,7 +130,7 @@ export function FieldKitApp({ onSwitchSkin }: { onSwitchSkin?: () => void }) {
         </main>
       </div>
 
-      <StatusBar playing={open ? open.fa : HERO.fa} onSwitchSkin={onSwitchSkin} />
+      <StatusBar playing={open ? open.fa : HERO.fa} />
 
       <DetailModal t={open} onClose={() => setOpen(null)} onToast={showToast} />
 

@@ -29,7 +29,7 @@ export function DetailModal({
           transition={{ duration: 0.22 }}
         >
           {/* overlay */}
-          <div className="absolute inset-0 bg-black/75 backdrop-blur-[6px]" onClick={onClose} aria-hidden />
+          <div className="absolute inset-0 bg-[#050302]/80 backdrop-blur-[7px]" onClick={onClose} aria-hidden />
 
           <motion.article
             role="dialog"
@@ -42,7 +42,7 @@ export function DetailModal({
             transition={{ type: "spring", stiffness: 300, damping: 30 }}
           >
             {/* header — film frame */}
-            <div className="scanlines relative h-52 overflow-hidden">
+            <div className="scanlines relative h-56 overflow-hidden">
               <img
                 src={t.backdrop ?? t.poster}
                 alt=""
@@ -77,9 +77,12 @@ export function DetailModal({
               </div>
             </div>
 
+            {/* sprocket divider — the film identity detail */}
+            <div className="perf-edge shrink-0" aria-hidden />
+
             {/* body */}
-            <div className="scroll-film max-h-[46vh] overflow-y-auto">
-              <div className="grid gap-5 p-5 sm:grid-cols-[132px_1fr]">
+            <div className="scroll-film max-h-[44vh] overflow-y-auto">
+              <div className="grid gap-6 p-6 sm:grid-cols-[136px_1fr]">
                 {/* poster thumb */}
                 <div className="hidden sm:block">
                   <img

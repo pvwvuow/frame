@@ -16,7 +16,7 @@ export type NavId = (typeof NAV)[number]["id"];
 
 export function Sidebar({ active, onPick }: { active: NavId; onPick: (id: NavId) => void }) {
   return (
-    <aside className="relative z-30 flex w-[204px] shrink-0 flex-col border-e border-line bg-coal2/80">
+    <aside className="side-glow relative z-30 flex w-[204px] shrink-0 flex-col border-e border-line bg-gradient-to-b from-coal2/90 via-coal2/70 to-coal2/85">
       {/* brand block */}
       <div className="flex items-center gap-3 px-5 pb-5 pt-6">
         <span className="relative grid size-11 place-items-center rounded-md border border-line2 bg-panel">
@@ -42,12 +42,12 @@ export function Sidebar({ active, onPick }: { active: NavId; onPick: (id: NavId)
               aria-current={on ? "page" : undefined}
               className={`nav-item group flex items-center gap-3 rounded-sm px-3 py-2.5 text-[13px] transition-colors ${
                 on
-                  ? "bg-gradient-to-l from-burn/12 to-transparent text-amber"
+                  ? "bg-gradient-to-l from-burn/15 to-transparent text-amber"
                   : "text-mut hover:bg-panel2/70 hover:text-ink"
               }`}
             >
               <Icon size={17} strokeWidth={on ? 2 : 1.6} className={on ? "text-burn" : "text-faint group-hover:text-mut"} />
-              <span className="font-semibold">{item.label}</span>
+              <span className={on ? "font-bold" : "font-semibold"}>{item.label}</span>
               <span dir="ltr" className="ms-auto font-mono text-[8.5px] tracking-[0.2em] text-faint/80">
                 {String(i + 1).padStart(2, "0")}
               </span>
@@ -77,12 +77,27 @@ export function Sidebar({ active, onPick }: { active: NavId; onPick: (id: NavId)
         </ul>
       </div>
 
+      {/* local cache meter — downloader identity */}
+      <div className="mt-5 px-5">
+        <div className="flex items-center justify-between font-mono text-[9px] tracking-[0.24em] text-faint">
+          <span>LOCAL CACHE</span>
+          <span dir="ltr" className="text-amber/85">46%</span>
+        </div>
+        <div className="filmstrip mt-2 !h-1.5">
+          <div className="filmstrip-fill" style={{ width: "46%" }} />
+          <div className="filmstrip-perf" />
+        </div>
+        <p dir="ltr" className="mt-1.5 font-mono text-[8.5px] tracking-wider text-faint/70">
+          58.2 / 128 GB · SMART MODE
+        </p>
+      </div>
+
       <div className="mt-auto">
         {/* search shortcut */}
         <button className="mx-3 mb-3 flex w-[calc(100%-24px)] items-center gap-2.5 rounded-sm border border-line bg-panel/60 px-3 py-2 text-[12px] text-faint transition-colors hover:border-line2 hover:text-mut">
           <Search size={14} />
           جست‌وجو…
-          <kbd dir="ltr" className="ms-auto font-mono text-[9px] text-faint/70 border border-line rounded px-1">Ctrl K</kbd>
+          <kbd dir="ltr" className="ms-auto rounded border border-line px-1 font-mono text-[9px] text-faint/70">Ctrl K</kbd>
         </button>
 
         {/* settings + user */}

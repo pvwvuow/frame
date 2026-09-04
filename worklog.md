@@ -38,3 +38,21 @@ Stage Summary:
 - Deliverable: "GHAB · LIQUID CINEMA" — fusion skin #1 default (Liquid Glass depth × Field Kit film soul) + preserved Field Kit skin, switchable from status bar.
 - Reusable pieces: aura component library + AURA CSS token block for the upcoming Electron build.
 - Next (awaiting user): full development phase (player, downloads, real catalog, Electron shell) on the chosen skin.
+
+---
+Task ID: 3
+Agent: Super Z (main)
+Task: User picked the brown Field Kit skin as THE design ("دومی قهوه‌ای بهتر بود") — polish it, fix flaws, enrich the space; drop the rejected Liquid skin.
+
+Work Log:
+- Made Field Kit the sole skin: page.tsx renders FieldKitApp directly; deleted src/components/aura + stale src/lib/nova-data.ts; removed skin-switch buttons from chrome.
+- Fixed "dry/flat space": new DARKROOM FIELD layers in globals.css + atmosphere.tsx — .dk-field warm ambient gradient field, .dk-beam breathing projector cone (conic-gradient, 16s sway), 12 deterministic .dust motes drifting upward, plus existing grain/leaks/vignette; prefers-reduced-motion opt-out.
+- Hero upgrade: mouse parallax (framer-motion springs; backdrop ±14px, film print ±12px opposite), floating tilted FILM PRINT frame (.print-frame + .float-soft + stock label) anchoring the empty left side, warm radial ember glow, staggered Variants entrance, .text-ember-glow title.
+- UX flaw fixes: Reel rows now have RTL-aware hover scroll arrows (.reel-btn, scrollBy ±640); TopBar sticky (.topbar-fade with under-fade melting into content); stronger caption scrim + inset top-light on cards; :focus-visible rings; btn/chip active polish.
+- Sidebar: warm edge glow (.side-glow), LOCAL CACHE filmstrip meter (46% · 58.2/128 GB), active-nav bold. Modal: h-56 header, sprocket .perf-edge divider, warmer overlay (#050302/80), p-6 body.
+- Offline-ready: downloaded IBM Plex Mono woff2 (400/500/600/700) to public/fonts, @font-face locals, removed Google Fonts links → eslint 0 warnings (no-page-custom-font gone); metadata → "قاب | GHAB — Cinema OS", themeColor #0B0906, build tag v0.3.0.
+- Verified @1440x900 via agent-browser: hero/rows/ranks/cache-meter render, sticky topbar holds, reel arrows appear on row hover, card halation+lift OK, hover action overlay confirmed (headless reports hover:none — @media(hover:hover) quirk, real desktops unaffected), modal opens w/ perf-edge, ESC closes, chip filters + GENRE BIN work, 0 console/hydration errors; tsc + eslint clean.
+
+Stage Summary:
+- Deliverable: "GHAB · Cinema OS v0.3" — polished Field Kit (warm darkroom) as the single final skin, richer ambient space, UX flaws fixed, fonts self-hosted.
+- Next (awaiting user): full development phase on this skin (real catalog, player, downloads, Electron shell).

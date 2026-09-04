@@ -1,6 +1,7 @@
 "use client";
 
-import { Play, Plus, ChevronLeft, Star, Clock3 } from "lucide-react";
+import { useRef } from "react";
+import { Play, Plus, ChevronLeft, ChevronRight, Star, Clock3 } from "lucide-react";
 import type { Title } from "@/lib/titles";
 
 /* ---------- section header — reel board style ---------- */
@@ -52,7 +53,7 @@ export function PosterCard({
       )}
       <article
         onClick={() => onOpen(t)}
-        className="halation-hover sweep group/poster relative w-full min-w-0 cursor-pointer overflow-hidden rounded-md border border-line bg-panel"
+        className="halation-hover sweep group/poster relative w-full min-w-0 cursor-pointer overflow-hidden rounded-md border border-line bg-panel shadow-[inset_0_1px_0_rgba(255,196,107,0.07)]"
         role="button"
         tabIndex={0}
         onKeyDown={(e) => e.key === "Enter" && onOpen(t)}
@@ -62,7 +63,7 @@ export function PosterCard({
           <img src={t.poster} alt={`پوستر ${t.fa}`} loading="lazy" className="poster-media absolute inset-0 size-full object-cover" />
 
           {/* bottom info gradient */}
-          <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/10 to-transparent" />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent" />
 
           {/* kind / season badge */}
           {t.badge && (
@@ -122,7 +123,7 @@ export function ContinueCard({ t, onOpen }: { t: Title; onOpen: (t: Title) => vo
   return (
     <article
       onClick={() => onOpen(t)}
-      className="halation-hover group/cw relative w-full min-w-0 cursor-pointer overflow-hidden rounded-md border border-line bg-panel"
+      className="halation-hover group/cw relative w-full min-w-0 cursor-pointer overflow-hidden rounded-md border border-line bg-panel shadow-[inset_0_1px_0_rgba(255,196,107,0.07)]"
       role="button"
       tabIndex={0}
       onKeyDown={(e) => e.key === "Enter" && onOpen(t)}
@@ -162,11 +163,33 @@ export function ContinueCard({ t, onOpen }: { t: Title; onOpen: (t: Title) => vo
   );
 }
 
-/* ---------- horizontal reel row ---------- */
+/* ---------- horizontal reel row — hover scroll arrows (RTL-aware) ---------- */
 export function Reel({ children }: { children: React.ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  /* RTL: content overflows to the left → next = scrollBy(-x) */
+  const nudge = (dx: number) => ref.current?.scrollBy({ left: dx, behavior: "smooth" });
+
   return (
-    <div className="no-scrollbar -mx-1 flex gap-4 overflow-x-auto px-1 pb-2 pt-1">
-      {children}
+    <div className="group/reel relative">
+      <div ref={ref} className="no-scrollbar -mx-1 flex gap-4 overflow-x-auto px-1 pb-2 pt-1">
+        {children}
+      </div>
+      <button
+        type="button"
+        onClick={() => nudge(-640)}
+        aria-label="بعدی"
+        className="reel-btn end-1.5"
+      >
+        <ChevronLeft size={17} />
+      </button>
+      <button
+        type="button"
+        onClick={() => nudge(640)}
+        aria-label="قبلی"
+        className="reel-btn start-1.5"
+      >
+        <ChevronRight size={17} />
+      </button>
     </div>
   );
 }
