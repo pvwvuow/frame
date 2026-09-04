@@ -1,0 +1,438 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+/* ---------- Vazirmatn Persian Font ---------- */
+@font-face {
+  font-family: "Vazirmatn";
+  src: url("/fonts/Vazirmatn-Light.woff2") format("woff2");
+  font-weight: 300;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Vazirmatn";
+  src: url("/fonts/Vazirmatn-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Vazirmatn";
+  src: url("/fonts/Vazirmatn-Medium.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Vazirmatn";
+  src: url("/fonts/Vazirmatn-Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Vazirmatn";
+  src: url("/fonts/Vazirmatn-Black.woff2") format("woff2");
+  font-weight: 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: "Vazirmatn", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+:root {
+  --radius: 0.75rem;
+  --background: #06060a;
+  --foreground: #f4f2ee;
+  --card: rgba(255, 255, 255, 0.05);
+  --card-foreground: #f4f2ee;
+  --popover: rgba(16, 16, 22, 0.85);
+  --popover-foreground: #f4f2ee;
+  --primary: #f59e0b;
+  --primary-foreground: #1a1204;
+  --secondary: rgba(255, 255, 255, 0.08);
+  --secondary-foreground: #f4f2ee;
+  --muted: rgba(255, 255, 255, 0.06);
+  --muted-foreground: rgba(244, 242, 238, 0.55);
+  --accent: rgba(255, 255, 255, 0.08);
+  --accent-foreground: #f4f2ee;
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: rgba(255, 255, 255, 0.1);
+  --input: rgba(255, 255, 255, 0.12);
+  --ring: rgba(245, 158, 11, 0.5);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html,
+  body {
+    height: 100%;
+    overflow: hidden;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: "Vazirmatn", ui-sans-serif, system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  ::selection {
+    background: rgba(245, 158, 11, 0.35);
+  }
+}
+
+/* ============================================================
+   LIQUID GLASS DESIGN SYSTEM
+   Based on oc_liquid_glass (heyarny) parameters:
+   refractStrength:-0.08 | blurRadiusPx:2 | specStrength:25
+   lightbandColor: cyan-white | edge blend
+   ============================================================ */
+
+/* --- Base liquid glass material --- */
+.lg {
+  position: relative;
+  isolation: isolate;
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.11) 0%,
+    rgba(255, 255, 255, 0.045) 45%,
+    rgba(255, 255, 255, 0.075) 100%
+  );
+  backdrop-filter: blur(24px) saturate(180%) brightness(1.06);
+  -webkit-backdrop-filter: blur(24px) saturate(180%) brightness(1.06);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow:
+    /* lightband — top */ inset 0 1px 0 rgba(255, 255, 255, 0.32),
+    /* lightband — bottom */ inset 0 -1px 0 rgba(255, 255, 255, 0.07),
+    /* refraction edges */ inset 1.5px 0 1px rgba(255, 255, 255, 0.09),
+    inset -1.5px 0 1px rgba(255, 255, 255, 0.09),
+    /* ambient depth */ 0 16px 44px -14px rgba(0, 0, 0, 0.6),
+    0 2px 8px -2px rgba(0, 0, 0, 0.35);
+}
+
+/* specular highlight streak (top-left) */
+.lg::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: 1;
+  background: linear-gradient(
+    115deg,
+    rgba(255, 255, 255, 0.2) 0%,
+    rgba(255, 255, 255, 0.045) 22%,
+    transparent 42%
+  );
+  opacity: 0.85;
+}
+
+/* inner refraction glow */
+.lg::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: 1;
+  box-shadow: inset 0 0 22px rgba(255, 255, 255, 0.05);
+}
+
+/* content above the pseudo layers */
+.lg > * {
+  position: relative;
+  z-index: 2;
+}
+
+/* --- Stronger glass for hero / modals --- */
+.lg-strong {
+  background: linear-gradient(
+    135deg,
+    rgba(28, 28, 36, 0.72) 0%,
+    rgba(18, 18, 24, 0.62) 100%
+  );
+  backdrop-filter: blur(40px) saturate(190%) brightness(1.1);
+  -webkit-backdrop-filter: blur(40px) saturate(190%) brightness(1.1);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.06),
+    0 32px 90px -18px rgba(0, 0, 0, 0.8),
+    0 4px 14px -4px rgba(0, 0, 0, 0.5);
+}
+
+/* --- Interactive hover sheen (liquid light sweep) --- */
+.lg-sheen {
+  transition:
+    transform 0.35s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.35s cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 0.35s;
+}
+.lg-sheen:hover {
+  border-color: rgba(255, 255, 255, 0.26);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.42),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.1),
+    0 20px 54px -14px rgba(0, 0, 0, 0.65),
+    0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+.lg-sheen::after {
+  transition: opacity 0.4s;
+}
+.lg-sheen:hover::after {
+  box-shadow:
+    inset 0 0 22px rgba(255, 255, 255, 0.08),
+    inset 0 0 60px rgba(255, 255, 255, 0.04);
+}
+
+/* --- Pill glass (nav / chips) --- */
+.lg-pill {
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.13) 0%,
+    rgba(255, 255, 255, 0.05) 100%
+  );
+  backdrop-filter: blur(18px) saturate(170%);
+  -webkit-backdrop-filter: blur(18px) saturate(170%);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.05),
+    0 8px 22px -8px rgba(0, 0, 0, 0.45);
+}
+
+/* --- Active nav pill with amber light --- */
+.lg-active {
+  background: linear-gradient(
+    135deg,
+    rgba(245, 158, 11, 0.22) 0%,
+    rgba(245, 158, 11, 0.08) 60%,
+    rgba(255, 255, 255, 0.06) 100%
+  );
+  border-color: rgba(251, 191, 36, 0.35);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.3),
+    inset 0 0 24px rgba(245, 158, 11, 0.12),
+    0 8px 26px -8px rgba(245, 158, 11, 0.28);
+}
+
+/* --- Frosted card over poster (hover overlay) --- */
+.lg-card-hover {
+  background: linear-gradient(
+    0deg,
+    rgba(10, 10, 14, 0.88) 0%,
+    rgba(10, 10, 14, 0.45) 45%,
+    rgba(10, 10, 14, 0.05) 100%
+  );
+  backdrop-filter: blur(10px) saturate(150%);
+  -webkit-backdrop-filter: blur(10px) saturate(150%);
+}
+
+/* --- Glass button --- */
+.lg-btn {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.16) 0%,
+    rgba(255, 255, 255, 0.06) 100%
+  );
+  backdrop-filter: blur(18px) saturate(180%);
+  -webkit-backdrop-filter: blur(18px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.32),
+    0 10px 26px -10px rgba(0, 0, 0, 0.5);
+  transition: all 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.lg-btn:hover {
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.24) 0%,
+    rgba(255, 255, 255, 0.1) 100%
+  );
+  border-color: rgba(255, 255, 255, 0.3);
+  transform: translateY(-1px);
+}
+.lg-btn:active {
+  transform: translateY(0) scale(0.98);
+}
+
+/* --- Amber primary glass button --- */
+.lg-btn-primary {
+  background: linear-gradient(
+    135deg,
+    rgba(251, 191, 36, 0.92) 0%,
+    rgba(245, 158, 11, 0.85) 55%,
+    rgba(234, 88, 12, 0.85) 100%
+  );
+  border: 1px solid rgba(255, 236, 190, 0.5);
+  color: #241603;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.55),
+    inset 0 -2px 4px rgba(146, 64, 14, 0.4),
+    0 14px 34px -10px rgba(245, 158, 11, 0.5);
+  transition: all 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.lg-btn-primary:hover {
+  filter: brightness(1.08);
+  transform: translateY(-1px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.6),
+    0 18px 44px -10px rgba(245, 158, 11, 0.6);
+}
+
+/* --- Window controls (Windows 11 style) --- */
+.win-btn {
+  width: 44px;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  color: rgba(255, 255, 255, 0.75);
+  transition: background 0.15s, color 0.15s;
+}
+.win-btn:hover {
+  background: rgba(255, 255, 255, 0.09);
+  color: #fff;
+}
+.win-btn-close:hover {
+  background: #e81123;
+  color: #fff;
+}
+
+/* --- Custom scrollbars --- */
+.scroll-glass {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+}
+.scroll-glass::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.scroll-glass::-webkit-scrollbar-track {
+  background: transparent;
+}
+.scroll-glass::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.14);
+  border-radius: 99px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+.scroll-glass::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.26);
+  background-clip: padding-box;
+}
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* --- Aurora ambient background --- */
+@keyframes drift-1 {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(-60px, 40px) scale(1.15);
+  }
+}
+@keyframes drift-2 {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1.1);
+  }
+  50% {
+    transform: translate(70px, -50px) scale(0.95);
+  }
+}
+@keyframes drift-3 {
+  0%,
+  100% {
+    transform: translate(0, 0) rotate(0deg);
+  }
+  50% {
+    transform: translate(-40px, -30px) rotate(8deg);
+  }
+}
+.aurora-1 {
+  animation: drift-1 26s ease-in-out infinite;
+}
+.aurora-2 {
+  animation: drift-2 32s ease-in-out infinite;
+}
+.aurora-3 {
+  animation: drift-3 38s ease-in-out infinite;
+}
+
+/* --- Liquid shimmer for progress --- */
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+.shimmer {
+  background: linear-gradient(
+    100deg,
+    rgba(255, 255, 255, 0) 30%,
+    rgba(255, 255, 255, 0.55) 50%,
+    rgba(255, 255, 255, 0) 70%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 2.4s linear infinite;
+}
+
+/* --- Pulse glow for live dot --- */
+@keyframes pulse-dot {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.5;
+    transform: scale(0.8);
+  }
+}
+.pulse-dot {
+  animation: pulse-dot 1.8s ease-in-out infinite;
+}
+
+/* --- Number font for latin digits inside Persian text --- */
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
