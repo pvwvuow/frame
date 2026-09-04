@@ -75,3 +75,20 @@ Stage Summary:
 - Deliverable: "GHAB · LUMINA — Cinema OS v1.0" — brand-new ambient-cinema skin, sole skin on / (Field Kit components remain unused on disk).
 - Signature elements: aurora ambient field, prism gradient, floating glass dock + now-playing bar, ranked numerals, ghost display type.
 - Next (awaiting user): full development phase (player, downloads, real catalog, Electron shell) on chosen direction.
+
+---
+Task ID: 5
+Agent: Super Z (main)
+Task: User rejected LUMINA too ("خیلی مزخرفه") — rebuild the UI completely from scratch for the 6th iteration as a fresh, professional, production-grade design.
+
+Work Log:
+- Abandoned ALL previous visual languages (liquid glass, brown field-kit, aurora glass, ambient cinema). New direction: "PARDEH · پرده" — restrained true-black streaming UI with a single crimson accent (#E5484D), solid surfaces, hairline borders — Netflix/Apple-TV-grade professionalism, zero gimmicks.
+- Built as a single-file HTML/CSS preview (no Next.js): download/pardeh-ui.html — lang=fa dir=rtl, Vazirmatn via Google Fonts + Tahoma fallback.
+- Layout: solid right sidebar (logo, nav + counts, premium upgrade card, user chip), topbar (greeting, search with Ctrl+K, bell, avatar), hero billboard (CSS-art Dune scene: crimson sun + orbit ring + starfield + dunes + grain + tilted floating mini-poster + rank badge), continue-watching row (16:9 cards, % badges, red progress with glowing head), trending posters row, top-10 row with giant outlined Persian numerals, series row, for-you row, 8 genre tiles, footer.
+- 25+ fake posters generated as pure CSS gradient art (12 movie / 7 series / 5 landscape) with per-poster decorations (planets, rings, arcs, glows, starfields) + 4K/dub badges + IMDb star ratings in Persian numerals.
+- Verified via agent-browser @1440x900 (3 viewport shots + full-page): found & fixed class collision (.greet g1/g2 vs genre g1-g8 → renamed to gt1/gt2) and moved hero sun/ring to inline-end so the title area stays clean.
+- Artifacts: download/pardeh-ui.html, pardeh-shot-1/2/3.png, pardeh-fullpage.png.
+
+Stage Summary:
+- Deliverable: "پرده · PARDEH v1" preview — completely new identity, fully RTL Persian, fake-poster demo, zero console errors.
+- Next (awaiting user): feedback on this direction; if approved → full development phase (Next.js + Electron shell, real catalog, player, downloads) on this design system.
