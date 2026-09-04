@@ -3,21 +3,21 @@
 ---
 Task ID: 1
 Agent: Super Z (main)
-Task: طراحی و ساخت پیش‌نمایش نرم‌افزار ویندوزی Electron برای فیلم و سریال («نواپلی NovaPlay») با طراحی Liquid Glass برگرفته از github.com/heyarny/oc_liquid_glass + پوسترهای AI برای دمو
+Task: Redesign the Electron VOD app UI (GHAB/قاب) based on sammularczyk/cavalry-field-kit visual language, replacing the rejected Liquid Glass design; fake posters demo; live preview.
 
 Work Log:
-- سورس oc_liquid_glass بررسی شد (پارامترها: refractStrength -0.08، blurRadiusPx 2، specStrength 25، lightbandColor cyan) و زبان طراحی به CSS برگردانده شد
-- سیستم طراحی Liquid Glass در src/app/globals.css ساخته شد: کلاس‌های .lg، .lg-strong، .lg-pill، .lg-active، .lg-btn، .lg-btn-primary با lightband، specular streak، refraction ring
-- ۱۷ پوستر عمودی (768x1344) + ۳ کاور عریض (1344x768) با z-ai CLI تولید شد (اسکریپت: scripts/gen_posters.sh)
-- فونت فارسی Vazirmatn (۵ وزن) در public/fonts دانلود شد
-- داده‌های دمو: src/lib/nova-data.ts — ۱۴ فیلم + ۳ سریال ساختگی با توضیحات فارسی، ژانر، امتیاز، کیفیت و حجم
-- کامپوننت‌ها در src/components/nova/: aurora، titlebar (کنترل‌های ویندوزی RTL)، sidebar (nav pill انیمیشنی + ویجت فضای دیسک + پروفایل)، hero (چرخش خودکار ۳ فیلم ویژه)، rows (کارت پوستر + hover overlay + ادامه تماشا + رتبه‌دار)، grid + ژانرچیپس، detail-modal (انتخاب کیفیت/حجم/دانلود/لیست)، player (فول‌اسکرین با کنترل شیشه‌ای)، downloads (نوار شناور + ویو مدیریت با شبیه‌سازی پیشرفت)، settings، toasts
-- باگ بحرانی رفع شد: تداخل نام `Home` (export پیش‌فرض صفحه) با آیکون lucide `Home` → بازگشت بی‌نهایت در SSR → OOM و HTML پنج‌مگابایتی؛ با تغییر نام به NovaApp و HomeIcon حل شد
-- نکته محیطی: bunx/bun next را زیر runtime Bun اجرا می‌کند؛ برای runtime Node باید `node node_modules/next/dist/bin/next dev` مستقیم اجرا شود. سرور با این روش پایدار روی پورت 3000 بالا آمده
-- نویگیشن پایین موبایل اضافه شد (سایدبار در <md مخفی)
-- تست کامل با agent-browser: خانه، مودال جزئیات، شروع دانلود + توست، ویو دانلودها، پلیر، فیلم‌ها با فیلتر ژانر، تنظیمات، موبایل — همه 200 و بدون خطای کنسول
+- Cloned and studied cavalry-field-kit: it is an analog-film shader kit (film burn, halation, light leak, grain, VHS/CRT, glow, godrays, Fujifilm-style colour recipes) → derived a "film lab / projection room" design language instead of liquid glass.
+- Initialized fullstack env; dev server on port 3000 (had to kill stale server from previous session and clear .next cache — CSS chunk was stale, custom classes missing).
+- Generated AI posters in Field Kit cinematic style: 12 portrait posters + 4 landscape thumbs (public/posters, public/backdrops). Note: image API requires 32-multiple sizes (used 864x1152, 1344x768). Reused hero-desert.png as featured backdrop.
+- Rewrote design system: src/app/globals.css — warm darkroom palette (#0B0906 coal, amber #FFC46B, burn #FF8A2A, ember #E5481F), animated 35mm grain (SVG turbulence), drifting light leaks, vignette, scanlines, godrays, viewfinder corner brackets, sprocket-hole filmstrip progress bars, halation hover shadows, outlined rank numerals, film-lab scrollbars.
+- Built components (src/components/fieldkit/): atmosphere (grain/leak/vignette + timecode hook), chrome (Electron Windows titlebar + OSD statusbar), sidebar (RTL nav + fake reels + user), topbar (OSD search + genre chips), hero (featured reel with REC/A-CAM labels), cards (PosterCard with rank/halation/sweep, ContinueCard with filmstrip, RowHeader reel-style), detail-modal (framer-motion, episodes list with progress strips).
+- Fake catalog: src/lib/titles.ts — 12 fictional Persian titles (+hero), directors, cast, synopses, film-stock labels, episodes.
+- page.tsx: composition, chip filtering, toast system, modal state.
+- layout.tsx: lang=fa dir=rtl, IBM Plex Mono via Google Fonts, Vazirmatn local.
+- Verified with agent-browser: all sections render, chips filter rows, modal opens (ESC closes), toasts fire, hover halation works, timecode runs at 24fps, zero console/hydration errors. Removed old src/components/nova. Lint: 0 errors.
 
 Stage Summary:
-- پیش‌نمایش کامل اپ «نواپلی» روی http://localhost:3000 در حال سرو است (dev server با node runtime)
-- ۱۹ فایل سورس جدید + ۲۰ تصویر AI تولید شد
-- برای نسخه Electron بعداً: همین رندر در BrowserWindow لود می‌شود؛ اسکلت آماده است
+- Deliverable: redesigned UI preview "GHAB · قاب — Cinema OS" running at / (Next.js dev, port 3000).
+- Old Liquid Glass design fully replaced (nova components deleted).
+- Design tokens and texture layers reusable for the upcoming Electron build.
+- Next step (pending user go-ahead): full development (real catalog, player, downloads, Electron shell).
