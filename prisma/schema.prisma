@@ -1,9 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -13,20 +7,87 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model User {
-  id        String   @id @default(cuid())
-  email     String   @unique
-  name      String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+model Title {
+  id            Int       @id @default(autoincrement())
+  slug          String    @unique
+  title         String
+  titleEn       String
+  type          String // 'movie' | 'series'
+  year          Int
+  rating        Float     @default(0)
+  duration      Int       @default(0) // minutes (movie) or avg episode
+  description   String
+  genres        String    @default("[]") // JSON string[]
+  poster        String
+  backdrop      String
+  videoUrl      String
+  trailerUrl    String?
+  director      String    @default("")
+  cast          String    @default("[]") // JSON string[]
+  country       String    @default("ایران")
+  ageRating     String    @default("+13")
+  quality       String    @default("4K")
+  featured      Boolean   @default(false)
+  trendingScore Int       @default(0)
+  views         Int       @default(0)
+  createdAt     DateTime  @default(now())
+  episodes      Episode[]
+  reviews       Review[]
+  watchlist     Watchlist[]
+  progress      WatchProgress[]
+
+  @@index([type])
+  @@index([trendingScore])
 }
 
-model Post {
-  id        String   @id @default(cuid())
-  title     String
-  content   String?
-  published Boolean  @default(false)
-  authorId  String
+model Episode {
+  id         Int             @id @default(autoincrement())
+  titleId    Int
+  title      Title           @relation(fields: [titleId], references: [id], onDelete: Cascade)
+  season     Int             @default(1)
+  number     Int
+  name       String
+  synopsis   String          @default("")
+  duration   Int             @default(45)
+  videoUrl   String
+  thumbnail  String
+  progress   WatchProgress[]
+
+  @@index([titleId])
+}
+
+model Watchlist {
+  id        Int      @id @default(autoincrement())
+  userKey   String
+  titleId   Int
+  title     Title    @relation(fields: [titleId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
+
+  @@unique([userKey, titleId])
+}
+
+model WatchProgress {
+  id        Int      @id @default(autoincrement())
+  userKey   String
+  titleId   Int
+  title     Title    @relation(fields: [titleId], references: [id], onDelete: Cascade)
+  episodeId Int?
+  episode   Episode? @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+  position  Float    @default(0)
+  duration  Float    @default(0)
   updatedAt DateTime @updatedAt
+
+  @@unique([userKey, titleId])
+}
+
+model Review {
+  id        Int      @id @default(autoincrement())
+  titleId   Int
+  title     Title    @relation(fields: [titleId], references: [id], onDelete: Cascade)
+  author    String
+  rating    Int
+  body      String
+  createdAt DateTime @default(now())
+
+  @@index([titleId])
 }
