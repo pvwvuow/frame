@@ -115,3 +115,19 @@ Work Log:
 Stage Summary:
 - Deliverable: "AKRAN · اکران v1" — structurally new cinema-first UI, RTL Persian, fake poster demo, fully interactive preview.
 - Next (awaiting user): verdict on this structure; if approved → full dev phase (Next.js + Electron shell, player, downloads, real catalog).
+
+---
+Task ID: 7
+Agent: Super Z (main)
+Task: User asked to see the AKRAN preview at the live preview URL (preview-chat-...space-z.ai) instead of a downloaded HTML file.
+
+Work Log:
+- Found the Next.js 16 dev server already running on port 3000 (the preview proxy target), but src/app/page.tsx still rendered the REJECTED LUMINA design.
+- Removed src/app/page.tsx (LUMINA entry point) and created src/app/route.ts — a root route handler with dynamic = "force-dynamic" that re-reads download/akran-ui.html on every request and serves it as text/html (source of truth stays the single-file design; live edits appear on refresh).
+- Verified via curl: GET / returns 200 text/html with the AKRAN document; transient page.tsx module-not-found note during the swap compiled out cleanly.
+- Verified via agent-browser @1440x900 against http://localhost:3000/: stage renders (Oppenheimer default), dock thumbnail click switches stage (Avatar, idx -> «۰۴ / ۰۵»), library wall + collection banners + solid-on-scroll nav all correct, no console errors.
+
+Stage Summary:
+- The preview URL / now serves the "AKRAN · اکران v1" design directly (no redirect, no URL change).
+- Single source of truth preserved: download/akran-ui.html; page refresh always reflects edits.
+- Next (awaiting user): verdict on AKRAN; if approved -> full dev phase (Next.js + Electron shell, player, downloads, real catalog).
