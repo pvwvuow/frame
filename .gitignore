@@ -52,3 +52,14 @@ prompt
 server.log
 # Skills directory
 /skills/
+# workspace / internal artifacts (not part of the app)
+/scripts/
+/upload/
+/tool-results/
+/.zscripts/
+/tests/
+/examples/
+/mini-services/
+/Caddyfile
+/worklog.md
+/log_*.txt
