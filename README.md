@@ -44,11 +44,11 @@ npm run dev          # http://localhost:3000
 ### انتشار نسخه‌ی جدید
 
 ```bash
-npm version minor        # یا patch/major → تگ vX.Y.Z
-git push --follow-tags
+npm version minor        # یا patch/major → نسخه در package.json + تگ vX.Y.Z
+git push --follow-tags   # (اگر تگ را push نکنید هم مشکلی نیست؛ پایین را ببینید)
 ```
 
-اکشن `Desktop (Electron) release` روی هر سه سیستم‌عامل بیلد می‌گیرد و فایل‌ها را در **GitHub Releases** منتشر می‌کند.
+اکشن `Desktop (Electron) release` با هر push روی `main` اجرا می‌شود: اگر برای نسخه‌ی فعلی `package.json` تگی وجود نداشته باشد، خودش تگ `vX.Y.Z` را می‌سازد، روی هر سه سیستم‌عامل بیلد می‌گیرد و فایل‌ها را در **GitHub Releases** منتشر می‌کند. اگر تگ از قبل وجود داشته باشد، کاری نمی‌کند (برای بیلد مجدد اجباری از **Run workflow → force** استفاده کنید).
 
 فایل `.env` شامل `DATABASE_URL="file:./db/custom.db"` است (در صورت نبود، مقدار پیش‌فرض به‌صورت خودکار استفاده می‌شود). دیتابیس در اولین درخواست به‌صورت خودکار seed می‌شود.
 
