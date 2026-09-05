@@ -89,9 +89,13 @@ class SourceSync {
   /** قفل روی slug برای جلوگیری از race در upsert موازی */
   private withLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
     const prev = this.locks.get(key) ?? Promise.resolve();
-    const next = prev.then(fn, fn);
-    this.locks.set(key, next.catch(() => {}));
-    return next;
+    const run = prev.then(fn, fn);
+    const stored: Promise<void> = run.then(
+      () => undefined,
+      () => undefined
+    );
+    this.locks.set(key, stored);
+    return run;
   }
 
   async status() {
@@ -266,6 +270,8 @@ class SourceSync {
         if (!title) return;
       }
     }
+    if (!title) return;
+    const current = title;
 
     const best = items.reduce((a, b) => (b.parsed.qRank > a.parsed.qRank ? b : a));
 
@@ -273,17 +279,17 @@ class SourceSync {
       for (const { parsed, entry } of items) {
         if (parsed.season == null || parsed.episode == null) continue;
         const existing = await db.episode.findFirst({
-          where: { titleId: title.id, season: parsed.season, number: parsed.episode },
+          where: { titleId: current.id, season: parsed.season, number: parsed.episode },
         });
         if (!existing) {
           await db.episode.create({
             data: {
-              titleId: title.id,
+              titleId: current.id,
               season: parsed.season,
               number: parsed.episode,
               name: `قسمت ${parsed.episode}`,
               videoUrl: entry.url,
-              thumbnail: title.poster,
+              thumbnail: current.poster,
             },
           });
           this.st.episodes++;
@@ -293,9 +299,9 @@ class SourceSync {
       }
     } else {
       // فیلم: بهترین فایل روی خود عنوان
-      if (qualityRank(title.videoUrl) < best.parsed.qRank || !title.videoUrl) {
+      if (qualityRank(current.videoUrl) < best.parsed.qRank || !current.videoUrl) {
         await db.title.update({
-          where: { id: title.id },
+          where: { id: current.id },
           data: { videoUrl: best.entry.url, quality: best.parsed.quality },
         });
       }

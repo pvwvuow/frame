@@ -37,6 +37,13 @@
     ".next/dev/types/**/*.ts"
   ],
   "exclude": [
-    "node_modules"
+    "node_modules",
+    "examples",
+    "skills",
+    "upload",
+    "scripts",
+    "dist",
+    "electron/dist",
+    "download"
   ]
 }
