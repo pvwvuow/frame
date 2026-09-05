@@ -258,7 +258,7 @@ function rebaseAsset(url_: string, siteRoot: string): string {
   return siteRoot.replace(/\/+$/, "") + url_;
 }
 
-const FETCH_TIMEOUT_MS = 20_000;
+const FETCH_TIMEOUT_MS = 90_000; // full-catalog payloads grow with the library
 const VERSION_TIMEOUT_MS = 8_000;
 
 /**
