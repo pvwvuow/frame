@@ -11,20 +11,12 @@ asar: true
 # server, static assets and the seed DB are shipped as plain resources so the
 # Prisma engine (.node) and the server can be executed directly.
 files:
-  - electron/**/*
+  - electron/dist/**/*
   - build/icon.png
   - package.json
-  - "!**/*.map"
-extraResources:
-  - from: .next/standalone
-    to: app/standalone
-    filter: ["**/*", "!**/*.map"]
-  - from: .next/static
-    to: app/standalone/.next/static
-  - from: public
-    to: app/standalone/public
-  - from: db/custom.db
-    to: app/seed.db
+  - "!node_modules/**"
+# Next.js standalone server + assets + seed DB are copied by the afterPack hook
+afterPack: scripts/electron-after-pack.cjs
 npmRebuild: false
 nodeGypRebuild: false
 compression: normal
@@ -62,6 +54,10 @@ dmg:
   title: Nama
 linux:
   icon: build/icon.png
+  desktop:
+    entry:
+      Name: Nama
+      StartupWMClass: nama
   category: AudioVideo
   maintainer: Nama
   synopsis: Persian streaming desktop app

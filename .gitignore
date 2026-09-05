@@ -58,6 +58,9 @@ server.log
 # workspace / internal artifacts (not part of the app)
 /scripts/*
 !/scripts/postbuild.cjs
+!/scripts/bundle-electron.cjs
+!/scripts/electron-after-pack.cjs
+/electron/dist/
 /upload/
 /tool-results/
 /.zscripts/

@@ -34,7 +34,7 @@ jobs:
           NEXT_TELEMETRY_DISABLED: "1"
 
       - name: Build & publish desktop app
-        run: npx electron-builder --publish always
+        run: npm run electron:release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: "false"

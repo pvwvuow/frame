@@ -10,7 +10,7 @@ const on = (channel, cb) => {
 contextBridge.exposeInMainWorld("nama", {
   isElectron: true,
   platform: process.platform,
-  version: process.env.npm_package_version || require("../package.json").version,
+  version: process.env.NAMA_APP_VERSION || "0.0.0",
   getInfo: () => ipcRenderer.invoke("nama:info"),
   checkForUpdates: () => ipcRenderer.invoke("nama:check-updates"),
   openDataDir: () => ipcRenderer.invoke("nama:open-data-dir"),

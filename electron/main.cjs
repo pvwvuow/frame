@@ -24,6 +24,8 @@ log.transports.file.level = "info";
 log.initialize?.();
 
 const isDev = !app.isPackaged;
+// bundled entry lives in electron/dist → project root is two levels up
+const ROOT = path.join(__dirname, "..", "..");
 const DEV_URL = process.env.NAMA_DEV_URL || "http://localhost:3000";
 const APP_NAME = "نما";
 
@@ -36,13 +38,13 @@ let autoUpdater = null;
 /* helpers                                                            */
 /* ------------------------------------------------------------------ */
 function resourcesDir() {
-  return isDev ? path.join(__dirname, "..") : process.resourcesPath;
+  return isDev ? ROOT : process.resourcesPath;
 }
 function standaloneDir() {
-  return isDev ? path.join(__dirname, "..", ".next", "standalone") : path.join(resourcesDir(), "app", "standalone");
+  return isDev ? path.join(ROOT, ".next", "standalone") : path.join(resourcesDir(), "app", "standalone");
 }
 function seedDbPath() {
-  return isDev ? path.join(__dirname, "..", "db", "custom.db") : path.join(resourcesDir(), "app", "seed.db");
+  return isDev ? path.join(ROOT, "db", "custom.db") : path.join(resourcesDir(), "app", "seed.db");
 }
 function userDbPath() {
   return path.join(app.getPath("userData"), "nama.db");
@@ -156,7 +158,7 @@ function createWindow() {
     autoHideMenuBar: true,
     backgroundColor: nativeTheme.shouldUseDarkColors ? "#070709" : "#f3f3f7",
     title: APP_NAME,
-    icon: path.join(__dirname, "..", "build", "icon.png"),
+    icon: path.join(ROOT, "build", "icon.png"),
     titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
     trafficLightPosition: { x: 14, y: 22 },
     webPreferences: {

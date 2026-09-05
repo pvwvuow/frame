@@ -12,15 +12,16 @@
     "db:migrate": "prisma migrate dev",
     "db:reset": "prisma migrate reset",
     "postinstall": "prisma generate",
-    "electron:dev": "cross-env NAMA_DEV_URL=http://localhost:3000 electron .",
-    "electron:start": "cross-env NAMA_USE_DEV_SERVER=0 electron .",
-    "electron:pack": "electron-builder --dir",
-    "electron:build": "electron-builder --publish never",
-    "electron:build:win": "electron-builder --win --publish never",
-    "electron:build:mac": "electron-builder --mac --publish never",
-    "electron:build:linux": "electron-builder --linux --publish never",
-    "electron:release": "electron-builder --publish always",
-    "desktop": "npm run build && npm run electron:build"
+    "electron:dev": "npm run electron:bundle && cross-env NAMA_DEV_URL=http://localhost:3000 electron .",
+    "electron:start": "npm run electron:bundle && cross-env NAMA_USE_DEV_SERVER=0 electron .",
+    "electron:pack": "npm run electron:bundle && electron-builder --dir",
+    "electron:build": "npm run electron:bundle && electron-builder --publish never",
+    "electron:build:win": "npm run electron:bundle && electron-builder --win --publish never",
+    "electron:build:mac": "npm run electron:bundle && electron-builder --mac --publish never",
+    "electron:build:linux": "npm run electron:bundle && electron-builder --linux --publish never",
+    "electron:release": "npm run electron:bundle && electron-builder --publish always",
+    "desktop": "npm run build && npm run electron:build",
+    "electron:bundle": "node scripts/bundle-electron.cjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -100,6 +101,7 @@
     "cross-env": "^10.1.0",
     "electron": "^44.2.0",
     "electron-builder": "^26.15.3",
+    "esbuild": "^0.28.2",
     "eslint": "^9",
     "eslint-config-next": "^16.1.1",
     "tailwindcss": "^4",
@@ -108,10 +110,11 @@
   },
   "description": "نما – سینمای آنلاین (وب + دسکتاپ)",
   "author": "Nama",
-  "main": "electron/main.cjs",
+  "main": "electron/dist/main.cjs",
   "homepage": "https://github.com/pvwvuow/frame",
   "repository": {
     "type": "git",
     "url": "https://github.com/pvwvuow/frame.git"
-  }
+  },
+  "desktopName": "nama.desktop"
 }
