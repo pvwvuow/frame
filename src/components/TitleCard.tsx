@@ -70,7 +70,7 @@ export default function TitleCard({
             )}
             <span className="flex items-center gap-1 rounded-md bg-black/60 px-1.5 py-0.5 text-[11px] font-bold text-amber-400 backdrop-blur">
               <StarIcon width={11} height={11} />
-              {fa(t.rating)}
+              {t.rating > 0 ? fa(t.rating) : "—"}
             </span>
           </div>
 
@@ -87,10 +87,18 @@ export default function TitleCard({
             <TitleName t={t} primaryClass="text-sm font-bold text-white" secondaryClass="text-[10px] leading-4 text-zinc-300" />
             <p className="mt-0.5 flex items-center gap-1.5 text-[11px] text-zinc-300">
               <span>{typeLabel(t.type)}</span>
-              <span className="opacity-50">·</span>
-              <span>{fa(t.year)}</span>
-              <span className="opacity-50">·</span>
-              <span className="truncate">{t.genres[0]}</span>
+              {t.year > 0 && (
+                <>
+                  <span className="opacity-50">·</span>
+                  <span>{fa(t.year)}</span>
+                </>
+              )}
+              {t.genres[0] && (
+                <>
+                  <span className="opacity-50">·</span>
+                  <span className="truncate">{t.genres[0]}</span>
+                </>
+              )}
             </p>
           </div>
 

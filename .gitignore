@@ -60,6 +60,9 @@ server.log
 !/scripts/postbuild.cjs
 !/scripts/bundle-electron.cjs
 !/scripts/electron-after-pack.cjs
+!/scripts/mock-od
+!/scripts/test-parser.ts
+/scripts/mock-od/tree/
 /electron/dist/
 /upload/
 /tool-results/
@@ -75,3 +78,17 @@ server.log
 db/*.db-journal
 db/*.db-wal
 db/*.db-shm
+
+# electron packaging
+/dist/
+/public/covers/
+/scripts/*.png
+/scripts/*.txt
+/scripts/*.log
+/scripts/mock-od/tree/
+/scripts/standalone.log
+/scripts/packaged-smoke.log
+/.next/standalone
+!/build/
+/build/*
+!/build/icon.png

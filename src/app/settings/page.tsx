@@ -1,4 +1,5 @@
 import SettingsForm from "@/components/library/SettingsForm";
+import SourceSyncCard from "@/components/settings/SourceSyncCard";
 import { SettingsIcon } from "@/components/Icons";
 import { getProfile } from "@/lib/library";
 import { getUserKey } from "@/lib/user";
@@ -39,6 +40,7 @@ export default async function SettingsPage() {
             }}
           />
         </div>
+        <SourceSyncCard />
       </div>
     </main>
   );

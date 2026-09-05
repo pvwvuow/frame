@@ -1,5 +1,6 @@
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "windows"]
 }
 
 datasource db {
@@ -30,6 +31,7 @@ model Title {
   featured      Boolean   @default(false)
   trendingScore Int       @default(0)
   views         Int       @default(0)
+  source        String    @default("demo") // demo | od (open-directory sync)
   createdAt     DateTime  @default(now())
   episodes      Episode[]
   reviews       Review[]
@@ -153,4 +155,11 @@ model UserProfile {
   language      String   @default("fa") // fa | en
   createdAt     DateTime @default(now())
   updatedAt     DateTime @default(now()) @updatedAt
+}
+
+/// وضعیت همگام‌سازی منابع (open directory) – برای ازسرگیری بعد از بستن برنامه
+model SyncState {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
 }

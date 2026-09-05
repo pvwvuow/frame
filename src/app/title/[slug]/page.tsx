@@ -152,7 +152,7 @@ export default async function TitlePage({ params }: Props) {
             <h1 className="text-glow text-4xl font-black leading-[1.15] text-white sm:text-5xl lg:text-6xl" dir={names.primaryDir}>{names.primary}</h1>
             <p className="mt-2 flex flex-wrap items-baseline gap-x-2 text-sm font-medium tracking-wide text-zinc-400">
               {names.secondary && <span dir={names.secondaryDir}>{names.secondary}</span>}
-              <span dir="ltr">· {t.year}</span>
+              {t.year > 0 && <span dir="ltr">· {t.year}</span>}
             </p>
 
             {/* stats row */}
@@ -182,7 +182,7 @@ export default async function TitlePage({ params }: Props) {
                 </span>
                 <span className="flex items-center gap-1.5">
                   <CalendarIcon width={16} height={16} className="text-zinc-400" />
-                  {fa(t.year)}
+                  {t.year > 0 ? fa(t.year) : "نامشخص"}
                 </span>
                 <span className="flex items-center gap-1.5">
                   <GlobeIcon width={16} height={16} className="text-zinc-400" />
@@ -252,7 +252,7 @@ export default async function TitlePage({ params }: Props) {
                 { k: "کیفیت", v: t.quality },
                 { k: "مدت", v: formatDuration(t.duration) },
                 { k: "رده سنی", v: t.ageRating },
-                { k: "محصول", v: `${t.country} · ${fa(t.year)}` },
+                { k: "محصول", v: t.year > 0 ? `${t.country} · ${fa(t.year)}` : t.country },
               ].map((x) => (
                 <div key={x.k} className="rounded-2xl border border-white/5 bg-ink-700/40 p-4">
                   <p className="text-[11px] text-zinc-500">{x.k}</p>
@@ -390,7 +390,7 @@ export default async function TitlePage({ params }: Props) {
                 { k: "کارگردان", v: t.director },
                 { k: "ژانر", v: t.genres.join("، ") },
                 { k: "کشور", v: t.country },
-                { k: "سال انتشار", v: fa(t.year) },
+                { k: "سال انتشار", v: t.year > 0 ? fa(t.year) : "نامشخص" },
                 { k: "زبان", v: "فارسی · زیرنویس انگلیسی" },
                 { k: "کیفیت پخش", v: `${t.quality} · Dolby Audio` },
                 ...(eps.length ? [{ k: "تعداد فصل", v: fa(seasons.length) }] : []),
