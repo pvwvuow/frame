@@ -81,31 +81,68 @@ const EMPTY: CatalogRefreshResult = {
 
 const HASH_KEY = "catalog.hash";
 
-let inflight: Promise<CatalogRefreshResult> | null = null;
+let seedInflight: Promise<CatalogRefreshResult> | null = null;
+let syncInflight: Promise<CatalogRefreshResult> | null = null;
 
 /**
  * Runs the seed refresh at most once per server process. Later calls (health
  * is probed twice during boot) await the same result instead of re-merging.
  */
 export function refreshCatalogOnce(seedPath: string): Promise<CatalogRefreshResult> {
-  if (!inflight) {
-    inflight = refreshCatalog(seedPath).catch((e) => ({
+  if (!seedInflight) {
+    seedInflight = refreshCatalog(seedPath).catch((e) => ({
       ...EMPTY,
       error: e instanceof Error ? e.message : String(e),
     }));
   }
-  return inflight;
+  return seedInflight;
 }
 
 /** Remote sync – re-runs only when the hosted catalog's content hash changes. */
 export function syncCatalogOnce(url: string): Promise<CatalogRefreshResult> {
-  if (!inflight) {
-    inflight = syncCatalog(url).catch((e) => ({
+  if (!syncInflight) {
+    syncInflight = syncCatalog(url).catch((e) => ({
       ...EMPTY,
       error: e instanceof Error ? e.message : String(e),
     }));
   }
-  return inflight;
+  return syncInflight;
+}
+
+/** Manual re-check (Settings button): drops the cached sync result so the
+ *  remote is actually contacted again, then runs one sync. The version.json
+ *  probe keeps this cheap when nothing changed. */
+export function recheckCatalogNow(url: string): Promise<CatalogRefreshResult> {
+  syncInflight = null;
+  return syncCatalogOnce(url);
+}
+
+/* ---------------------------------------------------------------- */
+/* periodic re-check while the app stays open                        */
+/* ---------------------------------------------------------------- */
+
+const RESYNC_INTERVAL_MS = 6 * 60 * 60 * 1000; // every 6 hours
+let resyncUrl: string | null = null;
+let resyncTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** Fire-and-forget background re-sync so long-running apps pick up new
+ *  content without a restart. Never blocks and never throws. */
+function scheduleResync(url: string) {
+  resyncUrl = url;
+  if (resyncTimer) return;
+  resyncTimer = setTimeout(() => {
+    resyncTimer = null;
+    const u = resyncUrl;
+    if (!u) return;
+    // a fresh sync is allowed: the previous inflight promise has settled
+    syncInflight = null;
+    syncCatalogOnce(u)
+      .then((r) => {
+        if (r.ok) scheduleResync(u);
+      })
+      .catch(() => {});
+  }, RESYNC_INTERVAL_MS);
+  resyncTimer.unref?.();
 }
 
 /* ------------------------------------------------------------------ */
@@ -188,27 +225,83 @@ function asJsonString(v: unknown): string {
 }
 
 /**
- * Rebases relative asset paths (poster/backdrop/thumbnail) against the
- * catalog URL, so a self-hosted catalog can also serve its own images.
- * Absolute URLs (CDN) pass through untouched.
+ * Site root that root-relative asset paths (/covers/…) resolve against.
+ *
+ * For GitHub raw the catalog lives at  <repo>/main/public/catalog/index.json
+ * while covers live under <repo>/main/public/covers/… – i.e. the site root is
+ * the URL minus the trailing catalog/<file> segment. A classic static host
+ * serving the whole public/ folder keeps the origin root, which the same
+ * rule produces when the path has no /catalog/ segment.
  */
-function rebaseAsset(url_: string, base: string): string {
-  if (!url_ || !base || !url_.startsWith("/") || !/^https?:\/\//i.test(base)) return url_;
+function siteRootOf(catalogUrl: string): string {
   try {
-    return new URL(url_, base).toString();
+    const u = new URL(catalogUrl);
+    const m = u.pathname.match(/^(.*\/)catalog\/[^/]+$/);
+    u.pathname = m ? m[1] : u.pathname.replace(/[^/]*$/, "");
+    u.search = "";
+    u.hash = "";
+    return u.toString();
   } catch {
-    return url_;
+    return catalogUrl;
+  }
+}
+
+/**
+ * Rebases root-relative asset paths (poster/backdrop/thumbnail) against the
+ * catalog's site root, so a remote catalog can also serve its own images.
+ * Absolute URLs (CDN) and app-local endpoints (/api/cover/*.svg fallback –
+ * served by this app itself) pass through untouched.
+ */
+function rebaseAsset(url_: string, siteRoot: string): string {
+  if (!url_ || !siteRoot || !/^https?:\/\//i.test(siteRoot)) return url_;
+  if (!url_.startsWith("/") || url_.startsWith("/api/")) return url_;
+  return siteRoot.replace(/\/+$/, "") + url_;
+}
+
+const FETCH_TIMEOUT_MS = 20_000;
+const VERSION_TIMEOUT_MS = 8_000;
+
+/**
+ * Tiny companion of index.json (same directory): { sha256, titles, … }.
+ * When present the app can detect "nothing changed" without downloading
+ * the multi-megabyte payload on every start.
+ */
+async function probeVersionHash(catalogUrl: string): Promise<string | null> {
+  try {
+    const vUrl = catalogUrl.replace(/[^/]*(?:\?.*)?#.*$/, "version.json");
+    const res = await fetch(vUrl, {
+      headers: { "User-Agent": "Nama-Catalog-Sync" },
+      signal: AbortSignal.timeout(VERSION_TIMEOUT_MS),
+    });
+    if (!res.ok) return null;
+    const j = (await res.json()) as { sha256?: string };
+    return typeof j.sha256 === "string" && /^[0-9a-f]{64}$/i.test(j.sha256) ? j.sha256.toLowerCase() : null;
+  } catch {
+    return null; // probe is optional – full download decides below
   }
 }
 
 async function syncCatalog(catalogUrl: string): Promise<CatalogRefreshResult> {
-  const res = await fetch(catalogUrl, { headers: { "User-Agent": "Nama-Catalog-Sync" } });
+  const prev = await db.syncState.findUnique({ where: { key: HASH_KEY } });
+
+  // fast path: the version probe tells us the payload is unchanged
+  const knownHash = await probeVersionHash(catalogUrl);
+  if (knownHash && prev?.value === knownHash) {
+    scheduleResync(catalogUrl);
+    const count = await db.title.count();
+    return { ok: true, skipped: true, titles: count, episodes: 0, created: 0, updated: 0, removed: 0 };
+  }
+
+  const res = await fetch(catalogUrl, {
+    headers: { "User-Agent": "Nama-Catalog-Sync" },
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+  });
   if (!res.ok) throw new Error(`catalog fetch failed: HTTP ${res.status}`);
   const body = await res.text();
   const hash = sha256(body);
 
-  const prev = await db.syncState.findUnique({ where: { key: HASH_KEY } });
   if (prev?.value === hash) {
+    scheduleResync(catalogUrl);
     const count = await db.title.count();
     return { ok: true, skipped: true, titles: count, episodes: 0, created: 0, updated: 0, removed: 0 };
   }
@@ -221,6 +314,8 @@ async function syncCatalog(catalogUrl: string): Promise<CatalogRefreshResult> {
     throw new Error("not a nama-catalog payload (bad format field)");
   }
 
+  const siteRoot = siteRootOf(catalogUrl);
+
   const items: CatalogItem[] = payload.titles.map((t) => ({
     slug: String(t.slug),
     title: String(t.title),
@@ -231,8 +326,8 @@ async function syncCatalog(catalogUrl: string): Promise<CatalogRefreshResult> {
     duration: Number(t.duration) || 0,
     description: String(t.description ?? ""),
     genres: asJsonString(t.genres),
-    poster: rebaseAsset(String(t.poster ?? ""), catalogUrl),
-    backdrop: rebaseAsset(String(t.backdrop ?? ""), catalogUrl),
+    poster: rebaseAsset(String(t.poster ?? ""), siteRoot),
+    backdrop: rebaseAsset(String(t.backdrop ?? ""), siteRoot),
     videoUrl: String(t.videoUrl ?? ""),
     trailerUrl: t.trailerUrl ? String(t.trailerUrl) : null,
     director: String(t.director ?? ""),
@@ -252,7 +347,7 @@ async function syncCatalog(catalogUrl: string): Promise<CatalogRefreshResult> {
           synopsis: String(e.synopsis ?? ""),
           duration: Number(e.duration) || 45,
           videoUrl: String(e.videoUrl ?? ""),
-          thumbnail: rebaseAsset(String(e.thumbnail ?? ""), catalogUrl),
+          thumbnail: rebaseAsset(String(e.thumbnail ?? ""), siteRoot),
         }))
       : [],
   }));
@@ -264,6 +359,7 @@ async function syncCatalog(catalogUrl: string): Promise<CatalogRefreshResult> {
       update: { value: hash },
       create: { key: HASH_KEY, value: hash },
     });
+    scheduleResync(catalogUrl);
   }
   return result;
 }

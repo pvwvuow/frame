@@ -9,7 +9,10 @@ import { SearchIcon, FlameIcon, FilmIcon, TvIcon, SparkIcon } from "@/components
 export const dynamic = "force-dynamic";
 export const metadata = { title: "جستجو | نما" };
 
-const POPULAR_QUERIES = ["نوآر", "علمی‌تخیلی", "شهاب حسینی", "کمدی", "ترانه علیدوستی", "جنایی", "۲۰۲۵"];
+// verified against the live catalog – every chip must return results
+// (genres are stored in Persian; cast names are Latin, so actor names
+// in Persian would find nothing)
+const POPULAR_QUERIES = ["کمدی", "اکشن", "انیمیشن", "ترسناک", "علمی‌تخیلی", "جنایی", "معمایی"];
 
 export default async function SearchPage({ searchParams }: { searchParams: Promise<{ q?: string; type?: string }> }) {
   const { q = "", type } = await searchParams;

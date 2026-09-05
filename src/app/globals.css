@@ -61,14 +61,17 @@
 
   /* liquid-glass surface tokens */
   --glass-bg: rgba(22, 22, 30, 0.55);
-  --glass-bg-strong: rgba(16, 16, 22, 0.74);
+  /* 0.93 alpha: popovers (search results, menus, command palette) and the
+     solid header must stay readable over bright posters – 0.74 was too
+     translucent (user report) */
+  --glass-bg-strong: rgba(12, 12, 18, 0.93);
   --glass-border: rgba(255, 255, 255, 0.10);
   --glass-rim: linear-gradient(155deg, rgba(255, 255, 255, 0.55) 0%, rgba(255, 255, 255, 0.08) 28%, rgba(255, 255, 255, 0) 55%, rgba(255, 255, 255, 0.28) 100%);
   --glass-sheen: linear-gradient(135deg, rgba(255, 255, 255, 0.14) 0%, rgba(255, 255, 255, 0.03) 30%, rgba(255, 255, 255, 0) 55%, rgba(255, 255, 255, 0.06) 100%);
   --glass-hl: rgba(255, 255, 255, 0.18);
   --glass-shadow: 0 24px 60px rgba(0, 0, 0, 0.55), 0 2px 8px rgba(0, 0, 0, 0.35);
   --glass-tint: rgba(120, 160, 255, 0.05);
-  --glass-blur: 22px;
+  --glass-blur: 30px;
 
   --scrollbar: #2a2a33;
   --skeleton-a: #16161c;
@@ -109,14 +112,14 @@
 
   /* liquid-glass surface tokens */
   --glass-bg: rgba(255, 255, 255, 0.52);
-  --glass-bg-strong: rgba(255, 255, 255, 0.76);
+  --glass-bg-strong: rgba(255, 255, 255, 0.94);
   --glass-border: rgba(255, 255, 255, 0.75);
   --glass-rim: linear-gradient(155deg, rgba(255, 255, 255, 1) 0%, rgba(255, 255, 255, 0.35) 28%, rgba(255, 255, 255, 0.05) 55%, rgba(255, 255, 255, 0.8) 100%);
   --glass-sheen: linear-gradient(135deg, rgba(255, 255, 255, 0.85) 0%, rgba(255, 255, 255, 0.25) 30%, rgba(255, 255, 255, 0) 55%, rgba(255, 255, 255, 0.35) 100%);
   --glass-hl: rgba(255, 255, 255, 0.95);
   --glass-shadow: 0 24px 60px rgba(30, 30, 60, 0.18), 0 2px 8px rgba(30, 30, 60, 0.08);
   --glass-tint: rgba(90, 130, 255, 0.06);
-  --glass-blur: 26px;
+  --glass-blur: 32px;
 
   --scrollbar: #c9c9d2;
   --skeleton-a: #e6e6ec;
@@ -151,7 +154,10 @@
   --color-ink-700: #16161c;
   --color-ink-600: #1f1f27;
   --glass-bg: rgba(22, 22, 30, 0.55);
-  --glass-bg-strong: rgba(16, 16, 22, 0.74);
+  /* 0.93 alpha: popovers (search results, menus, command palette) and the
+     solid header must stay readable over bright posters – 0.74 was too
+     translucent (user report) */
+  --glass-bg-strong: rgba(12, 12, 18, 0.93);
   --glass-border: rgba(255, 255, 255, 0.10);
   --glass-hl: rgba(255, 255, 255, 0.18);
   --glass-rim: linear-gradient(155deg, rgba(255, 255, 255, 0.55) 0%, rgba(255, 255, 255, 0.08) 28%, rgba(255, 255, 255, 0) 55%, rgba(255, 255, 255, 0.28) 100%);
@@ -197,24 +203,32 @@ body {
    refractive rim light (masked gradient border), a diagonal specular
    sheen, a subtle cool tint and a soft drop shadow. Works on any
    rounded element; children stay fully interactive.
+
+   ⚠ lives in @layer components: these rules set `position: relative`,
+   and unlayered rules would OVERRIDE Tailwind's layered `absolute` /
+   `fixed` utilities. That exact conflict pushed every glass dropdown
+   (language menu, search results, More menu) into the page flow —
+   the whole navbar re-flowed when they opened (user-reported bug).
    ===================================================================== */
+@layer components {
 .glass,
 .glass-strong,
 .glass-btn {
   position: relative;
   isolation: isolate;
-  background:
-    var(--glass-tint),
-    var(--glass-bg);
+  /* background-image first (tint), then an OPAQUE-ENOUGH color layer.
+     NOTE: `background: color1, color2` (two color layers) is invalid CSS
+     and was silently dropped → panels rendered with blur only, i.e. far
+     too glassy to read text on (user report). */
+  background-image: var(--glass-tint);
+  background-color: var(--glass-bg);
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%) brightness(1.02);
   backdrop-filter: blur(var(--glass-blur)) saturate(180%) brightness(1.02);
   border: 1px solid var(--glass-border);
   box-shadow: var(--glass-shadow), inset 0 1px 0 var(--glass-hl);
 }
 .glass-strong {
-  background:
-    var(--glass-tint),
-    var(--glass-bg-strong);
+  background-color: var(--glass-bg-strong);
 }
 /* specular sheen */
 .glass::before,
@@ -254,6 +268,7 @@ body {
 .glass-btn:active { transform: scale(0.97); box-shadow: 0 4px 14px rgb(var(--shadow-color) / 0.3), inset 0 1px 0 var(--glass-hl); }
 
 .glass-in { animation: var(--animate-glass-in); }
+} /* @layer components */
 
 .skeleton {
   background: linear-gradient(90deg, var(--skeleton-a) 25%, var(--skeleton-b) 50%, var(--skeleton-a) 75%);

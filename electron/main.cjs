@@ -214,10 +214,16 @@ async function startServer() {
   }
   if (needsCatalogRefresh) log.info("bundled catalog differs from installed – refresh scheduled");
 
-  /* Optional hosted-catalog sync (future server scenario): drop a plain-text
-     catalog-url.txt next to seed.db (resources/app) containing the URL of a
-     hosted nama-catalog JSON. When present it wins over the bundled seed and
-     the server only re-merges when the hosted payload's hash changes. */
+  /* Content auto-update (default ON): the catalog is pulled from this repo's
+     raw GitHub URL, so new movies/series committed to the repository reach
+     every installed app WITHOUT releasing a new version. The merge is
+     hash-gated and preserves all user data (profiles, favorites, progress).
+
+     Opt-out / override: drop a plain-text catalog-url.txt next to seed.db
+     (resources/app) containing either
+       - another http(s) URL  → sync from that server instead, or
+       - "off" / "local"      → disable remote sync entirely (bundled seed only). */
+  const DEFAULT_CATALOG_URL = "https://raw.githubusercontent.com/pvwvuow/frame/main/public/catalog/index.json";
   let catalogUrl = "";
   try {
     const urlFile = path.join(path.dirname(seed), "catalog-url.txt");
@@ -226,9 +232,14 @@ async function startServer() {
       if (/^https?:\/\//i.test(v)) {
         catalogUrl = v;
         log.info("hosted catalog configured:", catalogUrl);
+      } else if (/^(off|local|disable[d]?)$/i.test(v)) {
+        log.info("remote catalog sync disabled via catalog-url.txt");
       } else if (v) {
         log.warn("ignoring catalog-url.txt – not an http(s) URL");
       }
+    } else {
+      catalogUrl = DEFAULT_CATALOG_URL;
+      log.info("content auto-update enabled (GitHub catalog):", catalogUrl);
     }
   } catch (e) {
     log.warn("catalog-url.txt read failed:", e);

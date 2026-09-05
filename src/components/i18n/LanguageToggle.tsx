@@ -30,6 +30,9 @@ export default function LanguageToggle({ className = "" }: { className?: string 
 
   return (
     <div ref={ref} className={`relative ${className}`}>
+      {/* Fixed width: "FA" and "EN" render at slightly different widths, which
+          used to nudge the button (and its neighbours) every time the language
+          changed – a fixed pill keeps the navbar geometry stable. */}
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
@@ -37,7 +40,7 @@ export default function LanguageToggle({ className = "" }: { className?: string 
         aria-expanded={open}
         aria-label={t("nav.switchLanguage")}
         title={t("nav.switchLanguage")}
-        className="glass-btn flex h-10 items-center gap-1.5 rounded-full px-3 text-xs font-bold uppercase text-zinc-200 hover:text-white"
+        className="glass-btn flex h-10 w-[4.5rem] items-center justify-center gap-1.5 rounded-full px-2 text-xs font-bold uppercase text-zinc-200 hover:text-white"
       >
         <GlobeIcon width={16} height={16} />
         <span dir="ltr">{locale === "fa" ? "FA" : "EN"}</span>

@@ -13,10 +13,12 @@ export const dynamic = "force-dynamic";
  * before the first real page render.
  *
  * Catalog update paths (checked before the window is allowed to open):
- *   - NAMA_CATALOG_URL  → hosted nama-catalog JSON (future server scenario);
+ *   - NAMA_CATALOG_URL  → hosted nama-catalog JSON (by default the GitHub
+ *     raw URL of this repo, so content auto-updates without a new install);
  *     only re-merges when the hosted payload's hash changed (SyncState)
  *   - NAMA_CATALOG_SEED → bundled seed.db that differs from the installed
- *     one (app update carrying new content, detected by the shell)
+ *     one (app update carrying new content, detected by the shell) and the
+ *     offline fallback whenever the remote catalog is unreachable
  */
 export async function GET() {
   let dbOk = true;
@@ -28,6 +30,11 @@ export async function GET() {
     const seedPath = process.env.NAMA_CATALOG_SEED?.trim();
     if (catalogUrl) {
       catalog = await syncCatalogOnce(catalogUrl);
+      if (!catalog?.ok && seedPath) {
+        // remote unreachable (offline / GitHub down) → fall back to the
+        // bundled seed so an app update still delivers its content
+        catalog = await refreshCatalogOnce(seedPath);
+      }
     } else if (seedPath) {
       catalog = await refreshCatalogOnce(seedPath);
     }

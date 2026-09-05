@@ -221,7 +221,11 @@ export default function Navbar() {
           <div className="app-no-drag ms-auto flex items-center gap-1.5 sm:gap-2">
             <LanguageToggle className="hidden sm:flex" />
             <ThemeToggle className="hidden sm:grid" />
-            <div ref={boxRef} className="relative">
+            {/* Fixed-width slot: the expanded search renders as an absolute
+                overlay anchored to the magnifier's edge, so opening it never
+                reflows the other navbar controls (language/theme used to jump
+                and UserMenu was pushed off-screen on narrow windows). */}
+            <div ref={boxRef} className="relative h-10 w-10 shrink-0 sm:w-[220px]">
               <form
                 role="search"
                 onSubmit={(e) => {
@@ -230,8 +234,8 @@ export default function Navbar() {
                 }}
                 className={`flex h-10 items-center gap-2 rounded-full border transition-[width,background-color,border-color] duration-300 ${
                   open
-                    ? "w-[calc(100vw-140px)] max-w-[360px] border-white/20 bg-black/70 px-3 sm:w-[360px]"
-                    : "w-10 justify-center border-transparent bg-transparent px-0 sm:w-[220px] sm:justify-start sm:border-white/10 sm:bg-white/5 sm:px-3"
+                    ? "fixed inset-x-2 top-4 z-40 w-auto max-w-[360px] border-white/20 bg-black/80 px-3 shadow-[0_18px_50px_rgba(0,0,0,0.45)] sm:absolute sm:inset-y-0 sm:inset-x-auto sm:top-auto sm:end-0 sm:w-[min(360px,calc(100vw-2rem))] sm:shadow-none"
+                    : "absolute inset-y-0 end-0 w-full justify-center border-transparent bg-transparent px-0 sm:justify-start sm:border-white/10 sm:bg-white/5 sm:px-3"
                 }`}
               >
                 <button
@@ -293,7 +297,7 @@ export default function Navbar() {
               </form>
 
               {showPanel && (
-                <div className="glass-strong glass-in absolute end-0 top-12 w-[min(420px,calc(100vw-24px))] overflow-hidden rounded-2xl">
+                <div className="glass-strong glass-in fixed inset-x-2 top-16 z-40 overflow-hidden rounded-2xl sm:absolute sm:inset-x-auto sm:top-12 sm:end-0 sm:w-[min(420px,calc(100vw-24px))]">
                   {loading && results.length === 0 ? (
                     <div className="flex items-center gap-2 p-4 text-sm text-zinc-400">
                       <span className="h-3 w-3 animate-spin rounded-full border-2 border-zinc-500 border-t-transparent" /> {t("common.searching")}
@@ -309,7 +313,6 @@ export default function Navbar() {
                             onMouseEnter={() => setActive(i)}
                             className={`flex items-center gap-3 px-3 py-2 transition-colors ${i === active ? "bg-white/10" : "hover:bg-white/5"}`}
                           >
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img src={r.poster} alt="" className="h-16 w-11 shrink-0 rounded-md bg-ink-700 object-cover" />
                             <div className="min-w-0 flex-1">
                               <TitleName t={r} primaryClass="text-sm font-semibold text-white" secondaryClass="text-xs text-zinc-400" />

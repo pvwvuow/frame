@@ -136,25 +136,89 @@ export async function getReviews(titleId: number) {
   });
 }
 
+/* ------------------------------------------------------------------ */
+/* search – forgiving, normalization-aware matching                    */
+/*                                                                    */
+/* The catalog is small (a few hundred rows), so instead of SQLite     */
+/* LIKE (ASCII-only case folding, no Persian normalization, strict     */
+/* word order) we score rows in JS:                                    */
+/*   - Persian/Arabic folding: ي/ى→ی, ك→ک, أإآ→ا, ة→ه, ۰-۹↔0-9        */
+/*   - separators are interchangeable: ZWNJ, space and punctuation     */
+/*     all collapse, so «علمی‌تخیلی» matches "علمی تخیلی"              */
+/*   - every whitespace-separated word must appear somewhere           */
+/*     (title / English title / cast / director / genres), any order   */
+/*   - hits on the title rank above hits on people/genres              */
+/* ------------------------------------------------------------------ */
+
+function normFa(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/[\u064A\u0649]/g, "\u06CC") // ي ى → ی
+    .replace(/\u0643/g, "\u06A9") // ك → ک
+    .replace(/[\u0622\u0623\u0625]/g, "\u0627") // آ أ إ → ا
+    .replace(/\u0629/g, "\u0647") // ة → ه
+    .replace(/[\u064B-\u065F\u0670]/g, "") // harakat / tanvin
+    .replace(/[\u200B-\u200F\u2060]/g, " ") // ZWNJ & friends → space
+    .replace(/[\u06F0-\u06F9]/g, (d) => String(d.charCodeAt(0) - 0x06f0))
+    .replace(/[\u0660-\u0669]/g, (d) => String(d.charCodeAt(0) - 0x0660))
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim();
+}
+
+/** Compact key: normalized text with every separator removed, so "علمی
+ *  تخیلی", «علمی‌تخیلی» and "علمیتخیلی" all produce the same key. */
+function compactKey(s: string): string {
+  return normFa(s).replace(/\s+/g, "");
+}
+
+type SearchIndexEntry = { row: DbTitle; primary: string; secondary: string };
+
+let searchIndex: { at: number; count: number; entries: SearchIndexEntry[] } | null = null;
+const SEARCH_TTL_MS = 30_000;
+
+async function getSearchIndex(): Promise<SearchIndexEntry[]> {
+  const now = Date.now();
+  if (searchIndex && now - searchIndex.at < SEARCH_TTL_MS) {
+    // cheap staleness guard: a catalog refresh adds/removes rows
+    const count = await db.title.count();
+    if (count === searchIndex.count) return searchIndex.entries;
+  }
+  const rows = await db.title.findMany();
+  const entries = rows.map((row) => ({
+    row,
+    // \u0001 keeps adjacent fields from fusing into one false-match token
+    primary: [compactKey(row.title), compactKey(row.titleEn)].join("\u0001"),
+    secondary: [compactKey(row.director), compactKey(row.cast), compactKey(row.genres)].join("\u0001"),
+  }));
+  searchIndex = { at: now, count: rows.length, entries };
+  return entries;
+}
+
 export async function search(q: string, limit = 30) {
   await ensureSeeded();
-  const term = q.trim();
-  if (!term) return [];
-  const rows = await db.title.findMany({
-    where: {
-      OR: [
-        { title: { contains: term } },
-        { titleEn: { contains: term } },
-        { director: { contains: term } },
-        { description: { contains: term } },
-        { cast: { contains: term } },
-        { genres: { contains: term } },
-      ],
-    },
-    orderBy: { trendingScore: "desc" },
-    take: limit,
-  });
-  return rows.map(pv);
+  const words = normFa(q).split(/\s+/).filter(Boolean).map((w) => compactKey(w));
+  if (!words.length) return [];
+  const entries = await getSearchIndex();
+  const scored: { row: DbTitle; sc: number }[] = [];
+  for (const { row, primary, secondary } of entries) {
+    let inPrimary = 0;
+    let miss = false;
+    for (const w of words) {
+      if (primary.includes(w)) inPrimary++;
+      else if (!secondary.includes(w)) {
+        miss = true;
+        break;
+      }
+    }
+    if (miss) continue;
+    let sc = inPrimary * 8;
+    if (inPrimary === words.length) sc += 100;
+    if (primary.startsWith(words[0])) sc += 30;
+    sc += (row.trendingScore || 0) / 100;
+    scored.push({ row, sc });
+  }
+  scored.sort((a, b) => b.sc - a.sc || b.row.id - a.row.id);
+  return scored.slice(0, limit).map((s) => pv(s.row));
 }
 
 export async function getWatchlistIds(userKey: string) {
