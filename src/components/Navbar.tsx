@@ -123,7 +123,7 @@ export default function Navbar() {
           scrolled || showPanel ? "glass-strong rounded-none border-x-0 border-t-0" : "bg-gradient-to-b from-ink/80 to-transparent"
         } ${electron ? "app-drag" : ""}`}
       >
-        <div className="mx-auto flex h-16 max-w-[1600px] items-center gap-3 px-4 sm:h-[72px] sm:px-8 lg:px-12">
+        <div className="nav-inner mx-auto flex h-16 max-w-[1600px] items-center gap-3 px-4 sm:h-[72px] sm:px-8 lg:px-12">
           <Link href="/" className="group app-no-drag flex shrink-0 items-center gap-2">
             <span className="relative grid h-9 w-9 place-items-center rounded-lg bg-brand text-white shadow-[0_0_24px_var(--color-brand-glow)]">
               <span className="absolute inset-0 rounded-lg bg-white/10 opacity-0 transition group-hover:opacity-100" />

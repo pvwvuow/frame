@@ -107,7 +107,7 @@ export default function TitleModal({
             className="glass-strong relative w-full max-w-[560px] overflow-hidden rounded-[28px]"
           >
             {/* ── media strip (always dark, like a film cell) ─────────── */}
-            <div className="force-dark relative h-[150px] w-full overflow-hidden sm:h-[170px]">
+            <div className="force-dark relative z-0 h-[150px] w-full overflow-hidden sm:h-[170px]">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={t.backdrop} alt="" className="absolute inset-0 h-full w-full object-cover" />
               <video
@@ -159,13 +159,13 @@ export default function TitleModal({
             </div>
 
             {/* ── body ───────────────────────────────────────────────── */}
-            <div className="p-4 sm:p-5">
-              <div className="flex gap-4">
+            <div className="relative z-10 p-4 sm:p-5">
+              <div className="flex items-start gap-4">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={t.poster}
                   alt={t.title}
-                  className="relative z-10 -mt-14 h-[120px] w-[82px] shrink-0 rounded-xl bg-ink-700 object-cover shadow-[0_12px_30px_rgb(var(--shadow-color)/0.45)] ring-1 ring-white/20"
+                  className="relative z-20 -mt-14 h-[120px] w-[82px] shrink-0 rounded-xl bg-ink-700 object-cover shadow-[0_12px_30px_rgb(var(--shadow-color)/0.45)] ring-1 ring-white/20"
                 />
                 <div className="min-w-0 flex-1 pt-1">
                   <h2 className="truncate text-xl font-black text-white">{t.title}</h2>

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ChevronLeft, ChevronRight } from "./Icons";
 
 export default function Row({
@@ -17,6 +17,30 @@ export default function Row({
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [hover, setHover] = useState(false);
+  const [canPrev, setCanPrev] = useState(false);
+  const [canNext, setCanNext] = useState(true);
+
+  // track scroll edges (RTL: scrollLeft goes 0 → negative)
+  const update = () => {
+    const el = ref.current;
+    if (!el) return;
+    const max = el.scrollWidth - el.clientWidth;
+    const pos = Math.abs(el.scrollLeft);
+    setCanPrev(pos > 4);
+    setCanNext(pos < max - 4);
+  };
+  useEffect(() => {
+    update();
+    const el = ref.current;
+    if (!el) return;
+    el.addEventListener("scroll", update, { passive: true });
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => {
+      el.removeEventListener("scroll", update);
+      ro.disconnect();
+    };
+  }, []);
 
   const scroll = (dir: 1 | -1) => {
     const el = ref.current;
@@ -45,26 +69,29 @@ export default function Row({
       </div>
 
       <div className="relative">
-        <button
-          type="button"
-          aria-label="بعدی"
-          onClick={() => scroll(1)}
-          className={`absolute start-0 top-0 z-10 hidden h-full w-12 items-center justify-center bg-gradient-to-l from-transparent to-ink/90 text-white transition-opacity md:flex ${hover ? "opacity-100" : "opacity-0"}`}
-        >
-          <ChevronLeft width={28} height={28} />
-        </button>
+        {/* RTL: the row starts at the RIGHT edge. Right button = back to start, left button = forward. */}
         <button
           type="button"
           aria-label="قبلی"
           onClick={() => scroll(-1)}
-          className={`absolute end-0 top-0 z-10 hidden h-full w-12 items-center justify-center bg-gradient-to-r from-transparent to-ink/90 text-white transition-opacity md:flex ${hover ? "opacity-100" : "opacity-0"}`}
+          disabled={!canPrev}
+          className={`absolute start-0 top-0 z-10 hidden h-full w-14 items-center justify-center bg-gradient-to-l from-ink/90 to-transparent text-white transition-opacity md:flex ${hover && canPrev ? "opacity-100" : "pointer-events-none opacity-0"}`}
         >
-          <ChevronRight width={28} height={28} />
+          <span className="glass-btn grid h-10 w-10 place-items-center rounded-full"><ChevronRight width={22} height={22} /></span>
+        </button>
+        <button
+          type="button"
+          aria-label="بعدی"
+          onClick={() => scroll(1)}
+          disabled={!canNext}
+          className={`absolute end-0 top-0 z-10 hidden h-full w-14 items-center justify-center bg-gradient-to-r from-ink/90 to-transparent text-white transition-opacity md:flex ${hover && canNext ? "opacity-100" : "pointer-events-none opacity-0"}`}
+        >
+          <span className="glass-btn grid h-10 w-10 place-items-center rounded-full"><ChevronLeft width={22} height={22} /></span>
         </button>
 
         <div
           ref={ref}
-          className="no-scrollbar flex snap-x snap-mandatory gap-3 overflow-x-auto scroll-smooth px-4 pb-4 pt-2 sm:gap-4 sm:px-8 lg:px-12"
+          className="no-scrollbar flex snap-x snap-mandatory gap-3 overflow-x-auto overflow-y-visible scroll-smooth px-4 pb-6 pt-3 sm:gap-4 sm:px-8 lg:px-12"
         >
           {children}
         </div>

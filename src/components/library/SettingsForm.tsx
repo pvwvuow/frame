@@ -298,7 +298,7 @@ export default function SettingsForm({ initial }: { initial: ProfileData }) {
             </Card>
             <Card title="زبان و دسترسی‌پذیری">
               <div className="grid gap-3 md:grid-cols-2">
-                <Chips label="زبان رابط کاربری" value={p.language} onChange={(v) => set("language", v)} options={[["fa", "فارسی"], ["en", "English (به‌زودی)"]]} />
+                <Chips label="زبان رابط کاربری" value={p.language} onChange={(v) => set("language", v)} options={[["fa", "فارسی"], ["en", "English (در دست ساخت)"]]} />
                 <Toggle checked={p.reduceMotion} onChange={(v) => set("reduceMotion", v)} label="کاهش انیمیشن‌ها" hint="برای دستگاه‌های ضعیف یا حساسیت به حرکت" />
               </div>
             </Card>
@@ -479,9 +479,14 @@ export default function SettingsForm({ initial }: { initial: ProfileData }) {
                 <div className="rounded-2xl border border-white/5 bg-white/[0.03] p-4">
                   <p className="flex items-center gap-2 text-sm font-bold text-white"><DownloadIcon width={16} height={16} className="text-brand" /> نسخه‌ی دسکتاپ</p>
                   <p className="mt-1 text-[11px] leading-5 text-zinc-500">نما را به‌صورت برنامه‌ی ویندوز، مک یا لینوکس نصب کنید؛ با پخش آفلاین‌تر، به‌روزرسانی خودکار و میان‌برهای بیشتر.</p>
-                  <a href="https://github.com/pvwvuow/frame/releases/latest" target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-xs font-bold text-black hover:bg-zinc-200">
-                    <DownloadIcon width={14} height={14} /> دریافت از GitHub
-                  </a>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <a href="/download" className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-xs font-bold text-black hover:bg-zinc-200">
+                      <DownloadIcon width={14} height={14} /> صفحه‌ی دانلود
+                    </a>
+                    <a href="https://github.com/pvwvuow/frame/releases/latest" target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-full border border-white/15 px-4 py-2 text-xs font-bold text-white hover:bg-white/10">
+                      <ExternalIcon width={14} height={14} /> GitHub Releases
+                    </a>
+                  </div>
                 </div>
               )}
             </div>

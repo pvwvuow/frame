@@ -304,3 +304,13 @@ html[data-electron="1"] .app-drag { -webkit-app-region: drag; }
 html[data-electron="1"] .app-no-drag, html[data-electron="1"] .app-drag a, html[data-electron="1"] .app-drag button, html[data-electron="1"] .app-drag input { -webkit-app-region: no-drag; }
 html[data-electron="1"] { user-select: none; }
 html[data-electron="1"] input, html[data-electron="1"] textarea, html[data-electron="1"] p, html[data-electron="1"] [contenteditable] { user-select: text; }
+/* macOS "hiddenInset" title bar: traffic lights sit top-LEFT, which in RTL is where the
+   avatar / search live → reserve room so the controls never overlap. */
+html[data-electron="1"][data-platform="darwin"] .nav-inner { padding-inline-end: 92px; }
+html[data-electron="1"][data-platform="darwin"] header { padding-top: 2px; }
+/* desktop: nothing should look like a web page (no text cursor on chrome, no outline drag ghosts) */
+html[data-electron="1"] a, html[data-electron="1"] img { -webkit-user-drag: none; }
+html[data-electron="1"] body { overscroll-behavior: none; }
+
+/* ---- Modal / drawer safety: nothing behind an overlay should bleed through ---- */
+[role="dialog"], [role="alertdialog"] { isolation: isolate; }

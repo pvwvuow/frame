@@ -66,6 +66,7 @@ export default function Footer() {
               <li><Link className="hover:text-white" href="/favorites">علاقه‌مندی‌ها</Link></li>
               <li><Link className="hover:text-white" href="/history">تاریخچه تماشا</Link></li>
               <li><Link className="hover:text-white" href="/profile">پروفایل و تنظیمات</Link></li>
+              <li><Link className="flex items-center gap-1.5 font-bold text-white hover:text-brand" href="/download">دانلود برنامه‌ی دسکتاپ <span className="rounded bg-brand px-1.5 py-0.5 text-[9px] text-white">جدید</span></Link></li>
             </ul>
           </div>
         </div>

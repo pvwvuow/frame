@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld("nama", {
   version: process.env.NAMA_APP_VERSION || "0.0.0",
   getInfo: () => ipcRenderer.invoke("nama:info"),
   checkForUpdates: () => ipcRenderer.invoke("nama:check-updates"),
+  installUpdate: () => ipcRenderer.invoke("nama:install-update"),
   openDataDir: () => ipcRenderer.invoke("nama:open-data-dir"),
   openExternal: (url) => ipcRenderer.invoke("nama:open-external", url),
   window: {

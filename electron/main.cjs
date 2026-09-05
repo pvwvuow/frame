@@ -300,9 +300,14 @@ ipcMain.handle("nama:info", () => ({
   dbPath: userDbPath(),
 }));
 ipcMain.handle("nama:check-updates", () => checkForUpdates(false));
+ipcMain.handle("nama:install-update", () => {
+  if (!autoUpdater) return false;
+  setImmediate(() => autoUpdater.quitAndInstall(false, true));
+  return true;
+});
 ipcMain.handle("nama:open-data-dir", () => shell.openPath(app.getPath("userData")));
 ipcMain.handle("nama:open-external", (_e, url) => {
-  if (typeof url === "string" && /^https?:\/\//i.test(url)) return shell.openExternal(url);
+  if (typeof url === "string" && /^(https?:\/\/|mailto:|tel:)/i.test(url)) return shell.openExternal(url);
 });
 ipcMain.handle("nama:is-maximized", () => !!mainWindow?.isMaximized());
 ipcMain.on("nama:win", (_e, action) => {

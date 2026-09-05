@@ -8,6 +8,7 @@ export type NamaBridge = {
   version: string;
   getInfo: () => Promise<{ version: string; electron: string; chrome: string; node: string; platform: string; arch: string; dataDir: string; dbPath: string }>;
   checkForUpdates: () => Promise<{ status: "available" | "not-available" | "error" | "disabled"; version?: string; message?: string }>;
+  installUpdate?: () => Promise<boolean>;
   openDataDir: () => Promise<void>;
   openExternal: (url: string) => Promise<void>;
   window: { minimize: () => void; maximize: () => void; close: () => void; isMaximized: () => Promise<boolean>; toggleFullscreen: () => void };

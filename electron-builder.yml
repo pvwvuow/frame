@@ -25,13 +25,21 @@ publish:
   owner: pvwvuow
   repo: frame
   releaseType: release
+  publishAutoUpdate: true
 win:
   icon: build/icon.png
+  # NOTE: nsis + portable must NOT share an artifact name (they both default to
+  # Nama-x.y.z-win-x64.exe → the portable overwrote the installer during upload
+  # and the GitHub publish step timed out / latest.yml was never uploaded).
+  artifactName: "Nama-${version}-win-${arch}-setup.${ext}"
   target:
     - target: nsis
       arch: [x64]
     - target: portable
       arch: [x64]
+  verifyUpdateCodeSignature: false
+portable:
+  artifactName: "Nama-${version}-win-${arch}-portable.${ext}"
 nsis:
   oneClick: false
   perMachine: false
