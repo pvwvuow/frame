@@ -81,7 +81,12 @@ db/*.db-shm
 
 # electron packaging
 /dist/
-/public/covers/
+# runtime-generated SVG art is ignored, real downloaded covers (jpg) are shipped
+/public/covers/*
+/public/covers/**/*.svg
+!/public/covers/*/
+!/public/covers/**/*.jpg
+!/public/covers/**/*.png
 /scripts/*.png
 /scripts/*.txt
 /scripts/*.log
