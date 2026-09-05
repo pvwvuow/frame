@@ -38,8 +38,9 @@ nsis:
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: always
   shortcutName: Nama
-  installerLanguages: [fa_IR, en_US]
-  language: "1065"
+  # NSIS bundled with electron-builder has no Persian .nlf – installer UI is English,
+  # the app itself is fully Persian.
+  installerLanguages: [en_US]
 mac:
   icon: build/icon.png
   category: public.app-category.entertainment
