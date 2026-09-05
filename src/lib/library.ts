@@ -2,13 +2,10 @@ import { db } from "@/lib/db";
 import { ensureSeeded } from "@/db/seed";
 import type { TitleView } from "@/lib/queries";
 import type { Title as DbTitle } from "@prisma/client";
+import { LIST_STATUSES, type ListStatus } from "@/lib/library-shared";
 
-export type ListStatus = "planned" | "watching" | "watched";
-export const LIST_STATUSES: { value: ListStatus; label: string; color: string }[] = [
-  { value: "planned", label: "در انتظار تماشا", color: "text-sky-400" },
-  { value: "watching", label: "در حال تماشا", color: "text-amber-400" },
-  { value: "watched", label: "تماشا شده", color: "text-emerald-400" },
-];
+export { LIST_STATUSES };
+export type { ListStatus };
 
 function pv(t: DbTitle): TitleView {
   let genres: string[] = [];

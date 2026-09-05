@@ -1,6 +1,6 @@
 "use client";
 
-import { LIST_STATUSES, type ListStatus } from "@/lib/library";
+import { LIST_STATUSES, type ListStatus } from "@/lib/library-shared";
 import { useLibrary } from "./library/LibraryProvider";
 
 /** Watch-status pills (planned / watching / watched) for a title in the user's list. */

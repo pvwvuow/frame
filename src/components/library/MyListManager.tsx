@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import type { ListRow, ListStatus } from "@/lib/library";
-import { LIST_STATUSES } from "@/lib/library";
+import { LIST_STATUSES } from "@/lib/library-shared";
 import { fa, formatDuration, typeLabel, formatClock } from "@/lib/format";
 import TitleCard from "../TitleCard";
 import FavoriteButton from "../FavoriteButton";

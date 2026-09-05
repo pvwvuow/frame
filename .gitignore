@@ -92,3 +92,4 @@ db/*.db-shm
 !/build/
 /build/*
 !/build/icon.png
+.packsim/

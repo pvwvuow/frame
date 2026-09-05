@@ -29,6 +29,17 @@ const ROOT = path.join(__dirname, "..", "..");
 const DEV_URL = process.env.NAMA_DEV_URL || "http://localhost:3000";
 const APP_NAME = "نما";
 
+/* userData must be ASCII-safe: the SQLite path is handed to Prisma as a
+   `file:` URL and the query engine fails to OPEN (or create) files under
+   non-ASCII directories on Windows (the Persian app name «نما» produced
+   %APPDATA%\نما\nama.db → "Error code 14: Unable to open the database file"
+   → every page rendered "A server error occurred"). Keep the visible app
+   name Persian, but pin the data directory to plain ASCII.
+   appData is resolvable before `ready`; an explicit setPath below always wins. */
+const LEGACY_USER_DATA = path.join(app.getPath("appData"), APP_NAME);
+app.setName(APP_NAME);
+app.setPath("userData", path.join(app.getPath("appData"), "Nama"));
+
 let mainWindow = null;
 let serverProc = null;
 let serverUrl = null;
@@ -54,13 +65,49 @@ function toFileUrl(p) {
   return "file:" + p.replace(/\\/g, "/");
 }
 
+function isSQLiteFile(p) {
+  try {
+    const fd = fs.openSync(p, "r");
+    const buf = Buffer.alloc(16);
+    fs.readSync(fd, buf, 0, 16, 0);
+    fs.closeSync(fd);
+    return buf.toString("utf8") === "SQLite format 3\0";
+  } catch {
+    return false;
+  }
+}
+
+/** One-time carry-over of the v0.6.0-era database that lived under %APPDATA%\نما. */
+function migrateLegacyDb(dst) {
+  try {
+    const legacy = path.join(LEGACY_USER_DATA, "nama.db");
+    if (path.resolve(legacy) !== path.resolve(dst) && fs.existsSync(legacy) && isSQLiteFile(legacy) && !fs.existsSync(dst)) {
+      fs.copyFileSync(legacy, dst);
+      log.info("migrated legacy database from", legacy);
+    }
+  } catch (e) {
+    log.warn("legacy database migration skipped:", e);
+  }
+}
+
 function ensureUserDb() {
   const dst = userDbPath();
-  if (!fs.existsSync(dst)) {
-    fs.mkdirSync(path.dirname(dst), { recursive: true });
+  fs.mkdirSync(path.dirname(dst), { recursive: true });
+  migrateLegacyDb(dst);
+  const usable = fs.existsSync(dst) && isSQLiteFile(dst) && fs.statSync(dst).size > 4096;
+  if (!usable) {
     const src = seedDbPath();
-    if (fs.existsSync(src)) fs.copyFileSync(src, dst);
-    log.info("seeded user database at", dst);
+    if (fs.existsSync(src)) {
+      // atomic copy (tmp + rename) so an interrupted copy never leaves a broken db
+      const tmp = dst + ".tmp";
+      fs.copyFileSync(src, tmp);
+      fs.renameSync(tmp, dst);
+      log.info("seeded user database at", dst);
+    } else {
+      // no seed shipped → Prisma will create an empty file and seed.ts
+      // self-heals the schema (db/schema.sql) on first request
+      log.warn("seed database missing:", src, "– falling back to runtime schema bootstrap");
+    }
   }
   return dst;
 }
@@ -131,7 +178,59 @@ async function startServer() {
   });
   serverUrl = `http://127.0.0.1:${port}`;
   await waitFor(serverUrl);
+  await probeDatabase(serverUrl);
+  homeProbeDigest = await probeHomePage(serverUrl);
+  if (homeProbeDigest) log.error("home page SSR error, digest:", homeProbeDigest);
   return serverUrl;
+}
+
+/** Fetches / and looks for an RSC error digest embedded in the streamed payload. */
+function probeHomePage(baseUrl) {
+  return new Promise((resolve) => {
+    const req = http.get(baseUrl + "/", (res) => {
+      let body = "";
+      res.on("data", (c) => (body += c));
+      res.on("end", () => {
+        const m = body.match(/digest\\*"?:\\*"(\d{4,})/) || body.match(/"digest":"(\d{4,})"/);
+        resolve(m ? m[1] : null);
+      });
+    });
+    req.on("error", () => resolve(null));
+    req.setTimeout(15000, () => {
+      req.destroy();
+      resolve(null);
+    });
+  });
+}
+
+/** Result of the post-boot /api/health database probe (null when unreachable). */
+let dbProbeError = null;
+/** Digest of a server-render error detected on the home page, if any. */
+let homeProbeDigest = null;
+
+function probeDatabase(baseUrl) {
+  return new Promise((resolve) => {
+    const req = http.get(baseUrl + "/api/health", (res) => {
+      let body = "";
+      res.on("data", (c) => (body += c));
+      res.on("end", () => {
+        try {
+          const json = JSON.parse(body);
+          dbProbeError = json && json.db && json.db.ok === false ? String(json.db.error || "unknown database error") : null;
+        } catch {
+          dbProbeError = null;
+        }
+        if (dbProbeError) log.error("database probe failed:", dbProbeError);
+        else log.info("database probe ok");
+        resolve();
+      });
+    });
+    req.on("error", () => resolve());
+    req.setTimeout(10000, () => {
+      req.destroy();
+      resolve();
+    });
+  });
 }
 
 function stopServer() {
@@ -338,7 +437,6 @@ if (!gotLock) {
     }
   });
 
-  app.setName(APP_NAME);
   if (process.platform === "win32") app.setAppUserModelId("app.nama.desktop");
 
   app.whenReady().then(async () => {
@@ -349,6 +447,18 @@ if (!gotLock) {
       buildMenu();
       mainWindow = createWindow();
       setupUpdater();
+      if (dbProbeError || homeProbeDigest) {
+        const why = dbProbeError
+          ? `خطای دیتابیس:\n${dbProbeError}`
+          : `خطای رندر سرور (digest: ${homeProbeDigest})`;
+        dialog.showErrorBox(
+          "نما – خطای داخلی سرور",
+          `${why}\n\n` +
+            `مسیر دیتابیس:\n${userDbPath()}\n\n` +
+            `راهنما: پوشه‌ی داده‌ها را از منوی راهنما باز کنید و فایل nama.db را حذف کنید تا در اجرای بعدی از نو ساخته شود.\n` +
+            `لطفاً این فایل لاگ را برای پشتیبانی بفرستید:\n${log.transports.file.getFile().path}`
+        );
+      }
       app.on("activate", () => {
         if (BrowserWindow.getAllWindows().length === 0) mainWindow = createWindow();
       });

@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import { db } from "@/lib/db";
 
 const V = (n: number) => `/videos/v${n}.mp4`;
@@ -436,7 +438,55 @@ export async function ensureSeeded() {
   return seeding;
 }
 
+/**
+ * Self-heal: create the full Prisma schema from the shipped DDL when the
+ * SQLite file exists but has no tables (e.g. an empty nama.db created by a
+ * failed first-run copy, or a user DB from an older app version that is
+ * missing newly added tables). DDL is generated at build time via
+ * `prisma migrate diff` (scripts/postbuild.cjs) and shipped as db/schema.sql.
+ */
+let schemaEnsured = false;
+async function ensureSchema() {
+  if (schemaEnsured) return;
+  const probe = await db.$queryRawUnsafe<{ name: string }[]>(
+    `SELECT name FROM sqlite_master WHERE type='table' AND name='Title'`
+  );
+  if (Array.isArray(probe) && probe.length > 0) {
+    schemaEnsured = true;
+    return;
+  }
+  const candidates = [path.join(process.cwd(), "db", "schema.sql"), path.join(process.cwd(), "prisma", "schema.sql")];
+  const ddlPath = candidates.find((p) => fs.existsSync(p));
+  if (!ddlPath) {
+    console.error("[seed] schema.sql not found – cannot self-heal database schema");
+    return;
+  }
+  console.log("[seed] Title table missing → applying DDL from", ddlPath);
+  const ddl = fs.readFileSync(ddlPath, "utf8");
+  for (const raw of ddl.split(/;\s*\n/)) {
+    const stmt = raw
+      .split("\n")
+      .filter((l) => !l.trim().startsWith("--"))
+      .join("\n")
+      .trim();
+    if (!stmt) continue;
+    try {
+      await db.$executeRawUnsafe(stmt.endsWith(";") ? stmt : stmt + ";");
+    } catch (e) {
+      // "table/index already exists" is fine during partial heals; log the rest but continue
+      const msg = e instanceof Error ? e.message : String(e);
+      if (!/already exists/i.test(msg)) console.warn("[seed] DDL statement skipped:", msg);
+    }
+  }
+  schemaEnsured = true;
+}
+
 async function seedOnce() {
+  try {
+    await ensureSchema();
+  } catch (e) {
+    console.error("[seed] ensureSchema failed:", e);
+  }
   const count = await db.title.count();
   if (count > 0) {
     await syncCountries();

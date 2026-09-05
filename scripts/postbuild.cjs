@@ -11,6 +11,14 @@ fs.cpSync(path.join(root, ".next", "static"), path.join(standalone, ".next", "st
 fs.cpSync(path.join(root, "public"), path.join(standalone, "public"), { recursive: true });
 // Ship the seed SQLite database next to the standalone server so `npm start`
 // (or any host running `node .next/standalone/server.js`) works out of the box.
+// schema.sql (full DDL) ships alongside it so seed.ts can self-heal an
+// empty/legacy database at runtime.
 fs.mkdirSync(path.join(standalone, "db"), { recursive: true });
 fs.copyFileSync(path.join(root, "db", "custom.db"), path.join(standalone, "db", "custom.db"));
+const ddlSrc = path.join(root, "prisma", "schema.sql");
+if (fs.existsSync(ddlSrc)) {
+  fs.copyFileSync(ddlSrc, path.join(standalone, "db", "schema.sql"));
+} else {
+  console.warn("⚠ prisma/schema.sql missing – generate it: npx prisma migrate diff --from-empty --to-schema-datamodel prisma/schema.prisma --script > prisma/schema.sql");
+}
 console.log("✓ standalone output ready:", standalone);
