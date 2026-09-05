@@ -8,6 +8,8 @@ import { fa, formatClock, formatDuration, typeLabel } from "@/lib/format";
 import WatchlistButton from "../WatchlistButton";
 import FavoriteButton from "../FavoriteButton";
 import { CloseIcon, PlayIcon, StarIcon, ClockIcon, MuteIcon, VolumeIcon, ChevronLeft, CalendarIcon } from "../Icons";
+import TitleName from "../TitleName";
+import { useI18n } from "../i18n/LocaleProvider";
 
 type Episode = {
   id: number;
@@ -42,6 +44,7 @@ export default function TitleModal({
   onClose: () => void;
   onSwitch: (t: TitleView) => void;
 }) {
+  const { t: tr, locale } = useI18n();
   const [detail, setDetail] = useState<Detail | null>(null);
   const [muted, setMuted] = useState(true);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -130,7 +133,7 @@ export default function TitleModal({
                 <button
                   type="button"
                   onClick={onClose}
-                  aria-label="بستن"
+                  aria-label={tr("common.close")}
                   className="glass-btn grid h-9 w-9 place-items-center rounded-full text-white"
                 >
                   <CloseIcon width={16} height={16} />
@@ -138,14 +141,15 @@ export default function TitleModal({
                 <button
                   type="button"
                   onClick={() => setMuted((m) => !m)}
-                  aria-label={muted ? "روشن کردن صدا" : "بی‌صدا"}
+                  aria-label={muted ? tr("common.unmute") : tr("common.mute")}
                   className="glass-btn grid h-9 w-9 place-items-center rounded-full text-white"
                 >
                   {muted ? <MuteIcon width={16} height={16} /> : <VolumeIcon width={16} height={16} />}
                 </button>
               </div>
 
-              <div className="absolute inset-x-0 bottom-0 flex items-center gap-2 p-4 text-[10px] font-bold">
+              {/* badges sit on the END side; the poster overlaps the strip on the START side (-mt-14) */}
+              <div className="absolute inset-x-0 bottom-0 z-10 flex items-center justify-end gap-2 p-4 ps-[120px] text-[10px] font-bold">
                 <span className="rounded-md bg-brand px-2 py-0.5 text-white shadow-[0_0_14px_var(--color-brand-glow)]">{typeLabel(t.type)}</span>
                 <span className="rounded-md border border-white/25 bg-black/40 px-2 py-0.5 text-white backdrop-blur">{t.quality}</span>
                 <span className="rounded-md border border-white/25 bg-black/40 px-2 py-0.5 text-white backdrop-blur">{t.ageRating}</span>
@@ -168,10 +172,7 @@ export default function TitleModal({
                   className="relative z-20 -mt-14 h-[120px] w-[82px] shrink-0 rounded-xl bg-ink-700 object-cover shadow-[0_12px_30px_rgb(var(--shadow-color)/0.45)] ring-1 ring-white/20"
                 />
                 <div className="min-w-0 flex-1 pt-1">
-                  <h2 className="truncate text-xl font-black text-white">{t.title}</h2>
-                  <p className="truncate text-[11px] text-zinc-500" dir="ltr">
-                    {t.titleEn}
-                  </p>
+                  <TitleName t={t} as="h2" primaryClass="text-xl font-black text-white" secondaryClass="text-[11px] text-zinc-500" />
                   <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-zinc-300">
                     <span className="flex items-center gap-1 font-extrabold text-amber-400">
                       <StarIcon width={13} height={13} /> {fa(t.rating)}
@@ -181,7 +182,7 @@ export default function TitleModal({
                     </span>
                     <span className="flex items-center gap-1">
                       <ClockIcon width={13} height={13} className="text-zinc-500" />
-                      {t.type === "series" ? (eps.length ? `${fa(eps.length)} قسمت` : "سریال") : formatDuration(t.duration)}
+                      {t.type === "series" ? (eps.length ? `${fa(eps.length)} ${tr("common.episodes")}` : typeLabel(t.type)) : formatDuration(t.duration)}
                     </span>
                   </div>
                   <div className="mt-2 flex flex-wrap gap-1.5">
@@ -226,7 +227,7 @@ export default function TitleModal({
                               </div>
                               <div className="min-w-0 flex-1">
                                 <p className="truncate text-xs font-bold text-white">
-                                  <span className="text-zinc-500">ف{fa(e.season)} ق{fa(e.number)} · </span>
+                                  <span className="text-zinc-500" dir="ltr">S{fa(e.season)}·E{fa(e.number)} · </span>
                                   {e.name}
                                 </p>
                                 <p className="truncate text-[11px] text-zinc-500">{e.synopsis}</p>
@@ -237,7 +238,7 @@ export default function TitleModal({
                         );
                       })}
                       {eps.length > teaserEps.length && (
-                        <li className="px-1 pt-0.5 text-[11px] text-zinc-500">و {fa(eps.length - teaserEps.length)} قسمت دیگر…</li>
+                        <li className="px-1 pt-0.5 text-[11px] text-zinc-500">{locale === "en" ? `+${eps.length - teaserEps.length} more episodes…` : `و ${fa(eps.length - teaserEps.length)} قسمت دیگر…`}</li>
                       )}
                     </ul>
                   )}
@@ -251,7 +252,11 @@ export default function TitleModal({
                   className="flex h-11 flex-1 items-center justify-center gap-2 rounded-full bg-white px-5 text-sm font-extrabold text-black transition hover:scale-[1.02]"
                 >
                   <PlayIcon width={18} height={18} />
-                  {hasProgress && progress ? `ادامه از ${formatClock(progress.position)}` : t.type === "series" ? "پخش قسمت اول" : "پخش"}
+                  {hasProgress && progress
+                    ? `${tr("common.resume")} · ${formatClock(progress.position)}`
+                    : t.type === "series"
+                      ? locale === "en" ? "Play episode 1" : "پخش قسمت اول"
+                      : tr("common.play")}
                 </Link>
                 <WatchlistButton titleId={t.id} name={t.title} initial={detail?.inList ?? false} variant="icon" className="!h-11 !w-11" />
                 <FavoriteButton titleId={t.id} name={t.title} variant="icon" className="!h-11 !w-11" />
@@ -261,8 +266,8 @@ export default function TitleModal({
                 href={`/title/${t.slug}`}
                 className="glass-btn mt-2.5 flex h-11 items-center justify-center gap-1.5 rounded-full text-sm font-bold text-white"
               >
-                ادامه در جزئیات
-                <ChevronLeft width={16} height={16} />
+                {tr("modal.continueInDetails")}
+                <ChevronLeft width={16} height={16} className="rtl-flip" />
               </Link>
             </div>
           </motion.div>

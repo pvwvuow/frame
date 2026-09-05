@@ -3,30 +3,32 @@
 import { useEffect, useState } from "react";
 import { useTheme } from "next-themes";
 import { SunIcon, MoonIcon, MonitorIcon } from "../Icons";
+import { useI18n } from "../i18n/LocaleProvider";
 
 export const THEMES = [
-  { value: "dark", label: "تیره", hint: "سینمایی و کم‌نور", icon: MoonIcon },
-  { value: "light", label: "روشن", hint: "شفاف و پرنور", icon: SunIcon },
-  { value: "system", label: "خودکار", hint: "هماهنگ با سیستم", icon: MonitorIcon },
+  { value: "dark", label: "theme.dark", hint: "theme.darkHint", icon: MoonIcon },
+  { value: "light", label: "theme.light", hint: "theme.lightHint", icon: SunIcon },
+  { value: "system", label: "theme.system", hint: "theme.systemHint", icon: MonitorIcon },
 ] as const;
 
 /** Small icon button for the navbar – cycles dark → light → system. */
 export default function ThemeToggle({ className = "" }: { className?: string }) {
   const { theme, resolvedTheme, setTheme } = useTheme();
+  const { t } = useI18n();
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
   const current = mounted ? theme ?? "dark" : "dark";
   const isLight = mounted && resolvedTheme === "light";
   const next = current === "dark" ? "light" : current === "light" ? "system" : "dark";
-  const label = THEMES.find((t) => t.value === current)?.label ?? "تیره";
+  const label = t(THEMES.find((x) => x.value === current)?.label ?? "theme.dark");
 
   return (
     <button
       type="button"
       onClick={() => setTheme(next)}
-      aria-label={`تم فعلی: ${label} – تغییر تم`}
-      title={`تم: ${label}`}
+      aria-label={t("nav.themeCurrent", { name: label })}
+      title={`${t("nav.theme")}: ${label}`}
       className={`glass-btn relative grid h-10 w-10 place-items-center overflow-hidden rounded-full text-zinc-200 transition hover:text-white ${className}`}
     >
       <span className={`absolute transition-all duration-500 ${isLight ? "rotate-0 scale-100 opacity-100" : "-rotate-90 scale-50 opacity-0"}`}>
@@ -43,6 +45,7 @@ export default function ThemeToggle({ className = "" }: { className?: string }) 
 /** Segmented control used on the settings page. */
 export function ThemeSegment() {
   const { theme, setTheme } = useTheme();
+  const { t: tr } = useI18n();
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
   const current = mounted ? theme ?? "dark" : "dark";
@@ -70,9 +73,9 @@ export function ThemeSegment() {
               </div>
             </div>
             <span className="flex items-center gap-2 text-sm font-bold text-white">
-              <Icon width={16} height={16} className={active ? "text-brand" : "text-zinc-400"} /> {t.label}
+              <Icon width={16} height={16} className={active ? "text-brand" : "text-zinc-400"} /> {tr(t.label)}
             </span>
-            <span className="mt-0.5 block text-[11px] text-zinc-500">{t.hint}</span>
+            <span className="mt-0.5 block text-[11px] text-zinc-500">{tr(t.hint)}</span>
           </button>
         );
       })}

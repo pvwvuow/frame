@@ -34,6 +34,7 @@ import {
 } from "@/lib/queries";
 import { getUserKey } from "@/lib/user";
 import { fa, formatDuration, formatViews, typeLabel, formatClock } from "@/lib/format";
+import { titleNames } from "@/lib/title-name";
 
 export const dynamic = "force-dynamic";
 
@@ -42,7 +43,7 @@ type Props = { params: Promise<{ slug: string }> };
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params;
   const t = await getTitleBySlug(slug);
-  return { title: t ? `${t.title} (${t.year}) | نما` : "نما", description: t?.description };
+  return { title: t ? `${titleNames(t).label} (${t.year})` : "Nama", description: t?.description };
 }
 
 const AVATAR_GRADIENTS = [
@@ -58,6 +59,7 @@ export default async function TitlePage({ params }: Props) {
   const { slug } = await params;
   const t = await getTitleBySlug(slug);
   if (!t) notFound();
+  const names = titleNames(t);
   const userKey = await getUserKey();
   const [eps, similar, revs, inList, progress, byDirector] = await Promise.all([
     t.type === "series" ? getEpisodes(t.id) : Promise.resolve([]),
@@ -112,7 +114,7 @@ export default async function TitlePage({ params }: Props) {
               <Link href={t.type === "series" ? "/series" : "/movies"} className="hover:text-white">{t.type === "series" ? "سریال‌ها" : "فیلم‌ها"}</Link>
             </li>
             <li className="opacity-40">/</li>
-            <li className="truncate text-zinc-200">{t.title}</li>
+            <li className="truncate text-zinc-200" dir={names.primaryDir}>{names.primary}</li>
           </ol>
         </nav>
 
@@ -147,9 +149,10 @@ export default async function TitlePage({ params }: Props) {
               </span>
             </div>
 
-            <h1 className="text-glow text-4xl font-black leading-[1.15] text-white sm:text-5xl lg:text-6xl">{t.title}</h1>
-            <p className="mt-2 text-sm font-medium tracking-wide text-zinc-400" dir="ltr">
-              {t.titleEn} · {t.year}
+            <h1 className="text-glow text-4xl font-black leading-[1.15] text-white sm:text-5xl lg:text-6xl" dir={names.primaryDir}>{names.primary}</h1>
+            <p className="mt-2 flex flex-wrap items-baseline gap-x-2 text-sm font-medium tracking-wide text-zinc-400">
+              {names.secondary && <span dir={names.secondaryDir}>{names.secondary}</span>}
+              <span dir="ltr">· {t.year}</span>
             </p>
 
             {/* stats row */}

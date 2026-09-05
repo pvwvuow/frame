@@ -8,6 +8,8 @@ import { CheckIcon, TrashIcon, UserIcon, PlayIcon, SunIcon, BellIcon, ShieldIcon
 import { ThemeSegment } from "../theme/ThemeToggle";
 import { bridge, useIsElectron } from "@/lib/platform";
 import { fa } from "@/lib/format";
+import { useI18n } from "../i18n/LocaleProvider";
+import { isLocale } from "@/lib/i18n";
 
 export const AVATARS = [
   "from-brand to-purple-600",
@@ -114,6 +116,7 @@ function Card({ title, desc, children, id }: { title: string; desc?: string; chi
 export default function SettingsForm({ initial }: { initial: ProfileData }) {
   const [p, setP] = useState<ProfileData>(initial);
   const [pending, start] = useTransition();
+  const { locale, setLocale, t: tr } = useI18n();
   const [danger, setDanger] = useState<string | null>(null);
   const [section, setSection] = useState<SectionId>("profile");
   const [pinDraft, setPinDraft] = useState("");
@@ -298,7 +301,21 @@ export default function SettingsForm({ initial }: { initial: ProfileData }) {
             </Card>
             <Card title="زبان و دسترسی‌پذیری">
               <div className="grid gap-3 md:grid-cols-2">
-                <Chips label="زبان رابط کاربری" value={p.language} onChange={(v) => set("language", v)} options={[["fa", "فارسی"], ["en", "English (در دست ساخت)"]]} />
+                <div>
+                  <Chips
+                    label={tr("settings.language")}
+                    value={locale}
+                    onChange={(v) => {
+                      set("language", v);
+                      if (isLocale(v)) {
+                        setLocale(v);
+                        toast.success(tr("settings.languageChanged"));
+                      }
+                    }}
+                    options={[["fa", "فارسی"], ["en", "English"]]}
+                  />
+                  <p className="mt-1.5 text-[11px] text-zinc-500">{tr("settings.languageHint")}</p>
+                </div>
                 <Toggle checked={p.reduceMotion} onChange={(v) => set("reduceMotion", v)} label="کاهش انیمیشن‌ها" hint="برای دستگاه‌های ضعیف یا حساسیت به حرکت" />
               </div>
             </Card>

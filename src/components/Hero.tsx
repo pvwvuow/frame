@@ -7,10 +7,13 @@ import { fa, formatDuration, typeLabel } from "@/lib/format";
 import { InfoIcon, PlayIcon, StarIcon } from "./Icons";
 import WatchlistButton from "./WatchlistButton";
 import FavoriteButton from "./FavoriteButton";
+import { useI18n } from "./i18n/LocaleProvider";
+import { titleNames } from "@/lib/title-name";
 
 export default function Hero({ items, watchlistIds }: { items: TitleView[]; watchlistIds: number[] }) {
   const [idx, setIdx] = useState(0);
   const [paused, setPaused] = useState(false);
+  const { t: tr, locale } = useI18n();
 
   useEffect(() => {
     if (paused || items.length < 2) return;
@@ -20,6 +23,7 @@ export default function Hero({ items, watchlistIds }: { items: TitleView[]; watc
 
   if (!items.length) return null;
   const cur = items[idx];
+  const names = titleNames(cur, locale);
 
   return (
     <section
@@ -41,14 +45,14 @@ export default function Hero({ items, watchlistIds }: { items: TitleView[]; watc
           />
         </div>
       ))}
-      <div className="absolute inset-0 bg-gradient-to-l from-ink via-ink/60 to-ink/10" />
+      <div className={`absolute inset-0 ${locale === "en" ? "bg-gradient-to-r" : "bg-gradient-to-l"} from-ink via-ink/60 to-ink/10`} />
       <div className="absolute inset-0 bg-gradient-to-t from-ink via-ink/30 to-black/40" />
 
       <div className="relative z-10 mx-auto flex h-full max-w-[1600px] flex-col justify-end px-4 pb-24 sm:px-8 lg:px-12 lg:pb-28">
         <div key={cur.id} className="max-w-2xl animate-fade-up">
           <div className="mb-4 flex flex-wrap items-center gap-2 text-xs font-semibold">
             <span className="rounded-md bg-brand px-2 py-1 text-white shadow-[0_0_20px_var(--color-brand-glow)]">
-              {cur.featured ? "پیشنهاد ویژه" : typeLabel(cur.type)}
+              {cur.featured ? tr("hero.featured") : typeLabel(cur.type)}
             </span>
             <span className="rounded-md border border-white/20 bg-black/40 px-2 py-1 text-zinc-200 backdrop-blur">
               {cur.quality}
@@ -58,19 +62,21 @@ export default function Hero({ items, watchlistIds }: { items: TitleView[]; watc
             </span>
           </div>
 
-          <h1 className="text-glow text-4xl font-black leading-[1.15] text-white sm:text-5xl lg:text-6xl">
-            {cur.title}
+          <h1 className="text-glow text-4xl font-black leading-[1.15] text-white sm:text-5xl lg:text-6xl" dir={names.primaryDir}>
+            {names.primary}
           </h1>
-          <p className="mt-2 text-sm font-medium tracking-wide text-zinc-400" dir="ltr">
-            {cur.titleEn}
-          </p>
+          {names.secondary && (
+            <p className="mt-2 text-sm font-medium tracking-wide text-zinc-400" dir={names.secondaryDir}>
+              {names.secondary}
+            </p>
+          )}
 
           <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-zinc-200">
             <span className="flex items-center gap-1 font-bold text-amber-400">
               <StarIcon width={16} height={16} /> {fa(cur.rating)}
             </span>
             <span>{fa(cur.year)}</span>
-            <span>{cur.type === "series" ? `هر قسمت ${formatDuration(cur.duration)}` : formatDuration(cur.duration)}</span>
+            <span>{cur.type === "series" ? `${tr("common.perEpisode")} ${formatDuration(cur.duration)}` : formatDuration(cur.duration)}</span>
             <span className="text-zinc-400">{cur.genres.join(" · ")}</span>
           </div>
 
@@ -84,17 +90,17 @@ export default function Hero({ items, watchlistIds }: { items: TitleView[]; watc
               className="flex h-12 items-center gap-2 rounded-full bg-white px-7 text-sm font-extrabold text-black shadow-[0_10px_40px_rgba(255,255,255,0.15)] transition hover:scale-[1.03] hover:bg-zinc-200"
             >
               <PlayIcon width={20} height={20} />
-              پخش
+              {tr("common.play")}
             </Link>
             <Link
               href={`/title/${cur.slug}`}
               className="flex h-12 items-center gap-2 rounded-full border border-white/20 bg-white/10 px-6 text-sm font-bold text-white backdrop-blur transition hover:bg-white/20"
             >
               <InfoIcon />
-              جزئیات بیشتر
+              {tr("common.moreDetails")}
             </Link>
-            <WatchlistButton titleId={cur.id} name={cur.title} initial={watchlistIds.includes(cur.id)} variant="icon" />
-            <FavoriteButton titleId={cur.id} name={cur.title} variant="icon" />
+            <WatchlistButton titleId={cur.id} name={names.primary} initial={watchlistIds.includes(cur.id)} variant="icon" />
+            <FavoriteButton titleId={cur.id} name={names.primary} variant="icon" />
           </div>
         </div>
 
@@ -104,7 +110,7 @@ export default function Hero({ items, watchlistIds }: { items: TitleView[]; watc
             <button
               key={t.id}
               type="button"
-              aria-label={t.title}
+              aria-label={titleNames(t, locale).primary}
               onClick={() => setIdx(i)}
               className={`h-1.5 rounded-full transition-all ${i === idx ? "w-8 bg-brand" : "w-3 bg-white/30 hover:bg-white/60"}`}
             />
@@ -123,7 +129,7 @@ export default function Hero({ items, watchlistIds }: { items: TitleView[]; watc
               }`}
             >
               { }
-              <img src={t.poster} alt={t.title} className="h-full w-full object-cover" />
+              <img src={t.poster} alt={titleNames(t, locale).primary} className="h-full w-full object-cover" />
             </button>
           ))}
         </div>

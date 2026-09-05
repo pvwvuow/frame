@@ -5,6 +5,16 @@
 [![Desktop release](https://github.com/pvwvuow/frame/actions/workflows/desktop.yml/badge.svg)](https://github.com/pvwvuow/frame/actions/workflows/desktop.yml)
 [![CI](https://github.com/pvwvuow/frame/actions/workflows/ci.yml/badge.svg)](https://github.com/pvwvuow/frame/actions/workflows/ci.yml)
 
+
+## v0.5.0 – English UI, bilingual titles, header & quick-view fixes
+
+- **English language** – full UI language switcher (navbar globe, user drawer, Settings → ظاهر و زبان). Layout flips to LTR, digits/durations follow the language, choice is persisted (cookie + localStorage) and applied on the server render (no flash).
+- **Bilingual title names** – English-language productions show their English title first with the Persian name small beside it; Persian productions do the opposite (and flip in the English UI). Applied to cards, hero, quick-view, title page, search, command palette, history, my-list and continue-watching.
+- **Header fix** – the top bar no longer flashes a phantom border when scrolling back to the top (web + Electron). The header now keeps a permanent transparent border and only animates colour/blur, with scroll hysteresis.
+- **Quick-view fix** – the poster no longer overlaps the type/quality/age badges of the media strip.
+- **Standalone/`npm start` fix** – the SQLite database is now resolved to an absolute path and shipped next to the standalone server; foreign `DATABASE_URL`s injected by hosts are ignored.
+- User drawer is direction-aware (slides from the avatar side in both languages), PWA manifest added, row arrows mirror in LTR.
+
 ## اجرا (وب)
 
 ```bash

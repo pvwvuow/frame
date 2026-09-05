@@ -9,6 +9,7 @@ import { fa, formatClock, typeLabel } from "@/lib/format";
 import FavoriteButton from "../FavoriteButton";
 import WatchlistButton from "../WatchlistButton";
 import { PlayIcon, TrashIcon, HistoryIcon, CheckCircleIcon } from "../Icons";
+import TitleName from "@/components/TitleName";
 
 function dayLabel(iso: string) {
   const d = new Date(iso);
@@ -94,7 +95,7 @@ export default function HistoryList({ rows }: { rows: HistoryRow[] }) {
                       <span className="absolute inset-x-0 bottom-0 h-1 bg-white/20"><span className={`block h-full ${r.finished ? "bg-emerald-500" : "bg-brand"}`} style={{ width: `${pct}%` }} /></span>
                     </Link>
                     <div className="min-w-0 flex-1">
-                      <Link href={`/title/${r.title.slug}`} className="block truncate text-sm font-extrabold text-white hover:text-brand">{r.title.title}</Link>
+                      <Link href={`/title/${r.title.slug}`} className="block text-sm font-extrabold text-white hover:text-brand"><TitleName t={r.title} layout="inline" secondaryClass="text-[11px]" /></Link>
                       <p className="mt-0.5 truncate text-[11px] text-zinc-400">
                         {r.episodeId ? `فصل ${fa(r.season ?? 1)} · قسمت ${fa(r.episodeNumber ?? 1)} · ${r.episodeName}` : `${typeLabel(r.title.type)} · ${fa(r.title.year)}`}
                       </p>

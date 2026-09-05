@@ -314,3 +314,50 @@ html[data-electron="1"] body { overscroll-behavior: none; }
 
 /* ---- Modal / drawer safety: nothing behind an overlay should bleed through ---- */
 [role="dialog"], [role="alertdialog"] { isolation: isolate; }
+
+/* =====================================================================
+   SITE HEADER
+   The old header toggled `.glass-strong` (1px border + rim pseudo-element)
+   together with `transition-all`, so when the class was removed the border
+   width animated 1px → 0 while its colour snapped to `currentColor` – a
+   bright line flashed and vanished when scrolling back to the top.
+   Now the border, background and blur are ALWAYS present and only their
+   colour/opacity animate, driven by `data-solid`. Nothing is added or
+   removed from the box model, so nothing can pop.
+   ===================================================================== */
+.site-header {
+  --hdr-bg: transparent;
+  --hdr-border: transparent;
+  --hdr-blur: 0px;
+  --hdr-shadow: 0 0 0 rgba(0, 0, 0, 0);
+  background-color: var(--hdr-bg);
+  background-image: linear-gradient(to bottom, color-mix(in srgb, var(--color-ink) 82%, transparent), transparent);
+  border-bottom: 1px solid var(--hdr-border);
+  box-shadow: var(--hdr-shadow);
+  -webkit-backdrop-filter: blur(var(--hdr-blur)) saturate(160%);
+  backdrop-filter: blur(var(--hdr-blur)) saturate(160%);
+  transition:
+    background-color 0.28s ease,
+    border-color 0.28s ease,
+    box-shadow 0.28s ease,
+    -webkit-backdrop-filter 0.28s ease,
+    backdrop-filter 0.28s ease;
+  will-change: background-color, border-color;
+}
+.site-header[data-solid="1"] {
+  --hdr-bg: var(--glass-bg-strong);
+  --hdr-border: var(--glass-border);
+  --hdr-blur: var(--glass-blur);
+  --hdr-shadow: 0 10px 30px rgb(var(--shadow-color) / 0.25);
+  background-image: none;
+}
+/* the gradient scrim should not animate its own opacity – keep it instant to avoid double fades */
+.site-header[data-solid="0"] { background-color: transparent; }
+
+/* ---- LTR (English UI) adjustments ---- */
+html[dir="ltr"] body { font-family: "Segoe UI", "Inter", system-ui, -apple-system, "Vazirmatn", sans-serif; }
+html[dir="ltr"] h1, html[dir="ltr"] h2, html[dir="ltr"] h3, html[dir="ltr"] .font-display { font-family: "Segoe UI", "Inter", system-ui, -apple-system, "Estedad", sans-serif; letter-spacing: -0.02em; }
+/* row arrows / chevrons drawn for RTL should mirror in LTR */
+html[dir="ltr"] .rtl-flip { transform: scaleX(-1); }
+/* macOS traffic lights sit top-left; in LTR that is where the logo lives */
+html[data-electron="1"][data-platform="darwin"][dir="ltr"] .nav-inner { padding-inline-end: 0; padding-inline-start: 80px; }

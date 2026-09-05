@@ -17,6 +17,7 @@ import {
   BookmarkIcon, SearchIcon, CloseIcon, GridIcon, ListIcon, SortIcon, TrashIcon, PinIcon, PlayIcon, StarIcon,
   CheckCircleIcon, SquareIcon, NoteIcon, DownloadIcon, ShuffleIcon, InfoIcon, HeartIcon, ChevronDown,
 } from "../Icons";
+import TitleName from "@/components/TitleName";
 
 type Tab = "all" | "movie" | "series" | "planned" | "watching" | "watched" | "favorite";
 type Sort = "added" | "title" | "rating" | "year" | "duration" | "myScore" | "progress";
@@ -583,7 +584,7 @@ function ListItem({ r, selectMode, selected, onSelect, onRemove, onPin, onNote, 
           <div className="min-w-0">
             <p className="flex items-center gap-2 truncate text-base font-extrabold text-white">
               {r.pinned && <PinIcon width={14} height={14} filled className="text-amber-400" />}
-              <Link href={`/title/${r.title.slug}`} className="hover:text-brand">{r.title.title}</Link>
+              <Link href={`/title/${r.title.slug}`} className="min-w-0 hover:text-brand"><TitleName t={r.title} layout="inline" secondaryClass="text-xs" /></Link>
               {r.isFavorite && <HeartIcon width={14} height={14} filled className="text-rose-500" />}
             </p>
             <p className="truncate text-xs text-zinc-400" dir="ltr">{r.title.titleEn}</p>

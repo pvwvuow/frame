@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ChevronLeft, ChevronRight } from "./Icons";
+import { useI18n } from "./i18n/LocaleProvider";
 
 export default function Row({
   title,
@@ -16,6 +17,8 @@ export default function Row({
   children: ReactNode;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const { t, dir } = useI18n();
+  const rtl = dir === "rtl";
   const [hover, setHover] = useState(false);
   const [canPrev, setCanPrev] = useState(false);
   const [canNext, setCanNext] = useState(true);
@@ -45,8 +48,8 @@ export default function Row({
   const scroll = (dir: 1 | -1) => {
     const el = ref.current;
     if (!el) return;
-    // RTL: scrolling "forward" (visually left) means negative scrollLeft
-    el.scrollBy({ left: -dir * el.clientWidth * 0.8, behavior: "smooth" });
+    // RTL: scrolling "forward" (visually left) means negative scrollLeft; LTR is positive
+    el.scrollBy({ left: (rtl ? -dir : dir) * el.clientWidth * 0.8, behavior: "smooth" });
   };
 
   return (
@@ -62,8 +65,8 @@ export default function Row({
         </div>
         {href && (
           <Link href={href} className="group flex items-center gap-1 text-xs font-medium text-zinc-400 transition hover:text-brand">
-            مشاهده همه
-            <ChevronLeft width={14} height={14} className="transition-transform group-hover:-translate-x-0.5" />
+            {t("common.viewAll")}
+            <ChevronLeft width={14} height={14} className={`rtl-flip transition-transform ${rtl ? "group-hover:-translate-x-0.5" : "group-hover:translate-x-0.5"}`} />
           </Link>
         )}
       </div>
@@ -72,21 +75,21 @@ export default function Row({
         {/* RTL: the row starts at the RIGHT edge. Right button = back to start, left button = forward. */}
         <button
           type="button"
-          aria-label="قبلی"
+          aria-label={t("common.back")}
           onClick={() => scroll(-1)}
           disabled={!canPrev}
-          className={`absolute start-0 top-0 z-10 hidden h-full w-14 items-center justify-center bg-gradient-to-l from-ink/90 to-transparent text-white transition-opacity md:flex ${hover && canPrev ? "opacity-100" : "pointer-events-none opacity-0"}`}
+          className={`absolute start-0 top-0 z-10 hidden h-full w-14 items-center justify-center ${rtl ? "bg-gradient-to-l" : "bg-gradient-to-r"} from-ink/90 to-transparent text-white transition-opacity md:flex ${hover && canPrev ? "opacity-100" : "pointer-events-none opacity-0"}`}
         >
-          <span className="glass-btn grid h-10 w-10 place-items-center rounded-full"><ChevronRight width={22} height={22} /></span>
+          <span className="glass-btn grid h-10 w-10 place-items-center rounded-full"><ChevronRight width={22} height={22} className="rtl-flip" /></span>
         </button>
         <button
           type="button"
-          aria-label="بعدی"
+          aria-label={t("common.more")}
           onClick={() => scroll(1)}
           disabled={!canNext}
-          className={`absolute end-0 top-0 z-10 hidden h-full w-14 items-center justify-center bg-gradient-to-r from-ink/90 to-transparent text-white transition-opacity md:flex ${hover && canNext ? "opacity-100" : "pointer-events-none opacity-0"}`}
+          className={`absolute end-0 top-0 z-10 hidden h-full w-14 items-center justify-center ${rtl ? "bg-gradient-to-r" : "bg-gradient-to-l"} from-ink/90 to-transparent text-white transition-opacity md:flex ${hover && canNext ? "opacity-100" : "pointer-events-none opacity-0"}`}
         >
-          <span className="glass-btn grid h-10 w-10 place-items-center rounded-full"><ChevronLeft width={22} height={22} /></span>
+          <span className="glass-btn grid h-10 w-10 place-items-center rounded-full"><ChevronLeft width={22} height={22} className="rtl-flip" /></span>
         </button>
 
         <div

@@ -24,6 +24,7 @@ import {
   BellIcon,
   UserIcon,
 } from "./Icons";
+import TitleName from "@/components/TitleName";
 
 type Result = { id: number; slug: string; title: string; titleEn: string; poster: string; year: number; type: string; rating: number };
 
@@ -137,9 +138,9 @@ export default function CommandPalette() {
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={r.poster} alt="" className="h-12 w-8 shrink-0 rounded-md object-cover" />
           <span className="min-w-0 flex-1">
-            <span className="block truncate text-sm font-bold text-white">{r.title}</span>
+            <TitleName t={r} layout="inline" primaryClass="text-sm font-bold text-white" secondaryClass="text-[11px] text-zinc-500" />
             <span className="block truncate text-[11px] text-zinc-500" dir="ltr">
-              {r.titleEn} · {r.year}
+              {r.year}
             </span>
           </span>
           <span className="text-[11px] text-zinc-500">{r.type === "series" ? "سریال" : "فیلم"} · ★ {fa(r.rating)}</span>

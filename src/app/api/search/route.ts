@@ -12,6 +12,7 @@ export async function GET(req: Request) {
       slug: r.slug,
       title: r.title,
       titleEn: r.titleEn,
+      country: r.country,
       poster: r.poster,
       year: r.year,
       type: r.type,

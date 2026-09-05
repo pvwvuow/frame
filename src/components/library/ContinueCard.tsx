@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import type { TitleView } from "@/lib/queries";
 import { fa, formatClock } from "@/lib/format";
 import { PlayIcon, CloseIcon } from "../Icons";
+import TitleName from "@/components/TitleName";
 
 export type ContinueLike = {
   title: TitleView;
@@ -57,8 +58,8 @@ export default function ContinueCard({ c, removable = true }: { c: ContinueLike;
           </div>
         </Link>
         <div className="min-w-0 flex-1 py-1">
-          <Link href={`/title/${c.title.slug}`} className="block truncate text-base font-extrabold text-white hover:text-brand">
-            {c.title.title}
+          <Link href={`/title/${c.title.slug}`} className="block text-base font-extrabold text-white hover:text-brand">
+            <TitleName t={c.title} layout="inline" secondaryClass="text-xs" />
           </Link>
           <p className="mt-0.5 text-[11px] text-zinc-400">
             {c.episodeId ? `فصل ${fa(c.season ?? 1)} · قسمت ${fa(c.episodeNumber ?? 1)} · ${c.episodeName}` : `فیلم · ${fa(c.title.year)}`}

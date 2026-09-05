@@ -22,6 +22,8 @@ type SeedTitle = {
   cast: string[];
   ageRating: string;
   quality: string;
+  /** Production country – non-Iranian titles are shown English-first in the UI. */
+  country?: string;
   featured: boolean;
   trendingScore: number;
   views: number;
@@ -51,6 +53,7 @@ const seedTitles: SeedTitle[] = [
   },
   {
     slug: "orbit-of-silence",
+    country: "آمریکا",
     title: "مدار سکوت",
     titleEn: "Orbit of Silence",
     type: "movie",
@@ -91,6 +94,7 @@ const seedTitles: SeedTitle[] = [
   },
   {
     slug: "last-train",
+    country: "فرانسه",
     title: "آخرین قطار تهران",
     titleEn: "The Last Train",
     type: "movie",
@@ -131,6 +135,7 @@ const seedTitles: SeedTitle[] = [
   },
   {
     slug: "the-deep",
+    country: "بریتانیا",
     title: "اعماق",
     titleEn: "The Deep",
     type: "movie",
@@ -310,6 +315,7 @@ const seedTitles: SeedTitle[] = [
   },
   {
     slug: "galaxy-migrants",
+    country: "کانادا",
     title: "مهاجران کهکشان",
     titleEn: "Galaxy Migrants",
     type: "series",
@@ -433,6 +439,7 @@ export async function ensureSeeded() {
 async function seedOnce() {
   const count = await db.title.count();
   if (count > 0) {
+    await syncCountries();
     seeded = true;
     return;
   }
@@ -459,6 +466,7 @@ async function seedOnce() {
         cast: JSON.stringify(t.cast),
         ageRating: t.ageRating,
         quality: t.quality,
+        country: t.country ?? "ایران",
         featured: t.featured,
         trendingScore: t.trendingScore,
         views: t.views,
@@ -487,4 +495,12 @@ async function seedOnce() {
     }
   }
   seeded = true;
+}
+
+/** Lightweight data migration: apply production countries to titles seeded before the field existed. */
+async function syncCountries() {
+  const withCountry = seedTitles.filter((t) => t.country);
+  for (const t of withCountry) {
+    await db.title.updateMany({ where: { slug: t.slug, country: "ایران" }, data: { country: t.country } });
+  }
 }

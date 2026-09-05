@@ -6,39 +6,54 @@ import { useEffect, useRef, useState } from "react";
 import { SearchIcon, CloseIcon, FilmIcon, TvIcon, BookmarkIcon, HomeIcon, SparkIcon, UserIcon, LayersIcon, UsersIcon, ShuffleIcon, ChevronDown, BellIcon } from "./Icons";
 import UserMenu from "./UserMenu";
 import ThemeToggle from "./theme/ThemeToggle";
-import { fa } from "@/lib/format";
+import LanguageToggle from "./i18n/LanguageToggle";
+import TitleName from "./TitleName";
+import { fa, typeLabel } from "@/lib/format";
 import { useIsElectron } from "@/lib/platform";
+import { useI18n } from "./i18n/LocaleProvider";
+import type { TKey } from "@/lib/i18n";
 
 type Result = {
   id: number;
   slug: string;
   title: string;
   titleEn: string;
+  country?: string;
   poster: string;
   year: number;
   type: string;
   rating: number;
 };
 
-const links = [
-  { href: "/", label: "خانه", icon: HomeIcon },
-  { href: "/movies", label: "فیلم‌ها", icon: FilmIcon },
-  { href: "/series", label: "سریال‌ها", icon: TvIcon },
-  { href: "/genres", label: "ژانرها", icon: SparkIcon },
-  { href: "/collections", label: "مجموعه‌ها", icon: LayersIcon },
-  { href: "/my-list", label: "لیست من", icon: BookmarkIcon },
+type NavLink = { href: string; key: TKey; icon: typeof HomeIcon; hint?: TKey };
+
+const links: NavLink[] = [
+  { href: "/", key: "nav.home", icon: HomeIcon },
+  { href: "/movies", key: "nav.movies", icon: FilmIcon },
+  { href: "/series", key: "nav.series", icon: TvIcon },
+  { href: "/genres", key: "nav.genres", icon: SparkIcon },
+  { href: "/collections", key: "nav.collections", icon: LayersIcon },
+  { href: "/my-list", key: "nav.myList", icon: BookmarkIcon },
 ];
-const more = [
-  { href: "/people", label: "هنرمندان", icon: UsersIcon, hint: "کارگردان‌ها و بازیگران" },
-  { href: "/random", label: "امشب چی ببینم؟", icon: ShuffleIcon, hint: "انتخاب شانسی" },
-  { href: "/notifications", label: "اعلان‌ها", icon: BellIcon, hint: "تازه‌ها و یادآوری‌ها" },
+const more: NavLink[] = [
+  { href: "/people", key: "nav.people", icon: UsersIcon, hint: "nav.peopleHint" },
+  { href: "/random", key: "nav.random", icon: ShuffleIcon, hint: "nav.randomHint" },
+  { href: "/notifications", key: "nav.notifications", icon: BellIcon, hint: "nav.notificationsHint" },
 ];
-const mobileLinks = [links[0], links[1], links[2], links[3], { href: "/profile", label: "پروفایل", icon: UserIcon }];
+const mobileLinks: NavLink[] = [links[0], links[1], links[2], links[3], { href: "/profile", key: "nav.profile", icon: UserIcon }];
+
+/* Scroll thresholds with hysteresis: the header turns solid after 32px and only
+   returns to transparent below 6px, so it never flips back and forth (that
+   flip – combined with `transition-all` on the border – caused the "phantom
+   border" flash when scrolling back to the top). */
+const SOLID_AT = 32;
+const CLEAR_AT = 6;
 
 export default function Navbar() {
   const pathname = usePathname();
   const router = useRouter();
   const electron = useIsElectron();
+  const { t } = useI18n();
   const [scrolled, setScrolled] = useState(false);
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
@@ -49,13 +64,31 @@ export default function Navbar() {
   const boxRef = useRef<HTMLDivElement>(null);
   const moreRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const scrolledRef = useRef(false);
 
   useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 24);
-    onScroll();
+    let raf = 0;
+    const measure = () => {
+      raf = 0;
+      const y = window.scrollY || document.documentElement.scrollTop || 0;
+      const next = scrolledRef.current ? y > CLEAR_AT : y > SOLID_AT;
+      if (next !== scrolledRef.current) {
+        scrolledRef.current = next;
+        setScrolled(next);
+      }
+    };
+    const onScroll = () => {
+      if (!raf) raf = requestAnimationFrame(measure);
+    };
+    measure();
     window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
-  }, []);
+    window.addEventListener("resize", onScroll, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("resize", onScroll);
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, [pathname]);
 
   useEffect(() => {
     setOpen(false);
@@ -72,7 +105,7 @@ export default function Navbar() {
     }
     const ctrl = new AbortController();
     setLoading(true);
-    const t = setTimeout(() => {
+    const timer = setTimeout(() => {
       fetch(`/api/search?q=${encodeURIComponent(q)}`, { signal: ctrl.signal })
         .then((r) => r.json())
         .then((d: Result[]) => setResults(Array.isArray(d) ? d : []))
@@ -80,7 +113,7 @@ export default function Navbar() {
         .finally(() => setLoading(false));
     }, 220);
     return () => {
-      clearTimeout(t);
+      clearTimeout(timer);
       ctrl.abort();
     };
   }, [q]);
@@ -109,6 +142,7 @@ export default function Navbar() {
   const isActive = (href: string) => (href === "/" ? pathname === "/" : pathname?.startsWith(href));
   const moreActive = more.some((m) => pathname?.startsWith(m.href));
   const showPanel = open && q.trim().length > 0;
+  const solid = scrolled || showPanel || moreOpen;
 
   const submit = () => {
     if (!q.trim()) return;
@@ -119,12 +153,11 @@ export default function Navbar() {
   return (
     <>
       <header
-        className={`fixed inset-x-0 top-0 z-50 transition-all duration-300 ${
-          scrolled || showPanel ? "glass-strong rounded-none border-x-0 border-t-0" : "bg-gradient-to-b from-ink/80 to-transparent"
-        } ${electron ? "app-drag" : ""}`}
+        data-solid={solid ? "1" : "0"}
+        className={`site-header fixed inset-x-0 top-0 z-50 ${electron ? "app-drag" : ""}`}
       >
         <div className="nav-inner mx-auto flex h-16 max-w-[1600px] items-center gap-3 px-4 sm:h-[72px] sm:px-8 lg:px-12">
-          <Link href="/" className="group app-no-drag flex shrink-0 items-center gap-2">
+          <Link href="/" className="group app-no-drag flex shrink-0 items-center gap-2" aria-label={t("app.name")}>
             <span className="relative grid h-9 w-9 place-items-center rounded-lg bg-brand text-white shadow-[0_0_24px_var(--color-brand-glow)]">
               <span className="absolute inset-0 rounded-lg bg-white/10 opacity-0 transition group-hover:opacity-100" />
               <svg viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor">
@@ -132,21 +165,22 @@ export default function Navbar() {
               </svg>
             </span>
             <span className="text-2xl font-black tracking-tight text-white">
-              نما<span className="text-brand">.</span>
+              {t("app.name")}
+              <span className="text-brand">.</span>
             </span>
           </Link>
 
-          <nav className="app-no-drag hidden items-center gap-1 lg:flex" aria-label="ناوبری اصلی">
+          <nav className="app-no-drag hidden items-center gap-1 lg:flex" aria-label={t("nav.mainNav")}>
             {links.map((l) => (
               <Link
                 key={l.href}
                 href={l.href}
                 aria-current={isActive(l.href) ? "page" : undefined}
-                className={`whitespace-nowrap rounded-full px-3.5 py-2 text-sm font-medium transition xl:px-4 ${
+                className={`whitespace-nowrap rounded-full px-3.5 py-2 text-sm font-medium transition-colors xl:px-4 ${
                   isActive(l.href) ? "bg-white/10 text-white" : "text-zinc-300 hover:bg-white/5 hover:text-white"
                 }`}
               >
-                {l.label}
+                {t(l.key)}
               </Link>
             ))}
             <div ref={moreRef} className="relative">
@@ -155,11 +189,11 @@ export default function Navbar() {
                 onClick={() => setMoreOpen((o) => !o)}
                 aria-haspopup="menu"
                 aria-expanded={moreOpen}
-                className={`flex items-center gap-1 whitespace-nowrap rounded-full px-3.5 py-2 text-sm font-medium transition ${
+                className={`flex items-center gap-1 whitespace-nowrap rounded-full px-3.5 py-2 text-sm font-medium transition-colors ${
                   moreActive || moreOpen ? "bg-white/10 text-white" : "text-zinc-300 hover:bg-white/5 hover:text-white"
                 }`}
               >
-                بیشتر <ChevronDown width={14} height={14} className={`transition ${moreOpen ? "rotate-180" : ""}`} />
+                {t("nav.more")} <ChevronDown width={14} height={14} className={`transition-transform ${moreOpen ? "rotate-180" : ""}`} />
               </button>
               {moreOpen && (
                 <div role="menu" className="glass-strong glass-in absolute start-0 top-12 w-60 overflow-hidden rounded-2xl p-1.5">
@@ -168,12 +202,14 @@ export default function Navbar() {
                       key={m.href}
                       role="menuitem"
                       href={m.href}
-                      className={`flex items-center gap-3 rounded-xl px-3 py-2.5 transition ${pathname?.startsWith(m.href) ? "bg-white/10" : "hover:bg-white/5"}`}
+                      className={`flex items-center gap-3 rounded-xl px-3 py-2.5 transition-colors ${pathname?.startsWith(m.href) ? "bg-white/10" : "hover:bg-white/5"}`}
                     >
-                      <span className="grid h-8 w-8 place-items-center rounded-lg bg-white/5 text-zinc-300"><m.icon width={16} height={16} /></span>
+                      <span className="grid h-8 w-8 place-items-center rounded-lg bg-white/5 text-zinc-300">
+                        <m.icon width={16} height={16} />
+                      </span>
                       <span className="min-w-0">
-                        <span className="block text-sm font-bold text-white">{m.label}</span>
-                        <span className="block text-[11px] text-zinc-500">{m.hint}</span>
+                        <span className="block text-sm font-bold text-white">{t(m.key)}</span>
+                        {m.hint && <span className="block text-[11px] text-zinc-500">{t(m.hint)}</span>}
                       </span>
                     </Link>
                   ))}
@@ -183,6 +219,7 @@ export default function Navbar() {
           </nav>
 
           <div className="app-no-drag ms-auto flex items-center gap-1.5 sm:gap-2">
+            <LanguageToggle className="hidden sm:flex" />
             <ThemeToggle className="hidden sm:grid" />
             <div ref={boxRef} className="relative">
               <form
@@ -191,7 +228,7 @@ export default function Navbar() {
                   e.preventDefault();
                   submit();
                 }}
-                className={`flex h-10 items-center gap-2 rounded-full border transition-all duration-300 ${
+                className={`flex h-10 items-center gap-2 rounded-full border transition-[width,background-color,border-color] duration-300 ${
                   open
                     ? "w-[calc(100vw-140px)] max-w-[360px] border-white/20 bg-black/70 px-3 sm:w-[360px]"
                     : "w-10 justify-center border-transparent bg-transparent px-0 sm:w-[220px] sm:justify-start sm:border-white/10 sm:bg-white/5 sm:px-3"
@@ -199,7 +236,7 @@ export default function Navbar() {
               >
                 <button
                   type="button"
-                  aria-label="جستجو"
+                  aria-label={t("nav.search")}
                   onClick={() => {
                     if (open && q.trim()) submit();
                     else {
@@ -207,9 +244,9 @@ export default function Navbar() {
                       requestAnimationFrame(() => inputRef.current?.focus());
                     }
                   }}
-                  className="grid h-10 w-10 shrink-0 place-items-center text-zinc-300 hover:text-white sm:h-auto sm:w-auto"
+                  className="shrink-0 text-zinc-400 hover:text-white"
                 >
-                  <SearchIcon />
+                  <SearchIcon width={18} height={18} />
                 </button>
                 <input
                   ref={inputRef}
@@ -220,7 +257,6 @@ export default function Navbar() {
                   }}
                   onFocus={() => setOpen(true)}
                   onKeyDown={(e) => {
-                    if (!results.length) return;
                     if (e.key === "ArrowDown") {
                       e.preventDefault();
                       setActive((a) => Math.min(results.length - 1, a + 1));
@@ -232,15 +268,15 @@ export default function Navbar() {
                       router.push(`/title/${results[active].slug}`);
                     }
                   }}
-                  placeholder="جستجوی فیلم، سریال، بازیگر..."
-                  aria-label="جستجو"
+                  placeholder={t("nav.searchPlaceholder")}
+                  aria-label={t("nav.search")}
                   autoComplete="off"
                   className={`min-w-0 flex-1 bg-transparent text-sm text-white placeholder:text-zinc-500 focus:outline-none ${open ? "block" : "hidden sm:block"}`}
                 />
                 {q ? (
                   <button
                     type="button"
-                    aria-label="پاک کردن"
+                    aria-label={t("nav.clear")}
                     onClick={() => {
                       setQ("");
                       inputRef.current?.focus();
@@ -260,10 +296,10 @@ export default function Navbar() {
                 <div className="glass-strong glass-in absolute end-0 top-12 w-[min(420px,calc(100vw-24px))] overflow-hidden rounded-2xl">
                   {loading && results.length === 0 ? (
                     <div className="flex items-center gap-2 p-4 text-sm text-zinc-400">
-                      <span className="h-3 w-3 animate-spin rounded-full border-2 border-zinc-500 border-t-transparent" /> در حال جستجو...
+                      <span className="h-3 w-3 animate-spin rounded-full border-2 border-zinc-500 border-t-transparent" /> {t("common.searching")}
                     </div>
                   ) : results.length === 0 ? (
-                    <div className="p-4 text-sm text-zinc-400">نتیجه‌ای برای «{q.trim()}» پیدا نشد.</div>
+                    <div className="p-4 text-sm text-zinc-400">{t("nav.noResultsFor", { q: q.trim() })}</div>
                   ) : (
                     <ul className="max-h-[min(420px,60vh)] overflow-y-auto py-2" role="listbox">
                       {results.map((r, i) => (
@@ -271,17 +307,14 @@ export default function Navbar() {
                           <Link
                             href={`/title/${r.slug}`}
                             onMouseEnter={() => setActive(i)}
-                            className={`flex items-center gap-3 px-3 py-2 transition ${i === active ? "bg-white/10" : "hover:bg-white/5"}`}
+                            className={`flex items-center gap-3 px-3 py-2 transition-colors ${i === active ? "bg-white/10" : "hover:bg-white/5"}`}
                           >
                             {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img src={r.poster} alt="" className="h-16 w-11 shrink-0 rounded-md bg-ink-700 object-cover" />
                             <div className="min-w-0 flex-1">
-                              <p className="truncate text-sm font-semibold text-white">{r.title}</p>
-                              <p className="truncate text-xs text-zinc-400" dir="ltr">
-                                {r.titleEn}
-                              </p>
+                              <TitleName t={r} primaryClass="text-sm font-semibold text-white" secondaryClass="text-xs text-zinc-400" />
                               <p className="mt-0.5 text-[11px] text-zinc-500">
-                                {r.type === "series" ? "سریال" : "فیلم"} · {fa(r.year)} · ★ {fa(r.rating)}
+                                {typeLabel(r.type)} · {fa(r.year)} · ★ {fa(r.rating)}
                               </p>
                             </div>
                           </Link>
@@ -289,7 +322,7 @@ export default function Navbar() {
                       ))}
                       <li className="border-t border-white/5 px-3 pt-2">
                         <Link href={`/search?q=${encodeURIComponent(q.trim())}`} className="block py-2 text-center text-xs text-brand hover:underline">
-                          مشاهده همه نتایج
+                          {t("nav.allResults")}
                         </Link>
                       </li>
                     </ul>
@@ -306,7 +339,7 @@ export default function Navbar() {
       {/* mobile bottom nav – rendered outside the header so the header's
           backdrop-filter never becomes its containing block */}
       <nav
-        aria-label="ناوبری موبایل"
+        aria-label={t("nav.mobileNav")}
         className="glass-strong fixed inset-x-3 bottom-3 z-50 flex items-center justify-around rounded-2xl py-2 lg:hidden"
         style={{ paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))" }}
       >
@@ -321,10 +354,10 @@ export default function Navbar() {
               key={l.href}
               href={l.href}
               aria-current={on ? "page" : undefined}
-              className={`flex flex-col items-center gap-1 px-3 py-1 text-[11px] transition ${on ? "text-brand" : "text-zinc-400 hover:text-white"}`}
+              className={`flex flex-col items-center gap-1 px-3 py-1 text-[11px] transition-colors ${on ? "text-brand" : "text-zinc-400 hover:text-white"}`}
             >
               <Icon width={20} height={20} />
-              {l.label}
+              {t(l.key)}
             </Link>
           );
         })}

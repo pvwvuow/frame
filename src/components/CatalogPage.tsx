@@ -6,6 +6,7 @@ import { PlayIcon, StarIcon, InfoIcon, FilmIcon, TvIcon, EyeIcon } from "@/compo
 import { GENRES, getByType, getProgressMap, getCatalogStats, getYears } from "@/lib/queries";
 import { getUserKey } from "@/lib/user";
 import { fa, formatDuration, formatViews } from "@/lib/format";
+import TitleName from "@/components/TitleName";
 
 export type CatalogSearchParams = { genre?: string; sort?: string; year?: string; rating?: string };
 
@@ -84,7 +85,7 @@ export default async function CatalogPage({
               <img src={spotlight.poster} alt={spotlight.title} className="h-32 w-[86px] shrink-0 rounded-xl object-cover shadow-lg" />
               <div className="min-w-0 flex-1">
                 <p className="text-[11px] font-bold text-brand">{genre ? `برترین ${genre}` : "پیشنهاد امروز"}</p>
-                <p className="mt-1 truncate text-lg font-black text-white">{spotlight.title}</p>
+                <TitleName t={spotlight} layout="inline" primaryClass="text-lg font-black text-white" secondaryClass="text-xs text-zinc-400" className="mt-1" />
                 <p className="mt-0.5 flex items-center gap-2 text-xs text-zinc-400">
                   <span className="flex items-center gap-1 text-amber-400">
                     <StarIcon width={12} height={12} /> {fa(spotlight.rating)}
