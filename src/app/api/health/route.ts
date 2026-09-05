@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { ensureSeeded } from "@/db/seed";
-import { refreshCatalogOnce } from "@/lib/catalog-refresh";
+import { refreshCatalogOnce, syncCatalogOnce } from "@/lib/catalog-refresh";
 
 export const dynamic = "force-dynamic";
 
@@ -12,19 +12,23 @@ export const dynamic = "force-dynamic";
  * Touching ensureSeeded() here also triggers the schema self-heal (seed.ts)
  * before the first real page render.
  *
- * When the shell detects that the bundled seed database differs from the
- * installed one (app update carrying new content) it spawns this server with
- * NAMA_CATALOG_SEED=<seed.db path>. The first probe then merges the bundled
- * catalog into the user database before the window is allowed to open.
+ * Catalog update paths (checked before the window is allowed to open):
+ *   - NAMA_CATALOG_URL  → hosted nama-catalog JSON (future server scenario);
+ *     only re-merges when the hosted payload's hash changed (SyncState)
+ *   - NAMA_CATALOG_SEED → bundled seed.db that differs from the installed
+ *     one (app update carrying new content, detected by the shell)
  */
 export async function GET() {
   let dbOk = true;
   let dbError: string | undefined;
-  let catalog: Awaited<ReturnType<typeof refreshCatalogOnce>> | undefined;
+  let catalog: Awaited<ReturnType<typeof syncCatalogOnce>> | undefined;
   try {
     await ensureSeeded();
+    const catalogUrl = process.env.NAMA_CATALOG_URL?.trim();
     const seedPath = process.env.NAMA_CATALOG_SEED?.trim();
-    if (seedPath) {
+    if (catalogUrl) {
+      catalog = await syncCatalogOnce(catalogUrl);
+    } else if (seedPath) {
       catalog = await refreshCatalogOnce(seedPath);
     }
     await db.$queryRawUnsafe("SELECT 1");

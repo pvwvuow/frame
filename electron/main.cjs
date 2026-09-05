@@ -214,6 +214,26 @@ async function startServer() {
   }
   if (needsCatalogRefresh) log.info("bundled catalog differs from installed – refresh scheduled");
 
+  /* Optional hosted-catalog sync (future server scenario): drop a plain-text
+     catalog-url.txt next to seed.db (resources/app) containing the URL of a
+     hosted nama-catalog JSON. When present it wins over the bundled seed and
+     the server only re-merges when the hosted payload's hash changes. */
+  let catalogUrl = "";
+  try {
+    const urlFile = path.join(path.dirname(seed), "catalog-url.txt");
+    if (fs.existsSync(urlFile)) {
+      const v = fs.readFileSync(urlFile, "utf8").trim();
+      if (/^https?:\/\//i.test(v)) {
+        catalogUrl = v;
+        log.info("hosted catalog configured:", catalogUrl);
+      } else if (v) {
+        log.warn("ignoring catalog-url.txt – not an http(s) URL");
+      }
+    }
+  } catch (e) {
+    log.warn("catalog-url.txt read failed:", e);
+  }
+
   const env = {
     ...process.env,
     ELECTRON_RUN_AS_NODE: "1",
@@ -224,6 +244,7 @@ async function startServer() {
     NEXT_TELEMETRY_DISABLED: "1",
     NAMA_ELECTRON: "1",
     NAMA_CATALOG_SEED: needsCatalogRefresh ? seed : "",
+    NAMA_CATALOG_URL: catalogUrl,
   };
   serverProc = spawn(process.execPath, [entry], { cwd: dir, env, stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
   serverProc.stdout.on("data", (d) => log.info("[next]", String(d).trim()));
