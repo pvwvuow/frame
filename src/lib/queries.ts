@@ -71,7 +71,7 @@ export async function getTopRated(limit = 12) {
 
 export async function getByType(
   type: "movie" | "series",
-  opts: { genre?: string; sort?: string } = {}
+  opts: { genre?: string; sort?: string; year?: number; minRating?: number } = {}
 ) {
   await ensureSeeded();
   const orderBy =
@@ -86,6 +86,8 @@ export async function getByType(
     where: {
       type,
       ...(opts.genre ? { genres: { contains: hasGenre(opts.genre) } } : {}),
+      ...(opts.year ? { year: opts.year } : {}),
+      ...(opts.minRating ? { rating: { gte: opts.minRating } } : {}),
     },
     orderBy,
   });
@@ -230,4 +232,61 @@ export async function incrementViews(titleId: number) {
     where: { id: titleId },
     data: { views: { increment: 1 } },
   });
+}
+
+export async function getByDirector(director: string, excludeId: number, limit = 8) {
+  if (!director) return [];
+  const rows = await db.title.findMany({
+    where: { director, id: { not: excludeId } },
+    orderBy: { rating: "desc" },
+    take: limit,
+  });
+  return rows.map(pv);
+}
+
+export type GenreSummary = {
+  genre: string;
+  count: number;
+  movies: number;
+  series: number;
+  covers: string[];
+  avgRating: number;
+};
+
+export async function getGenreSummaries(): Promise<GenreSummary[]> {
+  await ensureSeeded();
+  const rows = await db.title.findMany({ orderBy: { trendingScore: "desc" } });
+  const all = rows.map(pv);
+  return GENRES.map((genre) => {
+    const items = all.filter((t) => t.genres.includes(genre));
+    const avg = items.length ? items.reduce((a, t) => a + t.rating, 0) / items.length : 0;
+    return {
+      genre,
+      count: items.length,
+      movies: items.filter((t) => t.type === "movie").length,
+      series: items.filter((t) => t.type === "series").length,
+      covers: items.slice(0, 4).map((t) => t.poster),
+      avgRating: Math.round(avg * 10) / 10,
+    };
+  }).filter((g) => g.count > 0);
+}
+
+export async function getCatalogStats(type: "movie" | "series") {
+  await ensureSeeded();
+  const [count, agg, top] = await Promise.all([
+    db.title.count({ where: { type } }),
+    db.title.aggregate({ where: { type }, _avg: { rating: true }, _sum: { views: true } }),
+    db.title.findFirst({ where: { type }, orderBy: { trendingScore: "desc" } }),
+  ]);
+  return {
+    count,
+    avgRating: Math.round((agg._avg.rating ?? 0) * 10) / 10,
+    totalViews: agg._sum.views ?? 0,
+    top: top ? pv(top) : null,
+  };
+}
+
+export async function getYears(type: "movie" | "series") {
+  const rows = await db.title.findMany({ where: { type }, select: { year: true }, distinct: ["year"], orderBy: { year: "desc" } });
+  return rows.map((r) => r.year);
 }

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { SearchIcon, CloseIcon, FilmIcon, TvIcon, BookmarkIcon, HomeIcon } from "./Icons";
+import { SearchIcon, CloseIcon, FilmIcon, TvIcon, BookmarkIcon, HomeIcon, SparkIcon } from "./Icons";
 import { fa } from "@/lib/format";
 
 type Result = {
@@ -21,6 +21,7 @@ const links = [
   { href: "/", label: "خانه", icon: HomeIcon },
   { href: "/movies", label: "فیلم‌ها", icon: FilmIcon },
   { href: "/series", label: "سریال‌ها", icon: TvIcon },
+  { href: "/genres", label: "ژانرها", icon: SparkIcon },
   { href: "/my-list", label: "لیست من", icon: BookmarkIcon },
 ];
 

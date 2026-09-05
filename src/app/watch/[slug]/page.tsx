@@ -28,7 +28,7 @@ export default async function WatchPage({ params, searchParams }: Props) {
   ]);
   await incrementViews(t.id);
 
-  let episode = null;
+  let episode: (typeof eps)[number] | null = null;
   if (t.type === "series" && eps.length) {
     const wanted = ep ? Number(ep) : progress?.episodeId ?? null;
     episode = eps.find((e) => e.id === wanted) ?? eps[0];

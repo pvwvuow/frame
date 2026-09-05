@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
+import QuickViewProvider from "@/components/quickview/QuickViewProvider";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -13,9 +14,11 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="fa" dir="rtl" data-scroll-behavior="smooth">
       <body className="min-h-screen bg-ink text-zinc-100 antialiased">
-        <Navbar />
-        <div className="min-h-screen">{children}</div>
-        <Footer />
+        <QuickViewProvider>
+          <Navbar />
+          <div className="min-h-screen">{children}</div>
+          <Footer />
+        </QuickViewProvider>
       </body>
     </html>
   );
