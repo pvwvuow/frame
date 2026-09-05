@@ -4,6 +4,9 @@ import type { Metadata } from "next";
 import Row from "@/components/Row";
 import TitleCard from "@/components/TitleCard";
 import WatchlistButton from "@/components/WatchlistButton";
+import FavoriteButton from "@/components/FavoriteButton";
+import RatingControl from "@/components/RatingControl";
+import StatusSelect from "@/components/StatusSelect";
 import ReviewForm from "@/components/ReviewForm";
 import DetailTabs from "@/components/title/DetailTabs";
 import EpisodeList from "@/components/title/EpisodeList";
@@ -209,8 +212,14 @@ export default async function TitlePage({ params }: Props) {
                 {hasProgress && progress ? `ادامه از ${formatClock(progress.position)}` : t.type === "series" ? "پخش قسمت اول" : "پخش فیلم"}
               </Link>
               <TrailerButton src={t.trailerUrl ?? t.videoUrl} poster={t.backdrop} title={t.title} />
-              <WatchlistButton titleId={t.id} initial={inList} variant="icon" />
+              <WatchlistButton titleId={t.id} name={t.title} initial={inList} variant="icon" />
+              <FavoriteButton titleId={t.id} name={t.title} variant="icon" />
               <ShareButton title={t.title} />
+            </div>
+
+            <div className="mt-5 flex flex-wrap items-center gap-x-8 gap-y-3">
+              <RatingControl titleId={t.id} />
+              <StatusSelect titleId={t.id} size="sm" />
             </div>
 
             {hasProgress && (

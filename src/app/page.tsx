@@ -15,6 +15,7 @@ import {
   getProgressMap,
 } from "@/lib/queries";
 import { getUserKey } from "@/lib/user";
+import { getFavoriteRows, getMyListRows } from "@/lib/library";
 import { fa, formatClock } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
@@ -32,6 +33,8 @@ export default async function HomePage() {
     getWatchlistIds(userKey),
     getContinueWatching(userKey),
   ]);
+  const [favRows, listRows] = await Promise.all([getFavoriteRows(userKey), getMyListRows(userKey)]);
+  const myQueue = listRows.filter((r) => r.status !== "watched").slice(0, 12);
   const progressMap = await getProgressMap(
     userKey,
     Array.from(new Set([...trending, ...newest, ...topRated, ...series].map((t) => t.id)))
@@ -87,6 +90,22 @@ export default async function HomePage() {
             </div>
           ))}
         </Row>
+
+        {myQueue.length > 0 && (
+          <Row title="از لیست شما" subtitle="نوبت این‌هاست" href="/my-list">
+            {myQueue.map((r) => (
+              <TitleCard key={r.title.id} t={r.title} progress={r.progress} />
+            ))}
+          </Row>
+        )}
+
+        {favRows.length > 0 && (
+          <Row title="علاقه‌مندی‌های شما ❤" subtitle="چیزهایی که عاشقشان هستید" href="/favorites">
+            {favRows.slice(0, 12).map((r) => (
+              <TitleCard key={r.title.id} t={r.title} />
+            ))}
+          </Row>
+        )}
 
         <Row title="تازه‌های نما" subtitle="جدیدترین اضافه‌شده‌ها" href="/movies?sort=newest">
           {newest.map((t) => (

@@ -28,3 +28,12 @@ export async function POST(req: Request) {
 
   return Response.json({ ok: true });
 }
+
+/** Remove one entry from history or clear everything. Body: { titleId?: number } */
+export async function DELETE(req: Request) {
+  const userKey = await getUserKey();
+  const body = (await req.json().catch(() => null)) as { titleId?: number; titleIds?: number[] } | null;
+  const ids = body?.titleIds?.map(Number).filter(Boolean) ?? (body?.titleId ? [Number(body.titleId)] : []);
+  const r = await db.watchProgress.deleteMany({ where: { userKey, ...(ids.length ? { titleId: { in: ids } } : {}) } });
+  return Response.json({ ok: true, removed: r.count });
+}

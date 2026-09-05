@@ -34,7 +34,9 @@ model Title {
   episodes      Episode[]
   reviews       Review[]
   watchlist     Watchlist[]
+  favorites     Favorite[]
   progress      WatchProgress[]
+  ratings       UserRating[]
 
   @@index([type])
   @@index([trendingScore])
@@ -56,12 +58,43 @@ model Episode {
   @@index([titleId])
 }
 
+/// "لیست من" – هر عنوان یک وضعیت، یادداشت و اولویت دارد
 model Watchlist {
   id        Int      @id @default(autoincrement())
   userKey   String
   titleId   Int
   title     Title    @relation(fields: [titleId], references: [id], onDelete: Cascade)
+  status    String   @default("planned") // planned | watching | watched
+  note      String   @default("")
+  pinned    Boolean  @default(false)
   createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  @@unique([userKey, titleId])
+  @@index([userKey, status])
+}
+
+/// علاقه‌مندی‌ها (قلب) – مستقل از لیست تماشا
+model Favorite {
+  id        Int      @id @default(autoincrement())
+  userKey   String
+  titleId   Int
+  title     Title    @relation(fields: [titleId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([userKey, titleId])
+  @@index([userKey])
+}
+
+/// امتیاز شخصی کاربر به هر عنوان (۱ تا ۱۰)
+model UserRating {
+  id        Int      @id @default(autoincrement())
+  userKey   String
+  titleId   Int
+  title     Title    @relation(fields: [titleId], references: [id], onDelete: Cascade)
+  score     Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
 
   @@unique([userKey, titleId])
 }
@@ -78,6 +111,7 @@ model WatchProgress {
   updatedAt DateTime @updatedAt
 
   @@unique([userKey, titleId])
+  @@index([userKey, updatedAt])
 }
 
 model Review {
@@ -90,4 +124,20 @@ model Review {
   createdAt DateTime @default(now())
 
   @@index([titleId])
+}
+
+/// پروفایل و تنظیمات کاربر
+model UserProfile {
+  id            Int      @id @default(autoincrement())
+  userKey       String   @unique
+  displayName   String   @default("کاربر نما")
+  avatar        Int      @default(0)
+  autoplay      Boolean  @default(true)
+  autoNext      Boolean  @default(true)
+  quality       String   @default("auto") // auto | 4k | 1080p | 720p | 480p
+  subtitle      String   @default("fa") // fa | en | off
+  matureContent Boolean  @default(true)
+  reduceMotion  Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @default(now()) @updatedAt
 }

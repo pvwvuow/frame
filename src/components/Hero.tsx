@@ -6,6 +6,7 @@ import type { TitleView } from "@/lib/queries";
 import { fa, formatDuration, typeLabel } from "@/lib/format";
 import { InfoIcon, PlayIcon, StarIcon } from "./Icons";
 import WatchlistButton from "./WatchlistButton";
+import FavoriteButton from "./FavoriteButton";
 
 export default function Hero({ items, watchlistIds }: { items: TitleView[]; watchlistIds: number[] }) {
   const [idx, setIdx] = useState(0);
@@ -92,7 +93,8 @@ export default function Hero({ items, watchlistIds }: { items: TitleView[]; watc
               <InfoIcon />
               جزئیات بیشتر
             </Link>
-            <WatchlistButton titleId={cur.id} initial={watchlistIds.includes(cur.id)} variant="icon" />
+            <WatchlistButton titleId={cur.id} name={cur.title} initial={watchlistIds.includes(cur.id)} variant="icon" />
+            <FavoriteButton titleId={cur.id} name={cur.title} variant="icon" />
           </div>
         </div>
 

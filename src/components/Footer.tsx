@@ -11,7 +11,7 @@ export default function Footer() {
   return (
     <footer className="mt-20 border-t border-white/5 bg-ink-800 pb-24 md:pb-10">
       <div className="mx-auto max-w-[1600px] px-4 py-12 sm:px-8 lg:px-12">
-        <div className="grid gap-10 md:grid-cols-4">
+        <div className="grid gap-10 sm:grid-cols-2 md:grid-cols-5">
           <div className="md:col-span-2">
             <p className="text-2xl font-black">
               نما<span className="text-brand">.</span>
@@ -30,12 +30,22 @@ export default function Footer() {
             </ul>
           </div>
           <div>
+            <p className="mb-3 text-sm font-bold text-white">پشتیبانی</p>
+            <ul className="space-y-2 text-sm text-zinc-400">
+              <li><Link className="hover:text-white" href="/about">درباره نما</Link></li>
+              <li><Link className="hover:text-white" href="/faq">سوالات متداول</Link></li>
+              <li><Link className="hover:text-white" href="/contact">تماس با ما</Link></li>
+              <li><Link className="hover:text-white" href="/terms">قوانین استفاده</Link></li>
+              <li><Link className="hover:text-white" href="/privacy">حریم خصوصی</Link></li>
+            </ul>
+          </div>
+          <div>
             <p className="mb-3 text-sm font-bold text-white">نما</p>
             <ul className="space-y-2 text-sm text-zinc-400">
-              <li><Link className="hover:text-white" href="/my-list">لیست تماشا</Link></li>
-              <li><span className="hover:text-white">درباره ما</span></li>
-              <li><span className="hover:text-white">قوانین و حریم خصوصی</span></li>
-              <li><span className="hover:text-white">تماس با ما</span></li>
+              <li><Link className="hover:text-white" href="/my-list">لیست من</Link></li>
+              <li><Link className="hover:text-white" href="/favorites">علاقه‌مندی‌ها</Link></li>
+              <li><Link className="hover:text-white" href="/history">تاریخچه تماشا</Link></li>
+              <li><Link className="hover:text-white" href="/profile">پروفایل و تنظیمات</Link></li>
             </ul>
           </div>
         </div>

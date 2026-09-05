@@ -414,9 +414,23 @@ const sampleReviews: Record<string, { author: string; rating: number; body: stri
 };
 
 let seeded = false;
+/** In-flight seeding promise – concurrent first requests share one seed run instead of racing. */
+let seeding: Promise<void> | null = null;
 
 export async function ensureSeeded() {
   if (seeded) return;
+  if (seeding) return seeding;
+  seeding = seedOnce()
+    .catch((e) => {
+      console.error("[seed] failed:", e);
+    })
+    .finally(() => {
+      seeding = null;
+    });
+  return seeding;
+}
+
+async function seedOnce() {
   const count = await db.title.count();
   if (count > 0) {
     seeded = true;
@@ -424,6 +438,9 @@ export async function ensureSeeded() {
   }
 
   for (const t of seedTitles) {
+    // idempotent: skip titles that already exist (e.g. partial previous seed)
+    const exists = await db.title.findUnique({ where: { slug: t.slug }, select: { id: true } });
+    if (exists) continue;
     const inserted = await db.title.create({
       data: {
         slug: t.slug,

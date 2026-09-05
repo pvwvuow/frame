@@ -15,6 +15,8 @@ import {
   VolumeIcon,
   ChevronLeft,
 } from "./Icons";
+import FavoriteButton from "./FavoriteButton";
+import WatchlistButton from "./WatchlistButton";
 
 export type PlayerEpisode = { id: number; season: number; number: number; name: string; videoUrl: string; thumbnail: string };
 
@@ -319,6 +321,10 @@ export default function Player({
           {subtitle && <p className="truncate text-xs text-zinc-300">{subtitle}</p>}
         </div>
         <div className="ms-auto flex items-center gap-2">
+          <span className="hidden items-center gap-1.5 sm:flex" data-ctrl>
+            <FavoriteButton titleId={titleId} name={title} variant="mini" className="!h-10 !w-10 !bg-white/10 !ring-0 hover:!bg-rose-600" />
+            <WatchlistButton titleId={titleId} name={title} variant="mini" className="!h-10 !w-10 !bg-white/10 !ring-0" />
+          </span>
           {episodes.length > 0 && (
             <button
               type="button"

@@ -6,6 +6,9 @@ import { AnimatePresence, motion } from "framer-motion";
 import type { TitleView } from "@/lib/queries";
 import { fa, formatClock, formatDuration, formatViews, typeLabel } from "@/lib/format";
 import WatchlistButton from "../WatchlistButton";
+import FavoriteButton from "../FavoriteButton";
+import RatingControl from "../RatingControl";
+import StatusSelect from "../StatusSelect";
 import {
   CloseIcon,
   PlayIcon,
@@ -192,11 +195,19 @@ export default function TitleModal({
                     <PlayIcon width={20} height={20} className="ms-0.5" />
                     {hasProgress && progress ? `ادامه از ${formatClock(progress.position)}` : t.type === "series" ? "پخش قسمت اول" : "پخش"}
                   </Link>
-                  {detail ? (
-                    <WatchlistButton key={`${t.id}-${detail.inList}`} titleId={t.id} initial={detail.inList} variant="icon" />
-                  ) : (
-                    <span className="h-12 w-12 animate-pulse rounded-full bg-white/10" />
-                  )}
+                  <WatchlistButton titleId={t.id} name={t.title} initial={detail?.inList ?? false} variant="icon" />
+                  <FavoriteButton titleId={t.id} name={t.title} variant="icon" />
+                  <Link
+                    href={`/title/${t.slug}`}
+                    className="flex h-12 items-center gap-2 rounded-full border border-white/20 bg-white/10 px-5 text-sm font-bold text-white backdrop-blur transition hover:bg-white/20"
+                  >
+                    صفحه کامل
+                  </Link>
+                </div>
+
+                <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-3">
+                  <RatingControl titleId={t.id} compact />
+                  <StatusSelect titleId={t.id} size="sm" />
                 </div>
 
                 {hasProgress && (

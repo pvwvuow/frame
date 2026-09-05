@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { SearchIcon, CloseIcon, FilmIcon, TvIcon, BookmarkIcon, HomeIcon, SparkIcon } from "./Icons";
+import { SearchIcon, CloseIcon, FilmIcon, TvIcon, BookmarkIcon, HomeIcon, SparkIcon, UserIcon } from "./Icons";
+import UserMenu from "./UserMenu";
 import { fa } from "@/lib/format";
 
 type Result = {
@@ -24,6 +25,7 @@ const links = [
   { href: "/genres", label: "ژانرها", icon: SparkIcon },
   { href: "/my-list", label: "لیست من", icon: BookmarkIcon },
 ];
+const mobileLinks = [...links.slice(0, 4), { href: "/profile", label: "پروفایل", icon: UserIcon }];
 
 export default function Navbar() {
   const pathname = usePathname();
@@ -185,17 +187,15 @@ export default function Navbar() {
             )}
           </div>
 
-          <div className="hidden h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-brand to-purple-600 text-sm font-bold text-white sm:flex">
-            ن
-          </div>
+          <UserMenu />
         </div>
       </div>
 
       {/* mobile bottom nav */}
       <nav className="glass fixed inset-x-3 bottom-3 z-50 flex items-center justify-around rounded-2xl py-2 md:hidden">
-        {links.map((l) => {
+        {mobileLinks.map((l) => {
           const Icon = l.icon;
-          const active = isActive(l.href);
+          const active = l.href === "/profile" ? ["/profile", "/my-list", "/favorites", "/history", "/settings"].some((p) => pathname?.startsWith(p)) : isActive(l.href);
           return (
             <Link
               key={l.href}

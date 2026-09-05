@@ -31,7 +31,8 @@ yarn-error.log*
 .pnpm-debug.log*
 
 # env files (can opt-in for committing if needed)
-.env*
+.env.local
+.env.*.local
 
 # vercel
 .vercel
@@ -64,3 +65,8 @@ server.log
 /worklog.md
 /log_*.txt
 package-lock.json
+
+# sqlite journals
+db/*.db-journal
+db/*.db-wal
+db/*.db-shm
