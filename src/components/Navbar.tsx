@@ -3,8 +3,9 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { SearchIcon, CloseIcon, FilmIcon, TvIcon, BookmarkIcon, HomeIcon, SparkIcon, UserIcon } from "./Icons";
+import { SearchIcon, CloseIcon, FilmIcon, TvIcon, BookmarkIcon, HomeIcon, SparkIcon, UserIcon, LayersIcon } from "./Icons";
 import UserMenu from "./UserMenu";
+import ThemeToggle from "./theme/ThemeToggle";
 import { fa } from "@/lib/format";
 
 type Result = {
@@ -23,9 +24,10 @@ const links = [
   { href: "/movies", label: "فیلم‌ها", icon: FilmIcon },
   { href: "/series", label: "سریال‌ها", icon: TvIcon },
   { href: "/genres", label: "ژانرها", icon: SparkIcon },
+  { href: "/collections", label: "مجموعه‌ها", icon: LayersIcon },
   { href: "/my-list", label: "لیست من", icon: BookmarkIcon },
 ];
-const mobileLinks = [...links.slice(0, 4), { href: "/profile", label: "پروفایل", icon: UserIcon }];
+const mobileLinks = [links[0], links[1], links[2], links[3], { href: "/profile", label: "پروفایل", icon: UserIcon }];
 
 export default function Navbar() {
   const pathname = usePathname();
@@ -84,7 +86,7 @@ export default function Navbar() {
   return (
     <header
       className={`fixed inset-x-0 top-0 z-50 transition-all duration-300 ${
-        scrolled ? "bg-ink/85 shadow-[0_8px_40px_rgba(0,0,0,0.45)] backdrop-blur-xl" : "bg-gradient-to-b from-black/80 to-transparent"
+        scrolled ? "glass-strong rounded-none border-x-0 border-t-0" : "bg-gradient-to-b from-ink/80 to-transparent"
       }`}
     >
       <div className="mx-auto flex h-16 max-w-[1600px] items-center gap-4 px-4 sm:h-[72px] sm:px-8 lg:px-12">
@@ -115,6 +117,7 @@ export default function Navbar() {
         </nav>
 
         <div className="ms-auto flex items-center gap-2">
+          <ThemeToggle className="hidden sm:grid" />
           <div ref={boxRef} className="relative">
             <form
               onSubmit={(e) => {
@@ -141,15 +144,19 @@ export default function Navbar() {
                 placeholder="جستجوی فیلم، سریال، بازیگر..."
                 className={`w-full bg-transparent text-sm text-white placeholder:text-zinc-500 focus:outline-none ${open ? "block" : "hidden sm:block"}`}
               />
-              {q && (
+              {q ? (
                 <button type="button" onClick={() => setQ("")} className="text-zinc-400 hover:text-white">
                   <CloseIcon width={16} height={16} />
                 </button>
+              ) : (
+                <kbd className="hidden shrink-0 rounded-md border border-white/15 bg-white/5 px-1.5 py-0.5 text-[10px] text-zinc-500 sm:block" dir="ltr">
+                  Ctrl K
+                </kbd>
               )}
             </form>
 
             {open && q.trim() && (
-              <div className="glass absolute end-0 top-12 w-[320px] overflow-hidden rounded-2xl shadow-2xl sm:w-[420px]">
+              <div className="glass-strong glass-in absolute end-0 top-12 w-[320px] overflow-hidden rounded-2xl sm:w-[420px]">
                 {loading && results.length === 0 ? (
                   <div className="p-4 text-sm text-zinc-400">در حال جستجو...</div>
                 ) : results.length === 0 ? (
@@ -192,7 +199,7 @@ export default function Navbar() {
       </div>
 
       {/* mobile bottom nav */}
-      <nav className="glass fixed inset-x-3 bottom-3 z-50 flex items-center justify-around rounded-2xl py-2 md:hidden">
+      <nav className="glass-strong fixed inset-x-3 bottom-3 z-50 flex items-center justify-around rounded-2xl py-2 md:hidden">
         {mobileLinks.map((l) => {
           const Icon = l.icon;
           const active = l.href === "/profile" ? ["/profile", "/my-list", "/favorites", "/history", "/settings"].some((p) => pathname?.startsWith(p)) : isActive(l.href);

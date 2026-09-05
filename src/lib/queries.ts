@@ -290,3 +290,107 @@ export async function getYears(type: "movie" | "series") {
   const rows = await db.title.findMany({ where: { type }, select: { year: true }, distinct: ["year"], orderBy: { year: "desc" } });
   return rows.map((r) => r.year);
 }
+
+/* ------------------------------------------------------------------ */
+/*  Collections – editorial, rule-based shelves                        */
+/* ------------------------------------------------------------------ */
+export type Collection = {
+  slug: string;
+  title: string;
+  tagline: string;
+  hue: number;
+  rule: (t: TitleView) => boolean;
+  sort?: (a: TitleView, b: TitleView) => number;
+};
+
+export const COLLECTIONS: Collection[] = [
+  { slug: "top-rated", title: "شاهکارها", tagline: "بالاترین امتیازهای نما", hue: 45, rule: (t) => t.rating >= 8, sort: (a, b) => b.rating - a.rating },
+  { slug: "binge", title: "یک‌نفس تا صبح", tagline: "سریال‌هایی که نمی‌شود رها کرد", hue: 265, rule: (t) => t.type === "series", sort: (a, b) => b.trendingScore - a.trendingScore },
+  { slug: "noir-nights", title: "شب‌های نوآر", tagline: "سایه، باران و رازهای شهر", hue: 210, rule: (t) => t.genres.some((g) => ["نوآر", "جنایی", "معمایی"].includes(g)) },
+  { slug: "future", title: "سفر به آینده", tagline: "علمی‌تخیلی و فراتر از زمین", hue: 190, rule: (t) => t.genres.includes("علمی‌تخیلی") },
+  { slug: "adrenaline", title: "آدرنالین", tagline: "اکشن و هیجان بی‌وقفه", hue: 5, rule: (t) => t.genres.some((g) => ["اکشن", "هیجان‌انگیز", "ماجراجویی"].includes(g)) },
+  { slug: "epic", title: "حماسه‌های تاریخی", tagline: "روایت‌های بزرگ از گذشته", hue: 30, rule: (t) => t.genres.some((g) => ["تاریخی", "حماسی", "جنگی"].includes(g)) },
+  { slug: "heart", title: "برای دل", tagline: "عاشقانه و درام", hue: 330, rule: (t) => t.genres.some((g) => ["عاشقانه", "درام"].includes(g)) },
+  { slug: "short-watch", title: "کمتر از دو ساعت", tagline: "فیلم‌های جمع‌وجور برای امشب", hue: 150, rule: (t) => t.type === "movie" && t.duration > 0 && t.duration <= 120, sort: (a, b) => a.duration - b.duration },
+  { slug: "family", title: "مناسب خانواده", tagline: "رده سنی پایین‌تر از +۱۶", hue: 100, rule: (t) => ["+3", "+7", "+13", "همه"].includes(t.ageRating) },
+  { slug: "fresh", title: "تازه‌نفس", tagline: "محصولات دو سال اخیر", hue: 280, rule: (t) => t.year >= new Date().getFullYear() - 2, sort: (a, b) => b.year - a.year },
+];
+
+export async function getCollections(limitPer = 12) {
+  await ensureSeeded();
+  const rows = await db.title.findMany({ orderBy: { trendingScore: "desc" } });
+  const all = rows.map(pv);
+  return COLLECTIONS.map((c) => {
+    const items = all.filter(c.rule).sort(c.sort ?? (() => 0)).slice(0, limitPer);
+    return { slug: c.slug, title: c.title, tagline: c.tagline, hue: c.hue, count: all.filter(c.rule).length, items };
+  }).filter((c) => c.items.length > 0);
+}
+
+export async function getCollection(slug: string) {
+  const c = COLLECTIONS.find((x) => x.slug === slug);
+  if (!c) return null;
+  await ensureSeeded();
+  const rows = await db.title.findMany({ orderBy: { trendingScore: "desc" } });
+  const items = rows.map(pv).filter(c.rule).sort(c.sort ?? (() => 0));
+  return { slug: c.slug, title: c.title, tagline: c.tagline, hue: c.hue, items };
+}
+
+/* ------------------------------------------------------------------ */
+/*  People – director / cast pages                                      */
+/* ------------------------------------------------------------------ */
+export async function getByPerson(name: string) {
+  await ensureSeeded();
+  const rows = await db.title.findMany({
+    where: { OR: [{ director: name }, { cast: { contains: `"${name}"` } }] },
+    orderBy: { rating: "desc" },
+  });
+  const all = rows.map(pv);
+  return {
+    name,
+    directed: all.filter((t) => t.director === name),
+    acted: all.filter((t) => t.cast.includes(name)),
+  };
+}
+
+export async function getPeopleIndex() {
+  await ensureSeeded();
+  const rows = await db.title.findMany({ select: { director: true, cast: true, poster: true, rating: true } });
+  const map = new Map<string, { name: string; roles: Set<"director" | "actor">; count: number; cover: string; score: number }>();
+  for (const r of rows) {
+    let cast: string[] = [];
+    try {
+      cast = JSON.parse(r.cast || "[]");
+    } catch {
+      /* ignore */
+    }
+    const bump = (name: string, role: "director" | "actor") => {
+      if (!name) return;
+      const e = map.get(name) ?? { name, roles: new Set(), count: 0, cover: r.poster, score: 0 };
+      e.roles.add(role);
+      e.count += 1;
+      e.score += r.rating;
+      map.set(name, e);
+    };
+    bump(r.director, "director");
+    cast.forEach((c) => bump(c, "actor"));
+  }
+  return Array.from(map.values())
+    .map((e) => ({ ...e, roles: Array.from(e.roles), avg: Math.round((e.score / e.count) * 10) / 10 }))
+    .sort((a, b) => b.count - a.count || b.avg - a.avg);
+}
+
+/* ------------------------------------------------------------------ */
+/*  Random pick – "امشب چی ببینم؟"                                     */
+/* ------------------------------------------------------------------ */
+export async function getRandomTitle(opts: { type?: "movie" | "series"; genre?: string; excludeIds?: number[] } = {}) {
+  await ensureSeeded();
+  const rows = await db.title.findMany({
+    where: {
+      ...(opts.type ? { type: opts.type } : {}),
+      ...(opts.genre ? { genres: { contains: hasGenre(opts.genre) } } : {}),
+      ...(opts.excludeIds?.length ? { id: { notIn: opts.excludeIds } } : {}),
+    },
+  });
+  if (!rows.length) return null;
+  return pv(rows[Math.floor(Math.random() * rows.length)]);
+}

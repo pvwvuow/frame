@@ -1,10 +1,11 @@
 import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
-import { Toaster } from "sonner";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import QuickViewProvider from "@/components/quickview/QuickViewProvider";
 import LibraryProvider from "@/components/library/LibraryProvider";
+import ThemeProvider from "@/components/theme/ThemeProvider";
+import CommandPalette from "@/components/CommandPalette";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -15,33 +16,28 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#070709",
+  themeColor: [
+    { media: "(prefers-color-scheme: dark)", color: "#070709" },
+    { media: "(prefers-color-scheme: light)", color: "#f3f3f7" },
+  ],
   width: "device-width",
   initialScale: 1,
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="fa" dir="rtl" data-scroll-behavior="smooth">
+    <html lang="fa" dir="rtl" data-scroll-behavior="smooth" suppressHydrationWarning>
       <body className="min-h-screen bg-ink text-zinc-100 antialiased">
-        <LibraryProvider>
-          <QuickViewProvider>
-            <Navbar />
-            <div className="min-h-screen">{children}</div>
-            <Footer />
-          </QuickViewProvider>
-        </LibraryProvider>
-        <Toaster
-          position="bottom-center"
-          dir="rtl"
-          theme="dark"
-          richColors
-          closeButton
-          toastOptions={{
-            className: "font-body",
-            style: { fontFamily: "var(--font-sans)", background: "#16161c", border: "1px solid rgba(255,255,255,0.1)", color: "#f4f4f5" },
-          }}
-        />
+        <ThemeProvider>
+          <LibraryProvider>
+            <QuickViewProvider>
+              <Navbar />
+              <div className="min-h-screen">{children}</div>
+              <Footer />
+              <CommandPalette />
+            </QuickViewProvider>
+          </LibraryProvider>
+        </ThemeProvider>
       </body>
     </html>
   );

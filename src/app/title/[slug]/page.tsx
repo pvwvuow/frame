@@ -281,7 +281,7 @@ export default async function TitlePage({ params }: Props) {
             <h2 className="mb-5 text-xl font-extrabold text-white">عوامل و بازیگران</h2>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
               <Link
-                href={`/search?q=${encodeURIComponent(t.director)}`}
+                href={`/person/${encodeURIComponent(t.director)}`}
                 className="group flex items-center gap-3 rounded-2xl border border-brand/20 bg-brand/5 p-3 transition hover:border-brand/50 hover:bg-brand/10"
               >
                 <span className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-gradient-to-br from-brand to-purple-600 text-white">
@@ -295,7 +295,7 @@ export default async function TitlePage({ params }: Props) {
               {t.cast.map((c, i) => (
                 <Link
                   key={c}
-                  href={`/search?q=${encodeURIComponent(c)}`}
+                  href={`/person/${encodeURIComponent(c)}`}
                   className="group flex items-center gap-3 rounded-2xl border border-white/5 bg-ink-700/40 p-3 transition hover:border-white/15 hover:bg-ink-700"
                 >
                   <span

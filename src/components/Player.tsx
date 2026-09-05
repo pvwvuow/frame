@@ -221,7 +221,7 @@ export default function Player({
   return (
     <div
       ref={wrapRef}
-      className={`relative h-screen w-screen select-none overflow-hidden bg-black ${showUi ? "cursor-default" : "cursor-none"}`}
+      className={`force-dark relative h-screen w-screen select-none overflow-hidden bg-black ${showUi ? "cursor-default" : "cursor-none"}`}
       onMouseMove={bumpUi}
       onClick={(e) => {
         if ((e.target as HTMLElement).closest("[data-ctrl]")) return;

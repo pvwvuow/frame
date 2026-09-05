@@ -1,48 +1,13 @@
 @import "tailwindcss";
 
 /* ---- Local Vazirmatn (offline-ready for Electron) ---- */
-@font-face {
-  font-family: "Vazirmatn";
-  src: url("/fonts/Vazirmatn-Light.woff2") format("woff2");
-  font-weight: 300;
-  font-display: swap;
-}
-@font-face {
-  font-family: "Vazirmatn";
-  src: url("/fonts/Vazirmatn-Regular.woff2") format("woff2");
-  font-weight: 400;
-  font-display: swap;
-}
-@font-face {
-  font-family: "Vazirmatn";
-  src: url("/fonts/Vazirmatn-Medium.woff2") format("woff2");
-  font-weight: 500;
-  font-display: swap;
-}
-@font-face {
-  font-family: "Vazirmatn";
-  src: url("/fonts/Vazirmatn-Bold.woff2") format("woff2");
-  font-weight: 600;
-  font-display: swap;
-}
-@font-face {
-  font-family: "Vazirmatn";
-  src: url("/fonts/Vazirmatn-Bold.woff2") format("woff2");
-  font-weight: 700;
-  font-display: swap;
-}
-@font-face {
-  font-family: "Vazirmatn";
-  src: url("/fonts/Vazirmatn-Black.woff2") format("woff2");
-  font-weight: 800;
-  font-display: swap;
-}
-@font-face {
-  font-family: "Vazirmatn";
-  src: url("/fonts/Vazirmatn-Black.woff2") format("woff2");
-  font-weight: 900;
-  font-display: swap;
-}
+@font-face { font-family: "Vazirmatn"; src: url("/fonts/Vazirmatn-Light.woff2") format("woff2"); font-weight: 300; font-display: swap; }
+@font-face { font-family: "Vazirmatn"; src: url("/fonts/Vazirmatn-Regular.woff2") format("woff2"); font-weight: 400; font-display: swap; }
+@font-face { font-family: "Vazirmatn"; src: url("/fonts/Vazirmatn-Medium.woff2") format("woff2"); font-weight: 500; font-display: swap; }
+@font-face { font-family: "Vazirmatn"; src: url("/fonts/Vazirmatn-Bold.woff2") format("woff2"); font-weight: 600; font-display: swap; }
+@font-face { font-family: "Vazirmatn"; src: url("/fonts/Vazirmatn-Bold.woff2") format("woff2"); font-weight: 700; font-display: swap; }
+@font-face { font-family: "Vazirmatn"; src: url("/fonts/Vazirmatn-Black.woff2") format("woff2"); font-weight: 800; font-display: swap; }
+@font-face { font-family: "Vazirmatn"; src: url("/fonts/Vazirmatn-Black.woff2") format("woff2"); font-weight: 900; font-display: swap; }
 
 /* ---- Estedad (Farsi-digits build) – display / headings font ---- */
 @font-face { font-family: "Estedad"; src: url("/fonts/Estedad-FD-Regular.woff2") format("woff2"); font-weight: 400; font-display: swap; }
@@ -52,145 +17,267 @@
 @font-face { font-family: "Estedad"; src: url("/fonts/Estedad-FD-ExtraBold.woff2") format("woff2"); font-weight: 800; font-display: swap; }
 @font-face { font-family: "Estedad"; src: url("/fonts/Estedad-FD-Black.woff2") format("woff2"); font-weight: 900; font-display: swap; }
 
+/* =====================================================================
+   THEME TOKENS
+   Tailwind v4 emits every colour utility as `var(--color-*)`, so we can
+   re-map the palette per theme. Dark is the default; `.light` inverts the
+   neutral scale (white ↔ black, zinc-100 ↔ zinc-900 …) while brand/gold/
+   status colours stay untouched. Any component written with the dark
+   vocabulary (text-white, bg-white/10, border-white/5 …) therefore renders
+   correctly in both themes without touching its markup.
+   ===================================================================== */
 @theme {
   --color-brand: #e50914;
   --color-brand-600: #c40812;
   --color-brand-glow: rgba(229, 9, 20, 0.45);
+  --color-gold: #f5b81b;
+
   --color-ink: #070709;
   --color-ink-800: #0e0e12;
   --color-ink-700: #16161c;
   --color-ink-600: #1f1f27;
   --color-mist: #a1a1aa;
+
   --font-sans: "Vazirmatn", "Estedad", "Segoe UI", Tahoma, system-ui, sans-serif;
   --font-display: "Estedad", "Vazirmatn", "Segoe UI", Tahoma, system-ui, sans-serif;
-  --color-gold: #f5b81b;
+
   --animate-pop: pop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) both;
-  @keyframes pop { from { transform: scale(0.6); opacity: 0; } to { transform: scale(1); opacity: 1; } }
   --animate-fade-up: fade-up 0.6s ease both;
   --animate-shimmer: shimmer 1.6s linear infinite;
   --animate-ken: ken 18s ease-in-out infinite alternate;
+  --animate-glass-in: glass-in 0.32s cubic-bezier(0.2, 0.9, 0.3, 1.1) both;
 
-  @keyframes fade-up {
-    from {
-      opacity: 0;
-      transform: translateY(14px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
-  }
-  @keyframes shimmer {
-    from {
-      background-position: 200% 0;
-    }
-    to {
-      background-position: -200% 0;
-    }
-  }
-  @keyframes ken {
-    from {
-      transform: scale(1);
-    }
-    to {
-      transform: scale(1.08);
-    }
-  }
+  @keyframes pop { from { transform: scale(0.6); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+  @keyframes fade-up { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+  @keyframes ken { from { transform: scale(1); } to { transform: scale(1.08); } }
+  @keyframes glass-in { from { opacity: 0; transform: translateY(10px) scale(0.97); } to { opacity: 1; transform: translateY(0) scale(1); } }
+}
+
+/* ---------- Dark (default) ---------- */
+:root,
+.dark {
+  color-scheme: dark;
+
+  /* liquid-glass surface tokens */
+  --glass-bg: rgba(22, 22, 30, 0.55);
+  --glass-bg-strong: rgba(16, 16, 22, 0.74);
+  --glass-border: rgba(255, 255, 255, 0.10);
+  --glass-rim: linear-gradient(155deg, rgba(255, 255, 255, 0.55) 0%, rgba(255, 255, 255, 0.08) 28%, rgba(255, 255, 255, 0) 55%, rgba(255, 255, 255, 0.28) 100%);
+  --glass-sheen: linear-gradient(135deg, rgba(255, 255, 255, 0.14) 0%, rgba(255, 255, 255, 0.03) 30%, rgba(255, 255, 255, 0) 55%, rgba(255, 255, 255, 0.06) 100%);
+  --glass-hl: rgba(255, 255, 255, 0.18);
+  --glass-shadow: 0 24px 60px rgba(0, 0, 0, 0.55), 0 2px 8px rgba(0, 0, 0, 0.35);
+  --glass-tint: rgba(120, 160, 255, 0.05);
+  --glass-blur: 22px;
+
+  --scrollbar: #2a2a33;
+  --skeleton-a: #16161c;
+  --skeleton-b: #1f1f27;
+  --overlay: rgba(0, 0, 0, 0.72);
+  --shadow-color: 0 0 0;
+  --stroke: rgba(255, 255, 255, 0.35);
+  --toast-bg: #16161c;
+  --toast-border: rgba(255, 255, 255, 0.1);
+  --toast-fg: #f4f4f5;
+}
+
+/* ---------- Light ---------- */
+.light {
+  color-scheme: light;
+
+  /* neutral palette inversion */
+  --color-white: #0f0f14;
+  --color-black: #ffffff;
+  --color-zinc-50: #09090b;
+  --color-zinc-100: #18181b;
+  --color-zinc-200: #27272a;
+  --color-zinc-300: #3f3f46;
+  --color-zinc-400: #52525b;
+  --color-zinc-500: #71717a;
+  --color-zinc-600: #a1a1aa;
+  --color-zinc-700: #d4d4d8;
+  --color-zinc-800: #e4e4e7;
+  --color-zinc-900: #f4f4f5;
+  --color-zinc-950: #fafafa;
+
+  --color-ink: #f3f3f7;
+  --color-ink-800: #ffffff;
+  --color-ink-700: #eaeaf0;
+  --color-ink-600: #dcdce4;
+  --color-mist: #52525b;
+  --color-brand-glow: rgba(229, 9, 20, 0.28);
+
+  /* liquid-glass surface tokens */
+  --glass-bg: rgba(255, 255, 255, 0.52);
+  --glass-bg-strong: rgba(255, 255, 255, 0.76);
+  --glass-border: rgba(255, 255, 255, 0.75);
+  --glass-rim: linear-gradient(155deg, rgba(255, 255, 255, 1) 0%, rgba(255, 255, 255, 0.35) 28%, rgba(255, 255, 255, 0.05) 55%, rgba(255, 255, 255, 0.8) 100%);
+  --glass-sheen: linear-gradient(135deg, rgba(255, 255, 255, 0.85) 0%, rgba(255, 255, 255, 0.25) 30%, rgba(255, 255, 255, 0) 55%, rgba(255, 255, 255, 0.35) 100%);
+  --glass-hl: rgba(255, 255, 255, 0.95);
+  --glass-shadow: 0 24px 60px rgba(30, 30, 60, 0.18), 0 2px 8px rgba(30, 30, 60, 0.08);
+  --glass-tint: rgba(90, 130, 255, 0.06);
+  --glass-blur: 26px;
+
+  --scrollbar: #c9c9d2;
+  --skeleton-a: #e6e6ec;
+  --skeleton-b: #f2f2f6;
+  --overlay: rgba(230, 232, 240, 0.72);
+  --shadow-color: 30 30 60;
+  --stroke: rgba(15, 15, 20, 0.28);
+  --toast-bg: #ffffff;
+  --toast-border: rgba(0, 0, 0, 0.08);
+  --toast-fg: #18181b;
+}
+
+/* Areas that must always stay dark (video player, media headers). */
+.force-dark,
+.light .force-dark {
+  color-scheme: dark;
+  --color-white: #ffffff;
+  --color-black: #000000;
+  --color-zinc-50: #fafafa;
+  --color-zinc-100: #f4f4f5;
+  --color-zinc-200: #e4e4e7;
+  --color-zinc-300: #d4d4d8;
+  --color-zinc-400: #a1a1aa;
+  --color-zinc-500: #71717a;
+  --color-zinc-600: #52525b;
+  --color-zinc-700: #3f3f46;
+  --color-zinc-800: #27272a;
+  --color-zinc-900: #18181b;
+  --color-zinc-950: #09090b;
+  --color-ink: #070709;
+  --color-ink-800: #0e0e12;
+  --color-ink-700: #16161c;
+  --color-ink-600: #1f1f27;
+  --glass-bg: rgba(22, 22, 30, 0.55);
+  --glass-bg-strong: rgba(16, 16, 22, 0.74);
+  --glass-border: rgba(255, 255, 255, 0.10);
+  --glass-hl: rgba(255, 255, 255, 0.18);
+  --glass-rim: linear-gradient(155deg, rgba(255, 255, 255, 0.55) 0%, rgba(255, 255, 255, 0.08) 28%, rgba(255, 255, 255, 0) 55%, rgba(255, 255, 255, 0.28) 100%);
+  --glass-sheen: linear-gradient(135deg, rgba(255, 255, 255, 0.14) 0%, rgba(255, 255, 255, 0.03) 30%, rgba(255, 255, 255, 0) 55%, rgba(255, 255, 255, 0.06) 100%);
+  --shadow-color: 0 0 0;
+  --stroke: rgba(255, 255, 255, 0.35);
 }
 
 html {
   scroll-behavior: smooth;
-  color-scheme: dark;
+  background: var(--color-ink);
 }
 
 body {
   background: var(--color-ink);
-  color: #f4f4f5;
+  color: var(--color-zinc-100);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
+  transition: background-color 0.35s ease, color 0.35s ease;
 }
 
 * {
   scrollbar-width: thin;
-  scrollbar-color: #2a2a33 transparent;
+  scrollbar-color: var(--scrollbar) transparent;
 }
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-::-webkit-scrollbar-thumb {
-  background: #2a2a33;
-  border-radius: 999px;
-}
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 999px; }
 
-.no-scrollbar {
-  scrollbar-width: none;
-}
-.no-scrollbar::-webkit-scrollbar {
-  display: none;
-}
+.no-scrollbar { scrollbar-width: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
 
-.text-glow {
-  text-shadow: 0 2px 30px rgba(0, 0, 0, 0.8);
-}
+.text-glow { text-shadow: 0 2px 30px rgb(var(--shadow-color) / 0.8); }
+.light .text-glow { text-shadow: 0 2px 24px rgba(255, 255, 255, 0.9); }
 
 .card-gradient {
-  background: linear-gradient(to top, rgba(7, 7, 9, 0.95) 0%, rgba(7, 7, 9, 0.4) 45%, transparent 100%);
+  background: linear-gradient(to top, color-mix(in srgb, var(--color-ink) 95%, transparent) 0%, color-mix(in srgb, var(--color-ink) 40%, transparent) 45%, transparent 100%);
 }
 
-.glass {
-  background: rgba(20, 20, 26, 0.6);
-  backdrop-filter: blur(16px) saturate(140%);
-  -webkit-backdrop-filter: blur(16px) saturate(140%);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+/* =====================================================================
+   LIQUID GLASS
+   A CSS approximation of Apple-style liquid glass (inspired by
+   ybouane/liquidglass): frosted backdrop with high saturation, a
+   refractive rim light (masked gradient border), a diagonal specular
+   sheen, a subtle cool tint and a soft drop shadow. Works on any
+   rounded element; children stay fully interactive.
+   ===================================================================== */
+.glass,
+.glass-strong,
+.glass-btn {
+  position: relative;
+  isolation: isolate;
+  background:
+    var(--glass-tint),
+    var(--glass-bg);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%) brightness(1.02);
+  backdrop-filter: blur(var(--glass-blur)) saturate(180%) brightness(1.02);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow), inset 0 1px 0 var(--glass-hl);
 }
+.glass-strong {
+  background:
+    var(--glass-tint),
+    var(--glass-bg-strong);
+}
+/* specular sheen */
+.glass::before,
+.glass-strong::before,
+.glass-btn::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--glass-sheen);
+  pointer-events: none;
+  z-index: -1;
+}
+/* refractive rim */
+.glass::after,
+.glass-strong::after,
+.glass-btn::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  background: var(--glass-rim);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+  opacity: 0.9;
+}
+/* button mode – hover brightens, press flattens (like liquidglass `button: true`) */
+.glass-btn {
+  transition: transform 0.18s ease, box-shadow 0.18s ease, filter 0.18s ease;
+  cursor: pointer;
+}
+.glass-btn:hover { filter: brightness(1.08) saturate(1.1); }
+.glass-btn:active { transform: scale(0.97); box-shadow: 0 4px 14px rgb(var(--shadow-color) / 0.3), inset 0 1px 0 var(--glass-hl); }
+
+.glass-in { animation: var(--animate-glass-in); }
 
 .skeleton {
-  background: linear-gradient(90deg, #16161c 25%, #1f1f27 50%, #16161c 75%);
+  background: linear-gradient(90deg, var(--skeleton-a) 25%, var(--skeleton-b) 50%, var(--skeleton-a) 75%);
   background-size: 200% 100%;
   animation: var(--animate-shimmer);
 }
 
-.range-input {
-  -webkit-appearance: none;
-  appearance: none;
-  background: transparent;
-  cursor: pointer;
-}
+.range-input { -webkit-appearance: none; appearance: none; background: transparent; cursor: pointer; }
 .range-input::-webkit-slider-thumb {
   -webkit-appearance: none;
-  width: 14px;
-  height: 14px;
-  border-radius: 999px;
+  width: 14px; height: 14px; border-radius: 999px;
   background: var(--color-brand);
   box-shadow: 0 0 0 4px rgba(229, 9, 20, 0.25);
   margin-top: -5px;
 }
-.range-input::-webkit-slider-runnable-track {
-  height: 4px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.25);
-}
-.range-input::-moz-range-thumb {
-  width: 14px;
-  height: 14px;
-  border: none;
-  border-radius: 999px;
-  background: var(--color-brand);
-}
-.range-input::-moz-range-track {
-  height: 4px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.25);
-}
+.range-input::-webkit-slider-runnable-track { height: 4px; border-radius: 999px; background: rgba(255, 255, 255, 0.25); }
+.range-input::-moz-range-thumb { width: 14px; height: 14px; border: none; border-radius: 999px; background: var(--color-brand); }
+.range-input::-moz-range-track { height: 4px; border-radius: 999px; background: rgba(255, 255, 255, 0.25); }
 
 /* ---- Typography ---- */
-h1, h2, h3, .font-display {
-  font-family: var(--font-display);
-  letter-spacing: -0.01em;
-}
+h1, h2, h3, .font-display { font-family: var(--font-display); letter-spacing: -0.01em; }
 .font-body { font-family: var(--font-sans); }
 .num { font-variant-numeric: tabular-nums; }
+.outline-num { -webkit-text-stroke: 2px var(--stroke); }
 
 /* ---- Focus & selection ---- */
 ::selection { background: rgba(229, 9, 20, 0.45); color: #fff; }
@@ -207,5 +294,6 @@ html[data-reduce-motion="1"] *, html[data-reduce-motion="1"] *::before, html[dat
 
 /* ---- Small helpers ---- */
 .line-clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.line-clamp-3 { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .heart-pop { animation: var(--animate-pop); }
 .checkbox-brand { accent-color: var(--color-brand); }

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { useLibrary } from "./LibraryProvider";
 import { CheckIcon, TrashIcon } from "../Icons";
+import { ThemeSegment } from "../theme/ThemeToggle";
 
 export const AVATARS = [
   "from-brand to-purple-600",
@@ -149,6 +150,15 @@ export default function SettingsForm({ initial }: { initial: ProfileData }) {
               ))}
             </div>
           </div>
+        </div>
+      </section>
+
+      {/* appearance */}
+      <section className="rounded-3xl border border-white/5 bg-ink-800/60 p-6">
+        <h2 className="text-lg font-extrabold text-white">ظاهر</h2>
+        <p className="text-xs text-zinc-500">تم برنامه بلافاصله اعمال می‌شود و روی همین دستگاه ذخیره می‌ماند.</p>
+        <div className="mt-5">
+          <ThemeSegment />
         </div>
       </section>
 

@@ -7,6 +7,8 @@ import { useLibrary } from "./library/LibraryProvider";
 import { AVATARS } from "./library/SettingsForm";
 import { BookmarkIcon, HeartIcon, HistoryIcon, SettingsIcon, UserIcon, ChevronDown, HelpIcon } from "./Icons";
 import { fa } from "@/lib/format";
+import { useTheme } from "next-themes";
+import { THEMES } from "./theme/ThemeToggle";
 
 const ITEMS = [
   { href: "/profile", label: "پروفایل من", icon: UserIcon },
@@ -19,6 +21,9 @@ const ITEMS = [
 
 export default function UserMenu() {
   const { profile, list, favorites } = useLibrary();
+  const { theme, setTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const pathname = usePathname();
@@ -52,7 +57,7 @@ export default function UserMenu() {
       </button>
 
       {open && (
-        <div role="menu" className="glass absolute end-0 top-12 w-64 overflow-hidden rounded-2xl shadow-2xl animate-fade-up">
+        <div role="menu" className="glass-strong glass-in absolute end-0 top-12 w-64 overflow-hidden rounded-2xl">
           <Link href="/profile" className="flex items-center gap-3 border-b border-white/5 px-4 py-3 transition hover:bg-white/5">
             <span className={`grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br text-base font-black text-white ${grad}`}>{initial}</span>
             <span className="min-w-0">
@@ -75,6 +80,24 @@ export default function UserMenu() {
               );
             })}
           </ul>
+          <div className="border-t border-white/5 p-2">
+            <p className="mb-1.5 px-2 text-[10px] font-bold text-zinc-500">ظاهر</p>
+            <div className="grid grid-cols-3 gap-1 rounded-xl bg-white/5 p-1">
+              {THEMES.map((t) => {
+                const active = mounted && (theme ?? "dark") === t.value;
+                return (
+                  <button
+                    key={t.value}
+                    type="button"
+                    onClick={() => setTheme(t.value)}
+                    className={`flex items-center justify-center gap-1 rounded-lg py-1.5 text-[11px] font-bold transition ${active ? "bg-white text-black shadow" : "text-zinc-300 hover:bg-white/10"}`}
+                  >
+                    <t.icon width={13} height={13} /> {t.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         </div>
       )}
     </div>

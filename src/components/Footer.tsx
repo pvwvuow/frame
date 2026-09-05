@@ -25,8 +25,10 @@ export default function Footer() {
             <ul className="space-y-2 text-sm text-zinc-400">
               <li><Link className="hover:text-white" href="/movies">فیلم‌ها</Link></li>
               <li><Link className="hover:text-white" href="/series">سریال‌ها</Link></li>
-              <li><Link className="hover:text-white" href="/movies?genre=اکشن">اکشن</Link></li>
-              <li><Link className="hover:text-white" href="/movies?genre=علمی‌تخیلی">علمی‌تخیلی</Link></li>
+              <li><Link className="hover:text-white" href="/genres">ژانرها</Link></li>
+              <li><Link className="hover:text-white" href="/collections">مجموعه‌ها</Link></li>
+              <li><Link className="hover:text-white" href="/people">هنرمندان</Link></li>
+              <li><Link className="hover:text-white" href="/random">امشب چی ببینم؟</Link></li>
             </ul>
           </div>
           <div>

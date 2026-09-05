@@ -81,8 +81,7 @@ export default async function HomePage() {
           {trending.map((t, i) => (
             <div key={t.id} className="relative flex shrink-0 items-end snap-start">
               <span
-                className="pointer-events-none -me-5 mb-2 select-none text-[88px] font-black leading-none text-transparent sm:text-[110px]"
-                style={{ WebkitTextStroke: "2px rgba(255,255,255,0.35)" }}
+                className="outline-num pointer-events-none -me-5 mb-2 select-none text-[88px] font-black leading-none text-transparent sm:text-[110px]"
               >
                 {i + 1}
               </span>

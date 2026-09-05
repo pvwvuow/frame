@@ -7,7 +7,7 @@ export default function NotFound() {
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(229,9,20,0.15),transparent_55%)]" />
       <div className="pointer-events-none absolute inset-0 opacity-[0.06] [background-image:repeating-linear-gradient(0deg,#fff_0_2px,transparent_2px_6px)]" />
       <div className="relative animate-fade-up">
-        <p className="text-[120px] font-black leading-none text-transparent sm:text-[180px]" style={{ WebkitTextStroke: "2px rgba(255,255,255,0.18)" }}>
+        <p className="outline-num text-[120px] font-black leading-none text-transparent sm:text-[180px]">
           ۴۰۴
         </p>
         <span className="mx-auto -mt-6 block w-fit rounded-md bg-brand px-3 py-1 text-xs font-black text-white shadow-[0_0_30px_var(--color-brand-glow)]">CUT!</span>
