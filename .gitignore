@@ -18,7 +18,9 @@ node_modules
 /out/
 
 # production
-/build
+/build/*
+!/build/icon.png
+/release/
 
 # misc
 .DS_Store
@@ -54,7 +56,8 @@ server.log
 # Skills directory
 /skills/
 # workspace / internal artifacts (not part of the app)
-/scripts/
+/scripts/*
+!/scripts/postbuild.cjs
 /upload/
 /tool-results/
 /.zscripts/
@@ -64,7 +67,6 @@ server.log
 /Caddyfile
 /worklog.md
 /log_*.txt
-package-lock.json
 
 # sqlite journals
 db/*.db-journal

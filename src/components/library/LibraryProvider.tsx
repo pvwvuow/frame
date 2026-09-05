@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import type { ListStatus } from "@/lib/library";
 
-type Profile = { displayName: string; avatar: number; reduceMotion: boolean };
+type Profile = { displayName: string; avatar: number; reduceMotion: boolean; kidsMode?: boolean; hasPin?: boolean };
 
 type Ctx = {
   ready: boolean;

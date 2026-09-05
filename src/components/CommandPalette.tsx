@@ -20,6 +20,9 @@ import {
   LayersIcon,
   ShuffleIcon,
   KeyboardIcon,
+  UsersIcon,
+  BellIcon,
+  UserIcon,
 } from "./Icons";
 
 type Result = { id: number; slug: string; title: string; titleEn: string; poster: string; year: number; type: string; rating: number };
@@ -105,11 +108,14 @@ export default function CommandPalette() {
       { id: "list", label: "لیست من", icon: BookmarkIcon, run: () => go("/my-list"), keywords: "list watchlist" },
       { id: "fav", label: "علاقه‌مندی‌ها", icon: HeartIcon, run: () => go("/favorites"), keywords: "favorites" },
       { id: "history", label: "تاریخچه تماشا", icon: HistoryIcon, run: () => go("/history"), keywords: "history" },
+      { id: "people", label: "هنرمندان", hint: "کارگردان‌ها و بازیگران", icon: UsersIcon, run: () => go("/people"), keywords: "people cast director" },
+      { id: "notifications", label: "اعلان‌ها", icon: BellIcon, run: () => go("/notifications"), keywords: "notifications bell" },
+      { id: "profile", label: "پروفایل من", icon: UserIcon, run: () => go("/profile"), keywords: "profile" },
       { id: "settings", label: "تنظیمات", icon: SettingsIcon, run: () => go("/settings"), keywords: "settings" },
       { id: "t-dark", label: "تم تیره", icon: MoonIcon, run: () => { setTheme("dark"); setOpen(false); }, keywords: "dark theme" },
       { id: "t-light", label: "تم روشن", icon: SunIcon, run: () => { setTheme("light"); setOpen(false); }, keywords: "light theme" },
       { id: "t-system", label: "تم خودکار (سیستم)", icon: MonitorIcon, run: () => { setTheme("system"); setOpen(false); }, keywords: "system theme auto" },
-      { id: "shortcuts", label: "کلیدهای میانبر", icon: KeyboardIcon, run: () => go("/faq#shortcuts"), keywords: "shortcuts keyboard" },
+      { id: "shortcuts", label: "کلیدهای میانبر", icon: KeyboardIcon, run: () => go("/settings#shortcuts"), keywords: "shortcuts keyboard" },
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [router]

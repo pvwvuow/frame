@@ -6,6 +6,7 @@ import QuickViewProvider from "@/components/quickview/QuickViewProvider";
 import LibraryProvider from "@/components/library/LibraryProvider";
 import ThemeProvider from "@/components/theme/ThemeProvider";
 import CommandPalette from "@/components/CommandPalette";
+import ElectronBridge from "@/components/electron/ElectronBridge";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -35,6 +36,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
               <div className="min-h-screen">{children}</div>
               <Footer />
               <CommandPalette />
+              <ElectronBridge />
             </QuickViewProvider>
           </LibraryProvider>
         </ThemeProvider>

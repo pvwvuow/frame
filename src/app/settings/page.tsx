@@ -11,7 +11,7 @@ export default async function SettingsPage() {
   const p = await getProfile(userKey);
   return (
     <main className="pb-16">
-      <div className="mx-auto max-w-4xl px-4 pt-28 sm:px-8 lg:pt-36">
+      <div className="mx-auto max-w-6xl px-4 pt-28 sm:px-8 lg:pt-36">
         <p className="mb-3 flex items-center gap-2 text-xs font-bold text-brand"><SettingsIcon width={16} height={16} /> شخصی‌سازی</p>
         <h1 className="text-4xl font-black text-white sm:text-5xl">تنظیمات</h1>
         <p className="mt-3 max-w-xl text-sm leading-7 text-zinc-300">پروفایل، پخش و حریم خصوصی خود را از این‌جا مدیریت کنید. تنظیمات روی همین دستگاه ذخیره می‌شود.</p>
@@ -26,6 +26,16 @@ export default async function SettingsPage() {
               subtitle: p.subtitle,
               matureContent: p.matureContent,
               reduceMotion: p.reduceMotion,
+              skipIntro: p.skipIntro,
+              playbackSpeed: p.playbackSpeed,
+              volume: p.volume,
+              dataSaver: p.dataSaver,
+              notifyNewEpisodes: p.notifyNewEpisodes,
+              notifyRecommendations: p.notifyRecommendations,
+              notifyContinue: p.notifyContinue,
+              kidsMode: p.kidsMode,
+              parentalPin: p.parentalPin,
+              language: p.language,
             }}
           />
         </div>

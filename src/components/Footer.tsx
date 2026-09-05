@@ -3,13 +3,31 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { fa } from "@/lib/format";
+import { useIsElectron } from "@/lib/platform";
 
 export default function Footer() {
   const pathname = usePathname();
+  const electron = useIsElectron();
   if (pathname?.startsWith("/watch/")) return null;
 
+  // Desktop app: no marketing / legal footer – just a slim status strip.
+  if (electron) {
+    return (
+      <footer className="mt-16 border-t border-white/5 pb-24 lg:pb-6">
+        <div className="mx-auto flex max-w-[1600px] flex-wrap items-center justify-between gap-3 px-4 py-4 text-[11px] text-zinc-500 sm:px-8 lg:px-12">
+          <p>نما · نسخه‌ی دسکتاپ · © {fa(new Date().getFullYear())}</p>
+          <nav className="flex items-center gap-4">
+            <Link className="hover:text-white" href="/settings">تنظیمات</Link>
+            <Link className="hover:text-white" href="/faq">راهنما</Link>
+            <Link className="hover:text-white" href="/settings#about">درباره برنامه</Link>
+          </nav>
+        </div>
+      </footer>
+    );
+  }
+
   return (
-    <footer className="mt-20 border-t border-white/5 bg-ink-800 pb-24 md:pb-10">
+    <footer className="mt-20 border-t border-white/5 bg-ink-800 pb-24 lg:pb-10">
       <div className="mx-auto max-w-[1600px] px-4 py-12 sm:px-8 lg:px-12">
         <div className="grid gap-10 sm:grid-cols-2 md:grid-cols-5">
           <div className="md:col-span-2">

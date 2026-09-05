@@ -1,15 +1,41 @@
-# نما · سینمای آنلاین (Next.js 16 + Prisma/SQLite)
+# نما · سینمای آنلاین (Next.js 16 + Prisma/SQLite + Electron)
 
-پلتفرم استریم فارسی با رابط RTL، پخش‌کننده اختصاصی، کاتالوگ، جستجو و فضای شخصی کامل کاربر.
+پلتفرم استریم فارسی با رابط RTL، پخش‌کننده اختصاصی، کاتالوگ، جستجو، مرکز اعلان‌ها و فضای شخصی کامل کاربر — به‌صورت **وب** و **برنامه‌ی دسکتاپ** (ویندوز / مک / لینوکس).
 
-## اجرا
+[![Desktop release](https://github.com/pvwvuow/frame/actions/workflows/desktop.yml/badge.svg)](https://github.com/pvwvuow/frame/actions/workflows/desktop.yml)
+[![CI](https://github.com/pvwvuow/frame/actions/workflows/ci.yml/badge.svg)](https://github.com/pvwvuow/frame/actions/workflows/ci.yml)
+
+## اجرا (وب)
 
 ```bash
-npm install          # یا bun install
-npx prisma generate
+npm install          # prisma generate به‌صورت خودکار اجرا می‌شود
 npx prisma db push   # ساخت/به‌روزرسانی db/custom.db
 npm run dev          # http://localhost:3000
 ```
+
+## برنامه‌ی دسکتاپ (Electron)
+
+| دستور | کار |
+| --- | --- |
+| `npm run electron:dev` | اجرای پوسته‌ی Electron روی `npm run dev` (هات‌ریلود) |
+| `npm run build && npm run electron:start` | اجرای Electron با سرور standalone تولیدی |
+| `npm run desktop` | بیلد کامل وب + ساخت نصب‌کننده‌ها در `release/` |
+| `npm run electron:build:win` / `:mac` / `:linux` | فقط یک پلتفرم |
+
+- خروجی‌ها: **Windows** (NSIS installer + portable)، **macOS** (dmg/zip، x64 و arm64)، **Linux** (AppImage + deb).
+- معماری: پوسته‌ی Electron (`electron/main.cjs`) سرور standalone نکست را با `ELECTRON_RUN_AS_NODE` روی یک پورت آزاد لوکال بالا می‌آورد؛ دیتابیس SQLite در اولین اجرا به `userData/nama.db` کپی می‌شود تا با به‌روزرسانی از بین نرود.
+- پل امن `window.nama` (preload با contextIsolation) برای: اطلاعات نسخه، بررسی به‌روزرسانی، باز کردن پوشه‌ی داده، لینک خارجی، نشان اعلان.
+- **به‌روزرسانی خودکار** با `electron-updater` از GitHub Releases.
+- در حالت دسکتاپ، فوتر بازاریابی/حقوقی حذف و بخش «درباره برنامه» در تنظیمات فعال می‌شود (`html[data-electron]`, کلاس `.web-only`).
+
+### انتشار نسخه‌ی جدید
+
+```bash
+npm version minor        # یا patch/major → تگ vX.Y.Z
+git push --follow-tags
+```
+
+اکشن `Desktop (Electron) release` روی هر سه سیستم‌عامل بیلد می‌گیرد و فایل‌ها را در **GitHub Releases** منتشر می‌کند.
 
 فایل `.env` شامل `DATABASE_URL="file:./db/custom.db"` است (در صورت نبود، مقدار پیش‌فرض به‌صورت خودکار استفاده می‌شود). دیتابیس در اولین درخواست به‌صورت خودکار seed می‌شود.
 
@@ -24,7 +50,8 @@ npm run dev          # http://localhost:3000
 | `/favorites` | علاقه‌مندی‌ها (♥) |
 | `/history` | تاریخچه تماشا (گروه‌بندی روزانه، حذف تکی/کلی) |
 | `/profile` | داشبورد کاربر و آمار |
-| `/settings` | پروفایل، پخش، دسترسی‌پذیری، منطقه خطر |
+| `/settings` | تنظیمات کامل با ناوبری کناری: پروفایل، پخش (کیفیت/زیرنویس/سرعت/صدا/رد تیتراژ/صرفه‌جویی داده)، ظاهر و زبان، اعلان‌ها، کنترل والدین (حالت کودک + پین)، داده و حریم خصوصی (پشتیبان JSON، پاک‌سازی)، میان‌برها، درباره برنامه |
+| `/notifications` | **مرکز اعلان‌ها**: قسمت‌های جدید سریال‌های لیست، یادآوری ادامه تماشا، پیشنهاد بر اساس ژانر محبوب، تازه‌های کاتالوگ؛ فیلتر، خوانده‌شده/حذف، نشان روی آیکون برنامه |
 | `/collections` `/collections/[slug]` | **مجموعه‌ها**: قفسه‌های موضوعی خودکار (شاهکارها، شب‌های نوآر، کمتر از دو ساعت، مناسب خانواده و …) |
 | `/people` `/person/[name]` | **هنرمندان**: فهرست کارگردان‌ها/بازیگران و صفحه‌ی اختصاصی هر نفر با همه‌ی آثار و همکاران مکرر |
 | `/random` | **امشب چی ببینم؟** انتخاب شانسی با فیلتر نوع/ژانر و «یکی دیگه!» بدون تکرار |
@@ -48,7 +75,7 @@ npm run dev          # http://localhost:3000
 
 ## API
 
-`/api/library` · `/api/watchlist` (POST/PATCH/PUT/DELETE) · `/api/favorites` (POST/PUT/DELETE) · `/api/rating` · `/api/profile` (GET/PATCH/DELETE) · `/api/progress` (POST/DELETE) · `/api/title/[slug]` · `/api/search` · `/api/reviews`
+`/api/library` · `/api/notifications` · `/api/watchlist` (POST/PATCH/PUT/DELETE) · `/api/favorites` (POST/PUT/DELETE) · `/api/rating` · `/api/profile` (GET/PATCH/DELETE) · `/api/progress` (POST/DELETE) · `/api/title/[slug]` · `/api/search` · `/api/reviews`
 
 ## فونت
 

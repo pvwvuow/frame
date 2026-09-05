@@ -7,6 +7,8 @@ export const dynamic = "force-dynamic";
 
 const QUALITIES = new Set(["auto", "4k", "1080p", "720p", "480p"]);
 const SUBS = new Set(["fa", "en", "off"]);
+const LANGS = new Set(["fa", "en"]);
+const SPEEDS = new Set([0.5, 0.75, 1, 1.25, 1.5, 1.75, 2]);
 
 export async function GET() {
   const userKey = await getUserKey();
@@ -20,11 +22,15 @@ export async function PATCH(req: Request) {
   const data: Record<string, unknown> = {};
   if (typeof b.displayName === "string") data.displayName = b.displayName.trim().slice(0, 40) || "کاربر نما";
   if (typeof b.avatar === "number") data.avatar = Math.max(0, Math.min(11, Math.round(b.avatar)));
-  for (const k of ["autoplay", "autoNext", "matureContent", "reduceMotion"] as const) {
+  for (const k of ["autoplay", "autoNext", "matureContent", "reduceMotion", "skipIntro", "dataSaver", "notifyNewEpisodes", "notifyRecommendations", "notifyContinue", "kidsMode"] as const) {
     if (typeof b[k] === "boolean") data[k] = b[k];
   }
   if (typeof b.quality === "string" && QUALITIES.has(b.quality)) data.quality = b.quality;
   if (typeof b.subtitle === "string" && SUBS.has(b.subtitle)) data.subtitle = b.subtitle;
+  if (typeof b.language === "string" && LANGS.has(b.language)) data.language = b.language;
+  if (typeof b.playbackSpeed === "number" && SPEEDS.has(b.playbackSpeed)) data.playbackSpeed = b.playbackSpeed;
+  if (typeof b.volume === "number") data.volume = Math.max(0, Math.min(100, Math.round(b.volume)));
+  if (typeof b.parentalPin === "string" && (b.parentalPin === "" || /^\d{4}$/.test(b.parentalPin))) data.parentalPin = b.parentalPin;
 
   await getProfile(userKey);
   const p = await db.userProfile.update({ where: { userKey }, data });

@@ -1,0 +1,72 @@
+# electron-builder configuration – https://www.electron.build/configuration
+appId: app.nama.desktop
+productName: Nama
+copyright: © Nama
+artifactName: "Nama-${version}-${os}-${arch}.${ext}"
+directories:
+  output: release
+  buildResources: build
+asar: true
+# Only the tiny Electron shell lives inside the asar; the Next.js standalone
+# server, static assets and the seed DB are shipped as plain resources so the
+# Prisma engine (.node) and the server can be executed directly.
+files:
+  - electron/**/*
+  - build/icon.png
+  - package.json
+  - "!**/*.map"
+extraResources:
+  - from: .next/standalone
+    to: app/standalone
+    filter: ["**/*", "!**/*.map"]
+  - from: .next/static
+    to: app/standalone/.next/static
+  - from: public
+    to: app/standalone/public
+  - from: db/custom.db
+    to: app/seed.db
+npmRebuild: false
+nodeGypRebuild: false
+compression: normal
+publish:
+  provider: github
+  owner: pvwvuow
+  repo: frame
+  releaseType: release
+win:
+  icon: build/icon.png
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: portable
+      arch: [x64]
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: always
+  shortcutName: Nama
+  installerLanguages: [fa_IR, en_US]
+  language: "1065"
+mac:
+  icon: build/icon.png
+  category: public.app-category.entertainment
+  hardenedRuntime: false
+  gatekeeperAssess: false
+  target:
+    - target: dmg
+      arch: [x64, arm64]
+    - target: zip
+      arch: [x64, arm64]
+dmg:
+  title: Nama
+linux:
+  icon: build/icon.png
+  category: AudioVideo
+  maintainer: Nama
+  synopsis: Persian streaming desktop app
+  target:
+    - target: AppImage
+      arch: [x64]
+    - target: deb
+      arch: [x64]

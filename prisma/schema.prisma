@@ -138,6 +138,19 @@ model UserProfile {
   subtitle      String   @default("fa") // fa | en | off
   matureContent Boolean  @default(true)
   reduceMotion  Boolean  @default(false)
+  // --- playback extras ---
+  skipIntro     Boolean  @default(true)
+  playbackSpeed Float    @default(1)
+  volume        Int      @default(80)
+  dataSaver     Boolean  @default(false)
+  // --- notifications ---
+  notifyNewEpisodes     Boolean @default(true)
+  notifyRecommendations Boolean @default(true)
+  notifyContinue        Boolean @default(true)
+  // --- parental control ---
+  kidsMode      Boolean  @default(false)
+  parentalPin   String   @default("")
+  language      String   @default("fa") // fa | en
   createdAt     DateTime @default(now())
   updatedAt     DateTime @default(now()) @updatedAt
 }

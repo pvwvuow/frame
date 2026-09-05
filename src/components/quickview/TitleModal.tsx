@@ -165,7 +165,7 @@ export default function TitleModal({
                 <img
                   src={t.poster}
                   alt={t.title}
-                  className="-mt-14 h-[120px] w-[82px] shrink-0 rounded-xl object-cover shadow-[0_12px_30px_rgb(var(--shadow-color)/0.45)] ring-1 ring-white/20"
+                  className="relative z-10 -mt-14 h-[120px] w-[82px] shrink-0 rounded-xl bg-ink-700 object-cover shadow-[0_12px_30px_rgb(var(--shadow-color)/0.45)] ring-1 ring-white/20"
                 />
                 <div className="min-w-0 flex-1 pt-1">
                   <h2 className="truncate text-xl font-black text-white">{t.title}</h2>

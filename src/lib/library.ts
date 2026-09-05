@@ -29,7 +29,7 @@ export type LibrarySnapshot = {
   watchlist: { titleId: number; status: ListStatus }[];
   favorites: number[];
   ratings: { titleId: number; score: number }[];
-  profile: { displayName: string; avatar: number; reduceMotion: boolean };
+  profile: { displayName: string; avatar: number; reduceMotion: boolean; kidsMode: boolean; hasPin: boolean };
 };
 
 export async function getLibrarySnapshot(userKey: string): Promise<LibrarySnapshot> {
@@ -43,7 +43,7 @@ export async function getLibrarySnapshot(userKey: string): Promise<LibrarySnapsh
     watchlist: wl.map((w) => ({ titleId: w.titleId, status: w.status as ListStatus })),
     favorites: fav.map((f) => f.titleId),
     ratings: rt,
-    profile: { displayName: profile.displayName, avatar: profile.avatar, reduceMotion: profile.reduceMotion },
+    profile: { displayName: profile.displayName, avatar: profile.avatar, reduceMotion: profile.reduceMotion, kidsMode: profile.kidsMode, hasPin: !!profile.parentalPin },
   };
 }
 

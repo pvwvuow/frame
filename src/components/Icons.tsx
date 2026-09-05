@@ -345,3 +345,51 @@ export const ArrowLeftIcon = (p: P) => (
     <path d="M19 12H5M12 19l-7-7 7-7" />
   </svg>
 );
+export const BellIcon = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 0 1-3.46 0" />
+  </svg>
+);
+export const RefreshIcon = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M23 4v6h-6M1 20v-6h6" />
+    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+  </svg>
+);
+export const FolderIcon = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+  </svg>
+);
+export const LockIcon = (p: P) => (
+  <svg {...base(p)}>
+    <rect x="3" y="11" width="18" height="11" rx="2" />
+    <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+  </svg>
+);
+export const MinimizeIcon = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M5 12h14" />
+  </svg>
+);
+export const MaximizeIcon = (p: P) => (
+  <svg {...base(p)}>
+    <rect x="4" y="4" width="16" height="16" rx="2" />
+  </svg>
+);
+export const RestoreIcon = (p: P) => (
+  <svg {...base(p)}>
+    <rect x="3" y="7" width="14" height="14" rx="2" />
+    <path d="M7 7V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-2" />
+  </svg>
+);
+export const ExternalIcon = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14 21 3" />
+  </svg>
+);
+export const SparklesIcon = (p: P) => (
+  <svg {...base(p)}>
+    <path d="m12 3 1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9zM19 17l.8 2.2L22 20l-2.2.8L19 23l-.8-2.2L16 20l2.2-.8zM5 2l.6 1.6L7.2 4.2 5.6 4.8 5 6.4 4.4 4.8 2.8 4.2l1.6-.6z" />
+  </svg>
+);

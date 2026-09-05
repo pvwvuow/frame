@@ -297,3 +297,10 @@ html[data-reduce-motion="1"] *, html[data-reduce-motion="1"] *::before, html[dat
 .line-clamp-3 { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .heart-pop { animation: var(--animate-pop); }
 .checkbox-brand { accent-color: var(--color-brand); }
+
+/* ---- Electron desktop shell ---- */
+html[data-electron="1"] .web-only { display: none !important; }
+html[data-electron="1"] .app-drag { -webkit-app-region: drag; }
+html[data-electron="1"] .app-no-drag, html[data-electron="1"] .app-drag a, html[data-electron="1"] .app-drag button, html[data-electron="1"] .app-drag input { -webkit-app-region: no-drag; }
+html[data-electron="1"] { user-select: none; }
+html[data-electron="1"] input, html[data-electron="1"] textarea, html[data-electron="1"] p, html[data-electron="1"] [contenteditable] { user-select: text; }
