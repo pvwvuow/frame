@@ -16,6 +16,7 @@ const { app, BrowserWindow, ipcMain, shell, Menu, nativeTheme, dialog, session }
 const { spawn } = require("node:child_process");
 const path = require("node:path");
 const fs = require("node:fs");
+const crypto = require("node:crypto");
 const net = require("node:net");
 const http = require("node:http");
 const log = require("electron-log");
@@ -65,6 +66,33 @@ function toFileUrl(p) {
   return "file:" + p.replace(/\\/g, "/");
 }
 
+function catalogMarkerPath() {
+  return path.join(app.getPath("userData"), "catalog.sha256");
+}
+
+function sha256File(p) {
+  return crypto.createHash("sha256").update(fs.readFileSync(p)).digest("hex");
+}
+
+/** Records which bundled seed version the user database currently reflects. */
+function writeCatalogMarker(hash) {
+  try {
+    fs.mkdirSync(path.dirname(catalogMarkerPath()), { recursive: true });
+    fs.writeFileSync(catalogMarkerPath(), hash + "\n", "utf8");
+    log.info("catalog marker updated:", hash.slice(0, 12));
+  } catch (e) {
+    log.warn("could not write catalog marker:", e);
+  }
+}
+
+function readCatalogMarker() {
+  try {
+    return fs.readFileSync(catalogMarkerPath(), "utf8").trim();
+  } catch {
+    return "";
+  }
+}
+
 function isSQLiteFile(p) {
   try {
     const fd = fs.openSync(p, "r");
@@ -103,6 +131,13 @@ function ensureUserDb() {
       fs.copyFileSync(src, tmp);
       fs.renameSync(tmp, dst);
       log.info("seeded user database at", dst);
+      // the fresh copy already reflects the bundled catalog → remember it so
+      // the boot-time comparison below does not schedule a needless refresh
+      try {
+        writeCatalogMarker(sha256File(src));
+      } catch (e) {
+        log.warn("seed hash failed after first-run copy:", e);
+      }
     } else {
       // no seed shipped → Prisma will create an empty file and seed.ts
       // self-heals the schema (db/schema.sql) on first request
@@ -159,6 +194,26 @@ async function startServer() {
 
   const port = await freePort();
   const dbPath = ensureUserDb();
+
+  /* Catalog freshness: if the bundled seed differs from the version the user
+     database was installed from, let the server merge the new catalog in
+     before the window opens (see src/lib/catalog-refresh.ts). Without this,
+     an updated app kept rendering the catalog of the FIRST installed version
+     – the user DB intentionally survives updates, the old code only copied
+     the seed when the file was still missing. */
+  let seedHash = null;
+  let needsCatalogRefresh = false;
+  const seed = seedDbPath();
+  if (fs.existsSync(seed)) {
+    try {
+      seedHash = sha256File(seed);
+      needsCatalogRefresh = seedHash !== readCatalogMarker();
+    } catch (e) {
+      log.warn("catalog seed hash failed:", e);
+    }
+  }
+  if (needsCatalogRefresh) log.info("bundled catalog differs from installed – refresh scheduled");
+
   const env = {
     ...process.env,
     ELECTRON_RUN_AS_NODE: "1",
@@ -168,6 +223,7 @@ async function startServer() {
     DATABASE_URL: toFileUrl(dbPath),
     NEXT_TELEMETRY_DISABLED: "1",
     NAMA_ELECTRON: "1",
+    NAMA_CATALOG_SEED: needsCatalogRefresh ? seed : "",
   };
   serverProc = spawn(process.execPath, [entry], { cwd: dir, env, stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
   serverProc.stdout.on("data", (d) => log.info("[next]", String(d).trim()));
@@ -177,8 +233,22 @@ async function startServer() {
     serverProc = null;
   });
   serverUrl = `http://127.0.0.1:${port}`;
-  await waitFor(serverUrl);
-  await probeDatabase(serverUrl);
+  // the first health probe also runs the one-time catalog merge → give it room
+  await waitFor(serverUrl, needsCatalogRefresh ? 120000 : 30000);
+  const health = await probeDatabase(serverUrl);
+  if (seedHash) {
+    if (!needsCatalogRefresh) {
+      writeCatalogMarker(seedHash);
+    } else if (health?.catalog?.ok) {
+      log.info(
+        `catalog refreshed from bundled seed: ${health.catalog.titles} titles, ` +
+          `${health.catalog.episodes} episodes (+${health.catalog.created} new, ~${health.catalog.updated} updated, -${health.catalog.removed} removed)`
+      );
+      writeCatalogMarker(seedHash);
+    } else {
+      log.error("catalog refresh failed:", health?.catalog?.error || "no catalog result");
+    }
+  }
   homeProbeDigest = await probeHomePage(serverUrl);
   if (homeProbeDigest) log.error("home page SSR error, digest:", homeProbeDigest);
   return serverUrl;
@@ -214,21 +284,22 @@ function probeDatabase(baseUrl) {
       let body = "";
       res.on("data", (c) => (body += c));
       res.on("end", () => {
+        let json = null;
         try {
-          const json = JSON.parse(body);
+          json = JSON.parse(body);
           dbProbeError = json && json.db && json.db.ok === false ? String(json.db.error || "unknown database error") : null;
         } catch {
           dbProbeError = null;
         }
         if (dbProbeError) log.error("database probe failed:", dbProbeError);
         else log.info("database probe ok");
-        resolve();
+        resolve(json);
       });
     });
-    req.on("error", () => resolve());
-    req.setTimeout(10000, () => {
+    req.on("error", () => resolve(null));
+    req.setTimeout(60000, () => {
       req.destroy();
-      resolve();
+      resolve(null);
     });
   });
 }
