@@ -4,6 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import type { ListStatus } from "@/lib/library";
+import { logEvent, pushFavorite, pushRating, pushWatchlist } from "@/lib/cloud";
 
 type Profile = { displayName: string; avatar: number; reduceMotion: boolean; kidsMode?: boolean; hasPin?: boolean };
 
@@ -97,6 +98,8 @@ export default function LibraryProvider({ children }: { children: ReactNode }) {
       });
       try {
         const d = await call<{ inList: boolean }>("/api/watchlist", "POST", { titleId: id, value: !was });
+        pushWatchlist(id, d.inList ? "planned" : null);
+        logEvent(d.inList ? "watchlist_add" : "watchlist_remove", { titleId: id, name });
         toast.success(d.inList ? `«${name ?? "عنوان"}» به لیست شما اضافه شد` : `«${name ?? "عنوان"}» از لیست حذف شد`, {
           action: d.inList ? { label: "مشاهده لیست", onClick: () => router.push("/my-list") } : undefined,
         });
@@ -125,6 +128,8 @@ export default function LibraryProvider({ children }: { children: ReactNode }) {
       });
       try {
         const d = await call<{ isFavorite: boolean }>("/api/favorites", "POST", { titleId: id, value: !was });
+        pushFavorite(id, d.isFavorite);
+        logEvent(d.isFavorite ? "favorite_add" : "favorite_remove", { titleId: id, name });
         toast.success(d.isFavorite ? `«${name ?? "عنوان"}» به علاقه‌مندی‌ها اضافه شد ❤️` : `«${name ?? "عنوان"}» از علاقه‌مندی‌ها حذف شد`, {
           action: d.isFavorite ? { label: "علاقه‌مندی‌ها", onClick: () => router.push("/favorites") } : undefined,
         });
@@ -148,6 +153,8 @@ export default function LibraryProvider({ children }: { children: ReactNode }) {
       setList((m) => new Map(m).set(id, status));
       try {
         await call("/api/watchlist", "PATCH", { titleId: id, status });
+        pushWatchlist(id, status);
+        logEvent("watchlist_status", { titleId: id, status });
         softRefresh();
       } catch {
         setList((m) => {
@@ -173,6 +180,8 @@ export default function LibraryProvider({ children }: { children: ReactNode }) {
       });
       try {
         await call("/api/rating", "POST", { titleId: id, score });
+        pushRating(id, score > 0 ? score : null);
+        logEvent(score > 0 ? "rate_set" : "rate_remove", { titleId: id, score });
         toast.success(score > 0 ? `امتیاز شما ثبت شد: ${score}/10` : "امتیاز شما حذف شد");
         softRefresh();
       } catch {

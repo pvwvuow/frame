@@ -5,6 +5,7 @@
    navigation (mini/floating mode). */
 import { useEffect } from "react";
 import { usePlayerStore, type PlayerEpisode, type PlayerSource } from "@/lib/player-store";
+import { logEvent } from "@/lib/cloud";
 
 export default function WatchClient(p: {
   titleId: number;
@@ -23,6 +24,8 @@ export default function WatchClient(p: {
 
   useEffect(() => {
     play(p);
+    // activity log (cloud, only when signed in) — the actual progress stays LOCAL by design
+    void logEvent("play", { titleId: p.titleId, episodeId: p.episode?.id ?? null });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [p.titleId, p.episode?.id ?? 0, p.src]);
 

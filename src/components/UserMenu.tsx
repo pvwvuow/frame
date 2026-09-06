@@ -28,6 +28,7 @@ import { bridge, useIsElectron } from "@/lib/platform";
 import { toast } from "sonner";
 import { useI18n } from "./i18n/LocaleProvider";
 import { LOCALES, LOCALE_META, type TKey } from "@/lib/i18n";
+import { useCloudSession } from "@/lib/cloud";
 
 type IconCmp = typeof UserIcon;
 type Entry = { href: string; label: TKey; icon: IconCmp; key?: "list" | "fav" | "notif"; tint?: string };
@@ -87,6 +88,7 @@ function Item({
 
 export default function UserMenu() {
   const { profile, list, favorites } = useLibrary();
+  const { session } = useCloudSession();
   const { theme, setTheme } = useTheme();
   const { t: tr, locale, dir, setLocale } = useI18n();
   const electron = useIsElectron();
@@ -250,6 +252,22 @@ export default function UserMenu() {
             <div className="max-h-[calc(100dvh-300px)] min-h-0 overflow-y-auto overscroll-contain p-2.5" role="menu">
               <p className="px-2 pb-1.5 pt-1 text-[10px] font-bold text-zinc-500">{tr("user.personal")}</p>
               <ul className="space-y-1">
+                <Item
+                  href="/auth"
+                  icon={UserIcon}
+                  label={
+                    session?.user?.email
+                      ? (() => {
+                          const mail = session.user.email ?? "";
+                          return mail.length > 28 ? `${mail.slice(0, 26)}…` : mail;
+                        })()
+                      : locale === "en"
+                        ? "Sign in / Sign up"
+                        : "ورود / ثبت‌نام"
+                  }
+                  active={isActive("/auth")}
+                  tint="text-brand"
+                />
                 {PERSONAL.map((it) => (
                   <Item
                     key={it.href}
