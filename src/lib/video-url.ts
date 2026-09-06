@@ -14,7 +14,17 @@ export type ProxySubsResponse = {
   cues: number;
   complete: boolean;
   vtt: string | null;
+  /** v0.10.6 header intelligence */
+  probed?: boolean;
+  kinds?: string[]; // subtitle CodecIDs seen in Tracks (incl. bitmap ones)
+  audio?: string[]; // audio track CodecIDs in file order
+  video?: string | null;
+  /** is the first audio track decodable by Chromium? null = unknown yet */
+  audioOk?: boolean | null;
+  audioLabel?: string | null; // e.g. "DTS", "AC3 (Dolby Digital)"
 };
+
+export type ProxyProbeResponse = Omit<ProxySubsResponse, "complete" | "vtt"> & { cues: number };
 
 /** URLs whose container may carry an embedded (renderable-by-us) subtitle. */
 export function isMkvUrl(url: string): boolean {
@@ -32,6 +42,12 @@ export function mediaSrc(rawUrl: string, proxyBase: string | null | undefined): 
 export function subsUrl(rawUrl: string, proxyBase: string | null | undefined): string | null {
   if (!proxyBase || !rawUrl) return null;
   return `${proxyBase}/subs?u=${encodeURIComponent(rawUrl)}`;
+}
+
+/** One-shot header probe (tracks/codecs) of a raw catalog URL. */
+export function probeUrl(rawUrl: string, proxyBase: string | null | undefined): string | null {
+  if (!proxyBase || !rawUrl) return null;
+  return `${proxyBase}/probe?u=${encodeURIComponent(rawUrl)}`;
 }
 
 /** Cached proxy base ("" = electron but proxy down, undefined = unknown). */

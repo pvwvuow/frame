@@ -360,7 +360,10 @@ html[data-electron="1"] body { overscroll-behavior: none; }
   --hdr-blur: 0px;
   --hdr-shadow: 0 0 0 rgba(0, 0, 0, 0);
   background-color: var(--hdr-bg);
-  background-image: linear-gradient(to bottom, color-mix(in srgb, var(--color-ink) 82%, transparent), transparent);
+  /* v0.10.6: much lighter top scrim — the hero image must stay VISIBLE
+     behind the unscrolled nav («نوشته‌های نوار روی عکس باشند»), the old
+     82%-ink band read as a solid bar sitting ON TOP of the artwork. */
+  background-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.42), rgba(0, 0, 0, 0.16) 55%, transparent);
   border-bottom: 1px solid var(--hdr-border);
   box-shadow: var(--hdr-shadow);
   -webkit-backdrop-filter: blur(var(--hdr-blur)) saturate(160%);
@@ -373,15 +376,16 @@ html[data-electron="1"] body { overscroll-behavior: none; }
     backdrop-filter 0.28s ease;
   will-change: background-color, border-color;
 }
+/* nav text stays readable over the bright artwork without hiding it */
+.site-header[data-solid="0"] { background-color: transparent; text-shadow: 0 1px 10px rgb(0 0 0 / 0.45), 0 0 2px rgb(0 0 0 / 0.35); }
 .site-header[data-solid="1"] {
   --hdr-bg: var(--glass-bg-strong);
   --hdr-border: var(--glass-border);
   --hdr-blur: var(--glass-blur);
   --hdr-shadow: 0 10px 30px rgb(var(--shadow-color) / 0.25);
   background-image: none;
+  text-shadow: none;
 }
-/* the gradient scrim should not animate its own opacity – keep it instant to avoid double fades */
-.site-header[data-solid="0"] { background-color: transparent; }
 
 /* ---- LTR (English UI) adjustments ---- */
 html[dir="ltr"] body { font-family: "Segoe UI", "Inter", system-ui, -apple-system, "Vazirmatn", sans-serif; }

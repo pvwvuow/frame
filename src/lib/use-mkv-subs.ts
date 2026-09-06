@@ -10,11 +10,13 @@ import { subsUrl, type ProxySubsResponse } from "./video-url";
 export function useMkvSubs(rawUrl: string | null | undefined, proxyBase: string | null | undefined, enabled = true) {
   const [vtt, setVtt] = useState<string | null>(null);
   const [cueCount, setCueCount] = useState(0);
+  const [info, setInfo] = useState<Pick<ProxySubsResponse, "found" | "probed" | "kinds" | "audio" | "audioOk" | "audioLabel"> | null>(null);
   const lastCount = useRef(0);
 
   useEffect(() => {
     setVtt(null);
     setCueCount(0);
+    setInfo(null);
     lastCount.current = 0;
     if (!rawUrl || !proxyBase || !enabled) return;
     const url = subsUrl(rawUrl, proxyBase);
@@ -29,6 +31,7 @@ export function useMkvSubs(rawUrl: string | null | undefined, proxyBase: string 
         if (r.ok) {
           const j = (await r.json()) as ProxySubsResponse;
           if (!alive) return;
+          setInfo({ found: j.found, probed: j.probed, kinds: j.kinds, audio: j.audio, audioOk: j.audioOk, audioLabel: j.audioLabel });
           if (j.cues > 0 && j.vtt && j.cues !== lastCount.current) {
             lastCount.current = j.cues;
             setVtt(j.vtt);
@@ -51,5 +54,5 @@ export function useMkvSubs(rawUrl: string | null | undefined, proxyBase: string 
     };
   }, [rawUrl, proxyBase, enabled]);
 
-  return { vtt, cueCount };
+  return { vtt, cueCount, info };
 }

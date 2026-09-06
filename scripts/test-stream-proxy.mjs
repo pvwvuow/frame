@@ -1,13 +1,18 @@
 /* Regression tests for the local stream proxy + MKV subtitle scanner.
  *
- * Builds a synthetic Matroska file (video+audio+SRT track), serves it from a
- * local dummy upstream with Range support, then drives the real proxy:
- *   1. full pass  → byte-identical passthrough + 2 cues extracted
+ * Builds synthetic Matroska files (video+audio+text tracks), serves them from
+ * a local dummy upstream with Range support, then drives the real proxy:
+ *   1. full pass  → byte-identical passthrough + 2 cues extracted (SRT)
  *   2. /subs      → VTT contains the Persian lines with VTT timestamps
  *   3. mid-file Range pass (no Tracks in sight) → shared trackNumber still
  *      recognises the subtitle block
  *   4. chunked feeding in odd sizes → parser survives chunk boundaries
  *   5. laced subtitle block → safely ignored
+ *   6. v0.10.6: ASS/SSA extraction (bare fields + full Dialogue line),
+ *      override-tag stripping, explicit end timing
+ *   7. v0.10.6: audio codec capture → audioOk=false for DTS/AC3, true for AAC
+ *   8. v0.10.6: /probe endpoint reports tracks without touching playback
+ *   9. v0.10.6: UTF8 preferred over ASS when both exist; bitmap-only → found=false
  *
  * Run: node scripts/test-stream-proxy.mjs
  */
@@ -15,7 +20,7 @@ import { createRequire } from "node:module";
 import http from "node:http";
 
 const require = createRequire(import.meta.url);
-const { startStreamProxy, MkvScanner, SubStore } = require("../electron/stream-proxy.cjs");
+const { startStreamProxy, MkvScanner, SubStore, StoreCache, assFrameToCue, isAudioCodecSupported } = require("../electron/stream-proxy.cjs");
 
 let passed = 0;
 let failed = 0;
@@ -99,6 +104,87 @@ const mkv = Buffer.concat([
   ])),
 ]);
 const CLUSTER2_OFFSET = mkv.indexOf(Buffer.from([0x1f, 0x43, 0xb6, 0x75]), 60);
+
+/* ------------------------------------------------- v0.10.6 fixtures ---- */
+const ASS1 = "0,0:00:02.00,0:00:04.50,Def,,0,0,0,,سلام دوباره"; // bare Dialogue fields (Matroska convention)
+const ASS2 = "Dialogue: 0,0:00:06.00,0:00:07.50,Def,,0,0,0,,{\\i1}خط دوم{\\i0}"; // full line + override tags
+const assCluster1 = el(0x1f43b675, Buffer.concat([
+  el(0xe7, uint16(0)),
+  simpleBlock(1, 0, 0x80, Buffer.alloc(64, 1)),
+  simpleBlock(3, 2000, 0x00, ASS1), // @2s
+]));
+const assCluster2 = el(0x1f43b675, Buffer.concat([
+  el(0xe7, uint16(5000)),
+  simpleBlock(3, 1000, 0x00, ASS2), // @6s
+]));
+/** video + DTS audio + ASS subtitle */
+const assMkv = Buffer.concat([
+  el(0x1a45dfa3, el(0x4282, Buffer.from("matroska", "ascii"))),
+  el(0x18538067, Buffer.concat([
+    el(0x1549a966, el(0x2ad7b1, uint32(1000000))),
+    el(0x1654ae6b, Buffer.concat([
+      trackEntry(1, 1, "V_MPEG4/ISO/AVC"),
+      trackEntry(2, 2, "A_DTS"),
+      trackEntry(3, 0x11, "S_TEXT/ASS"),
+    ])),
+    assCluster1,
+    assCluster2,
+  ])),
+]);
+/** video + AC3 audio + PGS bitmap subtitle (no renderable text) */
+const bitmapMkv = Buffer.concat([
+  el(0x1a45dfa3, el(0x4282, Buffer.from("matroska", "ascii"))),
+  el(0x18538067, Buffer.concat([
+    el(0x1654ae6b, Buffer.concat([
+      trackEntry(1, 1, "V_MPEG4/ISO/AVC"),
+      trackEntry(2, 2, "A_AC3"),
+      trackEntry(3, 0x11, "S_HDMV/PGS"),
+    ])),
+    el(0x1f43b675, Buffer.concat([el(0xe7, uint16(0)), simpleBlock(1, 0, 0x80, Buffer.alloc(32, 3))])),
+  ])),
+]);
+/** video + AAC audio + BOTH UTF8 and ASS subtitle tracks → UTF8 wins */
+const dualMkv = Buffer.concat([
+  el(0x1a45dfa3, el(0x4282, Buffer.from("matroska", "ascii"))),
+  el(0x18538067, Buffer.concat([
+    el(0x1654ae6b, Buffer.concat([
+      trackEntry(1, 1, "V_MPEG4/ISO/AVC"),
+      trackEntry(2, 2, "A_AAC"),
+      trackEntry(3, 0x11, "S_TEXT/ASS"),
+      trackEntry(4, 0x11, "S_TEXT/UTF8"),
+    ])),
+    el(0x1f43b675, Buffer.concat([
+      el(0xe7, uint16(0)),
+      simpleBlock(4, 1000, 0x00, "3\n00:00:01,000 --> 00:00:02,000\nاز ترک SRT\n"),
+      simpleBlock(3, 2000, 0x00, ASS1),
+    ])),
+  ])),
+]);
+
+/** dummy upstream that serves one of the fixtures with Range support */
+function serveFixture(buffer, contentType = "video/x-matroska") {
+  return new Promise((resolve) => {
+    const server = http.createServer((req, res) => {
+      const range = req.headers.range;
+      if (range) {
+        const m = /^bytes=(\d+)-/.exec(range);
+        const start = m ? Number(m[1]) : 0;
+        const slice = buffer.subarray(start);
+        res.writeHead(206, {
+          "content-type": contentType,
+          "content-length": String(slice.length),
+          "content-range": `bytes ${start}-${buffer.length - 1}/${buffer.length}`,
+          "accept-ranges": "bytes",
+        });
+        res.end(slice);
+        return;
+      }
+      res.writeHead(200, { "content-type": contentType, "content-length": String(buffer.length), "accept-ranges": "bytes" });
+      res.end(buffer);
+    });
+    server.listen(0, "127.0.0.1", () => resolve({ server, url: `http://127.0.0.1:${server.address().port}/movie.mkv` }));
+  });
+}
 
 /* ------------------------------------------------------- dummy upstream */
 async function withUpstream(fn) {
@@ -203,6 +289,77 @@ await withUpstream(async (upstreamUrl) => {
   // 7) security: /stream rejects non-http urls and remote peers are impossible (loopback bind)
   const bad = await fetch(`${base}/stream?u=${encodeURIComponent("file:///etc/passwd")}`);
   check("security: file:// rejected", bad.status === 400);
+
+  /* -------------------------------------------- v0.10.6: new subsystems -- */
+
+  // 8) ASS/SSA extraction via the real proxy (DTS audio → audioOk=false)
+  const ass = await serveFixture(assMkv);
+  try {
+    const assStream = `${base}/stream?u=${encodeURIComponent(ass.url)}`;
+    const assSubs = `${base}/subs?u=${encodeURIComponent(ass.url)}`;
+    const ra = await fetch(assStream);
+    await ra.arrayBuffer();
+    await new Promise((r) => setTimeout(r, 150));
+    const sa = await getJson(assSubs);
+    check("ass: found text track", sa.body.found === true);
+    check("ass: 2 cues extracted", sa.body.cues === 2, `got ${sa.body.cues}`);
+    check("ass: bare-fields line", sa.body.vtt?.includes("سلام دوباره"));
+    check("ass: override tags stripped", sa.body.vtt?.includes("خط دوم") && !sa.body.vtt?.includes("\\i1"));
+    check("ass: explicit end 4.5s", sa.body.vtt?.includes("00:00:02.000 --> 00:00:04.500"));
+    check("ass: kinds recorded", (sa.body.kinds || []).includes("S_TEXT/ASS"));
+    check("ass: DTS detected", sa.body.audio?.[0] === "A_DTS");
+    check("ass: audioOk=false for DTS", sa.body.audioOk === false);
+    check("ass: audioLabel", sa.body.audioLabel === "DTS");
+    check("ass: video codec captured", sa.body.video === "V_MPEG4/ISO/AVC");
+  } finally {
+    ass.server.close();
+  }
+
+  // 9) /probe endpoint – header intelligence with a ranged fetch only
+  const bit = await serveFixture(bitmapMkv);
+  try {
+    const probe = await getJson(`${base}/probe?u=${encodeURIComponent(bit.url)}`);
+    check("probe: probed=true", probe.body.probed === true);
+    check("probe: AC3 detected", probe.body.audio?.[0] === "A_AC3");
+    check("probe: audioOk=false for AC3", probe.body.audioOk === false);
+    check("probe: AC3 label", probe.body.audioLabel === "AC3 (Dolby Digital)");
+    check("probe: bitmap kind listed", (probe.body.kinds || []).includes("S_HDMV/PGS"));
+    check("probe: no text track", probe.body.found === false);
+    // /subs mirrors the header info gathered by the probe
+    const s2 = await getJson(`${base}/subs?u=${encodeURIComponent(bit.url)}`);
+    check("probe→subs: audioOk mirrored", s2.body.audioOk === false && s2.body.probed === true);
+  } finally {
+    bit.server.close();
+  }
+
+  // 10) dual UTF8+ASS → UTF8 preferred; AAC → audioOk=true
+  const dual = await serveFixture(dualMkv);
+  try {
+    const store4 = new SubStore("dual");
+    const sc4 = new MkvScanner(store4);
+    sc4.feed(dualMkv);
+    sc4.end();
+    check("dual: found=true", store4.found === true);
+    check("dual: utf8 preferred", store4.textTracks.get(store4.trackNumber) === "utf8");
+    check("dual: srt cue text", [...store4.cues.values()].some((c) => c.t.includes("از ترک SRT")));
+    check("dual: ass cue not merged", ![...store4.cues.values()].some((c) => c.t.includes("سلام دوباره")));
+    check("dual: AAC audioOk=true", store4.audioOk() === true);
+    const probe = await getJson(`${base}/probe?u=${encodeURIComponent(dual.url)}`);
+    check("dual: probe audioOk=true", probe.body.audioOk === true);
+  } finally {
+    dual.server.close();
+  }
+
+  // 11) codec support table
+  check("codec: A_AAC ok", isAudioCodecSupported("A_AAC") === true);
+  check("codec: A_MP3 ok", isAudioCodecSupported("A_MPEG/L3") === true);
+  check("codec: A_OPUS ok", isAudioCodecSupported("A_OPUS") === true);
+  check("codec: A_FLAC ok", isAudioCodecSupported("A_FLAC") === true);
+  check("codec: A_DTS no", isAudioCodecSupported("A_DTS") === false);
+  check("codec: A_DTSHD no", isAudioCodecSupported("A_DTS/HD") === false);
+  check("codec: A_TRUEHD no", isAudioCodecSupported("A_TRUEHD") === false);
+  check("codec: A_EAC3 no", isAudioCodecSupported("A_EAC3") === false);
+  check("codec: assFrameToCue timing", JSON.stringify(assFrameToCue(Buffer.from(ASS1, "utf8"))) === JSON.stringify({ start: 2000, end: 4500, text: "سلام دوباره" }));
 
   proxy.close();
   console.log(`\n${passed} passed, ${failed} failed`);

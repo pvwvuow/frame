@@ -35,8 +35,9 @@ import {
 } from "./Icons";
 import FavoriteButton from "./FavoriteButton";
 import WatchlistButton from "./WatchlistButton";
-import { loadProxyBase, mediaSrc } from "@/lib/video-url";
+import { isMkvUrl, loadProxyBase, mediaSrc } from "@/lib/video-url";
 import { useMkvSubs } from "@/lib/use-mkv-subs";
+import { ensurePlayableAudio } from "@/lib/audio-guard";
 import { preferredSourceIdx, rememberedVariantIdx, rememberVariantPref, variantShort } from "@/lib/variant";
 
 const SUB_SIZE_KEY = "nama-sub-size";
@@ -94,17 +95,9 @@ export default function Player() {
   const activeSrc = mediaSrc(rawActive, proxyBase);
   const [qMenu, setQMenu] = useState(false);
 
-  // default variant: pip's pick (srcHint) → remembered taste → hardsub → dub
-  // → catalog order. Re-applied when the source list changes (new title /
-  // episode), but a manual pick always wins for the current video.
-  useEffect(() => {
-    if (!srcList.length) return;
-    const hint = usePlayerStore.getState().srcHint;
-    const remembered = rememberedVariantIdx(srcList);
-    setSrcIdx(hint >= 0 && hint < srcList.length ? hint : remembered >= 0 ? remembered : preferredSourceIdx(srcList));
-    setQMenu(false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [contentKey, srcList.length]);
+  // default variant + audio guard live BELOW (after all state declarations)
+  const srcIdxRef = useRef(0);
+  const manualPickRef = useRef(false);
 
   // ---- subtitles ----------------------------------------------------------
   const [subOn, setSubOn] = useState(false);
@@ -125,18 +118,24 @@ export default function Player() {
   const [loading, setLoading] = useState(true);
   const [ended, setEnded] = useState(false);
   const [countdown, setCountdown] = useState<number | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   // when switching quality we need to resume at the same second
   const resumeAt = useRef<number | null>(null);
+  const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // restore volume/muted preferences (a stale muted flag is the classic
-  // "the movie has no sound" report)
+  const showNotice = useCallback((msg: string) => {
+    setNotice(msg);
+    if (noticeTimer.current) clearTimeout(noticeTimer.current);
+    noticeTimer.current = setTimeout(() => setNotice(null), 9000);
+  }, []);
+
+  // restore volume preference. NOTE: the muted flag is deliberately NOT
+  // restored — a stale muted=1 from an old session was one cause of the
+  // «the movie has no sound» report; every fresh open starts unmuted.
   useEffect(() => {
     try {
       const v = Number(localStorage.getItem(VOL_KEY));
       if (Number.isFinite(v) && v > 0) setVolume(Math.min(1, v));
-      setMuted(localStorage.getItem(MUTED_KEY) === "1");
-      const s = localStorage.getItem(SUB_SIZE_KEY) as "s" | "m" | "l" | null;
-      if (s) setSubSize(s);
     } catch {
       /* ignore */
     }
@@ -152,6 +151,36 @@ export default function Player() {
     }
   }, [volume, muted]);
 
+  // default variant: pip's pick (srcHint) → remembered taste → hardsub → dub
+  // → catalog order. Re-applied when the source list changes (new title /
+  // episode), but a manual pick always wins for the current video.
+  // v0.10.6: the same pass runs the AUDIO GUARD — if the chosen variant's
+  // first audio track is undecodable (DTS/AC3/…) we switch to the closest
+  // variant that will actually sound, instead of a silent picture.
+  useEffect(() => {
+    if (!srcList.length) return;
+    const hint = usePlayerStore.getState().srcHint;
+    const remembered = rememberedVariantIdx(srcList);
+    const initial = hint >= 0 && hint < srcList.length ? hint : remembered >= 0 ? remembered : preferredSourceIdx(srcList);
+    setSrcIdx(initial);
+    manualPickRef.current = false; // new content → the guard may act again
+    setQMenu(false);
+    if (proxyBase) {
+      let alive = true;
+      void ensurePlayableAudio(srcList, initial, proxyBase).then((r) => {
+        if (!alive || !r) return;
+        if (r.switchedTo != null && r.switchedTo !== srcIdxRef.current) {
+          setSrcIdx(r.switchedTo);
+          setLoading(true);
+        }
+        if (r.message) showNotice(r.message);
+      });
+      return () => {
+        alive = false;
+      };
+    }
+  }, [contentKey, srcList.length, proxyBase]);
+
   // lock body scroll behind the theater overlay
   useEffect(() => {
     if (!open) return;
@@ -161,6 +190,16 @@ export default function Player() {
       document.body.style.overflow = prev;
     };
   }, [open]);
+
+  // restore subtitle size pref (moved out of the volume effect)
+  useEffect(() => {
+    try {
+      const s = localStorage.getItem(SUB_SIZE_KEY) as "s" | "m" | "l" | null;
+      if (s) setSubSize(s);
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   // while the pip window owns playback, never leave the user staring at a
   // bare /watch page (its only content is the black backdrop); browsing away
@@ -303,8 +342,8 @@ export default function Player() {
     if (pipOpen) videoRef.current?.pause();
   }, [pipOpen]);
 
-  // ---- subtitles extracted from the MKV container (v0.10.5) ----------------
-  const { vtt: mkvVtt } = useMkvSubs(rawActive || null, proxyBase, open);
+  // ---- subtitles extracted from the MKV container (v0.10.5, ASS+ in 0.10.6)
+  const { vtt: mkvVtt, info: mkvInfo } = useMkvSubs(rawActive || null, proxyBase, open);
   const mkvBlobUrl = useRef<string | null>(null);
   useEffect(() => {
     const v = videoRef.current;
@@ -369,7 +408,15 @@ export default function Player() {
       // belt & braces for the first-play audio race: re-apply before playing
       v.volume = volume;
       v.muted = muted;
-      void v.play().catch(() => {});
+      void v.play().catch((err: unknown) => {
+        // web fallback (Electron sets no-user-gesture-required): start muted,
+        // let the unmute happen on the next user interaction
+        if (err && typeof err === "object" && (err as { name?: string }).name === "NotAllowedError") {
+          v.muted = true;
+          setMuted(true);
+          void v.play().catch(() => {});
+        }
+      });
     };
     const onTime = () => {
       setCurrent(v.currentTime);
@@ -419,14 +466,22 @@ export default function Player() {
   }, [startAt, save, bumpUi, nextEpisode, activeSrc, volume, muted]);
 
   // switch quality → same second, keep playing
-  const pickSource = (i: number) => {
+  const pickSource = (i: number, manual = true) => {
     const v = videoRef.current;
     if (v) resumeAt.current = v.currentTime;
-    rememberVariantPref(srcList[i]?.v);
+    if (manual) {
+      manualPickRef.current = true;
+      rememberVariantPref(srcList[i]?.v);
+    }
     setSrcIdx(i);
     setQMenu(false);
     setLoading(true);
   };
+
+  // keep the ref in sync without re-triggering the guard
+  useEffect(() => {
+    srcIdxRef.current = srcIdx;
+  }, [srcIdx]);
 
   // subtitle track mode sync
   useEffect(() => {
@@ -616,6 +671,15 @@ export default function Player() {
           <span className="grid h-24 w-24 place-items-center rounded-full bg-white/15 text-white backdrop-blur-md ring-1 ring-white/30">
             <PlayIcon width={44} height={44} className="ms-2" />
           </span>
+        </div>
+      )}
+
+      {/* v0.10.6 notice banner (audio-guard / subtitle intelligence) */}
+      {notice && (
+        <div className="pointer-events-none absolute inset-x-0 bottom-24 z-40 flex justify-center px-4" data-ctrl>
+          <div className="max-w-[92%] rounded-full border border-amber-300/30 bg-black/85 px-5 py-2.5 text-center text-xs font-semibold leading-6 text-amber-100 shadow-2xl backdrop-blur">
+            {notice}
+          </div>
         </div>
       )}
 
@@ -923,7 +987,11 @@ export default function Player() {
                         </button>
                       ) : (
                         <p className="mb-2 rounded-xl bg-white/5 p-2.5 text-[11px] leading-5 text-zinc-400">
-                          نسخه‌های «زیرنویس چسبیده» زیرنویس داخل تصویر دارند و به‌صورت پیش‌فرض انتخاب می‌شوند. می‌توانید فایل SRT خودتان را هم لود کنید.
+                          {isMkvUrl(rawActive) && mkvInfo?.probed && (mkvInfo.kinds ?? []).some((k) => /S_IMAGE|PGS|VobSub|^S_HDMV/i.test(k)) ? (
+                            <>زیرنویس داخل این فایل از نوع تصویری (PGS/VobSub) است و به‌عنوان متن قابل نمایش نیست؛ نسخه‌های «زیرنویس چسبیده» زیرنویس را داخل خود تصویر دارند.</>
+                          ) : (
+                            <>نسخه‌های «زیرنویس چسبیده» زیرنویس داخل تصویر دارند و به‌صورت پیش‌فرض انتخاب می‌شوند. می‌توانید فایل SRT خودتان را هم لود کنید.</>
+                          )}
                         </p>
                       )}
                       <button

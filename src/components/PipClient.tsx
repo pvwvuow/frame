@@ -18,6 +18,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { formatClock, fa } from "@/lib/format";
 import { loadProxyBase, mediaSrc } from "@/lib/video-url";
 import { useMkvSubs } from "@/lib/use-mkv-subs";
+import { ensurePlayableAudio } from "@/lib/audio-guard";
 import { preferredSourceIdx, rememberedVariantIdx, rememberVariantPref, variantShort } from "@/lib/variant";
 import type { PipPayload } from "@/lib/platform";
 import {
@@ -59,6 +60,14 @@ export default function PipClient() {
   const [showUi, setShowUi] = useState(true);
   const [subOn, setSubOn] = useState(true);
   const [subLoaded, setSubLoaded] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showNotice = useCallback((msg: string) => {
+    setNotice(msg);
+    if (noticeTimer.current) clearTimeout(noticeTimer.current);
+    noticeTimer.current = setTimeout(() => setNotice(null), 9000);
+  }, []);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -97,8 +106,13 @@ export default function PipClient() {
     return un;
   }, []);
 
-  /* resolve which source plays: hint → remembered taste → hardsub → dub */
+  /* resolve which source plays: hint → remembered taste → hardsub → dub →
+   * catalog order; then the v0.10.6 audio guard — a variant whose first
+   * audio track is DTS/AC3 (undecodable by Chromium) is swapped for the
+   * closest variant that will actually sound. */
   const stateKey = state ? `${state.slug}|${state.episode?.id ?? 0}|${state.src}` : "";
+  // re-runs when the proxy comes up late so the guard always gets its chance
+  const guardKey = `${stateKey}|${proxyBase ?? ""}`;
   useEffect(() => {
     if (!state) return;
     const list = state.sources ?? [];
@@ -108,16 +122,28 @@ export default function PipClient() {
     }
     const hint = state.srcIdx ?? -1;
     const remembered = rememberedVariantIdx(list);
-    setSrcIdx(hint >= 0 && hint < list.length ? hint : remembered >= 0 ? remembered : preferredSourceIdx(list));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stateKey]);
+    const initial = hint >= 0 && hint < list.length ? hint : remembered >= 0 ? remembered : preferredSourceIdx(list);
+    setSrcIdx(initial);
+    if (proxyBase) {
+      let alive = true;
+      void ensurePlayableAudio(list, initial, proxyBase).then((r) => {
+        if (!alive || !r) return;
+        if (r.switchedTo != null && r.switchedTo !== initial) setSrcIdx(r.switchedTo);
+        if (r.message) showNotice(r.message);
+      });
+      return () => {
+        alive = false;
+      };
+    }
+  }, [guardKey]);
 
-  /* restore volume/sub prefs (shared localStorage across app windows) */
+  /* restore volume/sub prefs (shared localStorage across app windows).
+   * muted is NOT restored — fresh playback always starts unmuted; the
+   * in-session handoff payload (state.muted) is honored above instead. */
   useEffect(() => {
     try {
       const v = Number(localStorage.getItem(VOL_KEY));
       if (Number.isFinite(v) && v > 0) setVolume(Math.min(1, v));
-      setMuted(localStorage.getItem(MUTED_KEY) === "1");
       setSubOn(localStorage.getItem(SUB_ON_KEY) !== "0");
     } catch {
       /* ignore */
@@ -180,7 +206,13 @@ export default function PipClient() {
       v.volume = volume;
       v.muted = muted;
       v.playbackRate = rate;
-      void v.play().catch(() => {});
+      void v.play().catch((err: unknown) => {
+        if (err && typeof err === "object" && (err as { name?: string }).name === "NotAllowedError") {
+          v.muted = true;
+          setMuted(true);
+          void v.play().catch(() => {});
+        }
+      });
     };
     const onTime = () => {
       setCurrent(v.currentTime);
@@ -399,6 +431,15 @@ export default function PipClient() {
       {loading && !ended && activeSrc && (
         <div className="pointer-events-none absolute inset-0 grid place-items-center">
           <div className="h-12 w-12 animate-spin rounded-full border-4 border-white/20 border-t-brand" />
+        </div>
+      )}
+
+      {/* v0.10.6 notice banner (audio-guard) */}
+      {notice && (
+        <div className="pointer-events-none absolute inset-x-0 bottom-14 z-40 flex justify-center px-3">
+          <div className="max-w-[94%] rounded-full border border-amber-300/30 bg-black/85 px-4 py-2 text-center text-[11px] font-semibold leading-5 text-amber-100 backdrop-blur">
+            {notice}
+          </div>
         </div>
       )}
 
