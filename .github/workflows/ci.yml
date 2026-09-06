@@ -15,7 +15,13 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci --legacy-peer-deps
+      - name: Preflight gate
+        run: node scripts/preflight.mjs --quick
+        env:
+          DATABASE_URL: "file:../db/custom.db"
       - run: npx tsc --noEmit
+      - name: Startup regression tests (nama.db / orphan server)
+        run: node scripts/test-startup-fixes.mjs
       - run: npm run build
         env:
           DATABASE_URL: "file:../db/custom.db"

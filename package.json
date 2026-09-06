@@ -1,10 +1,11 @@
 {
   "name": "nama",
-  "version": "0.10.2",
+  "version": "0.10.3",
   "private": true,
   "scripts": {
     "dev": "next dev -p 3000",
-    "build": "prisma generate && next build && node scripts/postbuild.cjs",
+    "build": "prisma generate && next build --webpack && node scripts/postbuild.cjs",
+    "verify": "npx tsc --noEmit && node scripts/preflight.mjs && node scripts/test-startup-fixes.mjs",
     "start": "NODE_ENV=production node .next/standalone/server.js",
     "lint": "eslint .",
     "db:push": "prisma db push --accept-data-loss",

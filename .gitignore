@@ -62,6 +62,8 @@ server.log
 !/scripts/electron-after-pack.cjs
 !/scripts/mock-od
 !/scripts/test-parser.ts
+!/scripts/test-startup-fixes.mjs
+!/scripts/preflight.mjs
 /scripts/mock-od/tree/
 /electron/dist/
 /upload/

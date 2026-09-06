@@ -217,6 +217,13 @@ function isOurServerProcess(pid) {
       ).toString();
       return /server\.js/i.test(out);
     }
+    if (process.platform === "darwin") {
+      // macOS has no /proc – `ps -p <pid> -o command=` prints the full argv
+      const out = execFileSync("ps", ["-p", String(pid), "-o", "command="], {
+        timeout: 10000,
+      }).toString();
+      return /server\.js/.test(out);
+    }
     const cmd = fs.readFileSync(`/proc/${pid}/cmdline`, "utf8");
     return /server\.js/.test(cmd);
   } catch {

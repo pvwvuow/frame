@@ -68,6 +68,20 @@ jobs:
           git push origin "refs/tags/$TAG"
           echo "build=true" >> "$GITHUB_OUTPUT"
 
+      # Pre-create the GitHub release so the 3 OS build jobs never race on
+      # release creation (electron-builder 422 already_exists → wasted retries)
+      - name: Pre-create release object
+        if: steps.decide.outputs.build == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.decide.outputs.tag }}
+        run: |
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 || \
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" \
+               --title "Nama $TAG" \
+               --notes "نما $TAG — ساخته‌شده توسط CI. See the app changelog inside the release notes of the main repository." \
+               --latest
+
   build:
     name: Build ${{ matrix.os }}
     needs: prepare
@@ -88,16 +102,33 @@ jobs:
       - name: Install dependencies
         run: npm ci --legacy-peer-deps
 
+      - name: Cache Electron / electron-builder downloads
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/electron
+            ~/.cache/electron-builder
+          key: electron-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: electron-${{ runner.os }}-
+
+      - name: Preflight gate
+        run: node scripts/preflight.mjs --quick
+        env:
+          DATABASE_URL: "file:../db/custom.db"
+
       - name: Build Next.js (standalone)
         run: npm run build
         env:
           DATABASE_URL: "file:../db/custom.db"
           NEXT_TELEMETRY_DISABLED: "1"
 
+      - name: Startup regression tests (nama.db / orphan server)
+        run: node scripts/test-startup-fixes.mjs
+
       - name: Build & publish desktop app
         uses: nick-fields/retry@v3
         with:
-          timeout_minutes: 40
+          timeout_minutes: 60
           max_attempts: 3
           retry_wait_seconds: 30
           command: npm run electron:release
