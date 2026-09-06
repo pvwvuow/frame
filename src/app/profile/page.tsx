@@ -2,6 +2,8 @@ import Link from "next/link";
 import TitleCard from "@/components/TitleCard";
 import ContinueCard from "@/components/library/ContinueCard";
 import { AVATARS } from "@/components/library/SettingsForm";
+import CloudIdentityBadge from "@/components/auth/CloudIdentityBadge";
+import { ProfileName, ProfileAvatarLetter } from "@/components/auth/ProfileIdentity";
 import { BookmarkIcon, HeartIcon, HistoryIcon, SettingsIcon, StarIcon, ClockIcon, CheckCircleIcon, ChevronLeft } from "@/components/Icons";
 import { getProfile, getUserStats, getFavoriteRows, getMyListRows } from "@/lib/library";
 import { getContinueWatching } from "@/lib/queries";
@@ -31,11 +33,12 @@ export default async function ProfilePage() {
         <div className="relative mx-auto max-w-[1600px] px-4 pb-8 pt-28 sm:px-8 lg:px-12 lg:pt-36">
           <div className="flex flex-col gap-6 md:flex-row md:items-center">
             <div className={`grid h-28 w-28 shrink-0 place-items-center rounded-[28px] bg-gradient-to-br text-5xl font-black text-white shadow-2xl ${AVATARS[p.avatar] ?? AVATARS[0]}`}>
-              {p.displayName.slice(0, 1)}
+              <ProfileAvatarLetter localName={p.displayName} />
             </div>
             <div className="min-w-0 flex-1">
               <p className="text-xs font-bold text-brand">{level}</p>
-              <h1 className="mt-1 truncate text-4xl font-black text-white sm:text-5xl">{p.displayName}</h1>
+              <ProfileName localName={p.displayName} />
+              <CloudIdentityBadge />
               <p className="mt-2 text-sm text-zinc-400">
                 عضو از {new Date(stats.memberSince).toLocaleDateString("fa-IR", { year: "numeric", month: "long" })} · {stats.minutesWatched ? formatDuration(stats.minutesWatched) : "۰ دقیقه"} تماشا
               </p>

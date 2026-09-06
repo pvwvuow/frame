@@ -7,6 +7,7 @@ import LibraryProvider from "@/components/library/LibraryProvider";
 import ThemeProvider from "@/components/theme/ThemeProvider";
 import LocaleProvider from "@/components/i18n/LocaleProvider";
 import CommandPalette from "@/components/CommandPalette";
+import WelcomeAuth from "@/components/auth/WelcomeAuth";
 import ElectronBridge from "@/components/electron/ElectronBridge";
 import HideOnPip from "@/components/HideOnPip";
 import GlobalPlayer from "@/components/GlobalPlayer";
@@ -103,6 +104,9 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
                 <HideOnPip>
                   <Navbar />
                   <CommandPalette />
+                  {/* v0.10.10: first-launch popup — sign in / sign up (once,
+                      signed-out only, hidden in the PiP window) */}
+                  <WelcomeAuth />
                   <ElectronBridge />
                   {/* the <video> element lives here — outside the routed tree —
                       so playback survives navigation (theater ↔ floating window) */}

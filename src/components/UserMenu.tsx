@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { useTheme } from "next-themes";
 import { useLibrary } from "./library/LibraryProvider";
@@ -21,6 +21,7 @@ import {
   LayersIcon,
   StarIcon,
   RefreshIcon,
+  LogoutIcon,
 } from "./Icons";
 import { fa } from "@/lib/format";
 import { THEMES } from "./theme/ThemeToggle";
@@ -28,7 +29,7 @@ import { bridge, useIsElectron } from "@/lib/platform";
 import { toast } from "sonner";
 import { useI18n } from "./i18n/LocaleProvider";
 import { LOCALES, LOCALE_META, type TKey } from "@/lib/i18n";
-import { useCloudSession } from "@/lib/cloud";
+import { getSupabase, useCloudSession } from "@/lib/cloud";
 
 type IconCmp = typeof UserIcon;
 type Entry = { href: string; label: TKey; icon: IconCmp; key?: "list" | "fav" | "notif"; tint?: string };
@@ -89,6 +90,7 @@ function Item({
 export default function UserMenu() {
   const { profile, list, favorites } = useLibrary();
   const { session } = useCloudSession();
+  const router = useRouter();
   const { theme, setTheme } = useTheme();
   const { t: tr, locale, dir, setLocale } = useI18n();
   const electron = useIsElectron();
@@ -153,7 +155,16 @@ export default function UserMenu() {
     };
   }, [open]);
 
-  const initial = (profile.displayName || (locale === "en" ? "N" : "ن")).slice(0, 1);
+  /* Account identity (v0.10.10): once signed in, the menu shows the CLOUD
+     account — the display name picked at signup (user_metadata.display_name)
+     or the email handle — never the local default placeholder ("کاربر نما"),
+     which previously confused users into thinking signup did nothing. */
+  const email = session?.user?.email ?? "";
+  const meta = (session?.user?.user_metadata ?? {}) as { display_name?: string; name?: string; full_name?: string };
+  const accountName =
+    meta.display_name?.trim() || meta.name?.trim() || meta.full_name?.trim() || (email ? email.split("@")[0] : "");
+  const shownName = accountName || profile.displayName;
+  const initial = (shownName || (locale === "en" ? "N" : "ن")).trim().slice(0, 1).toUpperCase();
   const grad = AVATARS[profile.avatar] ?? AVATARS[0];
   const themeValue = mounted ? theme ?? "dark" : "dark";
   const isActive = (href: string) => (href.includes("#") ? false : pathname === href || (href !== "/" && !!pathname?.startsWith(href)));
@@ -220,10 +231,17 @@ export default function UserMenu() {
               <div className="relative flex items-center gap-3">
                 <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-full bg-gradient-to-br text-base font-black text-white shadow-lg ${grad}`}>{initial}</span>
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-extrabold text-white">{profile.displayName}</p>
-                  <Link href="/profile" data-autofocus className="text-[11px] text-zinc-400 transition hover:text-brand">
-                    {locale === "en" ? "View profile →" : "مشاهده پروفایل ←"}
-                  </Link>
+                  <p className="truncate text-sm font-extrabold text-white">{shownName}</p>
+                  {email ? (
+                    /* signed in → the account email is the secondary line */
+                    <p dir="ltr" className="truncate text-start text-[11px] text-zinc-400" title={email}>
+                      {email}
+                    </p>
+                  ) : (
+                    <Link href="/profile" data-autofocus className="text-[11px] text-zinc-400 transition hover:text-brand">
+                      {locale === "en" ? "View profile →" : "مشاهده پروفایل ←"}
+                    </Link>
+                  )}
                 </div>
                 <button
                   type="button"
@@ -288,6 +306,27 @@ export default function UserMenu() {
               <ul className="space-y-1">
                 <Item {...SETTINGS_ENTRY} label={tr(SETTINGS_ENTRY.label)} active={isActive("/settings")} />
               </ul>
+
+              {/* sign out — visible whenever a cloud session exists */}
+              {session && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setOpen(false);
+                    try {
+                      await getSupabase()?.auth.signOut();
+                      toast.success(locale === "en" ? "Signed out." : "از حساب خارج شدی.");
+                      router.refresh();
+                    } catch {
+                      toast.error(locale === "en" ? "Sign out failed." : "خروج از حساب ناموفق بود.");
+                    }
+                  }}
+                  className="mt-2 flex w-full items-center gap-3 rounded-full border border-transparent bg-white/[0.04] px-3.5 py-2.5 text-sm text-rose-300 transition hover:border-rose-500/30 hover:bg-rose-500/10 hover:text-rose-200"
+                >
+                  <LogoutIcon width={17} height={17} />
+                  <span className="flex-1 text-start">{locale === "en" ? "Sign out" : "خروج از حساب"}</span>
+                </button>
+              )}
 
               {/* quick language */}
               <div className="mt-3 rounded-2xl border border-white/5 bg-white/[0.03] p-2">

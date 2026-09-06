@@ -10,6 +10,7 @@ import LanguageToggle from "./i18n/LanguageToggle";
 import TitleName from "./TitleName";
 import { fa, typeLabel } from "@/lib/format";
 import { useIsElectron } from "@/lib/platform";
+import { useCloudSession } from "@/lib/cloud";
 import { useI18n } from "./i18n/LocaleProvider";
 import type { TKey } from "@/lib/i18n";
 
@@ -54,7 +55,8 @@ export default function Navbar() {
   const pathname = usePathname();
   const router = useRouter();
   const electron = useIsElectron();
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
+  const { ready: authReady, session: authSession } = useCloudSession();
   const [scrolled, setScrolled] = useState(false);
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
@@ -335,7 +337,21 @@ export default function Navbar() {
               )}
             </div>
 
-            <UserMenu />
+            {/* Prominent entry point: while signed out the avatar menu is replaced
+                with a visible Sign in button (users could not discover the
+                entry hidden inside the menu). While signed in the UserMenu
+                (avatar → email + sign out) renders as before. */}
+            {authReady && !authSession ? (
+              <Link
+                href="/auth"
+                className="app-no-drag flex items-center gap-1.5 rounded-full bg-brand px-3.5 py-2 text-sm font-black text-white shadow-[0_0_20px_var(--color-brand-glow)] transition hover:bg-brand/85"
+              >
+                <UserIcon width={15} height={15} />
+                {locale === "en" ? "Sign in" : "ورود / ثبت‌نام"}
+              </Link>
+            ) : (
+              <UserMenu />
+            )}
           </div>
         </div>
       </header>
