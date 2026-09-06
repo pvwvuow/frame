@@ -2,13 +2,13 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { usePathname } from "next/navigation";
-import type { TitleView } from "@/lib/queries";
+import type { TitleCardData } from "@/components/TitleCard";
 import TitleModal from "./TitleModal";
 
 type Ctx = {
-  open: (t: TitleView) => void;
+  open: (t: TitleCardData) => void;
   close: () => void;
-  current: TitleView | null;
+  current: TitleCardData | null;
 };
 
 const QuickViewCtx = createContext<Ctx | null>(null);
@@ -20,10 +20,10 @@ export function useQuickView() {
 }
 
 export default function QuickViewProvider({ children }: { children: ReactNode }) {
-  const [current, setCurrent] = useState<TitleView | null>(null);
+  const [current, setCurrent] = useState<TitleCardData | null>(null);
   const pathname = usePathname();
 
-  const open = useCallback((t: TitleView) => setCurrent(t), []);
+  const open = useCallback((t: TitleCardData) => setCurrent(t), []);
   const close = useCallback(() => setCurrent(null), []);
 
   // close on route change

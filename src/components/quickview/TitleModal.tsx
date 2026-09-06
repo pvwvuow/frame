@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import type { TitleView } from "@/lib/queries";
+import type { TitleCardData } from "@/components/TitleCard";
 import { fa, formatClock, formatDuration, typeLabel } from "@/lib/format";
 import WatchlistButton from "../WatchlistButton";
 import FavoriteButton from "../FavoriteButton";
@@ -22,9 +22,9 @@ type Episode = {
 };
 
 type Detail = {
-  title: TitleView;
+  title: TitleCardData;
   episodes: Episode[];
-  similar: TitleView[];
+  similar: TitleCardData[];
   inList: boolean;
   progress: { position: number; duration: number; episodeId: number | null } | null;
   reviewCount: number;
@@ -40,9 +40,9 @@ export default function TitleModal({
   title,
   onClose,
 }: {
-  title: TitleView | null;
+  title: TitleCardData | null;
   onClose: () => void;
-  onSwitch: (t: TitleView) => void;
+  onSwitch: (t: TitleCardData) => void;
 }) {
   const { t: tr, locale } = useI18n();
   const [detail, setDetail] = useState<Detail | null>(null);

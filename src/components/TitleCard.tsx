@@ -12,13 +12,27 @@ import { useI18n } from "./i18n/LocaleProvider";
 import { titleNames } from "@/lib/title-name";
 import TitleName from "./TitleName";
 
+/** Shape needed by the card grid — list endpoints may ship the lightweight
+ *  variant (no description/cast/sources) while full TitleView still fits. */
+export type TitleCardData = Pick<
+  TitleView,
+  "id" | "slug" | "title" | "titleEn" | "type" | "year" | "rating" | "duration" | "genres" | "poster" | "backdrop" | "quality" | "country" | "ageRating" | "views"
+> &
+  Partial<TitleView>;
+
+declare global {
+  interface Window {
+    __namaProgress?: Record<string, { position: number; duration: number }>;
+  }
+}
+
 export default function TitleCard({
   t,
   progress,
   size = "md",
   rank,
 }: {
-  t: TitleView;
+  t: TitleCardData;
   progress?: { position: number; duration: number } | null;
   size?: "sm" | "md" | "lg";
   rank?: number;

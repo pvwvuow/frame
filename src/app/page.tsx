@@ -31,7 +31,7 @@ export default async function HomePage() {
     getTrending(),
     getNewest(),
     getTopRated(),
-    getByType("series"),
+    getByType("series", { limit: 24 }),
     getByGenre("هیجان‌انگیز"),
     getByGenre("علمی‌تخیلی"),
     getWatchlistIds(userKey),

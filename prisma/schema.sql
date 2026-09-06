@@ -19,6 +19,7 @@ CREATE TABLE "Title" (
     "country" TEXT NOT NULL DEFAULT 'ایران',
     "ageRating" TEXT NOT NULL DEFAULT '+13',
     "quality" TEXT NOT NULL DEFAULT '4K',
+    "sources" TEXT NOT NULL DEFAULT '[]',
     "featured" BOOLEAN NOT NULL DEFAULT false,
     "trendingScore" INTEGER NOT NULL DEFAULT 0,
     "views" INTEGER NOT NULL DEFAULT 0,
@@ -37,6 +38,7 @@ CREATE TABLE "Episode" (
     "duration" INTEGER NOT NULL DEFAULT 45,
     "videoUrl" TEXT NOT NULL,
     "thumbnail" TEXT NOT NULL,
+    "sources" TEXT NOT NULL DEFAULT '[]',
     CONSTRAINT "Episode_titleId_fkey" FOREIGN KEY ("titleId") REFERENCES "Title" ("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
 
@@ -48,6 +50,7 @@ CREATE TABLE "Watchlist" (
     "status" TEXT NOT NULL DEFAULT 'planned',
     "note" TEXT NOT NULL DEFAULT '',
     "pinned" BOOLEAN NOT NULL DEFAULT false,
+    "plannedDate" DATETIME,
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "Watchlist_titleId_fkey" FOREIGN KEY ("titleId") REFERENCES "Title" ("id") ON DELETE CASCADE ON UPDATE CASCADE
@@ -138,6 +141,24 @@ CREATE INDEX "Title_type_idx" ON "Title"("type");
 
 -- CreateIndex
 CREATE INDEX "Title_trendingScore_idx" ON "Title"("trendingScore");
+
+-- CreateIndex
+CREATE INDEX "Title_type_trendingScore_idx" ON "Title"("type", "trendingScore");
+
+-- CreateIndex
+CREATE INDEX "Title_type_rating_idx" ON "Title"("type", "rating");
+
+-- CreateIndex
+CREATE INDEX "Title_type_year_idx" ON "Title"("type", "year");
+
+-- CreateIndex
+CREATE INDEX "Title_rating_idx" ON "Title"("rating");
+
+-- CreateIndex
+CREATE INDEX "Title_views_idx" ON "Title"("views");
+
+-- CreateIndex
+CREATE INDEX "Title_year_idx" ON "Title"("year");
 
 -- CreateIndex
 CREATE INDEX "Episode_titleId_idx" ON "Episode"("titleId");

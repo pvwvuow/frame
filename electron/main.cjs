@@ -24,6 +24,11 @@ const log = require("electron-log");
 log.transports.file.level = "info";
 log.initialize?.();
 
+/* v0.10.4 – "the first movie sometimes has no sound": never let Chromium gate
+   playback on user-gesture heuristics inside our own window; the click on a
+   poster already IS the gesture. */
+app.commandLine.appendSwitch("autoplay-policy", "no-user-gesture-required");
+
 const isDev = !app.isPackaged;
 // bundled entry lives in electron/dist → project root is two levels up
 const ROOT = path.join(__dirname, "..", "..");

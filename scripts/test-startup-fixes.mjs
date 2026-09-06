@@ -28,6 +28,7 @@ const events = { dialogs: [], killed: [] };
 const electronStub = {
   app: {
     isPackaged: false,
+    commandLine: { appendSwitch: () => {} },
     getPath: (k) => (k === "appData" ? tmp : k === "userData" ? userData : tmp),
     setName: () => {},
     setPath: () => {},

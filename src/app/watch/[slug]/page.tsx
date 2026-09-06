@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import Player from "@/components/Player";
+import WatchClient from "@/components/WatchClient";
 import { getTitleBySlug, getEpisodes, getProgressFor, incrementViews } from "@/lib/queries";
 import { getUserKey } from "@/lib/user";
 import { fa } from "@/lib/format";
@@ -54,19 +54,25 @@ export default async function WatchPage({ params, searchParams }: Props) {
   const sources = episode ? parseSources(episode.sources) : parseSources(t.sources);
   const subtitle = episode ? `فصل ${fa(episode.season)} · قسمت ${fa(episode.number)} · ${episode.name}` : `${t.titleEn} · ${fa(t.year)}`;
 
+  /* The player itself lives in the root layout (GlobalPlayer) so playback
+     survives navigation. This page only feeds the store + paints black
+     behind the theater overlay. */
   return (
-    <Player
-      titleId={t.id}
-      slug={t.slug}
-      title={t.title}
-      subtitle={subtitle}
-      src={src}
-      sources={sources}
-      poster={t.backdrop}
-      startAt={startAt}
-      episode={episode}
-      nextEpisode={nextEpisode}
-      episodes={eps}
-    />
+    <>
+      <div className="fixed inset-0 -z-10 bg-black" aria-hidden />
+      <WatchClient
+        titleId={t.id}
+        slug={t.slug}
+        title={t.title}
+        subtitle={subtitle}
+        src={src}
+        sources={sources}
+        poster={t.backdrop}
+        startAt={startAt}
+        episode={episode}
+        nextEpisode={nextEpisode}
+        episodes={eps}
+      />
+    </>
   );
 }

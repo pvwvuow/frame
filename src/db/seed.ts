@@ -446,6 +446,23 @@ async function applyConnectionPragmas() {
   } catch (e) {
     console.warn("[seed] connection pragmas skipped:", e instanceof Error ? e.message : e);
   }
+  // v0.10.4 performance indexes — idempotent, so it also upgrades databases
+  // created by older app versions (the bundled seed may not carry them yet)
+  try {
+    const idx: [string, string][] = [
+      ["Title_type_trendingScore", "CREATE INDEX IF NOT EXISTS \"Title_type_trendingScore_idx\" ON \"Title\"(\"type\", \"trendingScore\")"],
+      ["Title_type_rating", "CREATE INDEX IF NOT EXISTS \"Title_type_rating_idx\" ON \"Title\"(\"type\", \"rating\")"],
+      ["Title_type_year", "CREATE INDEX IF NOT EXISTS \"Title_type_year_idx\" ON \"Title\"(\"type\", \"year\")"],
+      ["Title_rating", "CREATE INDEX IF NOT EXISTS \"Title_rating_idx\" ON \"Title\"(\"rating\")"],
+      ["Title_views", "CREATE INDEX IF NOT EXISTS \"Title_views_idx\" ON \"Title\"(\"views\")"],
+      ["Title_year", "CREATE INDEX IF NOT EXISTS \"Title_year_idx\" ON \"Title\"(\"year\")"],
+    ];
+    for (const [, ddl] of idx) {
+      await db.$executeRawUnsafe(ddl);
+    }
+  } catch (e) {
+    console.warn("[seed] perf indexes skipped:", e instanceof Error ? e.message : e);
+  }
 }
 
 export async function ensureSeeded() {

@@ -44,6 +44,13 @@ model Title {
 
   @@index([type])
   @@index([trendingScore])
+  // v0.10.4 perf: the catalog pages sort/filter on these constantly (14k rows)
+  @@index([type, trendingScore])
+  @@index([type, rating])
+  @@index([type, year])
+  @@index([rating])
+  @@index([views])
+  @@index([year])
 }
 
 model Episode {

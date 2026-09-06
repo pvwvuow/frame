@@ -2,13 +2,17 @@ import Link from "next/link";
 import { Suspense } from "react";
 import TitleCard from "@/components/TitleCard";
 import CatalogFilters from "@/components/CatalogFilters";
+import CatalogLoadMore from "@/components/CatalogLoadMore";
 import { PlayIcon, StarIcon, InfoIcon, FilmIcon, TvIcon, EyeIcon } from "@/components/Icons";
-import { GENRES, getByType, getProgressMap, getCatalogStats, getYears } from "@/lib/queries";
+import { GENRES, getCatalogPage, getProgressMap, getCatalogStats, getYears } from "@/lib/queries";
 import { getUserKey } from "@/lib/user";
 import { fa, formatDuration, formatViews } from "@/lib/format";
 import TitleName from "@/components/TitleName";
 
 export type CatalogSearchParams = { genre?: string; sort?: string; year?: string; rating?: string };
+
+/** first paint size — the rest streams in via /api/catalog (load-more) */
+const PAGE_SIZE = 48;
 
 export default async function CatalogPage({
   type,
@@ -26,8 +30,8 @@ export default async function CatalogPage({
   const year = sp.year ? Number(sp.year) : undefined;
   const minRating = sp.rating ? Number(sp.rating) : undefined;
   const userKey = await getUserKey();
-  const [items, stats, years] = await Promise.all([
-    getByType(type, { genre, sort, year, minRating }),
+  const [{ items, total }, stats, years] = await Promise.all([
+    getCatalogPage(type, { genre, sort, year, minRating }, 0, PAGE_SIZE),
     getCatalogStats(type),
     getYears(type),
   ]);
@@ -37,6 +41,7 @@ export default async function CatalogPage({
   );
   const spotlight = !genre && !year && !minRating ? stats.top : items[0] ?? null;
   const Icon = type === "movie" ? FilmIcon : TvIcon;
+  const filters = { type, genre, sort, year, minRating };
 
   return (
     <main className="pb-16">
@@ -119,7 +124,7 @@ export default async function CatalogPage({
 
         <div className="mt-6 flex items-center justify-between text-xs text-zinc-500">
           <p>
-            <span className="font-bold text-zinc-300">{fa(items.length)}</span> عنوان
+            <span className="font-bold text-zinc-300">{fa(total)}</span> عنوان
             {genre && <> در ژانر <span className="text-zinc-300">{genre}</span></>}
             {year && <> · سال <span className="text-zinc-300">{fa(year)}</span></>}
             {minRating && <> · امتیاز {fa(minRating)}+</>}
@@ -129,7 +134,7 @@ export default async function CatalogPage({
           </p>
         </div>
 
-        {items.length === 0 ? (
+        {total === 0 ? (
           <div className="mt-8 rounded-3xl border border-dashed border-white/10 p-16 text-center">
             <Icon width={40} height={40} className="mx-auto text-zinc-600" />
             <p className="mt-4 text-lg font-bold text-white">عنوانی با این فیلترها پیدا نشد</p>
@@ -149,6 +154,15 @@ export default async function CatalogPage({
               </div>
             ))}
           </div>
+        )}
+
+        {total > items.length && (
+          <CatalogLoadMore
+            filters={filters}
+            offset={items.length}
+            total={total}
+            rankStart={sort === "trending" && !genre ? items.length + 1 : undefined}
+          />
         )}
       </div>
     </main>

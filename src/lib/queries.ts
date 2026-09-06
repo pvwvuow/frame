@@ -38,6 +38,25 @@ export const GENRES = [
 
 const hasGenre = (g: string) => `"${g}"`;
 
+/* In-process cache for full-scan shelves (v0.10.4).
+   The catalog only changes when a sync adds/removes rows, so these cached
+   results are keyed by the row count + a TTL — repeated visits to /collections,
+   /genres, /people … stop re-reading 14k rows on every request. */
+const scanCache = new Map<string, { at: number; count: number; value: unknown }>();
+const SCAN_TTL_MS = 5 * 60_000;
+async function cachedScan<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  const hit = scanCache.get(key);
+  if (hit && Date.now() - hit.at < SCAN_TTL_MS) {
+    const count = await db.title.count();
+    if (count === hit.count) return hit.value as T;
+    scanCache.delete(key);
+  }
+  const value = await fn();
+  const count = await db.title.count();
+  scanCache.set(key, { at: Date.now(), count, value });
+  return value;
+}
+
 export async function getFeatured() {
   await ensureSeeded();
   const rows = await db.title.findMany({
@@ -71,7 +90,7 @@ export async function getTopRated(limit = 12) {
 
 export async function getByType(
   type: "movie" | "series",
-  opts: { genre?: string; sort?: string; year?: number; minRating?: number } = {}
+  opts: { genre?: string; sort?: string; year?: number; minRating?: number; limit?: number } = {}
 ) {
   await ensureSeeded();
   const orderBy =
@@ -90,8 +109,95 @@ export async function getByType(
       ...(opts.minRating ? { rating: { gte: opts.minRating } } : {}),
     },
     orderBy,
+    // home-page rows and similar shelves only ever show ~a dozen cards —
+    // never drag the whole 11k-row table through SSR for that
+    ...(opts.limit ? { take: opts.limit } : {}),
   });
   return rows.map(pv);
+}
+
+/* ------------------------------------------------------------------ */
+/* Paged catalog (v0.10.4 – the app-wide "slow UI" fix)                 */
+/*                                                                      */
+/* The archive grew to 14k+ titles; /movies & /series used to SELECT     */
+/* every row (with description/cast/sources!) and render 11k cards in    */
+/* one SSR pass. Lists now fetch only the fields the card grid needs,    */
+/* one page at a time; the rest loads on demand via /api/catalog.        */
+/* ------------------------------------------------------------------ */
+
+/** Fields the card grid (TitleCard / spotlight / filters) actually uses. */
+const LIST_FIELDS = {
+  id: true,
+  slug: true,
+  title: true,
+  titleEn: true,
+  type: true,
+  year: true,
+  rating: true,
+  duration: true,
+  genres: true,
+  poster: true,
+  backdrop: true,
+  quality: true,
+  country: true,
+  ageRating: true,
+  views: true,
+} as const;
+
+export type TitleListItem = Pick<
+  TitleView,
+  "id" | "slug" | "title" | "titleEn" | "type" | "year" | "rating" | "duration" | "genres" | "poster" | "backdrop" | "quality" | "country" | "ageRating" | "views"
+> &
+  Partial<TitleView>;
+
+export type CatalogQuery = { genre?: string; sort?: string; year?: number; minRating?: number };
+
+function catalogWhere(type: "movie" | "series", opts: CatalogQuery) {
+  return {
+    type,
+    ...(opts.genre ? { genres: { contains: hasGenre(opts.genre) } } : {}),
+    ...(opts.year ? { year: opts.year } : {}),
+    ...(opts.minRating ? { rating: { gte: opts.minRating } } : {}),
+  };
+}
+
+function catalogOrderBy(sort?: string) {
+  return sort === "rating"
+    ? { rating: "desc" as const }
+    : sort === "newest"
+      ? { year: "desc" as const }
+      : sort === "views"
+        ? { views: "desc" as const }
+        : sort === "name"
+          ? { title: "asc" as const }
+          : { trendingScore: "desc" as const };
+}
+
+export async function getCatalogPage(
+  type: "movie" | "series",
+  opts: CatalogQuery,
+  page = 0,
+  pageSize = 48
+): Promise<{ items: TitleListItem[]; total: number }> {
+  await ensureSeeded();
+  const where = catalogWhere(type, opts);
+  const orderBy = catalogOrderBy(opts.sort);
+  const [rows, total] = await Promise.all([
+    db.title.findMany({ where, orderBy, select: LIST_FIELDS, skip: page * pageSize, take: pageSize }),
+    db.title.count({ where }),
+  ]);
+  // DB stores genres/cast as JSON strings — the view layer wants arrays
+  const items = rows.map((r) => {
+    let genres: string[] = [];
+    try {
+      genres = JSON.parse(r.genres || "[]");
+      if (!Array.isArray(genres)) genres = [];
+    } catch {
+      /* ignore */
+    }
+    return { ...r, genres } as TitleListItem;
+  });
+  return { items, total };
 }
 
 export async function getByGenre(genre: string, limit = 12) {
@@ -318,21 +424,23 @@ export type GenreSummary = {
 };
 
 export async function getGenreSummaries(): Promise<GenreSummary[]> {
-  await ensureSeeded();
-  const rows = await db.title.findMany({ orderBy: { trendingScore: "desc" } });
-  const all = rows.map(pv);
-  return GENRES.map((genre) => {
-    const items = all.filter((t) => t.genres.includes(genre));
-    const avg = items.length ? items.reduce((a, t) => a + t.rating, 0) / items.length : 0;
-    return {
-      genre,
-      count: items.length,
-      movies: items.filter((t) => t.type === "movie").length,
-      series: items.filter((t) => t.type === "series").length,
-      covers: items.slice(0, 4).map((t) => t.poster),
-      avgRating: Math.round(avg * 10) / 10,
-    };
-  }).filter((g) => g.count > 0);
+  return cachedScan("genreSummaries", async () => {
+    await ensureSeeded();
+    const rows = await db.title.findMany({ orderBy: { trendingScore: "desc" } });
+    const all = rows.map(pv);
+    return GENRES.map((genre) => {
+      const items = all.filter((t) => t.genres.includes(genre));
+      const avg = items.length ? items.reduce((a, t) => a + t.rating, 0) / items.length : 0;
+      return {
+        genre,
+        count: items.length,
+        movies: items.filter((t) => t.type === "movie").length,
+        series: items.filter((t) => t.type === "series").length,
+        covers: items.slice(0, 4).map((t) => t.poster),
+        avgRating: Math.round(avg * 10) / 10,
+      };
+    }).filter((g) => g.count > 0);
+  });
 }
 
 export async function getCatalogStats(type: "movie" | "series") {
@@ -351,8 +459,10 @@ export async function getCatalogStats(type: "movie" | "series") {
 }
 
 export async function getYears(type: "movie" | "series") {
-  const rows = await db.title.findMany({ where: { type }, select: { year: true }, distinct: ["year"], orderBy: { year: "desc" } });
-  return rows.map((r) => r.year);
+  return cachedScan(`years:${type}`, async () => {
+    const rows = await db.title.findMany({ where: { type }, select: { year: true }, distinct: ["year"], orderBy: { year: "desc" } });
+    return rows.map((r) => r.year);
+  });
 }
 
 /* ------------------------------------------------------------------ */
@@ -381,22 +491,26 @@ export const COLLECTIONS: Collection[] = [
 ];
 
 export async function getCollections(limitPer = 12) {
-  await ensureSeeded();
-  const rows = await db.title.findMany({ orderBy: { trendingScore: "desc" } });
-  const all = rows.map(pv);
-  return COLLECTIONS.map((c) => {
-    const items = all.filter(c.rule).sort(c.sort ?? (() => 0)).slice(0, limitPer);
-    return { slug: c.slug, title: c.title, tagline: c.tagline, hue: c.hue, count: all.filter(c.rule).length, items };
-  }).filter((c) => c.items.length > 0);
+  return cachedScan(`collections:${limitPer}`, async () => {
+    await ensureSeeded();
+    const rows = await db.title.findMany({ orderBy: { trendingScore: "desc" } });
+    const all = rows.map(pv);
+    return COLLECTIONS.map((c) => {
+      const items = all.filter(c.rule).sort(c.sort ?? (() => 0)).slice(0, limitPer);
+      return { slug: c.slug, title: c.title, tagline: c.tagline, hue: c.hue, count: all.filter(c.rule).length, items };
+    }).filter((c) => c.items.length > 0);
+  });
 }
 
 export async function getCollection(slug: string) {
   const c = COLLECTIONS.find((x) => x.slug === slug);
   if (!c) return null;
-  await ensureSeeded();
-  const rows = await db.title.findMany({ orderBy: { trendingScore: "desc" } });
-  const items = rows.map(pv).filter(c.rule).sort(c.sort ?? (() => 0));
-  return { slug: c.slug, title: c.title, tagline: c.tagline, hue: c.hue, items };
+  return cachedScan(`collection:${slug}`, async () => {
+    await ensureSeeded();
+    const rows = await db.title.findMany({ orderBy: { trendingScore: "desc" } });
+    const items = rows.map(pv).filter(c.rule).sort(c.sort ?? (() => 0));
+    return { slug: c.slug, title: c.title, tagline: c.tagline, hue: c.hue, items };
+  });
 }
 
 /* ------------------------------------------------------------------ */
@@ -417,30 +531,32 @@ export async function getByPerson(name: string) {
 }
 
 export async function getPeopleIndex() {
-  await ensureSeeded();
-  const rows = await db.title.findMany({ select: { director: true, cast: true, poster: true, rating: true } });
-  const map = new Map<string, { name: string; roles: Set<"director" | "actor">; count: number; cover: string; score: number }>();
-  for (const r of rows) {
-    let cast: string[] = [];
-    try {
-      cast = JSON.parse(r.cast || "[]");
-    } catch {
-      /* ignore */
+  return cachedScan("peopleIndex", async () => {
+    await ensureSeeded();
+    const rows = await db.title.findMany({ select: { director: true, cast: true, poster: true, rating: true } });
+    const map = new Map<string, { name: string; roles: Set<"director" | "actor">; count: number; cover: string; score: number }>();
+    for (const r of rows) {
+      let cast: string[] = [];
+      try {
+        cast = JSON.parse(r.cast || "[]");
+      } catch {
+        /* ignore */
+      }
+      const bump = (name: string, role: "director" | "actor") => {
+        if (!name) return;
+        const e = map.get(name) ?? { name, roles: new Set(), count: 0, cover: r.poster, score: 0 };
+        e.roles.add(role);
+        e.count += 1;
+        e.score += r.rating;
+        map.set(name, e);
+      };
+      bump(r.director, "director");
+      cast.forEach((c) => bump(c, "actor"));
     }
-    const bump = (name: string, role: "director" | "actor") => {
-      if (!name) return;
-      const e = map.get(name) ?? { name, roles: new Set(), count: 0, cover: r.poster, score: 0 };
-      e.roles.add(role);
-      e.count += 1;
-      e.score += r.rating;
-      map.set(name, e);
-    };
-    bump(r.director, "director");
-    cast.forEach((c) => bump(c, "actor"));
-  }
-  return Array.from(map.values())
-    .map((e) => ({ ...e, roles: Array.from(e.roles), avg: Math.round((e.score / e.count) * 10) / 10 }))
-    .sort((a, b) => b.count - a.count || b.avg - a.avg);
+    return Array.from(map.values())
+      .map((e) => ({ ...e, roles: Array.from(e.roles), avg: Math.round((e.score / e.count) * 10) / 10 }))
+      .sort((a, b) => b.count - a.count || b.avg - a.avg);
+  });
 }
 
 /* ------------------------------------------------------------------ */

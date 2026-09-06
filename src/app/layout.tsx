@@ -8,6 +8,7 @@ import ThemeProvider from "@/components/theme/ThemeProvider";
 import LocaleProvider from "@/components/i18n/LocaleProvider";
 import CommandPalette from "@/components/CommandPalette";
 import ElectronBridge from "@/components/electron/ElectronBridge";
+import GlobalPlayer from "@/components/GlobalPlayer";
 import { getT } from "@/lib/i18n/server";
 import { LOCALE_META, dirOf } from "@/lib/i18n";
 import "./globals.css";
@@ -61,12 +62,39 @@ const IMG_FALLBACK_SCRIPT = String.raw`(function(){
   }, true);
 })();`;
 
+/* Audio unlock (v0.10.4): the first media element played right after launch
+   sometimes starts with no sound on Windows/Electron because Chromium's audio
+   pipeline is still initializing. Priming it with a silent WebAudio blip on
+   the first user gesture eliminates the race. */
+const AUDIO_UNLOCK_SCRIPT = String.raw`(function(){
+  if (window.__namaAudioUnlock) return; window.__namaAudioUnlock = 1;
+  var unlocked = false;
+  function unlock(){
+    if (unlocked) return; unlocked = true;
+    try {
+      var AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return;
+      var ctx = new AC();
+      var buf = ctx.createBuffer(1, 256, ctx.sampleRate);
+      var src = ctx.createBufferSource();
+      src.buffer = buf;
+      src.connect(ctx.destination);
+      src.start(0);
+      src.onended = function(){ try { ctx.close(); } catch(e){} };
+    } catch(e){}
+  }
+  ['pointerdown','keydown','touchstart'].forEach(function(ev){
+    document.addEventListener(ev, unlock, { once: true, capture: true });
+  });
+})();`;
+
 export default async function RootLayout({ children }: { children: ReactNode }) {
   const { locale } = await getT();
   return (
     <html lang={LOCALE_META[locale].htmlLang} dir={dirOf(locale)} data-locale={locale} data-scroll-behavior="smooth" suppressHydrationWarning>
       <body className="min-h-screen bg-ink text-zinc-100 antialiased">
         <script id="nama-img-fallback" dangerouslySetInnerHTML={{ __html: IMG_FALLBACK_SCRIPT }} />
+        <script id="nama-audio-unlock" dangerouslySetInnerHTML={{ __html: AUDIO_UNLOCK_SCRIPT }} />
         <ThemeProvider>
           <LocaleProvider initial={locale}>
             <LibraryProvider>
@@ -76,6 +104,9 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
                 <Footer />
                 <CommandPalette />
                 <ElectronBridge />
+                {/* the <video> element lives here — outside the routed tree —
+                    so playback survives navigation (mini/floating player) */}
+                <GlobalPlayer />
               </QuickViewProvider>
             </LibraryProvider>
           </LocaleProvider>
