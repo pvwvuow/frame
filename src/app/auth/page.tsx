@@ -135,7 +135,7 @@ export default function AuthPage() {
     const mail = session.user.email ?? "";
     const metaName = (session.user.user_metadata as { display_name?: string } | null)?.display_name ?? "";
     return (
-      <main className="mx-auto w-full max-w-lg px-4 py-14">
+      <main className="mx-auto flex min-h-[calc(100dvh-72px)] w-full max-w-lg items-center px-4 py-10">
         <div className="glass-strong rounded-3xl border border-white/10 p-7 text-center shadow-[0_30px_80px_rgba(0,0,0,0.45)]">
           <div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-gradient-to-br from-brand/70 to-rose-600/70 text-white shadow-lg">
             <UserIcon width={30} height={30} />
@@ -184,7 +184,7 @@ export default function AuthPage() {
 
   /* ---------------- setup + auth forms ---------------- */
   return (
-    <main className="mx-auto w-full max-w-lg px-4 py-14">
+    <main className="mx-auto flex min-h-[calc(100dvh-72px)] w-full max-w-lg items-center px-4 py-10">
       <div className="glass-strong rounded-3xl border border-white/10 p-7 shadow-[0_30px_80px_rgba(0,0,0,0.45)]">
         <div className="mb-6 text-center">
           <div className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-gradient-to-br from-brand/70 to-rose-600/70 text-white shadow-lg">

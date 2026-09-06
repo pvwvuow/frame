@@ -22,6 +22,7 @@ import {
   StarIcon,
   RefreshIcon,
   LogoutIcon,
+  CrownIcon,
 } from "./Icons";
 import { fa } from "@/lib/format";
 import { THEMES } from "./theme/ThemeToggle";
@@ -270,6 +271,21 @@ export default function UserMenu() {
             <div className="max-h-[calc(100dvh-300px)] min-h-0 overflow-y-auto overscroll-contain p-2.5" role="menu">
               <p className="px-2 pb-1.5 pt-1 text-[10px] font-bold text-zinc-500">{tr("user.personal")}</p>
               <ul className="space-y-1">
+                {/* VIP — gold, always on top (v0.10.11) */}
+                <li>
+                  <Link
+                    href="/vip"
+                    role="menuitem"
+                    className={`flex items-center gap-3 rounded-full border px-3.5 py-2.5 text-sm transition ${
+                      isActive("/vip")
+                        ? "border-amber-400/60 bg-amber-400/15 text-white"
+                        : "border-amber-400/25 bg-amber-400/[0.07] text-amber-200 hover:border-amber-300/50 hover:bg-amber-400/15 hover:text-amber-100"
+                    }`}
+                  >
+                    <CrownIcon width={17} height={17} />
+                    <span className="flex-1">{locale === "en" ? "VIP subscription" : "اشتراک ویژه (VIP)"}</span>
+                  </Link>
+                </li>
                 <Item
                   href="/auth"
                   icon={UserIcon}

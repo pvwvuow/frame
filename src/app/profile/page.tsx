@@ -3,6 +3,7 @@ import TitleCard from "@/components/TitleCard";
 import ContinueCard from "@/components/library/ContinueCard";
 import { AVATARS } from "@/components/library/SettingsForm";
 import CloudIdentityBadge from "@/components/auth/CloudIdentityBadge";
+import SubscriptionBadge from "@/components/auth/SubscriptionBadge";
 import { ProfileName, ProfileAvatarLetter } from "@/components/auth/ProfileIdentity";
 import { BookmarkIcon, HeartIcon, HistoryIcon, SettingsIcon, StarIcon, ClockIcon, CheckCircleIcon, ChevronLeft } from "@/components/Icons";
 import { getProfile, getUserStats, getFavoriteRows, getMyListRows } from "@/lib/library";
@@ -38,7 +39,10 @@ export default async function ProfilePage() {
             <div className="min-w-0 flex-1">
               <p className="text-xs font-bold text-brand">{level}</p>
               <ProfileName localName={p.displayName} />
-              <CloudIdentityBadge />
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <CloudIdentityBadge />
+                <SubscriptionBadge />
+              </div>
               <p className="mt-2 text-sm text-zinc-400">
                 عضو از {new Date(stats.memberSince).toLocaleDateString("fa-IR", { year: "numeric", month: "long" })} · {stats.minutesWatched ? formatDuration(stats.minutesWatched) : "۰ دقیقه"} تماشا
               </p>

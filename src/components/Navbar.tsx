@@ -11,6 +11,7 @@ import TitleName from "./TitleName";
 import { fa, typeLabel } from "@/lib/format";
 import { useIsElectron } from "@/lib/platform";
 import { useCloudSession } from "@/lib/cloud";
+import { CrownIcon } from "./Icons";
 import { useI18n } from "./i18n/LocaleProvider";
 import type { TKey } from "@/lib/i18n";
 
@@ -159,7 +160,7 @@ export default function Navbar() {
         data-solid={solid ? "1" : "0"}
         className={`site-header fixed inset-x-0 top-0 z-50 ${electron ? "app-drag" : ""}`}
       >
-        <div className="nav-inner mx-auto flex h-16 max-w-[1600px] items-center gap-3 px-4 sm:h-[72px] sm:px-8 lg:px-12">
+        <div className="nav-inner mx-auto flex h-16 max-w-[1600px] items-center gap-3 px-4 sm:h-[72px] sm:px-8 lg:px-9">
           <Link href="/" className="group app-no-drag flex shrink-0 items-center gap-2" aria-label={t("app.name")}>
             <span className="relative grid h-9 w-9 place-items-center rounded-lg bg-brand text-white shadow-[0_0_24px_var(--color-brand-glow)]">
               <span className="absolute inset-0 rounded-lg bg-white/10 opacity-0 transition group-hover:opacity-100" />
@@ -179,7 +180,7 @@ export default function Navbar() {
                 key={l.href}
                 href={l.href}
                 aria-current={isActive(l.href) ? "page" : undefined}
-                className={`whitespace-nowrap rounded-full px-3.5 py-2 text-sm font-medium transition-colors xl:px-4 ${
+                className={`whitespace-nowrap rounded-full px-2 py-2 text-sm font-medium transition-colors xl:px-3 ${
                   isActive(l.href) ? "bg-white/10 text-white" : "text-zinc-300 hover:bg-white/5 hover:text-white"
                 }`}
               >
@@ -221,14 +222,14 @@ export default function Navbar() {
             </div>
           </nav>
 
-          <div className="app-no-drag ms-auto flex items-center gap-1.5 sm:gap-2">
+          <div className="app-no-drag ms-auto flex items-center gap-1.5">
             <LanguageToggle className="hidden sm:flex" />
             <ThemeToggle className="hidden sm:grid" />
             {/* Fixed-width slot: the expanded search renders as an absolute
                 overlay anchored to the magnifier's edge, so opening it never
                 reflows the other navbar controls (language/theme used to jump
                 and UserMenu was pushed off-screen on narrow windows). */}
-            <div ref={boxRef} className="relative h-10 w-10 shrink-0 sm:w-[220px]">
+            <div ref={boxRef} className="relative h-10 w-10 shrink-0 sm:w-[160px] lg:w-[150px] 2xl:w-[220px]">
               <form
                 role="search"
                 onSubmit={(e) => {
@@ -336,6 +337,17 @@ export default function Navbar() {
                 </div>
               )}
             </div>
+
+            {/* VIP — gold pill, always visible (v0.10.11) */}
+            <Link
+              href="/vip"
+              aria-label={locale === "en" ? "VIP subscription" : "اشتراک ویژه"}
+              title={locale === "en" ? "VIP subscription" : "اشتراک ویژه"}
+              className="app-no-drag flex items-center gap-1.5 rounded-full border border-amber-400/40 bg-gradient-to-l from-amber-400/15 to-amber-500/10 px-3 py-2 text-sm font-black text-amber-300 transition hover:border-amber-300/60 hover:from-amber-400/25"
+            >
+              <CrownIcon width={15} height={15} />
+              <span className="hidden sm:inline">VIP</span>
+            </Link>
 
             {/* Prominent entry point: while signed out the avatar menu is replaced
                 with a visible Sign in button (users could not discover the

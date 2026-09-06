@@ -45,6 +45,11 @@ export const StarIcon = (p: P) => (
     <path d="M12 2.5l2.9 6.26 6.85.72-5.1 4.6 1.44 6.72L12 17.3l-6.09 3.5 1.44-6.72-5.1-4.6 6.85-.72L12 2.5z" />
   </svg>
 );
+export const CrownIcon = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M2.5 6.5l4.2 3.9L12 3.8l5.3 6.6 4.2-3.9-1.9 11.2a1.5 1.5 0 0 1-1.48 1.25H5.88A1.5 1.5 0 0 1 4.4 17.7L2.5 6.5z" />
+  </svg>
+);
 export const SearchIcon = (p: P) => (
   <svg {...base(p)}>
     <circle cx="11" cy="11" r="7" />

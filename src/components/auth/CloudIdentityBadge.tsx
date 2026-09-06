@@ -16,7 +16,7 @@ export default function CloudIdentityBadge() {
     <p
       dir="ltr"
       title={email}
-      className="mt-3 inline-flex max-w-full items-center gap-2 rounded-full border border-emerald-400/25 bg-emerald-400/10 px-3 py-1.5 text-[11px] font-bold text-emerald-300"
+      className="inline-flex max-w-full items-center gap-2 rounded-full border border-emerald-400/25 bg-emerald-400/10 px-3 py-1.5 text-[11px] font-bold text-emerald-300"
     >
       <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400" aria-hidden />
       <span className="truncate">{email}</span>
