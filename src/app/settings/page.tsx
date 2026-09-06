@@ -1,7 +1,8 @@
+import Link from "next/link";
 import SettingsForm from "@/components/library/SettingsForm";
 import SourceSyncCard from "@/components/settings/SourceSyncCard";
 import CatalogUpdateCard from "@/components/settings/CatalogUpdateCard";
-import { SettingsIcon } from "@/components/Icons";
+import { SettingsIcon, HelpIcon, ShieldIcon, KeyboardIcon, InfoIcon, MailIcon } from "@/components/Icons";
 import { getProfile } from "@/lib/library";
 import { getUserKey } from "@/lib/user";
 
@@ -43,6 +44,35 @@ export default async function SettingsPage() {
         </div>
         <CatalogUpdateCard />
         <SourceSyncCard />
+
+        {/* support — merged into settings (menu only links here) */}
+        <section id="support" className="mt-8 scroll-mt-28 rounded-3xl border border-white/5 bg-ink-700/40 p-5 sm:p-6">
+          <h2 className="text-sm font-extrabold text-white">پشتیبانی و راهنما</h2>
+          <p className="mt-1 text-xs text-zinc-500">همه‌ی بخش‌های کمکی یک‌جا، داخل تنظیمات.</p>
+          <div className="mt-4 grid gap-2 sm:grid-cols-2">
+            {[
+              { href: "/settings#parental", icon: ShieldIcon, label: "کنترل والدین و PIN", d: "حالت کودک، قفل محتوای بزرگسال" },
+              { href: "/settings#shortcuts", icon: KeyboardIcon, label: "میان‌برهای صفحه‌کلید", d: "کلیدهای سریع پخش‌کننده" },
+              { href: "/faq", icon: HelpIcon, label: "سوالات پرتکرار", d: "راهنمای استفاده از نما" },
+              { href: "/contact", icon: MailIcon, label: "تماس با ما", d: "گزارش مشکل یا پیشنهاد" },
+              { href: "/about", icon: InfoIcon, label: "درباره نما", d: "نسخه، تیم و توضیحات" },
+            ].map((x) => (
+              <Link
+                key={x.href}
+                href={x.href}
+                className="group flex items-center gap-3 rounded-2xl border border-white/5 bg-white/[0.03] p-3.5 transition hover:border-brand/40 hover:bg-brand/5"
+              >
+                <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-white/5 text-zinc-300 transition group-hover:bg-brand/15 group-hover:text-brand">
+                  <x.icon width={18} height={18} />
+                </span>
+                <span className="min-w-0">
+                  <span className="block text-sm font-bold text-white">{x.label}</span>
+                  <span className="block text-[11px] text-zinc-500">{x.d}</span>
+                </span>
+              </Link>
+            ))}
+          </div>
+        </section>
       </div>
     </main>
   );

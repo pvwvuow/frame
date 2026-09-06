@@ -11,10 +11,15 @@ export const THEMES = [
   { value: "system", label: "theme.system", hint: "theme.systemHint", icon: MonitorIcon },
 ] as const;
 
-/** Small icon button for the navbar – cycles dark → light → system. */
+const SHORT: Record<string, string> = { dark: "شب", light: "روز", system: "خودکار" };
+
+/**
+ * Navbar pill (dark → light → system). Styled like the +/♥ buttons:
+ * visible border + subtle fill, colored accent for the active mode.
+ */
 export default function ThemeToggle({ className = "" }: { className?: string }) {
   const { theme, resolvedTheme, setTheme } = useTheme();
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
@@ -22,6 +27,7 @@ export default function ThemeToggle({ className = "" }: { className?: string }) 
   const isLight = mounted && resolvedTheme === "light";
   const next = current === "dark" ? "light" : current === "light" ? "system" : "dark";
   const label = t(THEMES.find((x) => x.value === current)?.label ?? "theme.dark");
+  const short = locale === "en" ? (current === "dark" ? "Night" : current === "light" ? "Day" : "Auto") : SHORT[current] ?? "شب";
 
   return (
     <button
@@ -29,15 +35,18 @@ export default function ThemeToggle({ className = "" }: { className?: string }) 
       onClick={() => setTheme(next)}
       aria-label={t("nav.themeCurrent", { name: label })}
       title={`${t("nav.theme")}: ${label}`}
-      className={`glass-btn relative grid h-10 w-10 place-items-center overflow-hidden rounded-full text-zinc-200 transition hover:text-white ${className}`}
+      className={`relative flex h-10 items-center rounded-full border border-white/15 bg-white/[0.06] pe-4 ps-10 text-xs font-bold text-zinc-200 transition hover:border-white/30 hover:bg-white/10 hover:text-white ${className}`}
     >
-      <span className={`absolute transition-all duration-500 ${isLight ? "rotate-0 scale-100 opacity-100" : "-rotate-90 scale-50 opacity-0"}`}>
-        <SunIcon width={18} height={18} />
+      <span className="absolute start-2.5 grid h-5 w-5 place-items-center">
+        <span className={`absolute transition-all duration-500 ${isLight ? "rotate-0 scale-100 opacity-100" : "-rotate-90 scale-50 opacity-0"}`}>
+          <SunIcon width={16} height={16} className="text-amber-400" />
+        </span>
+        <span className={`absolute transition-all duration-500 ${!isLight ? "rotate-0 scale-100 opacity-100" : "rotate-90 scale-50 opacity-0"}`}>
+          <MoonIcon width={16} height={16} className="text-sky-300" />
+        </span>
       </span>
-      <span className={`absolute transition-all duration-500 ${!isLight ? "rotate-0 scale-100 opacity-100" : "rotate-90 scale-50 opacity-0"}`}>
-        <MoonIcon width={18} height={18} />
-      </span>
-      {mounted && current === "system" && <span className="absolute bottom-1.5 h-1 w-1 rounded-full bg-brand" />}
+      <span>{short}</span>
+      {mounted && current === "system" && <span className="absolute end-2 top-1/2 h-1 w-1 -translate-y-1/2 rounded-full bg-brand" />}
     </button>
   );
 }

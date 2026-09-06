@@ -446,6 +446,20 @@ export async function getPeopleIndex() {
 /* ------------------------------------------------------------------ */
 /*  Random pick – "امشب چی ببینم؟"                                     */
 /* ------------------------------------------------------------------ */
+/** جدول رنکینگ: بهترین آثار بر اساس امتیاز IMDb (با آستانه‌ی محبوبیت برای اعتبار). */
+export async function getRankings(type?: "movie" | "series", limit = 100) {
+  await ensureSeeded();
+  const rows = await db.title.findMany({
+    where: {
+      ...(type ? { type } : {}),
+      views: { gte: 5_000 },
+    },
+    orderBy: [{ rating: "desc" }, { views: "desc" }],
+    take: limit,
+  });
+  return rows.map(pv);
+}
+
 export async function getRandomTitle(opts: { type?: "movie" | "series"; genre?: string; excludeIds?: number[] } = {}) {
   await ensureSeeded();
   const rows = await db.title.findMany({

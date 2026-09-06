@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { SearchIcon, CloseIcon, FilmIcon, TvIcon, BookmarkIcon, HomeIcon, SparkIcon, UserIcon, LayersIcon, UsersIcon, ShuffleIcon, ChevronDown, BellIcon } from "./Icons";
+import { SearchIcon, CloseIcon, FilmIcon, TvIcon, BookmarkIcon, HomeIcon, SparkIcon, UserIcon, LayersIcon, UsersIcon, ShuffleIcon, ChevronDown, BellIcon, StarIcon } from "./Icons";
 import UserMenu from "./UserMenu";
 import ThemeToggle from "./theme/ThemeToggle";
 import LanguageToggle from "./i18n/LanguageToggle";
@@ -36,6 +36,7 @@ const links: NavLink[] = [
   { href: "/my-list", key: "nav.myList", icon: BookmarkIcon },
 ];
 const more: NavLink[] = [
+  { href: "/rankings", key: "nav.rankings", icon: StarIcon, hint: "nav.rankingsHint" },
   { href: "/people", key: "nav.people", icon: UsersIcon, hint: "nav.peopleHint" },
   { href: "/random", key: "nav.random", icon: ShuffleIcon, hint: "nav.randomHint" },
   { href: "/notifications", key: "nav.notifications", icon: BellIcon, hint: "nav.notificationsHint" },
@@ -235,7 +236,7 @@ export default function Navbar() {
                 className={`flex h-10 items-center gap-2 rounded-full border transition-[width,background-color,border-color] duration-300 ${
                   open
                     ? "fixed inset-x-2 top-4 z-40 w-auto max-w-[360px] border-white/20 bg-black/80 px-3 shadow-[0_18px_50px_rgba(0,0,0,0.45)] sm:absolute sm:inset-y-0 sm:inset-x-auto sm:top-auto sm:end-0 sm:w-[min(360px,calc(100vw-2rem))] sm:shadow-none"
-                    : "absolute inset-y-0 end-0 w-full justify-center border-transparent bg-transparent px-0 sm:justify-start sm:border-white/10 sm:bg-white/5 sm:px-3"
+                    : "absolute inset-y-0 end-0 w-full justify-center border-transparent bg-transparent px-0 sm:justify-start sm:border-white/15 sm:bg-white/[0.06] sm:px-3"
                 }`}
               >
                 <button

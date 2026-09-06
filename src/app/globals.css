@@ -212,8 +212,7 @@ body {
    ===================================================================== */
 @layer components {
 .glass,
-.glass-strong,
-.glass-btn {
+.glass-strong {
   position: relative;
   isolation: isolate;
   /* background-image first (tint), then an OPAQUE-ENOUGH color layer.
@@ -232,8 +231,7 @@ body {
 }
 /* specular sheen */
 .glass::before,
-.glass-strong::before,
-.glass-btn::before {
+.glass-strong::before {
   content: "";
   position: absolute;
   inset: 0;
@@ -244,8 +242,7 @@ body {
 }
 /* refractive rim */
 .glass::after,
-.glass-strong::after,
-.glass-btn::after {
+.glass-strong::after {
   content: "";
   position: absolute;
   inset: -1px;
@@ -259,13 +256,19 @@ body {
   pointer-events: none;
   opacity: 0.9;
 }
-/* button mode – hover brightens, press flattens (like liquidglass `button: true`) */
+/* v0.10: glass-btn redesigned – the glossy "liquid glass" look is gone.
+   Now it matches the +/♥ button language: clean bordered pill with a
+   subtle fill, colored on hover/active. Every previous glass-btn usage
+   (person page chips, random page, collections, modal, Row arrows)
+   inherits this automatically. */
 .glass-btn {
-  transition: transform 0.18s ease, box-shadow 0.18s ease, filter 0.18s ease;
+  background-color: rgb(255 255 255 / 0.06);
+  border: 1px solid rgb(255 255 255 / 0.12);
+  transition: transform 0.18s ease, background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease;
   cursor: pointer;
 }
-.glass-btn:hover { filter: brightness(1.08) saturate(1.1); }
-.glass-btn:active { transform: scale(0.97); box-shadow: 0 4px 14px rgb(var(--shadow-color) / 0.3), inset 0 1px 0 var(--glass-hl); }
+.glass-btn:hover { background-color: rgb(255 255 255 / 0.12); border-color: rgb(255 255 255 / 0.28); }
+.glass-btn:active { transform: scale(0.97); }
 
 .glass-in { animation: var(--animate-glass-in); }
 } /* @layer components */
@@ -312,6 +315,17 @@ html[data-reduce-motion="1"] *, html[data-reduce-motion="1"] *::before, html[dat
 .line-clamp-3 { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .heart-pop { animation: var(--animate-pop); }
 .checkbox-brand { accent-color: var(--color-brand); }
+
+/* ---- Player subtitles (loaded SRT/VTT tracks) ---- */
+video::cue {
+  font-family: Vazirmatn, sans-serif;
+  background: rgba(0, 0, 0, 0.72);
+  color: #fff;
+  line-height: 1.7;
+}
+[data-subsize="s"] video::cue { font-size: 2.4cqh; }
+[data-subsize="m"] video::cue { font-size: 3.2cqh; }
+[data-subsize="l"] video::cue { font-size: 4.2cqh; }
 
 /* ---- Electron desktop shell ---- */
 html[data-electron="1"] .web-only { display: none !important; }

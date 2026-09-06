@@ -28,6 +28,8 @@ model Title {
   country       String    @default("ایران")
   ageRating     String    @default("+13")
   quality       String    @default("4K")
+  /// همه‌ی لینک‌های موجود (کیفیت/ورژن): [{q:"1080p", v:"دوبله فارسی", url, size}]
+  sources       String    @default("[]")
   featured      Boolean   @default(false)
   trendingScore Int       @default(0)
   views         Int       @default(0)
@@ -55,6 +57,8 @@ model Episode {
   duration   Int             @default(45)
   videoUrl   String
   thumbnail  String
+  /// همه‌ی لینک‌های این قسمت (کیفیت/ورژن) — همان ساختار Title.sources
+  sources    String   @default("[]")
   progress   WatchProgress[]
 
   @@index([titleId])
@@ -69,6 +73,8 @@ model Watchlist {
   status    String   @default("planned") // planned | watching | watched
   note      String   @default("")
   pinned    Boolean  @default(false)
+  /// تاریخ برنامه‌ریزی‌شده برای تماشا (تقویم لیست من)
+  plannedDate DateTime?
   createdAt DateTime @default(now())
   updatedAt DateTime @default(now()) @updatedAt
 

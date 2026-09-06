@@ -1,6 +1,7 @@
 import Link from "next/link";
 import TitleCard from "@/components/TitleCard";
 import MyListManager from "@/components/library/MyListManager";
+import ListCalendar from "@/components/library/ListCalendar";
 import ContinueCard from "@/components/library/ContinueCard";
 import { BookmarkIcon, ClockIcon, FilmIcon, TvIcon, SparkIcon, HeartIcon, HistoryIcon, CheckCircleIcon } from "@/components/Icons";
 import { getContinueWatching, getTrending } from "@/lib/queries";
@@ -53,19 +54,22 @@ export default async function MyListPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+            <div className="flex flex-wrap items-center gap-2">
               {[
-                { icon: BookmarkIcon, v: fa(rows.length), k: "ذخیره‌شده" },
-                { icon: FilmIcon, v: fa(movies), k: "فیلم" },
-                { icon: TvIcon, v: fa(series), k: "سریال" },
-                { icon: CheckCircleIcon, v: `${fa(watchedPct)}٪`, k: "تماشا شده" },
-                { icon: ClockIcon, v: totalMinutes ? formatDuration(totalMinutes) : "۰", k: "زمان کل" },
+                { icon: BookmarkIcon, v: fa(rows.length), k: "ذخیره‌شده", c: "text-brand" },
+                { icon: FilmIcon, v: fa(movies), k: "فیلم", c: "text-sky-400" },
+                { icon: TvIcon, v: fa(series), k: "سریال", c: "text-violet-400" },
+                { icon: CheckCircleIcon, v: `${fa(watchedPct)}٪`, k: "تماشا شده", c: "text-emerald-400" },
+                { icon: ClockIcon, v: totalMinutes ? formatDuration(totalMinutes) : "۰", k: "زمان کل", c: "text-amber-400" },
               ].map((s) => (
-                <div key={s.k} className="glass rounded-2xl px-4 py-3">
-                  <s.icon width={16} height={16} className="text-zinc-400" />
-                  <p className="mt-2 text-lg font-black text-white num">{s.v}</p>
-                  <p className="text-[11px] text-zinc-400">{s.k}</p>
-                </div>
+                <span
+                  key={s.k}
+                  className="flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-xs font-bold text-white backdrop-blur transition hover:border-white/25"
+                >
+                  <s.icon width={15} height={15} className={s.c} />
+                  <span className="num">{s.v}</span>
+                  <span className="font-medium text-zinc-400">{s.k}</span>
+                </span>
               ))}
             </div>
           </div>
@@ -90,6 +94,17 @@ export default async function MyListPage() {
             </div>
           </section>
         )}
+
+        {/* calendar — برنامه‌ریزی تماشا بر اساس تاریخ */}
+        <section className="mt-12">
+          <div className="mb-4 flex items-end justify-between">
+            <div>
+              <h2 className="text-xl font-extrabold text-white">تقویم تماشا</h2>
+              <p className="text-xs text-zinc-500">فیلم‌ها و سریال‌های لیست‌تان را روی تقویم ثبت کنید تا ببینید کِی چه چیزی می‌بینید</p>
+            </div>
+          </div>
+          <ListCalendar rows={rows} />
+        </section>
 
         {/* manager */}
         <section className="mt-12">

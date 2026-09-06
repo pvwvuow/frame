@@ -60,6 +60,7 @@ export type CatalogItem = {
   country: string;
   ageRating: string;
   quality: string;
+  sources: string; // JSON: [{q, v, url, mb?}] — all quality/variant links
   featured: boolean;
   trendingScore: number;
   views: number;
@@ -71,6 +72,7 @@ export type CatalogItem = {
     synopsis: string;
     duration: number;
     videoUrl: string;
+    sources: string;
     thumbnail: string;
   }[];
 };
@@ -190,6 +192,7 @@ async function refreshCatalog(seedPath: string): Promise<CatalogRefreshResult> {
       country: t.country,
       ageRating: t.ageRating,
       quality: t.quality,
+      sources: t.sources,
       featured: t.featured,
       trendingScore: t.trendingScore,
       views: t.views,
@@ -201,6 +204,7 @@ async function refreshCatalog(seedPath: string): Promise<CatalogRefreshResult> {
         synopsis: e.synopsis,
         duration: e.duration,
         videoUrl: e.videoUrl,
+        sources: e.sources,
         thumbnail: e.thumbnail,
       })),
     }));
@@ -258,7 +262,7 @@ function rebaseAsset(url_: string, siteRoot: string): string {
   return siteRoot.replace(/\/+$/, "") + url_;
 }
 
-const FETCH_TIMEOUT_MS = 90_000; // full-catalog payloads grow with the library
+const FETCH_TIMEOUT_MS = 300_000; // full-catalog payloads grow with the library (+sources ≈ 69MB)
 const VERSION_TIMEOUT_MS = 8_000;
 
 /**
@@ -335,6 +339,7 @@ async function syncCatalog(catalogUrl: string): Promise<CatalogRefreshResult> {
     country: String(t.country ?? "نامشخص"),
     ageRating: String(t.ageRating ?? "+13"),
     quality: String(t.quality ?? "HD"),
+    sources: typeof t.sources === "string" && t.sources.startsWith("[") ? t.sources : "[]",
     featured: Boolean(t.featured),
     trendingScore: Number(t.trendingScore) || 0,
     views: Number(t.views) || 0,
@@ -347,6 +352,7 @@ async function syncCatalog(catalogUrl: string): Promise<CatalogRefreshResult> {
           synopsis: String(e.synopsis ?? ""),
           duration: Number(e.duration) || 45,
           videoUrl: String(e.videoUrl ?? ""),
+          sources: typeof e.sources === "string" && e.sources.startsWith("[") ? e.sources : "[]",
           thumbnail: rebaseAsset(String(e.thumbnail ?? ""), siteRoot),
         }))
       : [],
@@ -409,6 +415,7 @@ async function applyCatalog(items: CatalogItem[]): Promise<CatalogRefreshResult>
       country: t.country,
       ageRating: t.ageRating,
       quality: t.quality,
+      sources: t.sources ?? "[]",
       featured: t.featured,
       trendingScore: t.trendingScore,
       views: t.views,
@@ -471,6 +478,7 @@ async function episodesDiffer(
       a.synopsis !== b.synopsis ||
       a.duration !== b.duration ||
       a.videoUrl !== b.videoUrl ||
+      a.sources !== b.sources ||
       a.thumbnail !== b.thumbnail
     ) {
       return true;

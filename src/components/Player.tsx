@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { formatClock, fa } from "@/lib/format";
 import {
@@ -14,11 +14,34 @@ import {
   Rewind10,
   VolumeIcon,
   ChevronLeft,
+  CloseIcon,
+  CheckIcon,
+  SubtitleIcon,
 } from "./Icons";
 import FavoriteButton from "./FavoriteButton";
 import WatchlistButton from "./WatchlistButton";
 
 export type PlayerEpisode = { id: number; season: number; number: number; name: string; videoUrl: string; thumbnail: string };
+export type PlayerSource = { q: string; v: string; url: string; mb?: number };
+
+const SUB_SIZE_KEY = "nama-sub-size";
+const SUB_ON_KEY = "nama-sub-on";
+
+/** SRT → WebVTT (the <track> element only understands VTT). */
+function srtToVtt(input: string): string {
+  const body = input
+    .replace(/\r+\n/g, "\n")
+    .replace(/^\uFEFF/, "")
+    .replace(/(\d{2}:\d{2}:\d{2}),(\d{3})/g, "$1.$2")
+    .replace(/<[^>]+>/g, "");
+  return `WEBVTT\n\n${body}`;
+}
+
+function variantShort(v: string) {
+  if (!v) return "";
+  if (v.includes("دوبله")) return "دوبله";
+  return v; // «زیرنویس چسبیده» / «بدون زیرنویس» — keep as-is
+}
 
 export default function Player({
   titleId,
@@ -31,6 +54,7 @@ export default function Player({
   episode,
   nextEpisode,
   episodes,
+  sources = [],
 }: {
   titleId: number;
   slug: string;
@@ -42,12 +66,29 @@ export default function Player({
   episode: PlayerEpisode | null;
   nextEpisode: PlayerEpisode | null;
   episodes: PlayerEpisode[];
+  sources?: PlayerSource[];
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSaved = useRef(0);
   const router = useRouter();
+
+  // ---- quality / variant sources -----------------------------------------
+  const srcList: PlayerSource[] = useMemo(
+    () => (sources.length ? sources : src ? [{ q: "", v: "", url: src }] : []),
+    [sources, src]
+  );
+  const [srcIdx, setSrcIdx] = useState(0);
+  const activeSrc = srcList[Math.min(srcIdx, srcList.length - 1)]?.url || src;
+  const [qMenu, setQMenu] = useState(false);
+
+  // ---- subtitles ----------------------------------------------------------
+  const [subOn, setSubOn] = useState(false);
+  const [subSize, setSubSize] = useState<"s" | "m" | "l">("m");
+  const [subLoaded, setSubLoaded] = useState(false);
+  const [subMenu, setSubMenu] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   const [playing, setPlaying] = useState(false);
   const [current, setCurrent] = useState(0);
@@ -61,6 +102,8 @@ export default function Player({
   const [loading, setLoading] = useState(true);
   const [ended, setEnded] = useState(false);
   const [countdown, setCountdown] = useState<number | null>(null);
+  // when switching quality we need to resume at the same second
+  const resumeAt = useRef<number | null>(null);
 
   const save = useCallback(
     (pos: number, dur: number) => {
@@ -103,12 +146,26 @@ export default function Player({
     else void el.requestFullscreen?.();
   }, []);
 
+  // restore subtitle prefs
+  useEffect(() => {
+    try {
+      const s = localStorage.getItem(SUB_SIZE_KEY) as "s" | "m" | "l" | null;
+      if (s) setSubSize(s);
+      setSubOn(localStorage.getItem(SUB_ON_KEY) === "1" && !!subLoaded);
+    } catch {
+      /* ignore */
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [subLoaded]);
+
   useEffect(() => {
     const v = videoRef.current;
     if (!v) return;
     const onLoaded = () => {
       setDuration(v.duration);
-      if (startAt > 0 && startAt < v.duration - 5) v.currentTime = startAt;
+      const resume = resumeAt.current ?? startAt;
+      resumeAt.current = null;
+      if (resume > 0 && resume < v.duration - 5) v.currentTime = resume;
       setLoading(false);
       void v.play().catch(() => {});
     };
@@ -149,7 +206,60 @@ export default function Player({
       v.removeEventListener("pause", onPause);
       v.removeEventListener("ended", onEnded);
     };
-  }, [startAt, save, bumpUi, nextEpisode]);
+  }, [startAt, save, bumpUi, nextEpisode, activeSrc]);
+
+  // switch quality → same second, keep playing
+  const pickSource = (i: number) => {
+    const v = videoRef.current;
+    if (v) resumeAt.current = v.currentTime;
+    setSrcIdx(i);
+    setQMenu(false);
+    setLoading(true);
+  };
+
+  // subtitle track mode sync
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v) return;
+    const track = v.textTracks[0];
+    if (track) track.mode = subOn && subLoaded ? "showing" : "disabled";
+  }, [subOn, subLoaded]);
+
+  const onSubFile = (f: File | undefined) => {
+    if (!f) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const text = String(reader.result ?? "");
+      const vtt = /^\uFEFF?WEBVTT/.test(text.trim()) ? text : srtToVtt(text);
+      const url = URL.createObjectURL(new Blob([vtt], { type: "text/vtt" }));
+      const v = videoRef.current;
+      if (!v) return;
+      // remove previous blob track
+      while (v.textTracks.length) {
+        const el = v.querySelector("track");
+        if (el) el.remove();
+        else break;
+      }
+      const tr = document.createElement("track");
+      tr.kind = "subtitles";
+      tr.srclang = "fa";
+      tr.label = "زیرنویس";
+      tr.src = url;
+      tr.className = "nama-sub-track";
+      v.appendChild(tr);
+      setSubLoaded(true);
+      setSubOn(true);
+      try {
+        localStorage.setItem(SUB_ON_KEY, "1");
+      } catch {}
+      setSubMenu(false);
+      setTimeout(() => {
+        const t = v.textTracks[0];
+        if (t) t.mode = "showing";
+      }, 50);
+    };
+    reader.readAsText(f, "utf-8");
+  };
 
   useEffect(() => {
     if (countdown === null) return;
@@ -181,6 +291,14 @@ export default function Player({
           break;
         case "m":
           setMuted((m) => !m);
+          break;
+        case "c":
+          setSubOn((s) => {
+            try {
+              localStorage.setItem(SUB_ON_KEY, s ? "0" : "1");
+            } catch {}
+            return !s;
+          });
           break;
         case "ArrowUp":
           setVolume((v) => Math.min(1, v + 0.1));
@@ -217,10 +335,13 @@ export default function Player({
 
   const pct = duration ? (current / duration) * 100 : 0;
   const bufPct = duration ? (buffered / duration) * 100 : 0;
+  const active = srcList[Math.min(srcIdx, srcList.length - 1)];
+  const qualityLabel = active?.q || "";
 
   return (
     <div
       ref={wrapRef}
+      data-subsize={subSize}
       className={`force-dark relative h-screen w-screen select-none overflow-hidden bg-black ${showUi ? "cursor-default" : "cursor-none"}`}
       onMouseMove={bumpUi}
       onClick={(e) => {
@@ -232,7 +353,8 @@ export default function Player({
     >
       <video
         ref={videoRef}
-        src={src}
+        key={activeSrc}
+        src={activeSrc}
         poster={poster}
         className="h-full w-full object-contain"
         playsInline
@@ -243,6 +365,22 @@ export default function Player({
       {loading && !ended && (
         <div className="pointer-events-none absolute inset-0 grid place-items-center">
           <div className="h-16 w-16 animate-spin rounded-full border-4 border-white/20 border-t-brand" />
+        </div>
+      )}
+
+      {/* unavailable — no playable source for this title/episode */}
+      {!activeSrc && (
+        <div className="absolute inset-0 grid place-items-center bg-black/80" data-ctrl>
+          <div className="max-w-sm p-6 text-center">
+            <p className="text-xl font-black text-white">این نسخه در دسترس نیست</p>
+            <p className="mt-2 text-sm leading-7 text-zinc-400">لینک معتبری برای این {episode ? "قسمت" : "عنوان"} پیدا نشد. قسمت یا نسخه‌ی دیگری را امتحان کنید.</p>
+            <div className="mt-5 flex justify-center gap-3">
+              <Link href={`/title/${slug}`} className="flex h-11 items-center rounded-full bg-white px-6 text-sm font-bold text-black">بازگشت به جزئیات</Link>
+              {episodes.length > 0 && episode && episodes[episodes.findIndex((e) => e.id === episode.id) + 1] && (
+                <Link href={`/watch/${slug}?ep=${episodes[episodes.findIndex((e) => e.id === episode.id) + 1].id}`} className="flex h-11 items-center rounded-full border border-white/20 px-6 text-sm font-bold text-white hover:bg-white/10">قسمت بعد</Link>
+              )}
+            </div>
+          </div>
         </div>
       )}
 
@@ -313,7 +451,7 @@ export default function Player({
         className={`absolute inset-x-0 top-0 flex items-center gap-4 bg-gradient-to-b from-black/80 to-transparent p-4 transition-opacity duration-300 sm:p-6 ${showUi ? "opacity-100" : "opacity-0"}`}
         data-ctrl
       >
-        <Link href={`/title/${slug}`} className="grid h-11 w-11 place-items-center rounded-full bg-white/10 text-white backdrop-blur hover:bg-white/20" aria-label="بازگشت">
+        <Link href={`/title/${slug}`} className="grid h-11 w-11 place-items-center rounded-full border border-white/20 bg-white/10 text-white backdrop-blur transition hover:bg-white/20" aria-label="بازگشت">
           <BackIcon />
         </Link>
         <div className="min-w-0">
@@ -329,7 +467,7 @@ export default function Player({
             <button
               type="button"
               onClick={() => setShowEps((s) => !s)}
-              className="hidden h-10 items-center gap-2 rounded-full bg-white/10 px-4 text-sm font-semibold text-white backdrop-blur hover:bg-white/20 sm:flex"
+              className="flex h-10 items-center gap-2 rounded-full border border-white/20 bg-white/10 px-4 text-sm font-semibold text-white backdrop-blur transition hover:bg-white/20"
             >
               قسمت‌ها
               <ChevronLeft width={16} height={16} />
@@ -357,7 +495,6 @@ export default function Player({
                   href={`/watch/${slug}?ep=${e.id}`}
                   className={`flex gap-3 rounded-xl p-2 transition ${e.id === episode?.id ? "bg-brand/20 ring-1 ring-brand/60" : "hover:bg-white/5"}`}
                 >
-                  { }
                   <img src={e.thumbnail} alt="" className="h-14 w-24 rounded-lg object-cover" />
                   <div className="min-w-0">
                     <p className="text-xs text-zinc-400">
@@ -440,7 +577,7 @@ export default function Player({
               <select
                 value={rate}
                 onChange={(e) => setRate(Number(e.target.value))}
-                className="h-9 appearance-none rounded-full bg-white/10 px-3 text-xs font-bold text-white hover:bg-white/20 focus:outline-none"
+                className="h-9 appearance-none rounded-full border border-white/20 bg-white/10 px-3 text-xs font-bold text-white hover:bg-white/20 focus:outline-none"
                 aria-label="سرعت پخش"
               >
                 {[0.5, 0.75, 1, 1.25, 1.5, 2].map((r) => (
@@ -450,11 +587,139 @@ export default function Player({
                 ))}
               </select>
             </div>
-            <span className="hidden rounded-full bg-white/10 px-3 py-2 text-xs font-bold text-white sm:block">۴K</span>
+
+            {/* quality / variant picker */}
+            {srcList.length > 1 && (
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setQMenu((o) => !o);
+                    setSubMenu(false);
+                  }}
+                  className={`flex h-9 items-center gap-1.5 rounded-full border px-3 text-xs font-bold transition ${
+                    qMenu ? "border-brand/60 bg-brand/20 text-white" : "border-white/20 bg-white/10 text-white hover:bg-white/20"
+                  }`}
+                  aria-label="انتخاب کیفیت"
+                >
+                  {qualityLabel || "کیفیت"}
+                </button>
+                {qMenu && (
+                  <ul className="absolute bottom-11 end-0 z-30 w-56 overflow-hidden rounded-2xl border border-white/10 bg-ink-800/95 p-1.5 shadow-2xl backdrop-blur-xl">
+                    {srcList.map((s, i) => {
+                      const on = i === srcIdx;
+                      return (
+                        <li key={`${s.url}-${i}`}>
+                          <button
+                            type="button"
+                            onClick={() => pickSource(i)}
+                            className={`flex w-full items-center gap-2 rounded-xl px-3 py-2 text-xs transition ${
+                              on ? "bg-brand/20 text-white" : "text-zinc-300 hover:bg-white/5 hover:text-white"
+                            }`}
+                          >
+                            <span className="w-12 shrink-0 font-black">{s.q || "عادی"}</span>
+                            <span className={`flex-1 text-start text-[11px] ${s.v?.includes("دوبله") ? "text-emerald-300" : s.v?.includes("زیرنویس") ? "text-sky-300" : "text-zinc-500"}`}>
+                              {variantShort(s.v) || "اصلی"}
+                            </span>
+                            {s.mb ? <span className="text-[10px] text-zinc-500 num">{fa(s.mb)}MB</span> : null}
+                            {on && <CheckIcon width={13} height={13} className="text-brand" />}
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </div>
+            )}
+
+            {/* subtitles */}
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => {
+                  setSubMenu((o) => !o);
+                  setQMenu(false);
+                }}
+                aria-label="زیرنویس"
+                className={`grid h-9 w-9 place-items-center rounded-full border transition ${
+                  subOn && subLoaded ? "border-brand/60 bg-brand/20 text-white" : subLoaded ? "border-white/20 bg-white/10 text-white hover:bg-white/20" : "border-white/20 bg-white/10 text-white hover:bg-white/20"
+                }`}
+              >
+                <SubtitleIcon width={17} height={17} />
+              </button>
+              {subLoaded && subOn && !subMenu && <span className="pointer-events-none absolute -top-0.5 end-0 h-2 w-2 rounded-full bg-brand ring-2 ring-black" />}
+              {subMenu && (
+                <div className="absolute bottom-11 end-0 z-30 w-64 overflow-hidden rounded-2xl border border-white/10 bg-ink-800/95 p-3 shadow-2xl backdrop-blur-xl">
+                  <div className="mb-2 flex items-center justify-between">
+                    <p className="text-xs font-extrabold text-white">زیرنویس</p>
+                    <button type="button" onClick={() => setSubMenu(false)} aria-label="بستن" className="text-zinc-500 hover:text-white">
+                      <CloseIcon width={13} height={13} />
+                    </button>
+                  </div>
+                  {subLoaded ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSubOn((s) => {
+                          try {
+                            localStorage.setItem(SUB_ON_KEY, s ? "0" : "1");
+                          } catch {}
+                          return !s;
+                        });
+                      }}
+                      className={`mb-2 flex w-full items-center justify-between rounded-xl border px-3 py-2 text-xs font-bold transition ${
+                        subOn ? "border-brand/50 bg-brand/15 text-white" : "border-white/10 bg-white/5 text-zinc-300 hover:bg-white/10"
+                      }`}
+                    >
+                      <span className="flex items-center gap-2">
+                        <SubtitleIcon width={14} height={14} /> نمایش زیرنویس
+                      </span>
+                      <span>{subOn ? "روشن" : "خاموش"}</span>
+                    </button>
+                  ) : (
+                    <p className="mb-2 rounded-xl bg-white/5 p-2.5 text-[11px] leading-5 text-zinc-400">
+                      فایل‌های این آرشیو زیرنویس جدا ندارند؛ نسخه‌های «زیرنویس چسبیده» زیرنویس داخل تصویر دارند. می‌توانید فایل SRT خودتان را لود کنید.
+                    </p>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => fileRef.current?.click()}
+                    className="flex w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-bold text-zinc-200 transition hover:bg-white/10"
+                  >
+                    <PlusIconSmall /> بارگذاری فایل زیرنویس (SRT / VTT)
+                  </button>
+                  <input ref={fileRef} type="file" accept=".srt,.vtt,text/vtt" className="hidden" onChange={(e) => onSubFile(e.target.files?.[0])} />
+                  <div className="mt-2 flex items-center gap-1 rounded-xl bg-white/5 p-1">
+                    {(
+                      [
+                        ["s", "کوچک"],
+                        ["m", "متوسط"],
+                        ["l", "بزرگ"],
+                      ] as const
+                    ).map(([v, l]) => (
+                      <button
+                        key={v}
+                        type="button"
+                        onClick={() => {
+                          setSubSize(v);
+                          try {
+                            localStorage.setItem(SUB_SIZE_KEY, v);
+                          } catch {}
+                        }}
+                        className={`flex-1 rounded-lg py-1.5 text-[11px] font-bold transition ${subSize === v ? "bg-white text-black" : "text-zinc-300 hover:bg-white/10"}`}
+                      >
+                        {l}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
             {nextEpisode && (
               <Link
                 href={`/watch/${slug}?ep=${nextEpisode.id}`}
-                className="hidden h-9 items-center gap-1 rounded-full bg-white/10 px-3 text-xs font-bold text-white hover:bg-white/20 sm:flex"
+                className="hidden h-9 items-center gap-1 rounded-full border border-white/20 bg-white/10 px-3 text-xs font-bold text-white hover:bg-white/20 sm:flex"
               >
                 قسمت بعد
                 <ChevronLeft width={14} height={14} />
@@ -467,5 +732,13 @@ export default function Player({
         </div>
       </div>
     </div>
+  );
+}
+
+function PlusIconSmall() {
+  return (
+    <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+      <path d="M12 5v14M5 12h14" />
+    </svg>
   );
 }

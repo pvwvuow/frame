@@ -40,9 +40,9 @@ export default function LanguageToggle({ className = "" }: { className?: string 
         aria-expanded={open}
         aria-label={t("nav.switchLanguage")}
         title={t("nav.switchLanguage")}
-        className="glass-btn flex h-10 w-[4.5rem] items-center justify-center gap-1.5 rounded-full px-2 text-xs font-bold uppercase text-zinc-200 hover:text-white"
+        className="flex h-10 items-center gap-2 rounded-full border border-white/15 bg-white/[0.06] px-4 text-xs font-bold uppercase text-zinc-200 transition hover:border-white/30 hover:bg-white/10 hover:text-white"
       >
-        <GlobeIcon width={16} height={16} />
+        <GlobeIcon width={15} height={15} className="text-emerald-300" />
         <span dir="ltr">{locale === "fa" ? "FA" : "EN"}</span>
       </button>
       {open && (

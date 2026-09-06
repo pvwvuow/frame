@@ -54,6 +54,7 @@ export type ListRow = {
   pinned: boolean;
   addedAt: string;
   updatedAt: string;
+  plannedDate: string | null;
   progress: { position: number; duration: number; episodeId: number | null } | null;
   isFavorite: boolean;
   myScore: number | null;
@@ -82,6 +83,7 @@ export async function getMyListRows(userKey: string): Promise<ListRow[]> {
     pinned: r.pinned,
     addedAt: r.createdAt.toISOString(),
     updatedAt: r.updatedAt.toISOString(),
+    plannedDate: r.plannedDate ? r.plannedDate.toISOString().slice(0, 10) : null,
     progress: pm.has(r.titleId)
       ? { position: pm.get(r.titleId)!.position, duration: pm.get(r.titleId)!.duration, episodeId: pm.get(r.titleId)!.episodeId }
       : null,

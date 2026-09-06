@@ -37,18 +37,18 @@ export default async function FavoritesPage() {
                 <BookmarkIcon width={13} height={13} /> رفتن به لیست من
               </Link>
             </div>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <div className="flex flex-wrap items-center gap-2">
               {[
-                { icon: HeartIcon, v: fa(rows.length), k: "علاقه‌مندی" },
-                { icon: FilmIcon, v: fa(movies), k: "فیلم" },
-                { icon: TvIcon, v: fa(rows.length - movies), k: "سریال" },
-                { icon: StarIcon, v: fa(avg), k: "میانگین امتیاز" },
+                { icon: HeartIcon, v: fa(rows.length), k: "علاقه‌مندی", c: "border-rose-500/40 bg-rose-500/10 text-rose-300" },
+                { icon: FilmIcon, v: fa(movies), k: "فیلم", c: "border-sky-400/25 bg-sky-500/10 text-sky-300" },
+                { icon: TvIcon, v: fa(rows.length - movies), k: "سریال", c: "border-violet-400/25 bg-violet-500/10 text-violet-300" },
+                { icon: StarIcon, v: fa(avg), k: "میانگین امتیاز", c: "border-amber-400/25 bg-amber-500/10 text-amber-300" },
               ].map((s) => (
-                <div key={s.k} className="glass rounded-2xl px-4 py-3">
-                  <s.icon width={16} height={16} className="text-zinc-400" />
-                  <p className="mt-2 text-lg font-black text-white num">{s.v}</p>
-                  <p className="text-[11px] text-zinc-400">{s.k}</p>
-                </div>
+                <span key={s.k} className={`flex items-center gap-2 rounded-full border px-4 py-2 text-xs font-bold backdrop-blur ${s.c}`}>
+                  <s.icon width={15} height={15} />
+                  <span className="text-white num">{s.v}</span>
+                  <span className="font-medium opacity-80">{s.k}</span>
+                </span>
               ))}
             </div>
           </div>

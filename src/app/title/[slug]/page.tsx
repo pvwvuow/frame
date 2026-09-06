@@ -51,9 +51,20 @@ const AVATAR_GRADIENTS = [
   "from-violet-500 to-fuchsia-500",
   "from-sky-500 to-cyan-400",
   "from-emerald-500 to-lime-400",
-  "from-amber-500 to-yellow-400",
+  "from-amber-500 to-yellow-500",
   "from-pink-500 to-rose-400",
 ];
+
+function parseSources(json: string) {
+  try {
+    const arr = JSON.parse(json || "[]");
+    return Array.isArray(arr) ? arr.filter((s) => s && s.url) : [];
+  } catch {
+    return [];
+  }
+}
+
+const TIERS_ORD: Record<string, number> = { "4K": 5, "1080p": 4, "720p": 3, "540p": 2, "480p": 1 };
 
 export default async function TitlePage({ params }: Props) {
   const { slug } = await params;
@@ -77,6 +88,33 @@ export default async function TitlePage({ params }: Props) {
   const seasons = Array.from(new Set(eps.map((e) => e.season)));
   const score10 = Math.max(0, Math.min(10, t.rating));
   const ring = (score10 / 10) * 100;
+
+  // real quality / subtitle info from the imported sources
+  // (series: aggregate the (quality, variant) combos of the episodes)
+  const allSources =
+    t.type === "series"
+      ? Object.values(
+          eps.reduce<Record<string, { q: string; v: string; url: string; mb?: number }>>((acc, e) => {
+            try {
+              for (const s of JSON.parse(e.sources || "[]")) {
+                if (!s?.url) continue;
+                const k = `${s.q}|${s.v}`;
+                if (!acc[k]) acc[k] = { q: s.q || "", v: s.v || "", url: s.url, mb: s.mb };
+              }
+            } catch {
+              /* ignore */
+            }
+            return acc;
+          }, {})
+        ).sort((a, b) => (TIERS_ORD[b.q] ?? 0) - (TIERS_ORD[a.q] ?? 0))
+      : parseSources(t.sources);
+  const qualities = Array.from(new Set(allSources.map((s) => s.q).filter(Boolean)));
+  const hasDub = allSources.some((s) => s.v.includes("دوبله"));
+  const hasHardSub = allSources.some((s) => s.v.includes("زیرنویس"));
+  const variantBadges = [
+    ...(hasDub ? [{ label: "دوبله فارسی", c: "border-emerald-400/30 bg-emerald-500/10 text-emerald-300" }] : []),
+    ...(hasHardSub ? [{ label: "زیرنویس چسبیده", c: "border-sky-400/30 bg-sky-500/10 text-sky-300" }] : []),
+  ];
 
   // rating histogram (10 → 1)
   const hist = Array.from({ length: 10 }, (_, i) => 10 - i).map((n) => ({
@@ -142,11 +180,19 @@ export default async function TitlePage({ params }: Props) {
                   <FlameIcon width={12} height={12} /> ترند
                 </span>
               )}
-              <span className="rounded-md border border-white/20 bg-black/40 px-2 py-1 text-zinc-100 backdrop-blur">{t.quality}</span>
+              <span className="rounded-md border border-white/20 bg-black/40 px-2 py-1 text-zinc-100 backdrop-blur">{qualities.length ? qualities.join(" · ") : t.quality}</span>
               <span className="rounded-md border border-white/20 bg-black/40 px-2 py-1 text-zinc-100 backdrop-blur">{t.ageRating}</span>
-              <span className="flex items-center gap-1 rounded-md border border-white/20 bg-black/40 px-2 py-1 text-zinc-100 backdrop-blur">
-                <SubtitleIcon width={12} height={12} /> زیرنویس · دوبله
-              </span>
+              {variantBadges.length > 0 ? (
+                variantBadges.map((b) => (
+                  <span key={b.label} className={`flex items-center gap-1 rounded-md border px-2 py-1 ${b.c}`}>
+                    <SubtitleIcon width={12} height={12} /> {b.label}
+                  </span>
+                ))
+              ) : (
+                <span className="flex items-center gap-1 rounded-md border border-white/20 bg-black/40 px-2 py-1 text-zinc-100 backdrop-blur">
+                  <SubtitleIcon width={12} height={12} /> بدون زیرنویس جدا
+                </span>
+              )}
             </div>
 
             <h1 className="text-glow text-4xl font-black leading-[1.15] text-white sm:text-5xl lg:text-6xl" dir={names.primaryDir}>{names.primary}</h1>
@@ -249,7 +295,7 @@ export default async function TitlePage({ params }: Props) {
 
             <div className="mt-8 grid grid-cols-2 gap-3 sm:grid-cols-4">
               {[
-                { k: "کیفیت", v: t.quality },
+                { k: "کیفیت", v: qualities.length ? qualities.join(" · ") : t.quality },
                 { k: "مدت", v: formatDuration(t.duration) },
                 { k: "رده سنی", v: t.ageRating },
                 { k: "محصول", v: t.year > 0 ? `${t.country} · ${fa(t.year)}` : t.country },
@@ -260,6 +306,24 @@ export default async function TitlePage({ params }: Props) {
                 </div>
               ))}
             </div>
+            {allSources.length > 0 && (
+              <div className="mt-4 rounded-2xl border border-white/5 bg-ink-700/40 p-4">
+                <p className="mb-2.5 flex items-center gap-2 text-sm font-extrabold text-white">
+                  <SubtitleIcon width={15} height={15} className="text-brand" /> نسخه‌های موجود
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {allSources.slice(0, 12).map((s, i) => (
+                    <span key={`${s.url}-${i}`} className="flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] font-bold text-zinc-200">
+                      <span className="text-white">{s.q || "عادی"}</span>
+                      {s.v && <span className={s.v.includes("دوبله") ? "text-emerald-300" : s.v.includes("زیرنویس") ? "text-sky-300" : "text-zinc-500"}>{s.v}</span>}
+                      {s.mb ? <span className="text-zinc-500 num">{fa(s.mb)}MB</span> : null}
+                    </span>
+                  ))}
+                  {allSources.length > 12 && <span className="rounded-full px-2 py-1 text-[11px] text-zinc-500">+{fa(allSources.length - 12)} نسخه دیگر</span>}
+                </div>
+                <p className="mt-2.5 text-[11px] leading-5 text-zinc-500">هنگام پخش می‌توانید از دکمه‌ی کیفیت، بین نسخه‌های بالا جابه‌جا شوید. برای زیرنویس جدا، دکمه‌ی CC داخل پخش‌کننده است.</p>
+              </div>
+            )}
           </section>
 
           {/* episodes */}
@@ -391,8 +455,8 @@ export default async function TitlePage({ params }: Props) {
                 { k: "ژانر", v: t.genres.join("، ") },
                 { k: "کشور", v: t.country },
                 { k: "سال انتشار", v: t.year > 0 ? fa(t.year) : "نامشخص" },
-                { k: "زبان", v: "فارسی · زیرنویس انگلیسی" },
-                { k: "کیفیت پخش", v: `${t.quality} · Dolby Audio` },
+                { k: "زبان", v: "فارسی دوبله / اصلی" },
+                { k: "کیفیت پخش", v: qualities.length ? qualities.join(" · ") : `${t.quality}` },
                 ...(eps.length ? [{ k: "تعداد فصل", v: fa(seasons.length) }] : []),
               ].map((row) => (
                 <div key={row.k} className="flex items-start justify-between gap-4 border-b border-white/5 pb-3 last:border-0 last:pb-0">

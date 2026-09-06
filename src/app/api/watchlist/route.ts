@@ -35,16 +35,25 @@ export async function POST(req: Request) {
   return Response.json({ inList: wanted });
 }
 
-/** Update one row. Body: { titleId, status?, note?, pinned? } */
+/** Update one row. Body: { titleId, status?, note?, pinned?, plannedDate? } */
 export async function PATCH(req: Request) {
   const userKey = await getUserKey();
-  const body = (await req.json().catch(() => null)) as { titleId?: number; status?: string; note?: string; pinned?: boolean } | null;
+  const body = (await req.json().catch(() => null)) as
+    | { titleId?: number; status?: string; note?: string; pinned?: boolean; plannedDate?: string | null }
+    | null;
   const titleId = Number(body?.titleId);
   if (!titleId) return Response.json({ error: "titleId required" }, { status: 400 });
-  const data: { status?: string; note?: string; pinned?: boolean } = {};
+  const data: { status?: string; note?: string; pinned?: boolean; plannedDate?: Date | null } = {};
   if (body?.status && STATUSES.has(body.status)) data.status = body.status;
   if (typeof body?.note === "string") data.note = body.note.slice(0, 500);
   if (typeof body?.pinned === "boolean") data.pinned = body.pinned;
+  if (body?.plannedDate !== undefined) {
+    if (body.plannedDate === null || body.plannedDate === "") data.plannedDate = null;
+    else {
+      const d = new Date(body.plannedDate);
+      if (!isNaN(d.getTime())) data.plannedDate = d;
+    }
+  }
 
   const row = await db.watchlist.upsert({
     where: { userKey_titleId: { userKey, titleId } },
@@ -52,7 +61,13 @@ export async function PATCH(req: Request) {
     create: { userKey, titleId, ...data },
   });
   bust();
-  return Response.json({ ok: true, status: row.status, note: row.note, pinned: row.pinned });
+  return Response.json({
+    ok: true,
+    status: row.status,
+    note: row.note,
+    pinned: row.pinned,
+    plannedDate: row.plannedDate,
+  });
 }
 
 /** Bulk ops. Body: { titleIds: number[], action: "add" | "status", status? } */

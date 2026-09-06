@@ -9,6 +9,15 @@ export const dynamic = "force-dynamic";
 
 type Props = { params: Promise<{ slug: string }>; searchParams: Promise<{ ep?: string }> };
 
+export function parseSources(json: string): { q: string; v: string; url: string; mb?: number }[] {
+  try {
+    const arr = JSON.parse(json || "[]");
+    return Array.isArray(arr) ? arr.filter((s) => s && s.url) : [];
+  } catch {
+    return [];
+  }
+}
+
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params;
   const t = await getTitleBySlug(slug);
@@ -31,7 +40,8 @@ export default async function WatchPage({ params, searchParams }: Props) {
   let episode: (typeof eps)[number] | null = null;
   if (t.type === "series" && eps.length) {
     const wanted = ep ? Number(ep) : progress?.episodeId ?? null;
-    episode = eps.find((e) => e.id === wanted) ?? eps[0];
+    // prefer the requested/progress episode; otherwise the first PLAYABLE one
+    episode = (wanted ? eps.find((e) => e.id === wanted) : null) ?? eps.find((e) => e.videoUrl) ?? eps[0];
   }
 
   const idx = episode ? eps.findIndex((e) => e.id === episode.id) : -1;
@@ -41,6 +51,7 @@ export default async function WatchPage({ params, searchParams }: Props) {
   const startAt = progress && sameEpisode && progress.duration > 0 && progress.position / progress.duration < 0.97 ? progress.position : 0;
 
   const src = episode?.videoUrl ?? t.videoUrl;
+  const sources = episode ? parseSources(episode.sources) : parseSources(t.sources);
   const subtitle = episode ? `فصل ${fa(episode.season)} · قسمت ${fa(episode.number)} · ${episode.name}` : `${t.titleEn} · ${fa(t.year)}`;
 
   return (
@@ -50,6 +61,7 @@ export default async function WatchPage({ params, searchParams }: Props) {
       title={t.title}
       subtitle={subtitle}
       src={src}
+      sources={sources}
       poster={t.backdrop}
       startAt={startAt}
       episode={episode}
