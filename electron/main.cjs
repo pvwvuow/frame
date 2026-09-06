@@ -20,6 +20,8 @@ const crypto = require("node:crypto");
 const net = require("node:net");
 const http = require("node:http");
 const log = require("electron-log");
+const { startStreamProxy } = require("./stream-proxy.cjs");
+const { setupPip, pipOpen } = require("./pip.cjs");
 
 log.transports.file.level = "info";
 log.initialize?.();
@@ -52,6 +54,10 @@ let serverUrl = null;
 let autoUpdater = null;
 /** exit info of the last dead server process – for precise error messages */
 let lastServerExit = null;
+/** base URL of the local stream proxy (MKV subtitle extraction), null until up */
+let proxyBase = null;
+let streamProxy = null;
+let quitting = false;
 
 /* ------------------------------------------------------------------ */
 /* helpers                                                            */
@@ -623,6 +629,15 @@ function createWindow() {
   win.on("closed", () => {
     mainWindow = null;
   });
+  // closing the app window while the floating player is alive → hide it and
+  // keep watching on the desktop; the app really quits via the pip close or
+  // a real quit flow
+  win.on("close", (e) => {
+    if (!quitting && pipOpen()) {
+      e.preventDefault();
+      win.hide();
+    }
+  });
 
   // external links → system browser
   win.webContents.setWindowOpenHandler(({ url }) => {
@@ -829,6 +844,7 @@ ipcMain.handle("nama:info", () => ({
   dataDir: app.getPath("userData"),
   dbPath: userDbPath(),
 }));
+ipcMain.handle("nama:proxy-url", () => proxyBase || "");
 ipcMain.handle("nama:check-updates", () => checkForUpdates(false));
 ipcMain.handle("nama:install-update", () => {
   if (!autoUpdater) return false;
@@ -874,6 +890,23 @@ if (!gotLock) {
     try {
       // tighten permissions – no camera/mic/geolocation prompts
       session.defaultSession.setPermissionRequestHandler((_wc, permission, cb) => cb(["fullscreen", "media", "notifications"].includes(permission)));
+      // local stream proxy: pass-through streaming + live MKV subtitle
+      // extraction (the archive's «زیرنویس چسبیده» files carry the Persian
+      // SRT muxed inside the Matroska container – Chromium ignores it)
+      try {
+        streamProxy = await startStreamProxy(log);
+        proxyBase = streamProxy.base;
+        log.info("stream proxy ready at", proxyBase);
+      } catch (e) {
+        log.warn("stream proxy unavailable – videos play directly without embedded subs:", e);
+      }
+      setupPip({
+        log,
+        getMainWindow: () => mainWindow,
+        getServerUrl: () => serverUrl,
+        isQuitting: () => quitting,
+        getUserData: () => app.getPath("userData"),
+      });
       await startServer();
       buildMenu();
       mainWindow = createWindow();
@@ -905,6 +938,12 @@ if (!gotLock) {
     if (process.platform !== "darwin") app.quit();
   });
   app.on("before-quit", () => {
+    quitting = true;
+    try {
+      streamProxy?.close();
+    } catch {
+      /* ignore */
+    }
     stopServer();
     clearServerPid();
   });

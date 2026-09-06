@@ -16,6 +16,8 @@ contextBridge.exposeInMainWorld("nama", {
   installUpdate: () => ipcRenderer.invoke("nama:install-update"),
   openDataDir: () => ipcRenderer.invoke("nama:open-data-dir"),
   openExternal: (url) => ipcRenderer.invoke("nama:open-external", url),
+  /** base URL of the local stream proxy ("" when unavailable / web mode) */
+  proxyUrl: () => ipcRenderer.invoke("nama:proxy-url"),
   window: {
     minimize: () => ipcRenderer.send("nama:win", "minimize"),
     maximize: () => ipcRenderer.send("nama:win", "maximize"),
@@ -26,4 +28,19 @@ contextBridge.exposeInMainWorld("nama", {
   onNavigate: (cb) => on("nama:navigate", cb),
   onUpdateStatus: (cb) => on("nama:update-status", cb),
   setBadge: (count) => ipcRenderer.send("nama:badge", count),
+  /* desktop-wide floating player (real OS window, v0.10.5) */
+  pip: {
+    open: (payload) => ipcRenderer.invoke("pip:open", payload),
+    close: () => ipcRenderer.send("pip:close"),
+    expand: (currentTime, srcIdx) => ipcRenderer.send("pip:expand", { currentTime, srcIdx }),
+    pin: (on) => ipcRenderer.send("pip:pin", !!on),
+    time: (t) => ipcRenderer.send("pip:time", t),
+    next: () => ipcRenderer.send("pip:next"),
+    getState: () => ipcRenderer.invoke("pip:get-state"),
+    onState: (cb) => on("pip:state", cb),
+    onExpand: (cb) => on("pip:expand-to-main", cb),
+    onClosed: (cb) => on("pip:closed", cb),
+    onTime: (cb) => on("nama:pip-time", cb),
+    onSync: (cb) => on("nama:pip-sync", cb),
+  },
 });

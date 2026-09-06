@@ -22,6 +22,8 @@ jobs:
       - run: npx tsc --noEmit
       - name: Startup regression tests (nama.db / orphan server)
         run: node scripts/test-startup-fixes.mjs
+      - name: Stream proxy / MKV subtitle tests
+        run: node scripts/test-stream-proxy.mjs
       - run: npm run build
         env:
           DATABASE_URL: "file:../db/custom.db"

@@ -61,7 +61,15 @@ const logStub = {
 
 const src = fs.readFileSync(path.join(ROOT, "electron", "main.cjs"), "utf8");
 const sandbox = {
-  require: (m) => (m === "electron" ? electronStub : m === "electron-log" ? logStub : require(m)),
+  // sibling modules of main.cjs resolve from electron/ (the sandbox require
+  // would otherwise resolve relative to this test file)
+  require: (m) => {
+    if (m === "electron") return electronStub;
+    if (m === "electron-log") return logStub;
+    if (m === "./stream-proxy.cjs") return require(path.join(ROOT, "electron", "stream-proxy.cjs"));
+    if (m === "./pip.cjs") return require(path.join(ROOT, "electron", "pip.cjs"));
+    return require(m);
+  },
   module: { exports: {} },
   exports: {},
   __filename: path.join(ROOT, "electron", "dist", "main.cjs"),

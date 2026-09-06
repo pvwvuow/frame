@@ -8,6 +8,7 @@ import ThemeProvider from "@/components/theme/ThemeProvider";
 import LocaleProvider from "@/components/i18n/LocaleProvider";
 import CommandPalette from "@/components/CommandPalette";
 import ElectronBridge from "@/components/electron/ElectronBridge";
+import HideOnPip from "@/components/HideOnPip";
 import GlobalPlayer from "@/components/GlobalPlayer";
 import { getT } from "@/lib/i18n/server";
 import { LOCALE_META, dirOf } from "@/lib/i18n";
@@ -99,14 +100,16 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
           <LocaleProvider initial={locale}>
             <LibraryProvider>
               <QuickViewProvider>
-                <Navbar />
+                <HideOnPip>
+                  <Navbar />
+                  <Footer />
+                  <CommandPalette />
+                  <ElectronBridge />
+                  {/* the <video> element lives here — outside the routed tree —
+                      so playback survives navigation (theater ↔ floating window) */}
+                  <GlobalPlayer />
+                </HideOnPip>
                 <div className="min-h-screen">{children}</div>
-                <Footer />
-                <CommandPalette />
-                <ElectronBridge />
-                {/* the <video> element lives here — outside the routed tree —
-                    so playback survives navigation (mini/floating player) */}
-                <GlobalPlayer />
               </QuickViewProvider>
             </LibraryProvider>
           </LocaleProvider>

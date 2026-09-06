@@ -390,3 +390,7 @@ html[dir="ltr"] h1, html[dir="ltr"] h2, html[dir="ltr"] h3, html[dir="ltr"] .fon
 html[dir="ltr"] .rtl-flip { transform: scaleX(-1); }
 /* macOS traffic lights sit top-left; in LTR that is where the logo lives */
 html[data-electron="1"][data-platform="darwin"][dir="ltr"] .nav-inner { padding-inline-end: 0; padding-inline-start: 80px; }
+
+/* desktop floating player (v0.10.5): native window drag regions */
+.pip-drag { -webkit-app-region: drag; }
+.pip-no-drag { -webkit-app-region: no-drag; }

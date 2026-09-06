@@ -1,22 +1,17 @@
 "use client";
 
-/* نما – global player (v0.10.4)
+/* نما – global player (v0.10.5)
  *
  * Mounted ONCE from the root layout (GlobalPlayer) — outside the routed page
- * tree — so playback survives navigation. Two render modes:
- *   • theater  – fixed fullscreen overlay (the classic /watch experience)
- *   • mini     – floating, draggable, pinnable card; the user keeps browsing
- *                the app while the video keeps playing
+ * tree — so playback survives navigation. The in-app surface is the THEATER
+ * overlay; "float" hands playback to a real always-on-top OS window
+ * (electron/pip.cjs → /pip route) that floats over the WHOLE desktop, is
+ * freely resizable and pinnable. The old in-app mini card is gone — it
+ * blacked out the page behind it and never left the app window.
  *
- * /watch/[slug] is a thin server page that pushes its data into the player
- * store (see src/lib/player-store.ts) — it renders no player of its own.
- *
- * v0.10.4 fixes baked in:
- *   • "no sound on the first play" — audio pipeline primed on first gesture
- *     (layout script) + volume/muted re-applied on every `playing` event +
- *     volume/muted persisted to localStorage
- *   • hardsub variants («زیرنویس چسبیده») are now picked as the DEFAULT
- *     source when present, so burned-in subtitles actually show
+ * v0.10.5 subtitle extraction: MKV files stream through the local proxy
+ * (src/lib/video-url.ts) which pulls the muxed Persian SRT out of the
+ * Matroska container live and feeds it back as a WebVTT track.
  */
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -37,19 +32,17 @@ import {
   CheckIcon,
   SubtitleIcon,
   MinimizeIcon,
-  MaximizeIcon,
-  PinIcon,
-  ExpandIcon,
 } from "./Icons";
 import FavoriteButton from "./FavoriteButton";
 import WatchlistButton from "./WatchlistButton";
+import { loadProxyBase, mediaSrc } from "@/lib/video-url";
+import { useMkvSubs } from "@/lib/use-mkv-subs";
+import { preferredSourceIdx, rememberedVariantIdx, rememberVariantPref, variantShort } from "@/lib/variant";
 
 const SUB_SIZE_KEY = "nama-sub-size";
 const SUB_ON_KEY = "nama-sub-on";
 const VOL_KEY = "nama-volume";
 const MUTED_KEY = "nama-muted";
-const MINI_POS_KEY = "nama-mini-pos";
-const VARIANT_PREF_KEY = "nama-variant-pref"; // remembered default variant choice
 
 /** SRT → WebVTT (the <track> element only understands VTT). */
 function srtToVtt(input: string): string {
@@ -61,65 +54,13 @@ function srtToVtt(input: string): string {
   return `WEBVTT\n\n${body}`;
 }
 
-function variantShort(v: string) {
-  if (!v) return "";
-  if (v.includes("دوبله")) return "دوبله";
-  return v; // «زیرنویس چسبیده» / «بدون زیرنویس» — keep as-is
-}
-
-/** Which source should start by default? Burned-in subtitles first (the
-    archive's hardsub rips ARE the subtitle experience), then Persian dub,
-    then whatever order the catalog ships. */
-function preferredSourceIdx(list: { q: string; v: string }[]): number {
-  if (list.length <= 1) return 0;
-  const score = (v: string) => (v.includes("چسبیده") ? 3 : v.includes("دوبله") ? 2 : v.includes("زیرنویس") ? 1 : 0);
-  let best = 0;
-  let bestScore = -1;
-  for (let i = 0; i < list.length; i++) {
-    const s = score(list[i].v || "");
-    if (s > bestScore) {
-      best = i;
-      bestScore = s;
-    }
-  }
-  return best;
-}
-
-/** Remember the variant the user manually picked, so the NEXT video they open
-    starts with the same taste (dubbed people get dubbed, etc.). */
-function rememberedVariantIdx(list: { q: string; v: string }[]): number {
-  try {
-    const pref = localStorage.getItem(VARIANT_PREF_KEY);
-    if (!pref) return -1;
-    for (let i = 0; i < list.length; i++) {
-      const v = list[i].v || "";
-      if (v.includes("چسبیده") && pref === "hardsub") return i;
-      if (v.includes("دوبله") && pref === "dub") return i;
-    }
-  } catch {
-    /* ignore */
-  }
-  return -1;
-}
-
-function rememberVariantPref(v?: string) {
-  try {
-    if (!v) return;
-    if (v.includes("چسبیده")) localStorage.setItem(VARIANT_PREF_KEY, "hardsub");
-    else if (v.includes("دوبله")) localStorage.setItem(VARIANT_PREF_KEY, "dub");
-  } catch {
-    /* ignore */
-  }
-}
-
 export default function Player() {
   const router = useRouter();
   const pathname = usePathname();
   const store = usePlayerStore();
   const {
     open,
-    mini,
-    pinned,
+    pipOpen,
     titleId,
     slug,
     title,
@@ -145,16 +86,22 @@ export default function Player() {
     [sources, src]
   );
   const [srcIdx, setSrcIdx] = useState(0);
-  const activeSrc = srcList[Math.min(srcIdx, srcList.length - 1)]?.url || src;
+  const [proxyBase, setProxyBase] = useState<string | null>(null);
+  useEffect(() => {
+    void loadProxyBase().then((b) => setProxyBase(b || null));
+  }, []);
+  const rawActive = srcList[Math.min(srcIdx, srcList.length - 1)]?.url || src;
+  const activeSrc = mediaSrc(rawActive, proxyBase);
   const [qMenu, setQMenu] = useState(false);
 
-  // default variant: remembered taste → hardsub → dub → catalog order.
-  // Re-applied when the source list changes (new title / episode), but a
-  // manual pick always wins for the current video.
+  // default variant: pip's pick (srcHint) → remembered taste → hardsub → dub
+  // → catalog order. Re-applied when the source list changes (new title /
+  // episode), but a manual pick always wins for the current video.
   useEffect(() => {
     if (!srcList.length) return;
+    const hint = usePlayerStore.getState().srcHint;
     const remembered = rememberedVariantIdx(srcList);
-    setSrcIdx(remembered >= 0 ? remembered : preferredSourceIdx(srcList));
+    setSrcIdx(hint >= 0 && hint < srcList.length ? hint : remembered >= 0 ? remembered : preferredSourceIdx(srcList));
     setQMenu(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [contentKey, srcList.length]);
@@ -207,23 +154,27 @@ export default function Player() {
 
   // lock body scroll behind the theater overlay
   useEffect(() => {
-    if (!open || mini) return;
+    if (!open) return;
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => {
       document.body.style.overflow = prev;
     };
-  }, [open, mini]);
+  }, [open]);
 
-  // browsing away from /watch → auto-float (never trap the user behind a
-  // fullscreen overlay); returning to the same /watch route → re-expand
+  // while the pip window owns playback, never leave the user staring at a
+  // bare /watch page (its only content is the black backdrop); browsing away
+  // from /watch with the theater open → auto-float to the desktop window
   useEffect(() => {
+    if (store.pipOpen) {
+      navigateAwayFromWatch();
+      return;
+    }
     if (!open) return;
     const onWatch = pathname?.startsWith("/watch/") ?? false;
-    if (!onWatch && !mini) store.setMini(true);
-    else if (onWatch && mini && pathname === `/watch/${slug}`) store.setMini(false);
+    if (!onWatch) floatToPip();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pathname, open]);
+  }, [pathname, open, store.pipOpen]);
 
   const save = useCallback(
     (pos: number, dur: number) => {
@@ -266,15 +217,6 @@ export default function Player() {
     else void el.requestFullscreen?.();
   }, []);
 
-  const closePlayer = useCallback(() => {
-    const v = videoRef.current;
-    if (v && v.duration) save(v.currentTime, v.duration);
-    store.close();
-    // closed while still sitting on the bare /watch route → move to the title
-    // page so the user never stares at an empty black screen
-    if (/^\/watch\//.test(window.location.pathname)) router.push(`/title/${slug}`);
-  }, [save, store, router, slug]);
-
   const goBackToTitle = useCallback(() => {
     const v = videoRef.current;
     if (v && v.duration) save(v.currentTime, v.duration);
@@ -282,10 +224,133 @@ export default function Player() {
     router.push(`/title/${slug}`);
   }, [save, store, router, slug]);
 
+  /** Leave the bare /watch route (black backdrop only) for the title page. */
+  const leftWatchRef = useRef<string | null>(null);
+  const navigateAwayFromWatch = useCallback(() => {
+    const p = window.location.pathname;
+    if (!/^\/watch\//.test(p)) return;
+    if (leftWatchRef.current === p) return;
+    leftWatchRef.current = p;
+    const idx = typeof window.history.state?.idx === "number" ? window.history.state.idx : 0;
+    if (idx > 0) router.back();
+    else router.push(`/title/${usePlayerStore.getState().slug}`);
+  }, [router]);
+
+  /** Hand playback to the always-on-top desktop window (v0.10.5). */
+  const floatToPip = useCallback(() => {
+    const v = videoRef.current;
+    const pip = window.nama?.pip;
+    if (!v || !pip) return;
+    save(v.currentTime, v.duration || 0);
+    void pip.open({
+      titleId,
+      slug,
+      title,
+      subtitle,
+      src: rawActive,
+      sources: srcList,
+      poster,
+      startAt: 0,
+      episode,
+      nextEpisode,
+      episodes,
+      currentTime: v.currentTime,
+      volume,
+      muted,
+      rate,
+      srcIdx,
+    });
+    v.pause();
+    store.setPipOpen(true);
+    store.close();
+    navigateAwayFromWatch();
+  }, [titleId, slug, title, subtitle, rawActive, srcList, poster, episode, nextEpisode, episodes, volume, muted, rate, srcIdx, save, store, navigateAwayFromWatch]);
+
+  // pip window events: expand-back, closed, position ticker, content sync
+  useEffect(() => {
+    const pip = window.nama?.pip;
+    if (!pip) return;
+    const un1 = pip.onExpand((payload) => {
+      const cur = usePlayerStore.getState();
+      usePlayerStore.setState({
+        ...payload,
+        open: true,
+        pipOpen: false,
+        srcHint: payload.srcIdx ?? -1,
+        contentKey: cur.contentKey + 1,
+      });
+    });
+    const un2 = pip.onClosed(() => {
+      usePlayerStore.getState().setPipOpen(false);
+    });
+    const un3 = pip.onTime((t) => {
+      usePlayerStore.getState().setPipTime(t);
+    });
+    const un4 = pip.onSync((payload) => {
+      const cur = usePlayerStore.getState();
+      usePlayerStore.setState({ ...payload, open: false, pipOpen: true, srcHint: payload.srcIdx ?? -1, contentKey: cur.contentKey + 1 });
+    });
+    return () => {
+      un1?.();
+      un2?.();
+      un3?.();
+      un4?.();
+    };
+  }, []);
+
+  // pause the in-app element while the pip window owns playback
+  useEffect(() => {
+    if (pipOpen) videoRef.current?.pause();
+  }, [pipOpen]);
+
+  // ---- subtitles extracted from the MKV container (v0.10.5) ----------------
+  const { vtt: mkvVtt } = useMkvSubs(rawActive || null, proxyBase, open);
+  const mkvBlobUrl = useRef<string | null>(null);
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v || !mkvVtt) return;
+    // swap in the (growing) extracted track
+    while (v.textTracks.length) {
+      const el = v.querySelector("track");
+      if (el) el.remove();
+      else break;
+    }
+    try {
+      if (mkvBlobUrl.current) URL.revokeObjectURL(mkvBlobUrl.current);
+    } catch {
+      /* ignore */
+    }
+    const url = URL.createObjectURL(new Blob([mkvVtt], { type: "text/vtt" }));
+    mkvBlobUrl.current = url;
+    const tr = document.createElement("track");
+    tr.kind = "subtitles";
+    tr.srclang = "fa";
+    tr.label = "زیرنویس فارسی";
+    tr.src = url;
+    tr.className = "nama-sub-track";
+    v.appendChild(tr);
+    setSubLoaded(true);
+    let pref: string | null = null;
+    try {
+      pref = localStorage.getItem(SUB_ON_KEY);
+    } catch {
+      /* ignore */
+    }
+    setSubOn(pref !== "0");
+    const t0 = setTimeout(() => {
+      const t = v.textTracks[0];
+      if (t) t.mode = pref !== "0" ? "showing" : "disabled";
+    }, 60);
+    return () => clearTimeout(t0);
+  }, [mkvVtt]);
+
   // restore subtitle prefs
   useEffect(() => {
     try {
-      setSubOn(localStorage.getItem(SUB_ON_KEY) === "1" && !!subLoaded);
+      // default ON: the extracted MKV subs are the archive's subtitle
+      // experience; only an explicit user "off" keeps them hidden
+      const pref = localStorage.getItem(SUB_ON_KEY);
+      setSubOn((pref === null || pref === "1") && !!subLoaded);
     } catch {
       /* ignore */
     }
@@ -428,11 +493,10 @@ export default function Player() {
           togglePlay();
           break;
         case "Escape":
-          if (mini) closePlayer();
-          else goBackToTitle();
+          goBackToTitle();
           break;
         case "i":
-          store.setMini(!mini);
+          floatToPip();
           break;
         case "ArrowRight":
           seek(10);
@@ -465,7 +529,7 @@ export default function Player() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open, mini, togglePlay, seek, toggleFs, bumpUi, closePlayer, goBackToTitle, store]);
+  }, [open, togglePlay, seek, toggleFs, bumpUi, goBackToTitle, floatToPip, store]);
 
   useEffect(() => {
     const v = videoRef.current;
@@ -488,71 +552,6 @@ export default function Player() {
     };
   }, [save]);
 
-  // ---- mini-player drag ---------------------------------------------------
-  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
-  const drag = useRef<{ dx: number; dy: number } | null>(null);
-
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(MINI_POS_KEY);
-      if (raw) {
-        const p = JSON.parse(raw);
-        if (Number.isFinite(p?.x) && Number.isFinite(p?.y)) setPos(p);
-      }
-    } catch {
-      /* ignore */
-    }
-  }, []);
-
-  const clampPos = (x: number, y: number) => {
-    const w = wrapRef.current?.offsetWidth || 384;
-    const h = wrapRef.current?.offsetHeight || 216;
-    return {
-      x: Math.max(8, Math.min(window.innerWidth - w - 8, x)),
-      y: Math.max(8, Math.min(window.innerHeight - h - 8, y)),
-    };
-  };
-
-  const onDragStart = (e: React.PointerEvent) => {
-    if (!mini) return;
-    // buttons inside the handle bar still need their click — never drag from them
-    if ((e.target as HTMLElement).closest("button")) return;
-    const el = wrapRef.current;
-    if (!el) return;
-    const r = el.getBoundingClientRect();
-    drag.current = { dx: e.clientX - r.left, dy: e.clientY - r.top };
-    const p = clampPos(r.left, r.top);
-    setPos(p);
-    (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
-  };
-
-  const onDragMove = (e: React.PointerEvent) => {
-    if (!drag.current) return;
-    const p = clampPos(e.clientX - drag.current.dx, e.clientY - drag.current.dy);
-    setPos(p);
-  };
-
-  const onDragEnd = () => {
-    if (!drag.current) return;
-    drag.current = null;
-    setPos((p) => {
-      if (p) {
-        try {
-          localStorage.setItem(MINI_POS_KEY, JSON.stringify(p));
-        } catch {
-          /* ignore */
-        }
-      }
-      return p;
-    });
-  };
-
-  // default mini position: bottom-left (RTL app → away from the scrollbar)
-  const miniStyle: React.CSSProperties =
-    pos && mini
-      ? { left: pos.x, top: pos.y }
-      : { left: 16, bottom: 16 };
-
   const pct = duration ? (current / duration) * 100 : 0;
   const bufPct = duration ? (buffered / duration) * 100 : 0;
   const active = srcList[Math.min(srcIdx, srcList.length - 1)];
@@ -566,14 +565,7 @@ export default function Player() {
       ref={wrapRef}
       data-subsize={subSize}
       data-ctrl
-      className={
-        mini
-          ? `force-dark fixed z-[95] w-[400px] max-w-[calc(100vw-32px)] select-none overflow-hidden rounded-2xl bg-black shadow-[0_18px_60px_rgba(0,0,0,0.65)] ring-1 ring-white/15 ${
-              showUi ? "cursor-default" : "cursor-none"
-            }`
-          : `force-dark fixed inset-0 z-[100] select-none overflow-hidden bg-black ${showUi ? "cursor-default" : "cursor-none"}`
-      }
-      style={mini ? miniStyle : undefined}
+      className={`force-dark fixed inset-0 z-[100] select-none overflow-hidden bg-black ${showUi ? "cursor-default" : "cursor-none"}`}
       onMouseMove={bumpUi}
       onClick={(e) => {
         if (e.target !== e.currentTarget) {
@@ -590,7 +582,7 @@ export default function Player() {
         key={activeSrc}
         src={activeSrc}
         poster={poster}
-        className={mini ? "aspect-video w-full object-contain" : "h-full w-full object-contain"}
+        className="h-full w-full object-contain"
         playsInline
         preload="metadata"
       />
@@ -632,168 +624,56 @@ export default function Player() {
         <div className="absolute inset-0 grid place-items-center bg-black/70 backdrop-blur-sm" data-ctrl>
           <div className="text-center">
             {nextEpisode ? (
-              mini ? (
-                <button
-                  type="button"
-                  onClick={() => router.push(`/watch/${slug}?ep=${nextEpisode.id}`)}
-                  className="flex h-10 items-center gap-2 rounded-full bg-white px-5 text-sm font-bold text-black"
-                >
-                  <PlayIcon width={16} height={16} /> قسمت بعد
-                </button>
-              ) : (
-                <>
-                  <p className="text-sm text-zinc-400">قسمت بعدی تا {fa(countdown ?? 0)} ثانیه دیگر</p>
-                  <p className="mt-2 text-2xl font-black text-white">
-                    قسمت {fa(nextEpisode.number)}: {nextEpisode.name}
-                  </p>
-                  <div className="mt-6 flex justify-center gap-3">
-                    <Link
-                      href={`/watch/${slug}?ep=${nextEpisode.id}`}
-                      className="flex h-12 items-center gap-2 rounded-full bg-white px-6 font-bold text-black"
-                    >
-                      <PlayIcon /> پخش قسمت بعد
-                    </Link>
-                    <button
-                      type="button"
-                      onClick={() => setCountdown(null)}
-                      className="h-12 rounded-full border border-white/20 px-6 font-bold text-white hover:bg-white/10"
-                    >
-                      لغو
-                    </button>
-                  </div>
-                </>
-              )
+              <>
+                <p className="text-sm text-zinc-400">قسمت بعدی تا {fa(countdown ?? 0)} ثانیه دیگر</p>
+                <p className="mt-2 text-2xl font-black text-white">
+                  قسمت {fa(nextEpisode.number)}: {nextEpisode.name}
+                </p>
+                <div className="mt-6 flex justify-center gap-3">
+                  <Link
+                    href={`/watch/${slug}?ep=${nextEpisode.id}`}
+                    className="flex h-12 items-center gap-2 rounded-full bg-white px-6 font-bold text-black"
+                  >
+                    <PlayIcon /> پخش قسمت بعد
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={() => setCountdown(null)}
+                    className="h-12 rounded-full border border-white/20 px-6 font-bold text-white hover:bg-white/10"
+                  >
+                    لغو
+                  </button>
+                </div>
+              </>
             ) : (
               <>
-                <p className={mini ? "text-sm font-black text-white" : "text-2xl font-black text-white"}>تماشا به پایان رسید</p>
-                {!mini && (
-                  <div className="mt-6 flex justify-center gap-3">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const v = videoRef.current;
-                        if (v) {
-                          v.currentTime = 0;
-                          void v.play();
-                        }
-                      }}
-                      className="flex h-12 items-center gap-2 rounded-full bg-white px-6 font-bold text-black"
-                    >
-                      <PlayIcon /> تماشای دوباره
-                    </button>
-                    <Link href={`/title/${slug}`} className="h-12 rounded-full border border-white/20 px-6 leading-[48px] font-bold text-white hover:bg-white/10">
-                      بازگشت
-                    </Link>
-                  </div>
-                )}
+                <p className="text-2xl font-black text-white">تماشا به پایان رسید</p>
+                <div className="mt-6 flex justify-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const v = videoRef.current;
+                      if (v) {
+                        v.currentTime = 0;
+                        void v.play();
+                      }
+                    }}
+                    className="flex h-12 items-center gap-2 rounded-full bg-white px-6 font-bold text-black"
+                  >
+                    <PlayIcon /> تماشای دوباره
+                  </button>
+                  <Link href={`/title/${slug}`} className="h-12 rounded-full border border-white/20 px-6 leading-[48px] font-bold text-white hover:bg-white/10">
+                    بازگشت
+                  </Link>
+                </div>
               </>
             )}
           </div>
         </div>
       )}
 
-      {mini ? (
-        /* ── floating mini-player chrome ─────────────────────────────── */
-        <>
-          <div
-            className="absolute inset-x-0 top-0 flex items-center gap-1 bg-gradient-to-b from-black/80 to-transparent px-2 py-1.5"
-            onPointerDown={onDragStart}
-            onPointerMove={onDragMove}
-            onPointerUp={onDragEnd}
-            data-drag
-          >
-            <span className="min-w-0 flex-1 cursor-grab truncate px-1 text-[11px] font-bold text-white/90 active:cursor-grabbing" title={title}>
-              {title}
-            </span>
-            <button
-              type="button"
-              onClick={() => store.togglePin()}
-              title={pinned ? "سنجاق شده — همیشه روی صفحه" : "جمع‌شده"}
-              className={`grid h-7 w-7 place-items-center rounded-full transition hover:bg-white/20 ${pinned ? "text-brand" : "text-zinc-300 opacity-60"}`}
-            >
-              <PinIcon width={13} height={13} />
-            </button>
-            <button
-              type="button"
-              onClick={() => store.setMini(false)}
-              title="گسترش (بازگشت به پخش‌کننده کامل)"
-              className="grid h-7 w-7 place-items-center rounded-full text-white transition hover:bg-white/20"
-            >
-              <MaximizeIcon width={13} height={13} />
-            </button>
-            <button
-              type="button"
-              onClick={closePlayer}
-              title="بستن"
-              className="grid h-7 w-7 place-items-center rounded-full text-white transition hover:bg-white/20"
-            >
-              <CloseIcon width={13} height={13} />
-            </button>
-          </div>
-
-          {/* thin progress + basic controls */}
-          <div
-            className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 to-transparent px-2 pb-1.5 pt-6"
-            data-ctrl
-          >
-            <div className="group relative h-4 cursor-pointer" dir="ltr">
-              <div className="absolute inset-x-0 top-1/2 h-1 -translate-y-1/2 rounded-full bg-white/25">
-                <div className="absolute inset-y-0 left-0 rounded-full bg-brand" style={{ width: `${pct}%` }} />
-              </div>
-              <input
-                type="range"
-                min={0}
-                max={duration || 0}
-                step={0.1}
-                value={current}
-                onChange={(e) => {
-                  const v = videoRef.current;
-                  if (v) v.currentTime = Number(e.target.value);
-                }}
-                className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
-                aria-label="پیشرفت"
-              />
-            </div>
-            <div className="mt-0.5 flex items-center gap-1">
-              <button type="button" onClick={togglePlay} className="grid h-8 w-8 place-items-center rounded-full text-white hover:bg-white/10" aria-label="پخش/توقف">
-                {playing ? <PauseIcon width={18} height={18} /> : <PlayIcon width={18} height={18} />}
-              </button>
-              <button type="button" onClick={() => setMuted((m) => !m)} className="grid h-8 w-8 place-items-center rounded-full text-white hover:bg-white/10" aria-label="صدا">
-                {muted || volume === 0 ? <MuteIcon width={16} height={16} /> : <VolumeIcon width={16} height={16} />}
-              </button>
-              <span className="text-[10px] tabular-nums text-zinc-300" dir="ltr">
-                {formatClock(current)} / {formatClock(duration)}
-              </span>
-              <div className="ms-auto flex items-center gap-1">
-                {srcList.length > 1 && (
-                  <select
-                    value={srcIdx}
-                    onChange={(e) => pickSource(Number(e.target.value))}
-                    className="h-7 max-w-[120px] appearance-none rounded-full border border-white/20 bg-white/10 px-2 text-[10px] font-bold text-white focus:outline-none"
-                    aria-label="کیفیت"
-                  >
-                    {srcList.map((s, i) => (
-                      <option key={`${s.url}-${i}`} value={i} className="bg-ink text-white">
-                        {s.q || "عادی"} {variantShort(s.v) ? `· ${variantShort(s.v)}` : ""}
-                      </option>
-                    ))}
-                  </select>
-                )}
-                <button
-                  type="button"
-                  onClick={() => store.setMini(false)}
-                  title="بازگشت به صفحه پخش"
-                  className="grid h-8 w-8 place-items-center rounded-full text-white hover:bg-white/10"
-                >
-                  <ExpandIcon width={15} height={15} />
-                </button>
-              </div>
-            </div>
-          </div>
-        </>
-      ) : (
-        /* ── theater chrome ──────────────────────────────────────────── */
-        <>
+      {/* theater chrome */}
+      <>
           {/* top bar */}
           <div
             className={`absolute inset-x-0 top-0 flex items-center gap-4 bg-gradient-to-b from-black/80 to-transparent p-4 transition-opacity duration-300 sm:p-6 ${showUi ? "opacity-100" : "opacity-0"}`}
@@ -807,11 +687,12 @@ export default function Player() {
               {subtitle && <p className="truncate text-xs text-zinc-300">{subtitle}</p>}
             </div>
             <div className="ms-auto flex items-center gap-2">
-              {/* float: keep watching while browsing the app */}
+              {/* float: a real always-on-top desktop window — keep watching
+                  while browsing the app or working in ANY other program */}
               <button
                 type="button"
-                onClick={() => store.setMini(true)}
-                title="پخش شناور — بگرد و فیلم ادامه پیدا کند"
+                onClick={floatToPip}
+                title="پخش شناور روی صفحه‌نمایش — قابل جابه‌جایی و تغییر اندازه"
                 className="flex h-10 items-center gap-2 rounded-full border border-white/20 bg-white/10 px-4 text-sm font-semibold text-white backdrop-blur transition hover:bg-white/20"
               >
                 <MinimizeIcon width={15} height={15} />
@@ -1095,8 +976,7 @@ export default function Player() {
               </div>
             </div>
           </div>
-        </>
-      )}
+      </>
     </div>
   );
 }

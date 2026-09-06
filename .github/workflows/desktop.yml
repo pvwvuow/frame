@@ -124,6 +124,8 @@ jobs:
 
       - name: Startup regression tests (nama.db / orphan server)
         run: node scripts/test-startup-fixes.mjs
+      - name: Stream proxy / MKV subtitle tests
+        run: node scripts/test-stream-proxy.mjs
 
       - name: Build & publish desktop app
         uses: nick-fields/retry@v3
