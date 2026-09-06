@@ -12,7 +12,7 @@ const KINDS = {
   continue: { label: "ادامه تماشا", icon: PlayIcon, tint: "text-amber-400 bg-amber-500/10" },
   recommend: { label: "پیشنهاد", icon: SparkIcon, tint: "text-fuchsia-400 bg-fuchsia-500/10" },
   new: { label: "تازه‌ها", icon: FlameIcon, tint: "text-brand bg-brand/10" },
-  system: { label: "نما", icon: InfoIcon, tint: "text-zinc-300 bg-white/10" },
+  system: { label: "فریم", icon: InfoIcon, tint: "text-zinc-300 bg-white/10" },
 } as const;
 
 const READ_KEY = "nama-notif-read";

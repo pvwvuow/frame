@@ -5,7 +5,7 @@
  * Placeholders use `{name}` syntax → t("card.play", { name }).
  */
 export const fa = {
-  app: { name: "نما", tagline: "سینمای آنلاین", desktop: "نسخه‌ی دسکتاپ", metaTitle: "نما | سینمای آنلاین", metaDesc: "تماشای آنلاین جدیدترین فیلم‌ها و سریال‌ها با کیفیت 4K در نما" },
+  app: { name: "فریم", tagline: "سینمای آنلاین", desktop: "نسخه‌ی دسکتاپ", metaTitle: "فریم | سینمای آنلاین", metaDesc: "تماشای آنلاین جدیدترین فیلم‌ها و سریال‌ها با کیفیت 4K در فریم" },
   common: {
     movie: "فیلم", series: "سریال", movies: "فیلم‌ها", seriesPlural: "سریال‌ها",
     play: "پخش", resume: "ادامه تماشا", details: "جزئیات", moreDetails: "جزئیات بیشتر", viewDetails: "مشاهده جزئیات",
@@ -38,13 +38,13 @@ export const fa = {
     seriesTitle: "سریال‌های برگزیده", seriesSub: "داستان‌هایی برای شب‌های طولانی",
     thrillerTitle: "هیجان‌انگیز و پرتعلیق", thrillerSub: "نفس‌گیر تا آخرین ثانیه",
     scifiTitle: "علمی‌تخیلی", scifiSub: "فراتر از مرزهای زمان",
-    ctaTitle: "امشب چی ببینم؟", ctaSub: "بگذارید نما برایتان انتخاب کند.", ctaBtn: "انتخاب شانسی",
+    ctaTitle: "امشب چی ببینم؟", ctaSub: "بگذارید فریم برایتان انتخاب کند.", ctaBtn: "انتخاب شانسی",
   },
   card: { details: "جزئیات {name}", play: "پخش {name}" },
   modal: { continueInDetails: "ادامه در صفحه جزئیات", similar: "مشابه‌ها", episodesTeaser: "قسمت‌ها", allEpisodes: "همه قسمت‌ها", reviews: "نقد", yourScore: "امتیاز شما", noEpisodes: "قسمتی ثبت نشده" },
   footer: {
     about: "سینمای آنلاین نما؛ تماشای هزاران فیلم و سریال با کیفیت 4K HDR، بدون تبلیغ، روی همه‌ی دستگاه‌ها. هر شب یک تجربه‌ی سینمایی تازه.",
-    categories: "دسته‌بندی‌ها", support: "پشتیبانی", aboutUs: "درباره نما", faq: "سوالات متداول", contact: "تماس با ما", terms: "قوانین استفاده", privacy: "حریم خصوصی",
+    categories: "دسته‌بندی‌ها", support: "پشتیبانی", aboutUs: "درباره فریم", faq: "سوالات متداول", contact: "تماس با ما", terms: "قوانین استفاده", privacy: "حریم خصوصی",
     library: "کتابخانه", favorites: "علاقه‌مندی‌ها", history: "تاریخچه تماشا", profileSettings: "پروفایل و تنظیمات", downloadApp: "دانلود برنامه‌ی دسکتاپ",
     settings: "تنظیمات", help: "راهنما", aboutApp: "درباره برنامه",
   },
@@ -65,7 +65,7 @@ type DeepStringify<T> = { [K in keyof T]: T[K] extends string ? string : DeepStr
 export type Dictionary = DeepStringify<typeof fa>;
 
 export const en: Dictionary = {
-  app: { name: "Nama", tagline: "Online Cinema", desktop: "Desktop edition", metaTitle: "Nama | Online Cinema", metaDesc: "Stream the latest movies and series in 4K on Nama" },
+  app: { name: "Frame", tagline: "Online Cinema", desktop: "Desktop edition", metaTitle: "Frame | Online Cinema", metaDesc: "Stream the latest movies and series in 4K on Frame" },
   common: {
     movie: "Movie", series: "Series", movies: "Movies", seriesPlural: "Series",
     play: "Play", resume: "Resume", details: "Details", moreDetails: "More info", viewDetails: "View details",
@@ -98,13 +98,13 @@ export const en: Dictionary = {
     seriesTitle: "Featured series", seriesSub: "Stories for long nights",
     thrillerTitle: "Thrillers & suspense", thrillerSub: "Breathless until the last second",
     scifiTitle: "Science fiction", scifiSub: "Beyond the edges of time",
-    ctaTitle: "What should I watch tonight?", ctaSub: "Let Nama pick for you.", ctaBtn: "Surprise me",
+    ctaTitle: "What should I watch tonight?", ctaSub: "Let Frame pick for you.", ctaBtn: "Surprise me",
   },
   card: { details: "Details of {name}", play: "Play {name}" },
   modal: { continueInDetails: "Open full details", similar: "More like this", episodesTeaser: "Episodes", allEpisodes: "All episodes", reviews: "reviews", yourScore: "Your score", noEpisodes: "No episodes yet" },
   footer: {
-    about: "Nama online cinema — thousands of movies and series in 4K HDR, ad-free, on every device. A fresh cinematic experience every night.",
-    categories: "Browse", support: "Support", aboutUs: "About Nama", faq: "FAQ", contact: "Contact", terms: "Terms of use", privacy: "Privacy",
+    about: "Frame online cinema — thousands of movies and series in 4K HDR, ad-free, on every device. A fresh cinematic experience every night.",
+    categories: "Browse", support: "Support", aboutUs: "About Frame", faq: "FAQ", contact: "Contact", terms: "Terms of use", privacy: "Privacy",
     library: "Library", favorites: "Favorites", history: "Watch history", profileSettings: "Profile & settings", downloadApp: "Download desktop app",
     settings: "Settings", help: "Help", aboutApp: "About",
   },

@@ -88,7 +88,7 @@ function createPipWindow() {
     fullscreenable: false,
     maximizable: false,
     skipTaskbar: false,
-    title: "نما — پخش شناور",
+    title: "Frame — پخش شناور",
     icon: path.join(__dirname, "..", "build", "icon.png"),
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),

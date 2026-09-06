@@ -87,7 +87,10 @@ export default function Player() {
     [sources, src]
   );
   const [srcIdx, setSrcIdx] = useState(0);
-  const [proxyBase, setProxyBase] = useState<string | null>(null);
+  // tri-state: undefined = still resolving → the <video> is NOT mounted yet.
+  // Mounting with the direct URL and swapping to the proxy URL a moment later
+  // re-keyed the element and restarted playback (double-start on every open).
+  const [proxyBase, setProxyBase] = useState<string | null | undefined>(undefined);
   useEffect(() => {
     void loadProxyBase().then((b) => setProxyBase(b || null));
   }, []);
@@ -203,17 +206,26 @@ export default function Player() {
 
   // while the pip window owns playback, never leave the user staring at a
   // bare /watch page (its only content is the black backdrop); browsing away
-  // from /watch with the theater open → auto-float to the desktop window
+  // from /watch with the theater open → auto-float to the desktop window.
+  // v0.10.7: react to NAVIGATION only. The old dependency array also re-ran
+  // this effect whenever open/pipOpen flipped — so pressing "expand back to
+  // the app" while browsing any page other than /watch re-floated IMMEDIATELY:
+  // the theater never appeared («بزرگ نمیشه») and the film restarted inside a
+  // rogue floating window («دوبار پلی شده، صداش از یه جای رندوم میاد»). The
+  // expand/float guards below close that race for good.
   useEffect(() => {
-    if (store.pipOpen) {
+    if (Date.now() - expandAtRef.current < 2000) return; // just expanded
+    if (floatingRef.current) return; // float already in flight
+    const s = usePlayerStore.getState();
+    if (s.pipOpen) {
       navigateAwayFromWatch();
       return;
     }
-    if (!open) return;
+    if (!s.open) return;
     const onWatch = pathname?.startsWith("/watch/") ?? false;
     if (!onWatch) floatToPip();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pathname, open, store.pipOpen]);
+  }, [pathname]);
 
   const save = useCallback(
     (pos: number, dur: number) => {
@@ -275,12 +287,25 @@ export default function Player() {
     else router.push(`/title/${usePlayerStore.getState().slug}`);
   }, [router]);
 
-  /** Hand playback to the always-on-top desktop window (v0.10.5). */
+  /** Hand playback to the always-on-top desktop window (v0.10.5).
+   *  v0.10.7 fixes: (1) the payload now carries the EXACT position —
+   *  startAt used to be hard-coded 0 while the pip window ignored
+   *  `currentTime`, so floating restarted the film from the beginning
+   *  («فیلم ریست میشه»); (2) a re-entrancy guard — the double invocation
+   *  from the button + the auto-float effect opened the pip twice and the
+   *  second open re-keyed the video mid-handoff. */
+  const floatingRef = useRef(false);
   const floatToPip = useCallback(() => {
+    if (floatingRef.current) return;
     const v = videoRef.current;
     const pip = window.nama?.pip;
-    if (!v || !pip) return;
-    save(v.currentTime, v.duration || 0);
+    if (!pip) return;
+    floatingRef.current = true;
+    window.setTimeout(() => {
+      floatingRef.current = false;
+    }, 1500);
+    const at = v ? v.currentTime : 0;
+    if (v && v.duration) save(at, v.duration);
     void pip.open({
       titleId,
       slug,
@@ -289,27 +314,34 @@ export default function Player() {
       src: rawActive,
       sources: srcList,
       poster,
-      startAt: 0,
+      startAt: at,
+      currentTime: at,
       episode,
       nextEpisode,
       episodes,
-      currentTime: v.currentTime,
       volume,
       muted,
       rate,
       srcIdx,
     });
-    v.pause();
+    v?.pause();
     store.setPipOpen(true);
     store.close();
     navigateAwayFromWatch();
   }, [titleId, slug, title, subtitle, rawActive, srcList, poster, episode, nextEpisode, episodes, volume, muted, rate, srcIdx, save, store, navigateAwayFromWatch]);
 
   // pip window events: expand-back, closed, position ticker, content sync
+  const expandAtRef = useRef(0);
   useEffect(() => {
     const pip = window.nama?.pip;
     if (!pip) return;
     const un1 = pip.onExpand((payload) => {
+      // remember the expand so the navigation effect above never re-floats
+      expandAtRef.current = Date.now();
+      floatingRef.current = true;
+      window.setTimeout(() => {
+        floatingRef.current = false;
+      }, 1500);
       const cur = usePlayerStore.getState();
       usePlayerStore.setState({
         ...payload,
@@ -632,15 +664,17 @@ export default function Player() {
       onDoubleClick={toggleFs}
       dir="rtl"
     >
-      <video
-        ref={videoRef}
-        key={activeSrc}
-        src={activeSrc}
-        poster={poster}
-        className="h-full w-full object-contain"
-        playsInline
-        preload="metadata"
-      />
+      {proxyBase !== undefined && (
+        <video
+          ref={videoRef}
+          key={activeSrc}
+          src={activeSrc}
+          poster={poster}
+          className="h-full w-full object-contain"
+          playsInline
+          preload="metadata"
+        />
+      )}
 
       {/* loading */}
       {loading && !ended && (

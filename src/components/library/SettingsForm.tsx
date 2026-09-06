@@ -243,7 +243,7 @@ export default function SettingsForm({ initial }: { initial: ProfileData }) {
 
       <div className="min-w-0 space-y-6">
         {section === "profile" && (
-          <Card title="پروفایل" desc="نام و آواتار شما در سراسر نما نمایش داده می‌شود.">
+          <Card title="پروفایل" desc="نام و آواتار شما در سراسر فریم نمایش داده می‌شود.">
             <div className="flex flex-col gap-6 sm:flex-row sm:items-center">
               <div className={`grid h-24 w-24 shrink-0 place-items-center rounded-3xl bg-gradient-to-br text-4xl font-black text-white shadow-xl ${AVATARS[p.avatar] ?? AVATARS[0]}`}>
                 {(p.displayName.trim() || "ن").slice(0, 1)}
@@ -323,7 +323,7 @@ export default function SettingsForm({ initial }: { initial: ProfileData }) {
         )}
 
         {section === "notifications" && (
-          <Card title="اعلان‌ها" desc="اعلان‌ها در مرکز اعلان‌های نما (و در نسخه‌ی دسکتاپ روی نشان برنامه) نمایش داده می‌شوند.">
+          <Card title="اعلان‌ها" desc="اعلان‌ها در مرکز اعلان‌های فریم (و در نسخه‌ی دسکتاپ روی نشان برنامه) نمایش داده می‌شوند.">
             <div className="grid gap-3 md:grid-cols-2">
               <Toggle checked={p.notifyNewEpisodes} onChange={(v) => set("notifyNewEpisodes", v)} label="قسمت‌های جدید" hint="برای سریال‌های داخل لیست شما" />
               <Toggle checked={p.notifyRecommendations} onChange={(v) => set("notifyRecommendations", v)} label="پیشنهادهای ویژه" hint="بر اساس ژانرهای مورد علاقه‌تان" />
@@ -439,7 +439,7 @@ export default function SettingsForm({ initial }: { initial: ProfileData }) {
         )}
 
         {section === "shortcuts" && (
-          <Card id="shortcuts" title="میان‌برهای صفحه‌کلید" desc="برای کار سریع‌تر با نما.">
+          <Card id="shortcuts" title="میان‌برهای صفحه‌کلید" desc="برای کار سریع‌تر با فریم.">
             <ul className="divide-y divide-white/5 overflow-hidden rounded-2xl border border-white/5">
               {SHORTCUTS.filter((s) => electron || s.scope !== "برنامه دسکتاپ").map((s) => (
                 <li key={s.label} className="flex items-center gap-3 bg-white/[0.02] px-4 py-3">
@@ -459,7 +459,7 @@ export default function SettingsForm({ initial }: { initial: ProfileData }) {
         )}
 
         {section === "about" && (
-          <Card id="about" title={electron ? "برنامه‌ی دسکتاپ نما" : "درباره نما"} desc={electron ? "اطلاعات نسخه، به‌روزرسانی و مسیر داده‌ها." : "اطلاعات نسخه‌ی وب."}>
+          <Card id="about" title={electron ? "برنامه‌ی دسکتاپ فریم" : "درباره فریم"} desc={electron ? "اطلاعات نسخه، به‌روزرسانی و مسیر داده‌ها." : "اطلاعات نسخه‌ی وب."}>
             <div className="grid gap-3 md:grid-cols-2">
               <div className="rounded-2xl border border-white/5 bg-white/[0.03] p-4">
                 <p className="flex items-center gap-2 text-sm font-bold text-white"><MonitorIcon width={16} height={16} className="text-brand" /> نسخه</p>
@@ -495,7 +495,7 @@ export default function SettingsForm({ initial }: { initial: ProfileData }) {
               ) : (
                 <div className="rounded-2xl border border-white/5 bg-white/[0.03] p-4">
                   <p className="flex items-center gap-2 text-sm font-bold text-white"><DownloadIcon width={16} height={16} className="text-brand" /> نسخه‌ی دسکتاپ</p>
-                  <p className="mt-1 text-[11px] leading-5 text-zinc-500">نما را به‌صورت برنامه‌ی ویندوز، مک یا لینوکس نصب کنید؛ با پخش آفلاین‌تر، به‌روزرسانی خودکار و میان‌برهای بیشتر.</p>
+                  <p className="mt-1 text-[11px] leading-5 text-zinc-500">فریم را به‌صورت برنامه‌ی ویندوز، مک یا لینوکس نصب کنید؛ با پخش آفلاین‌تر، به‌روزرسانی خودکار و میان‌برهای بیشتر.</p>
                   <div className="mt-3 flex flex-wrap gap-2">
                     <a href="/download" className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-xs font-bold text-black hover:bg-zinc-200">
                       <DownloadIcon width={14} height={14} /> صفحه‌ی دانلود

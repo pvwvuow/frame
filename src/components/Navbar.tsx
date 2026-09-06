@@ -162,7 +162,7 @@ export default function Navbar() {
             <span className="relative grid h-9 w-9 place-items-center rounded-lg bg-brand text-white shadow-[0_0_24px_var(--color-brand-glow)]">
               <span className="absolute inset-0 rounded-lg bg-white/10 opacity-0 transition group-hover:opacity-100" />
               <svg viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor">
-                <path d="M6 4h3l6 9V4h3v16h-3l-6-9v9H6z" />
+                <path d="M8 5h9.5v3h-6.3v3.2h5.6v3h-5.6V19H8z" />
               </svg>
             </span>
             <span className="text-2xl font-black tracking-tight text-white">

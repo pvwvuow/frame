@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import type { SVGProps } from "react";
 
 const NAV = [
-  { href: "/about", label: "درباره نما" },
+  { href: "/about", label: "درباره فریم" },
   { href: "/faq", label: "سوالات متداول" },
   { href: "/contact", label: "تماس با ما" },
   { href: "/terms", label: "قوانین استفاده" },

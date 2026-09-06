@@ -6,7 +6,7 @@ export const metadata = { title: "تماس با ما" };
 
 export default function ContactPage() {
   return (
-    <InfoPage current="/contact" icon={MailIcon} eyebrow="در خدمتیم" title="تماس با ما" lead="پیشنهاد، گزارش مشکل یا درخواست فیلم؟ فرم زیر را پر کنید؛ تیم نما همیشه می‌خواند.">
+    <InfoPage current="/contact" icon={MailIcon} eyebrow="در خدمتیم" title="تماس با ما" lead="پیشنهاد، گزارش مشکل یا درخواست فیلم؟ فرم زیر را پر کنید؛ تیم فریم همیشه می‌خواند.">
       <div className="mb-6 grid gap-3 sm:grid-cols-3">
         {[
           { icon: MailIcon, k: "ایمیل", v: "hello@nama.film" },

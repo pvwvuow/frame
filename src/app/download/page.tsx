@@ -76,7 +76,7 @@ export default async function DownloadPage() {
           <p className="mb-3 flex items-center gap-2 text-xs font-bold text-brand">
             <DownloadIcon width={16} height={16} /> برنامه‌ی دسکتاپ
           </p>
-          <h1 className="text-4xl font-black text-white sm:text-5xl">نما را روی کامپیوترتان نصب کنید</h1>
+          <h1 className="text-4xl font-black text-white sm:text-5xl">فریم را روی کامپیوترتان نصب کنید</h1>
           <p className="mt-4 max-w-2xl text-sm leading-7 text-zinc-300">
             همان تجربه‌ی سینمایی نما، این‌بار به‌صورت یک برنامه‌ی مستقل برای ویندوز، مک و لینوکس؛ با به‌روزرسانی خودکار، اجرای سریع‌تر و بدون وابستگی به مرورگر.
           </p>
@@ -173,7 +173,7 @@ export default async function DownloadPage() {
               <b className="text-white">مک:</b> در اولین اجرا از منوی راست‌کلیک «Open» را انتخاب کنید یا در System Settings ← Privacy &amp; Security اجازه‌ی اجرا بدهید.
             </li>
             <li>
-              <b className="text-white">لینوکس:</b> برای AppImage ابتدا <code dir="ltr" className="rounded bg-white/10 px-1.5 py-0.5 text-xs">chmod +x Nama-*.AppImage</code> را اجرا کنید.
+              <b className="text-white">لینوکس:</b> برای AppImage ابتدا <code dir="ltr" className="rounded bg-white/10 px-1.5 py-0.5 text-xs">chmod +x Frame-*.AppImage</code> را اجرا کنید.
             </li>
             <li>
               داده‌های شما (لیست، تاریخچه، تنظیمات) در پوشه‌ی داده‌ی برنامه ذخیره می‌شود و با به‌روزرسانی از بین نمی‌رود. از <Link href="/settings#privacy" className="text-brand hover:underline">تنظیمات ← داده و حریم خصوصی</Link> می‌توانید پشتیبان JSON بگیرید.

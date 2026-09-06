@@ -20,7 +20,7 @@ const require = createRequire(import.meta.url);
 import { fileURLToPath } from "node:url";
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "nama-test-"));
-const userData = path.join(tmp, "Nama");
+const userData = path.join(tmp, "Frame"); // v0.10.7: renamed with the product
 fs.mkdirSync(userData, { recursive: true });
 
 const events = { dialogs: [], killed: [] };

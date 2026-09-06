@@ -478,7 +478,7 @@ export type Collection = {
 };
 
 export const COLLECTIONS: Collection[] = [
-  { slug: "top-rated", title: "شاهکارها", tagline: "بالاترین امتیازهای نما", hue: 45, rule: (t) => t.rating >= 8, sort: (a, b) => b.rating - a.rating },
+  { slug: "top-rated", title: "شاهکارها", tagline: "بالاترین امتیازهای فریم", hue: 45, rule: (t) => t.rating >= 8, sort: (a, b) => b.rating - a.rating },
   { slug: "binge", title: "یک‌نفس تا صبح", tagline: "سریال‌هایی که نمی‌شود رها کرد", hue: 265, rule: (t) => t.type === "series", sort: (a, b) => b.trendingScore - a.trendingScore },
   { slug: "noir-nights", title: "شب‌های نوآر", tagline: "سایه، باران و رازهای شهر", hue: 210, rule: (t) => t.genres.some((g) => ["نوآر", "جنایی", "معمایی"].includes(g)) },
   { slug: "future", title: "سفر به آینده", tagline: "علمی‌تخیلی و فراتر از زمین", hue: 190, rule: (t) => t.genres.includes("علمی‌تخیلی") },

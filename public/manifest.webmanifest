@@ -1,7 +1,7 @@
 {
-  "name": "Nama – نما",
-  "short_name": "Nama",
-  "description": "Online cinema – stream movies & series in 4K. سینمای آنلاین نما.",
+  "name": "Frame – فریم",
+  "short_name": "Frame",
+  "description": "Online cinema – stream movies & series in 4K. سینمای آنلاین فریم.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#070709",
@@ -9,7 +9,17 @@
   "lang": "fa",
   "dir": "rtl",
   "icons": [
-    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
-    { "src": "/logo.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/logo.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
   ]
 }

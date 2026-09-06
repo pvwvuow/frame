@@ -53,9 +53,9 @@ export default async function SettingsPage() {
             {[
               { href: "/settings#parental", icon: ShieldIcon, label: "کنترل والدین و PIN", d: "حالت کودک، قفل محتوای بزرگسال" },
               { href: "/settings#shortcuts", icon: KeyboardIcon, label: "میان‌برهای صفحه‌کلید", d: "کلیدهای سریع پخش‌کننده" },
-              { href: "/faq", icon: HelpIcon, label: "سوالات پرتکرار", d: "راهنمای استفاده از نما" },
+              { href: "/faq", icon: HelpIcon, label: "سوالات پرتکرار", d: "راهنمای استفاده از فریم" },
               { href: "/contact", icon: MailIcon, label: "تماس با ما", d: "گزارش مشکل یا پیشنهاد" },
-              { href: "/about", icon: InfoIcon, label: "درباره نما", d: "نسخه، تیم و توضیحات" },
+              { href: "/about", icon: InfoIcon, label: "درباره فریم", d: "نسخه، تیم و توضیحات" },
             ].map((x) => (
               <Link
                 key={x.href}

@@ -1,8 +1,12 @@
 # electron-builder configuration – https://www.electron.build/configuration
+# v0.10.7: product renamed Nama → Frame.
+# NOTE: appId stays app.nama.desktop ON PURPOSE – the NSIS upgrade GUID and
+# the macOS bundle identity are derived from it, so electron-updater keeps
+# upgrading the SAME installation instead of installing a second app.
 appId: app.nama.desktop
-productName: Nama
-copyright: © Nama
-artifactName: "Nama-${version}-${os}-${arch}.${ext}"
+productName: Frame
+copyright: © Frame
+artifactName: "Frame-${version}-${os}-${arch}.${ext}"
 directories:
   output: release
   buildResources: build
@@ -29,9 +33,9 @@ publish:
 win:
   icon: build/icon.png
   # NOTE: nsis + portable must NOT share an artifact name (they both default to
-  # Nama-x.y.z-win-x64.exe → the portable overwrote the installer during upload
+  # Frame-x.y.z-win-x64.exe → the portable overwrote the installer during upload
   # and the GitHub publish step timed out / latest.yml was never uploaded).
-  artifactName: "Nama-${version}-win-${arch}-setup.${ext}"
+  artifactName: "Frame-${version}-win-${arch}-setup.${ext}"
   target:
     - target: nsis
       arch: [x64]
@@ -39,13 +43,13 @@ win:
       arch: [x64]
   verifyUpdateCodeSignature: false
 portable:
-  artifactName: "Nama-${version}-win-${arch}-portable.${ext}"
+  artifactName: "Frame-${version}-win-${arch}-portable.${ext}"
 nsis:
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: always
-  shortcutName: Nama
+  shortcutName: Frame
   # NSIS bundled with electron-builder has no Persian .nlf – installer UI is English,
   # the app itself is fully Persian.
   installerLanguages: [en_US]
@@ -60,15 +64,15 @@ mac:
     - target: zip
       arch: [x64, arm64]
 dmg:
-  title: Nama
+  title: Frame
 linux:
   icon: build/icon.png
   desktop:
     entry:
-      Name: Nama
-      StartupWMClass: nama
+      Name: Frame
+      StartupWMClass: frame
   category: AudioVideo
-  maintainer: Nama
+  maintainer: Frame
   synopsis: Persian streaming desktop app
   target:
     - target: AppImage

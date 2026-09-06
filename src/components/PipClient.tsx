@@ -1,6 +1,6 @@
 "use client";
 
-/* نما – desktop floating player (v0.10.5)
+/* فریم – desktop floating player (v0.10.5)
  *
  * Rendered inside a frameless, freely-resizable, always-on-top Electron
  * window (electron/pip.cjs). It floats over the WHOLE desktop — the user can
@@ -43,7 +43,10 @@ const SUB_ON_KEY = "nama-sub-on";
 export default function PipClient() {
   const [state, setState] = useState<PipPayload | null>(null);
   const [pin, setPin] = useState(true);
-  const [proxyBase, setProxyBase] = useState<string | null>(null);
+  // tri-state: undefined = still resolving → the <video> stays unmounted so
+  // the src never flips direct→proxy after playback started (that re-keyed
+  // the element and restarted the film seconds into the float window).
+  const [proxyBase, setProxyBase] = useState<string | null | undefined>(undefined);
   const [srcIdx, setSrcIdx] = useState(0);
   const [qMenu, setQMenu] = useState(false);
 
@@ -88,13 +91,19 @@ export default function PipClient() {
     void pip.getState().then((p) => {
       if (!p) return;
       setState(p);
+      // v0.10.7: resume at the transferred position. The handoff payload
+      // carries both `startAt` and `currentTime`; only `startAt` was honored
+      // and the theater sent 0 — so floating ALWAYS restarted from zero.
+      const at = p.startAt > 0 ? p.startAt : p.currentTime ?? 0;
+      if (at > 0) resumeAt.current = at;
       if (typeof p.volume === "number") setVolume(p.volume);
       if (typeof p.muted === "boolean") setMuted(p.muted);
       if (typeof p.rate === "number") setRate(p.rate);
     });
     const un = pip.onState((p) => {
       setState(p);
-      resumeAt.current = p.startAt > 0 ? p.startAt : null;
+      const at = p.startAt > 0 ? p.startAt : p.currentTime ?? 0;
+      resumeAt.current = at > 0 ? at : null;
       setCurrent(0);
       setDuration(0);
       setBuffered(0);
@@ -400,7 +409,7 @@ export default function PipClient() {
   if (!window.nama?.pip) {
     return (
       <div className="force-dark fixed inset-0 grid place-items-center bg-black p-6 text-center text-sm leading-7 text-zinc-400" dir="rtl">
-        این صفحه فقط داخل برنامه‌ی نما (پنجره‌ی پخش شناور) باز می‌شود.
+        این صفحه فقط داخل برنامه‌ی فریم (پنجره‌ی پخش شناور) باز می‌شود.
       </div>
     );
   }
@@ -418,15 +427,17 @@ export default function PipClient() {
         togglePlay();
       }}
     >
-      <video
-        ref={videoRef}
-        key={activeSrc || "empty"}
-        src={activeSrc || undefined}
-        poster={state.poster || undefined}
-        className="h-full w-full object-contain"
-        playsInline
-        preload="metadata"
-      />
+      {proxyBase !== undefined && (
+        <video
+          ref={videoRef}
+          key={activeSrc || "empty"}
+          src={activeSrc || undefined}
+          poster={state.poster || undefined}
+          className="h-full w-full object-contain"
+          playsInline
+          preload="metadata"
+        />
+      )}
 
       {loading && !ended && activeSrc && (
         <div className="pointer-events-none absolute inset-0 grid place-items-center">

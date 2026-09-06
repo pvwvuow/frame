@@ -99,7 +99,7 @@ export async function getNotifications(userKey: string): Promise<Notification[]>
   out.push({
     id: "sys-welcome",
     kind: "system",
-    title: "به نما خوش آمدید",
+    title: "به فریم خوش آمدید",
     body: "از تنظیمات می‌توانید نوع اعلان‌هایی که دریافت می‌کنید را شخصی‌سازی کنید.",
     href: "/settings#notifications",
     at: new Date(profile.createdAt).toISOString(),

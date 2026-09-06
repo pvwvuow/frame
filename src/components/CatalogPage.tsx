@@ -58,7 +58,7 @@ export default async function CatalogPage({
         <div className="relative mx-auto flex max-w-[1600px] flex-col gap-8 px-4 pb-10 pt-28 sm:px-8 lg:flex-row lg:items-end lg:justify-between lg:px-12 lg:pt-36">
           <div className="max-w-2xl">
             <p className="mb-3 flex items-center gap-2 text-xs font-bold text-brand">
-              <Icon width={16} height={16} /> کتابخانه نما
+              <Icon width={16} height={16} /> کتابخانه فریم
             </p>
             <h1 className="text-4xl font-black text-white sm:text-5xl">
               {heading}

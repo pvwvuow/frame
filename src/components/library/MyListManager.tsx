@@ -291,7 +291,7 @@ export default function MyListManager({ rows }: { rows: ListRow[] }) {
   const shareList = async () => {
     const text = filtered.map((r, i) => `${i + 1}. ${r.title.title} (${r.title.year}) ★${r.title.rating}`).join("\n");
     try {
-      if (navigator.share) await navigator.share({ title: "لیست تماشای من در نما", text });
+      if (navigator.share) await navigator.share({ title: "لیست تماشای من در فریم", text });
       else {
         await navigator.clipboard.writeText(text);
         toast.success("لیست در کلیپ‌بورد کپی شد");

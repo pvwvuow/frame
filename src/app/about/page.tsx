@@ -5,7 +5,7 @@ import { getCatalogStats } from "@/lib/queries";
 import { fa, formatViews } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
-export const metadata = { title: "درباره نما" };
+export const metadata = { title: "درباره فریم" };
 
 export default async function AboutPage() {
   const [m, s] = await Promise.all([getCatalogStats("movie"), getCatalogStats("series")]);
@@ -18,7 +18,7 @@ export default async function AboutPage() {
     { icon: SparkIcon, t: "پیشنهاد هوشمند", d: "بر اساس سلیقه‌ی شما و ژانرهای محبوب‌تان پیشنهاد می‌دهیم." },
   ];
   return (
-    <InfoPage current="/about" icon={SparkIcon} eyebrow="داستان ما" title="درباره نما" lead="نما یک سینمای آنلاین فارسی است؛ جایی که هر شب می‌توانید یک تجربه‌ی سینمایی تازه داشته باشید. ما با عشق به سینما و وسواس در جزئیات، تلاش می‌کنیم بهترین تجربه‌ی تماشا را با زبان و حس‌وحال ایرانی بسازیم.">
+    <InfoPage current="/about" icon={SparkIcon} eyebrow="داستان ما" title="درباره فریم" lead="فریم یک سینمای آنلاین فارسی است؛ جایی که هر شب می‌توانید یک تجربه‌ی سینمایی تازه داشته باشید. ما با عشق به سینما و وسواس در جزئیات، تلاش می‌کنیم بهترین تجربه‌ی تماشا را با زبان و حس‌وحال ایرانی بسازیم.">
       <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
         {[
           { icon: FilmIcon, v: fa(m.count), k: "فیلم" },
@@ -48,7 +48,7 @@ export default async function AboutPage() {
       </Section>
       <Section title="ماموریت ما">
         <p>باور داریم سینما فقط سرگرمی نیست؛ زبان مشترک آدم‌هاست. هدف ما ساختن پلتفرمی است که در آن پیدا کردن فیلمِ درست برای امشب، به اندازه‌ی تماشای آن لذت‌بخش باشد.</p>
-        <p>نما به‌صورت مداوم به‌روزرسانی می‌شود؛ اگر ایده یا پیشنهادی دارید، <Link href="/contact" className="text-brand hover:underline">با ما در میان بگذارید</Link>.</p>
+        <p>فریم به‌صورت مداوم به‌روزرسانی می‌شود؛ اگر ایده یا پیشنهادی دارید، <Link href="/contact" className="text-brand hover:underline">با ما در میان بگذارید</Link>.</p>
       </Section>
     </InfoPage>
   );

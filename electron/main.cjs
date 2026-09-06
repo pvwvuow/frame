@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
 /**
- * نما – Electron main process
+ * Frame – Electron main process
  *
  * Production layout (see electron-builder.yml):
  *   <resources>/app/standalone/server.js      – Next.js standalone server
@@ -35,18 +35,45 @@ const isDev = !app.isPackaged;
 // bundled entry lives in electron/dist → project root is two levels up
 const ROOT = path.join(__dirname, "..", "..");
 const DEV_URL = process.env.NAMA_DEV_URL || "http://localhost:3000";
-const APP_NAME = "نما";
+// v0.10.7: the product is renamed Nama → Frame (user request + new logo).
+const APP_NAME = "Frame";
 
 /* userData must be ASCII-safe: the SQLite path is handed to Prisma as a
    `file:` URL and the query engine fails to OPEN (or create) files under
    non-ASCII directories on Windows (the Persian app name «نما» produced
    %APPDATA%\نما\nama.db → "Error code 14: Unable to open the database file"
-   → every page rendered "A server error occurred"). Keep the visible app
-   name Persian, but pin the data directory to plain ASCII.
-   appData is resolvable before `ready`; an explicit setPath below always wins. */
+   → every page rendered "A server error occurred").
+   v0.10.7: the ASCII folder follows the new name (Frame). The old %APPDATA%\Nama
+   folder is RENAMED in place — an instant same-volume move that carries the
+   database, covers, pip bounds and the runtime server. If the rename is
+   blocked (files locked by a still-running old build) we fall back to the
+   previous folder so nothing is lost. */
+const PREVIOUS_USER_DATA = path.join(app.getPath("appData"), "Nama");
+const USER_DATA = path.join(app.getPath("appData"), "Frame");
 const LEGACY_USER_DATA = path.join(app.getPath("appData"), APP_NAME);
+let userDataDir = USER_DATA;
+if (!fs.existsSync(USER_DATA) && fs.existsSync(PREVIOUS_USER_DATA)) {
+  try {
+    fs.renameSync(PREVIOUS_USER_DATA, USER_DATA);
+    log.info("userData migrated: Nama → Frame");
+  } catch (e) {
+    // locked by a still-running old build → keep using the old folder
+    userDataDir = PREVIOUS_USER_DATA;
+    log.warn("userData rename skipped, staying on Nama:", e && e.message);
+  }
+}
 app.setName(APP_NAME);
-app.setPath("userData", path.join(app.getPath("appData"), "Nama"));
+app.setPath("userData", userDataDir);
+// stable Windows taskbar identity/notifications (must match the NSIS GUID
+// derived from appId — app.nama.desktop is deliberately unchanged across the
+// rename so electron-updater keeps upgrading the same installation)
+if (process.platform === "win32") {
+  try {
+    app.setAppUserModelId("app.nama.desktop");
+  } catch {
+    /* ignore */
+  }
+}
 
 let mainWindow = null;
 let serverProc = null;
@@ -614,7 +641,21 @@ function createWindow() {
     backgroundColor: nativeTheme.shouldUseDarkColors ? "#070709" : "#f3f3f7",
     title: APP_NAME,
     icon: path.join(ROOT, "build", "icon.png"),
-    titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
+    // v0.10.7 (user request, restores the v0.9.0 look): NO native title bar.
+    // The site header becomes the topmost strip, so the home hero artwork
+    // slides all the way under the nav («پوستر کامل زیر نوار، نوشته‌ها روی عکس»).
+    // Windows draws its caption buttons via the Window Controls Overlay
+    // (transparent background → they float over the artwork like macOS).
+    titleBarStyle: process.platform === "darwin" ? "hiddenInset" : process.platform === "win32" ? "hidden" : "default",
+    ...(process.platform === "win32"
+      ? {
+          titleBarOverlay: {
+            color: "#00000000",
+            symbolColor: nativeTheme.shouldUseDarkColors ? "#e5e5e5" : "#3f3f46",
+            height: 40,
+          },
+        }
+      : {}),
     trafficLightPosition: { x: 14, y: 22 },
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
@@ -624,6 +665,23 @@ function createWindow() {
       spellcheck: false,
     },
   });
+
+  // theme flip → recolor the overlay caption buttons (Windows)
+  if (process.platform === "win32") {
+    try {
+      nativeTheme.on("updated", () => {
+        try {
+          if (!win.isDestroyed()) {
+            win.setTitleBarOverlay({ symbolColor: nativeTheme.shouldUseDarkColors ? "#e5e5e5" : "#3f3f46" });
+          }
+        } catch {
+          /* older Electron without setTitleBarOverlay */
+        }
+      });
+    } catch {
+      /* ignore */
+    }
+  }
 
   win.once("ready-to-show", () => win.show());
   win.on("closed", () => {
@@ -657,7 +715,7 @@ function createWindow() {
 
 function showError(err) {
   log.error(err);
-  dialog.showErrorBox("نما – خطا در اجرا", String(err && err.stack ? err.stack : err));
+  dialog.showErrorBox("Frame – خطا در اجرا", String(err && err.stack ? err.stack : err));
 }
 
 /* ------------------------------------------------------------------ */
@@ -710,7 +768,7 @@ async function offerRepair(kind, detail) {
   try {
     const r = await dialog.showMessageBox({
       type: "error",
-      title: "نما – خطا",
+      title: "Frame – خطا",
       message: kind,
       detail:
         `${String(detail).slice(0, 900)}\n\n` +
@@ -752,7 +810,7 @@ function buildMenu() {
   const template = [
     ...(isMac ? [{ role: "appMenu" }] : []),
     {
-      label: "نما",
+      label: "Frame",
       submenu: [
         { label: "خانه", accelerator: "CmdOrCtrl+H", click: () => nav("/") },
         { label: "جستجو", accelerator: "CmdOrCtrl+F", click: () => nav("/search") },
@@ -786,7 +844,7 @@ function buildMenu() {
         { label: "پوشه‌ی داده‌ها", click: () => shell.openPath(app.getPath("userData")) },
         { label: "پوشه‌ی لاگ", click: () => shell.openPath(path.dirname(log.transports.file.getFile().path)) },
         { type: "separator" },
-        { label: `درباره‌ی نما (v${app.getVersion()})`, click: () => nav("/settings#about") },
+        { label: `درباره‌ی Frame (v${app.getVersion()})`, click: () => nav("/settings#about") },
       ],
     },
   ];
@@ -919,7 +977,7 @@ if (!gotLock) {
           ? `خطای دیتابیس:\n${dbProbeError}`
           : `خطای رندر سرور (digest: ${homeProbeDigest})`;
         dialog.showErrorBox(
-          "نما – خطای داخلی سرور",
+          "Frame – خطای داخلی سرور",
           `${why}\n\n` +
             `مسیر دیتابیس:\n${userDbPath()}\n\n` +
             `لطفاً این فایل لاگ را برای پشتیبانی بفرستید:\n${log.transports.file.getFile().path}`
