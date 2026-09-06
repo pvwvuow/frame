@@ -137,7 +137,13 @@ export default function PipClient() {
       let alive = true;
       void ensurePlayableAudio(list, initial, proxyBase).then((r) => {
         if (!alive || !r) return;
-        if (r.switchedTo != null && r.switchedTo !== initial) setSrcIdx(r.switchedTo);
+        if (r.switchedTo != null && r.switchedTo !== initial) {
+          // v0.10.8: keep the exact position across the audio-guard variant
+          // switch (the src change re-keys the <video> element).
+          const v = videoRef.current;
+          if (v && v.currentTime > 0.5) resumeAt.current = v.currentTime;
+          setSrcIdx(r.switchedTo);
+        }
         if (r.message) showNotice(r.message);
       });
       return () => {
@@ -210,7 +216,9 @@ export default function PipClient() {
       setDuration(v.duration);
       const resume = resumeAt.current ?? state?.startAt ?? 0;
       resumeAt.current = null;
-      if (resume > 0 && resume < v.duration - 5) v.currentTime = resume;
+      // v0.10.8: unknown duration (0/NaN) must not skip the resume seek —
+      // that is the "film restarts from zero inside the floating window" bug.
+      if (resume > 0 && resume < (v.duration || Infinity) - 5) v.currentTime = resume;
       setLoading(false);
       v.volume = volume;
       v.muted = muted;

@@ -173,6 +173,11 @@ export default function Player() {
       void ensurePlayableAudio(srcList, initial, proxyBase).then((r) => {
         if (!alive || !r) return;
         if (r.switchedTo != null && r.switchedTo !== srcIdxRef.current) {
+          // v0.10.8: carry the EXACT position across the variant switch — the
+          // src change re-keys the <video>, and without this the film jumped
+          // back to the resume point (or 0) mid-watch.
+          const v = videoRef.current;
+          if (v && v.currentTime > 0.5) resumeAt.current = v.currentTime;
           setSrcIdx(r.switchedTo);
           setLoading(true);
         }
@@ -435,7 +440,10 @@ export default function Player() {
       setDuration(v.duration);
       const resume = resumeAt.current ?? startAt;
       resumeAt.current = null;
-      if (resume > 0 && resume < v.duration - 5) v.currentTime = resume;
+      // v0.10.8: tolerate unknown durations (some MKV streams report 0/NaN
+      // at loadedmetadata) — the resume seek used to be skipped entirely and
+      // the film restarted from the beginning.
+      if (resume > 0 && resume < (v.duration || Infinity) - 5) v.currentTime = resume;
       setLoading(false);
       // belt & braces for the first-play audio race: re-apply before playing
       v.volume = volume;

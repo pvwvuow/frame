@@ -57,12 +57,13 @@ function el(id, payload) {
 const uint16 = (n) => Buffer.from([(n >> 8) & 0xff, n & 0xff]);
 const uint32 = (n) => Buffer.from([(n >>> 24) & 0xff, (n >>> 16) & 0xff, (n >>> 8) & 0xff, n & 0xff]);
 
-function trackEntry(trackNo, type, codec) {
+function trackEntry(trackNo, type, codec, lang) {
   // TrackNumber = plain big-endian integer (what real muxers write)
   return el(0xae, Buffer.concat([
     el(0xd7, Buffer.from([trackNo])),
     el(0x83, Buffer.from([type])),
     el(0x86, Buffer.from(codec, "ascii")),
+    lang ? el(0x22b59c, Buffer.from(lang, "ascii")) : Buffer.alloc(0),
   ]));
 }
 function simpleBlock(trackNo, relTc, flags, text) {
@@ -157,6 +158,25 @@ const dualMkv = Buffer.concat([
       el(0xe7, uint16(0)),
       simpleBlock(4, 1000, 0x00, "3\n00:00:01,000 --> 00:00:02,000\nاز ترک SRT\n"),
       simpleBlock(3, 2000, 0x00, ASS1),
+    ])),
+  ])),
+]);
+
+/** v0.10.8: eng SRT muxed FIRST, fas SRT SECOND → the PERSIAN track must win
+ *  (the old extractor followed the first UTF8 track and showed English) */
+const faSecondMkv = Buffer.concat([
+  el(0x1a45dfa3, el(0x4282, Buffer.from("matroska", "ascii"))),
+  el(0x18538067, Buffer.concat([
+    el(0x1654ae6b, Buffer.concat([
+      trackEntry(1, 1, "V_MPEG4/ISO/AVC"),
+      trackEntry(2, 2, "A_AAC"),
+      trackEntry(3, 0x11, "S_TEXT/UTF8", "eng"),
+      trackEntry(4, 0x11, "S_TEXT/UTF8", "fas"),
+    ])),
+    el(0x1f43b675, Buffer.concat([
+      el(0xe7, uint16(0)),
+      simpleBlock(3, 1000, 0x00, "1\n00:00:01,000 --> 00:00:02,000\nenglish line\n"),
+      simpleBlock(4, 2000, 0x00, "1\n00:00:02,000 --> 00:00:03,000\nخط فارسی برنده\n"),
     ])),
   ])),
 ]);
@@ -340,7 +360,7 @@ await withUpstream(async (upstreamUrl) => {
     sc4.feed(dualMkv);
     sc4.end();
     check("dual: found=true", store4.found === true);
-    check("dual: utf8 preferred", store4.textTracks.get(store4.trackNumber) === "utf8");
+    check("dual: utf8 preferred", store4.textTracks.get(store4.trackNumber)?.codec === "utf8");
     check("dual: srt cue text", [...store4.cues.values()].some((c) => c.t.includes("از ترک SRT")));
     check("dual: ass cue not merged", ![...store4.cues.values()].some((c) => c.t.includes("سلام دوباره")));
     check("dual: AAC audioOk=true", store4.audioOk() === true);
@@ -350,7 +370,17 @@ await withUpstream(async (upstreamUrl) => {
     dual.server.close();
   }
 
-  // 11) codec support table
+  // 11) v0.10.8: eng-first + fas-second → the Persian track must be followed
+  const faSecond = new SubStore("fa-second");
+  const sc5 = new MkvScanner(faSecond);
+  sc5.feed(faSecondMkv);
+  sc5.end();
+  check("fa-pref: found=true", faSecond.found === true);
+  check("fa-pref: persian track picked", faSecond.textTracks.get(faSecond.trackNumber)?.lang === "fas", JSON.stringify([...faSecond.textTracks.values()]));
+  check("fa-pref: persian cue extracted", [...faSecond.cues.values()].some((c) => c.t.includes("خط فارسی برنده")));
+  check("fa-pref: english cue NOT merged", ![...faSecond.cues.values()].some((c) => c.t.includes("english line")));
+
+  // 12) codec support table
   check("codec: A_AAC ok", isAudioCodecSupported("A_AAC") === true);
   check("codec: A_MP3 ok", isAudioCodecSupported("A_MPEG/L3") === true);
   check("codec: A_OPUS ok", isAudioCodecSupported("A_OPUS") === true);

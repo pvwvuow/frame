@@ -337,12 +337,9 @@ html[data-electron="1"] input, html[data-electron="1"] textarea, html[data-elect
    avatar / search live → reserve room so the controls never overlap. */
 html[data-electron="1"][data-platform="darwin"] .nav-inner { padding-inline-end: 92px; }
 html[data-electron="1"][data-platform="darwin"] header { padding-top: 2px; }
-/* v0.10.7 Windows hidden titlebar: the caption buttons (min/max/close) are
-   drawn by the Window Controls Overlay at the top-RIGHT of the window.
-   In RTL that is the inline-START side (where the logo lives) → reserve room
-   there; in LTR reserve at inline-end. ~3 buttons × ~47px. */
-html[data-electron="1"][data-platform="win32"] .nav-inner { padding-inline-start: 148px; }
-html[data-electron="1"][data-platform="win32"][dir="ltr"] .nav-inner { padding-inline-end: 148px; }
+/* v0.10.8: the v0.10.7 Windows "hidden titlebar + overlay" experiment was
+   REVERTED (user request) — the native title bar is back, so the nav needs
+   no reserved caption-button padding anymore. */
 /* desktop: nothing should look like a web page (no text cursor on chrome, no outline drag ghosts) */
 html[data-electron="1"] a, html[data-electron="1"] img { -webkit-user-drag: none; }
 html[data-electron="1"] body { overscroll-behavior: none; }
@@ -366,10 +363,9 @@ html[data-electron="1"] body { overscroll-behavior: none; }
   --hdr-blur: 0px;
   --hdr-shadow: 0 0 0 rgba(0, 0, 0, 0);
   background-color: var(--hdr-bg);
-  /* v0.10.7: with the native Windows title bar gone the artwork now reaches
-     the very top of the window — the gradient only adds a whisper of shadow
-     for nav-text contrast and must never read as a "bar". */
-  background-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.36), rgba(0, 0, 0, 0.12) 55%, transparent);
+  /* soft top scrim: keeps the nav text readable over the bright hero artwork
+     while the poster stays clearly visible underneath the nav items */
+  background-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.42), rgba(0, 0, 0, 0.16) 55%, transparent);
   border-bottom: 1px solid var(--hdr-border);
   box-shadow: var(--hdr-shadow);
   -webkit-backdrop-filter: blur(var(--hdr-blur)) saturate(160%);

@@ -26,6 +26,7 @@ export function useMkvSubs(rawUrl: string | null | undefined, proxyBase: string 
 
     const tick = async () => {
       if (!alive) return;
+      let wait = 2500;
       try {
         const r = await fetch(url, { cache: "no-store" });
         if (r.ok) {
@@ -37,14 +38,15 @@ export function useMkvSubs(rawUrl: string | null | undefined, proxyBase: string 
             setVtt(j.vtt);
             setCueCount(j.cues);
           }
-          if (j.complete && j.cues === lastCount.current) {
-            return; // nothing more will arrive
-          }
+          // v0.10.8: NEVER stop while the player is open. The old early-return
+          // killed the poll as soon as one full pass reported `complete`, so
+          // cues picked up by LATER seek passes never reached the <track>.
+          if (j.complete && j.cues === lastCount.current) wait = 10000; // idle back-off
         }
       } catch {
         /* proxy briefly busy – retry */
       }
-      timer = setTimeout(tick, 2500);
+      timer = setTimeout(tick, wait);
     };
     void tick();
 

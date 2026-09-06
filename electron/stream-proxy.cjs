@@ -76,6 +76,8 @@ const ID = {
   TRACK_NUMBER: 0xd7,
   TRACK_TYPE: 0x83,
   CODEC_ID: 0x86,
+  TRACK_LANGUAGE: 0x22b59c,
+  TRACK_NAME: 0x536e,
   CLUSTER: 0x1f43b675,
   TIMECODE: 0xe7,
   SIMPLE_BLOCK: 0xa3,
@@ -148,8 +150,10 @@ class SubStore {
      *  mid-file without a Tracks element, it must still recognise subtitle
      *  blocks) */
     this.trackNumber = null;
-    /** marker-inclusive track numbers of ALL text subtitle tracks */
-    this.textTracks = new Map(); // vint → codec
+    /** marker-inclusive track numbers of ALL text subtitle tracks →
+     *  { codec, lang, name } (v0.10.8: lang/name kept so the PERSIAN track
+     *  wins when a release muxes several subtitle languages) */
+    this.textTracks = new Map();
     this.complete = false; // a full-file (bytes=0-) pass finished
     this.vttCache = null;
     this.vttCount = -1;
@@ -466,21 +470,28 @@ class MkvScanner {
   }
 
   /** TrackEntry children → record every track; pick the best TEXT subtitle
-   *  track (UTF8 > WEBVTT > ASS > SSA) and remember audio/video codecs. */
+   *  track (Persian first, then UTF8 > WEBVTT > ASS > SSA) and remember
+   *  audio/video codecs. */
   parseTracks(buf) {
     let p = 0;
     let trackNum = null;
     let trackType = null;
     let codec = "";
+    let subLang = "";
+    let subName = "";
     const flush = () => {
       if (trackNum != null && codec) {
         if (trackType === 0x11) {
           if (!this.store.kinds.includes(codec)) this.store.kinds.push(codec);
           const vint = markedTrackVint(trackNum);
-          if (/^S_TEXT\/UTF8/i.test(codec)) this.store.textTracks.set(vint, "utf8");
-          else if (/^S_TEXT\/WEBVTT/i.test(codec)) this.store.textTracks.set(vint, "webvtt");
-          else if (/^S_TEXT\/ASS/i.test(codec)) this.store.textTracks.set(vint, "ass");
-          else if (/^S_TEXT\/SSA/i.test(codec)) this.store.textTracks.set(vint, "ass");
+          const kind = /^S_TEXT\/UTF8/i.test(codec)
+            ? "utf8"
+            : /^S_TEXT\/WEBVTT/i.test(codec)
+              ? "webvtt"
+              : /^S_TEXT\/(ASS|SSA)/i.test(codec)
+                ? "ass"
+                : null;
+          if (kind) this.store.textTracks.set(vint, { codec: kind, lang: subLang, name: subName });
         } else if (trackType === 2) {
           if (!this.store.audioCodecs.includes(codec)) this.store.audioCodecs.push(codec);
         } else if (trackType === 1) {
@@ -489,6 +500,8 @@ class MkvScanner {
       }
       trackNum = trackType = null;
       codec = "";
+      subLang = "";
+      subName = "";
     };
     while (p < buf.length - 1) {
       const idV = readVint(buf, p, true);
@@ -516,6 +529,8 @@ class MkvScanner {
             trackNum = n;
           } else if (id2.value === ID.TRACK_TYPE) trackType = buf[d2];
           else if (id2.value === ID.CODEC_ID) codec = buf.subarray(d2, d2 + sz2.value).toString("ascii");
+          else if (id2.value === ID.TRACK_LANGUAGE) subLang = buf.subarray(d2, d2 + sz2.value).toString("utf8");
+          else if (id2.value === ID.TRACK_NAME) subName = buf.subarray(d2, d2 + sz2.value).toString("utf8");
           q = d2 + sz2.value;
         }
       }
@@ -528,16 +543,25 @@ class MkvScanner {
     }
   }
 
-  /** Choose the subtitle track the extractor follows: UTF8 first, then
-   *  WEBVTT, then ASS/SSA (converted). Remember the choice in the shared
-   *  store so seek-only passes recognise the same track. */
+  /** Choose the subtitle track the extractor follows: a PERSIAN track first
+   *  (v0.10.8 – releases often mux eng+fas; the first UTF8 track used to win
+   *  even when it was the English one), then UTF8 > WEBVTT > ASS/SSA
+   *  (converted). Remember the choice in the shared store so seek-only
+   *  passes recognise the same track. */
   pickPreferredTrack() {
     if (!this.store.textTracks.size) return;
-    const rank = (c) => (c === "utf8" ? 4 : c === "webvtt" ? 3 : 2); // ass=2
+    const codecRank = (c) => (c === "utf8" ? 4 : c === "webvtt" ? 3 : 2); // ass=2
+    const rank = (t) => {
+      const info = typeof t === "string" ? { codec: t } : t;
+      const persian =
+        /^(fa|fas|per)([-_].*)?$/i.test(String(info.lang || "").trim()) ||
+        /farsi|persian|فارسی|زیرنویس/i.test(String(info.name || ""));
+      return (persian ? 10 : 0) + codecRank(info.codec);
+    };
     let bestV = null;
     let bestR = -1;
-    for (const [v, c] of this.store.textTracks) {
-      const r = rank(c);
+    for (const [v, t] of this.store.textTracks) {
+      const r = rank(t);
       if (r > bestR) {
         bestR = r;
         bestV = v;
@@ -547,7 +571,7 @@ class MkvScanner {
       this.subTrack = bestV;
       this.store.trackNumber = bestV;
       this.store.found = true;
-      const anyPlain = [...this.store.textTracks.values()].some((c) => c === "utf8");
+      const anyPlain = [...this.store.textTracks.values()].some((t) => (typeof t === "string" ? t : t.codec) === "utf8");
       this.store.assOnly = !anyPlain;
     }
   }
@@ -567,7 +591,8 @@ class MkvScanner {
     if (lacing !== 0) return; // subtitles are never laced in practice
     const frameStart = start + tv.len + 3;
     const frame = buf.subarray(frameStart, start + size);
-    const kind = this.store.textTracks.get(track) || "utf8";
+    const info = this.store.textTracks.get(track);
+    const kind = (info && typeof info === "object" ? info.codec : info) || "utf8";
     const base = this.clusterTc + tcRel;
     if (kind === "ass") {
       const cue = assFrameToCue(frame);

@@ -641,21 +641,13 @@ function createWindow() {
     backgroundColor: nativeTheme.shouldUseDarkColors ? "#070709" : "#f3f3f7",
     title: APP_NAME,
     icon: path.join(ROOT, "build", "icon.png"),
-    // v0.10.7 (user request, restores the v0.9.0 look): NO native title bar.
-    // The site header becomes the topmost strip, so the home hero artwork
-    // slides all the way under the nav («پوستر کامل زیر نوار، نوشته‌ها روی عکس»).
-    // Windows draws its caption buttons via the Window Controls Overlay
-    // (transparent background → they float over the artwork like macOS).
-    titleBarStyle: process.platform === "darwin" ? "hiddenInset" : process.platform === "win32" ? "hidden" : "default",
-    ...(process.platform === "win32"
-      ? {
-          titleBarOverlay: {
-            color: "#00000000",
-            symbolColor: nativeTheme.shouldUseDarkColors ? "#e5e5e5" : "#3f3f46",
-            height: 40,
-          },
-        }
-      : {}),
+    // v0.10.8 (user request «برگردون به حالت قبل»): the v0.10.7 experiment
+    // (hidden native title bar + Window Controls Overlay) is REVERTED —
+    // Windows/macOS/Linux get their normal window chrome back. The hero
+    // under the transparent site nav does NOT need this: the site nav is a
+    // fixed overlay INSIDE the page, so the artwork sits under the nav text
+    // with the native title bar in place as well.
+    titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
     trafficLightPosition: { x: 14, y: 22 },
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
@@ -665,23 +657,6 @@ function createWindow() {
       spellcheck: false,
     },
   });
-
-  // theme flip → recolor the overlay caption buttons (Windows)
-  if (process.platform === "win32") {
-    try {
-      nativeTheme.on("updated", () => {
-        try {
-          if (!win.isDestroyed()) {
-            win.setTitleBarOverlay({ symbolColor: nativeTheme.shouldUseDarkColors ? "#e5e5e5" : "#3f3f46" });
-          }
-        } catch {
-          /* older Electron without setTitleBarOverlay */
-        }
-      });
-    } catch {
-      /* ignore */
-    }
-  }
 
   win.once("ready-to-show", () => win.show());
   win.on("closed", () => {

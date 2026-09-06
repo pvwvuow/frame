@@ -102,7 +102,6 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
               <QuickViewProvider>
                 <HideOnPip>
                   <Navbar />
-                  <Footer />
                   <CommandPalette />
                   <ElectronBridge />
                   {/* the <video> element lives here — outside the routed tree —
@@ -110,6 +109,16 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
                   <GlobalPlayer />
                 </HideOnPip>
                 <div className="min-h-screen">{children}</div>
+                {/* v0.10.8 fix: the footer MUST come after the routed content.
+                    It used to sit BEFORE {children} in the DOM, and being a
+                    static (in-flow) block it pushed the ENTIRE page ~400px down
+                    — the home hero never reached the top nav, no matter what
+                    scrim/titlebar tweaks were applied («پوستر باید بره بالاتر
+                    و کامل زیر نوشته‌های نوار بیفته»). Content first, footer
+                    last, exactly like the reference template. */}
+                <HideOnPip>
+                  <Footer />
+                </HideOnPip>
               </QuickViewProvider>
             </LibraryProvider>
           </LocaleProvider>
