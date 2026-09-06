@@ -113,10 +113,101 @@ export function syncCatalogOnce(url: string): Promise<CatalogRefreshResult> {
 
 /** Manual re-check (Settings button): drops the cached sync result so the
  *  remote is actually contacted again, then runs one sync. The version.json
- *  probe keeps this cheap when nothing changed. */
+ *  probe keeps this cheap when nothing changed. While the boot-time startup
+ *  sync is still running we await it instead of racing a second merge. */
 export function recheckCatalogNow(url: string): Promise<CatalogRefreshResult> {
+  if (startupInflight && startupState.status === "running") {
+    return startupInflight.then(
+      (s) => s.result ?? { ...EMPTY, error: "startup sync failed" }
+    );
+  }
   syncInflight = null;
   return syncCatalogOnce(url);
+}
+
+/* ------------------------------------------------------------------ */
+/* boot-time startup sync (background)                                */
+/* ------------------------------------------------------------------ */
+
+export type StartupSyncState = {
+  status: "idle" | "running" | "ok" | "error";
+  phase: "adopt" | "remote" | "seed" | "done";
+  startedAt?: number;
+  finishedAt?: number;
+  result?: CatalogRefreshResult;
+};
+
+let startupState: StartupSyncState = { status: "idle", phase: "done" };
+let startupInflight: Promise<StartupSyncState> | null = null;
+
+/** Current boot-sync progress – exposed via /api/health. */
+export function getStartupSyncState(): StartupSyncState {
+  return startupState;
+}
+
+/**
+ * Runs the full boot pipeline (fresh-seed adoption → hosted-catalog sync →
+ * bundled-seed fallback) exactly once per server process, in the BACKGROUND.
+ *
+ * v0.10.1 and earlier executed this chain synchronously inside /api/health,
+ * which meant the app window waited for a potential ~69MB download plus a
+ * 14,000-title merge on every content release → "server did not start in
+ * time". The health route now kicks this off fire-and-forget and answers in
+ * milliseconds; the Electron shell polls the state until it settles.
+ */
+export function runStartupSync(): Promise<StartupSyncState> {
+  if (startupInflight) return startupInflight;
+  const startedAt = Date.now();
+  startupState = { status: "running", phase: "adopt", startedAt };
+  startupInflight = (async (): Promise<StartupSyncState> => {
+    const catalogUrl = process.env.NAMA_CATALOG_URL?.trim();
+    const seedPath = process.env.NAMA_CATALOG_SEED?.trim();
+    let catalog: CatalogRefreshResult | undefined;
+    let phase: StartupSyncState["phase"] = "adopt";
+    try {
+      if (process.env.NAMA_CATALOG_FRESH_SEED === "1") {
+        catalog = await adoptFreshSeed();
+      }
+      phase = "remote";
+      if (catalogUrl) {
+        const remote = await syncCatalogOnce(catalogUrl);
+        if (remote?.ok) {
+          catalog = remote;
+        } else if (!catalog?.ok && seedPath) {
+          // remote unreachable (offline / GitHub down) → fall back to the
+          // bundled seed so an app update still delivers its content
+          phase = "seed";
+          catalog = await refreshCatalogOnce(seedPath);
+        }
+      } else if (!catalog?.ok && seedPath) {
+        phase = "seed";
+        catalog = await refreshCatalogOnce(seedPath);
+      }
+      return {
+        status: catalog?.ok ? "ok" : "error",
+        phase: "done",
+        startedAt,
+        finishedAt: Date.now(),
+        result: catalog ?? { ...EMPTY, error: "no catalog source configured" },
+      };
+    } catch (e) {
+      return {
+        status: "error",
+        phase: "done",
+        startedAt,
+        finishedAt: Date.now(),
+        result: {
+          ...EMPTY,
+          ...(catalog?.ok ? { titles: catalog.titles } : {}),
+          error: e instanceof Error ? e.message : String(e),
+        },
+      };
+    }
+  })().then((state) => {
+    startupState = state;
+    return state;
+  });
+  return startupInflight;
 }
 
 /* ---------------------------------------------------------------- */

@@ -13,7 +13,7 @@
  * (ELECTRON_RUN_AS_NODE) on a free localhost port and the window loads it.
  */
 const { app, BrowserWindow, ipcMain, shell, Menu, nativeTheme, dialog, session } = require("electron");
-const { spawn } = require("node:child_process");
+const { spawn, execFileSync } = require("node:child_process");
 const path = require("node:path");
 const fs = require("node:fs");
 const crypto = require("node:crypto");
@@ -45,6 +45,8 @@ let mainWindow = null;
 let serverProc = null;
 let serverUrl = null;
 let autoUpdater = null;
+/** exit info of the last dead server process – for precise error messages */
+let lastServerExit = null;
 
 /* ------------------------------------------------------------------ */
 /* helpers                                                            */
@@ -114,7 +116,11 @@ function migrateLegacyDb(dst) {
   try {
     const legacy = path.join(LEGACY_USER_DATA, "nama.db");
     if (path.resolve(legacy) !== path.resolve(dst) && fs.existsSync(legacy) && isSQLiteFile(legacy) && !fs.existsSync(dst)) {
-      fs.copyFileSync(legacy, dst);
+      // atomic copy (tmp + rename) so an interrupted migration never leaves
+      // a half-written nama.db behind
+      const tmp = dst + ".legacy-tmp";
+      fs.copyFileSync(legacy, tmp);
+      fs.renameSync(tmp, dst);
       log.info("migrated legacy database from", legacy);
     }
   } catch (e) {
@@ -130,6 +136,22 @@ function ensureUserDb() {
   if (!usable) {
     freshSeedCopy = true;
     const src = seedDbPath();
+    // Stale -wal/-shm journals from a previous database would corrupt the
+    // fresh copy (SQLite would try to recover them against the new file) –
+    // move a pre-existing db aside (kept for support) and drop its journals.
+    const brokenStamp = fs.existsSync(dst)
+      ? ".broken-" + new Date().toISOString().replace(/[:.]/g, "-").slice(0, 24)
+      : null;
+    for (const suf of ["", "-wal", "-shm"]) {
+      const f = dst + suf;
+      if (!fs.existsSync(f)) continue;
+      try {
+        if (brokenStamp) fs.renameSync(f, f + brokenStamp);
+        else fs.rmSync(f, { force: true });
+      } catch {
+        try { fs.rmSync(f, { force: true }); } catch { /* ignore */ }
+      }
+    }
     if (fs.existsSync(src)) {
       // atomic copy (tmp + rename) so an interrupted copy never leaves a broken db
       const tmp = dst + ".tmp";
@@ -152,6 +174,86 @@ function ensureUserDb() {
   return dst;
 }
 
+/* ------------------------------------------------------------------ */
+/* leftover-server hygiene (v0.10.2)                                   */
+/* ------------------------------------------------------------------ */
+/* If a previous run was force-killed, the Next server child survives as an
+   orphan and keeps nama.db locked → "database is locked" errors and slow
+   boots. A pid file lets the next launch detect and reap it. */
+function serverPidFile() {
+  return path.join(app.getPath("userData"), "server.pid");
+}
+
+function writeServerPid(pid) {
+  try {
+    fs.mkdirSync(path.dirname(serverPidFile()), { recursive: true });
+    fs.writeFileSync(serverPidFile(), String(pid), "utf8");
+  } catch (e) {
+    log.warn("could not write server.pid:", e);
+  }
+}
+
+function clearServerPid() {
+  try {
+    fs.rmSync(serverPidFile(), { force: true });
+  } catch {
+    /* ignore */
+  }
+}
+
+/** True when `pid` is (very likely) a leftover Nama standalone server. */
+function isOurServerProcess(pid) {
+  try {
+    if (process.platform === "win32") {
+      const out = execFileSync(
+        "powershell.exe",
+        [
+          "-NoProfile",
+          "-NonInteractive",
+          "-Command",
+          `(Get-CimInstance Win32_Process -Filter "ProcessId=${pid}").CommandLine`,
+        ],
+        { timeout: 10000, windowsHide: true }
+      ).toString();
+      return /server\.js/i.test(out);
+    }
+    const cmd = fs.readFileSync(`/proc/${pid}/cmdline`, "utf8");
+    return /server\.js/.test(cmd);
+  } catch {
+    return false;
+  }
+}
+
+function killProcessTree(pid) {
+  try {
+    if (process.platform === "win32") {
+      execFileSync("taskkill", ["/F", "/T", "/PID", String(pid)], {
+        timeout: 10000,
+        windowsHide: true,
+        stdio: "ignore",
+      });
+    } else {
+      process.kill(pid, "SIGKILL");
+    }
+    log.warn("killed leftover server process:", pid);
+  } catch (e) {
+    log.info("leftover server already gone:", pid, (e && e.message) || e);
+  }
+}
+
+function cleanupStaleServer() {
+  let pid = 0;
+  try {
+    pid = Number(fs.readFileSync(serverPidFile(), "utf8").trim());
+  } catch {
+    return;
+  }
+  clearServerPid();
+  if (!pid || pid === process.pid || !Number.isFinite(pid)) return;
+  if (isOurServerProcess(pid)) killProcessTree(pid);
+  else log.info("stale pid", pid, "is not a Nama server – left alone");
+}
+
 function freePort() {
   return new Promise((resolve, reject) => {
     const srv = net.createServer();
@@ -164,27 +266,106 @@ function freePort() {
   });
 }
 
-function waitFor(url, timeoutMs = 30000) {
+/** Waits until the embedded server answers /api/health. Fails FAST when the
+ *  server process dies, and never hammers a busy-but-alive server (a cold
+ *  start under antivirus scanning can legitimately take a while). */
+function waitFor(url, timeoutMs = 90000) {
   const started = Date.now();
   return new Promise((resolve, reject) => {
+    const retry = (err) => {
+      if (!serverProc) {
+        const why = lastServerExit ? `exit code ${lastServerExit.code}` : "process gone";
+        return reject(new Error(`server process exited before becoming ready (${why})`));
+      }
+      if (Date.now() - started > timeoutMs) {
+        return reject(err instanceof Error ? err : new Error("server did not start in time"));
+      }
+      setTimeout(tick, 400);
+    };
     const tick = () => {
+      if (!serverProc) return retry();
       const req = http.get(url + "/api/health", (res) => {
         res.resume();
         if (res.statusCode && res.statusCode < 500) return resolve();
         retry();
       });
       req.on("error", retry);
-      req.setTimeout(2000, () => {
+      req.setTimeout(10000, () => {
         req.destroy();
         retry();
       });
     };
-    const retry = () => {
-      if (Date.now() - started > timeoutMs) return reject(new Error("server did not start in time"));
-      setTimeout(tick, 250);
-    };
     tick();
   });
+}
+
+/** GET + JSON parse helper shared by the boot probes and the sync watcher. */
+function httpJson(url_, timeoutMs = 10000) {
+  return new Promise((resolve, reject) => {
+    const req = http.get(url_, (res) => {
+      let body = "";
+      res.on("data", (c) => (body += c));
+      res.on("end", () => {
+        try {
+          resolve(JSON.parse(body));
+        } catch (e) {
+          reject(e);
+        }
+      });
+    });
+    req.on("error", reject);
+    req.setTimeout(timeoutMs, () => req.destroy(new Error("health request timeout")));
+  });
+}
+
+function attachServerLogging(proc) {
+  proc.stdout.on("data", (d) => log.info("[next]", String(d).trim()));
+  proc.stderr.on("data", (d) => log.warn("[next]", String(d).trim()));
+  proc.on("exit", (code, signal) => {
+    lastServerExit = { code, signal };
+    log.warn("next server exited with code", code);
+    serverProc = null;
+  });
+}
+
+/** Polls the background catalog sync (see runStartupSync in
+ *  catalog-refresh.ts) until it settles, then records the bundled-seed
+ *  marker. A failed merge leaves the marker stale → next boot retries. */
+function watchCatalogSync(seedHash) {
+  if (!seedHash) return;
+  const started = Date.now();
+  const timer = setInterval(() => {
+    if (!serverUrl) {
+      clearInterval(timer);
+      return;
+    }
+    if (Date.now() - started > 20 * 60 * 1000) {
+      clearInterval(timer);
+      log.error("catalog sync watcher timed out – marker left stale, next boot retries");
+      return;
+    }
+    httpJson(serverUrl + "/api/health", 10000)
+      .then((j) => {
+        const st = j && j.catalog;
+        if (!st || st.status === "running" || st.status === "idle") return; // keep waiting
+        clearInterval(timer);
+        if (st.status === "ok" && st.result && st.result.ok) {
+          const secs = st.finishedAt && st.startedAt ? Math.max(1, Math.round((st.finishedAt - st.startedAt) / 1000)) : "?";
+          log.info(
+            `catalog sync finished in ${secs}s: ${st.result.titles} titles, ` +
+              `+${st.result.created ?? 0} new, ~${st.result.updated ?? 0} updated, -${st.result.removed ?? 0} removed`
+          );
+          writeCatalogMarker(seedHash);
+        } else {
+          log.error("catalog sync failed:", (st.result && st.result.error) || st.status);
+          log.warn("catalog marker left stale – next launch retries the merge");
+        }
+      })
+      .catch(() => {
+        /* server busy – keep polling */
+      });
+  }, 4000);
+  timer.unref?.();
 }
 
 /** Site root for asset rebasing – same rule as catalog-refresh.ts. A catalog
@@ -213,7 +394,7 @@ async function startServer() {
   const entry = path.join(dir, "server.js");
   if (!fs.existsSync(entry)) throw new Error(`standalone server not found: ${entry}\nRun "npm run build" first.`);
 
-  const port = await freePort();
+  cleanupStaleServer();
   const dbPath = ensureUserDb();
 
   /* Catalog freshness: if the bundled seed differs from the version the user
@@ -270,7 +451,7 @@ async function startServer() {
     ...process.env,
     ELECTRON_RUN_AS_NODE: "1",
     NODE_ENV: "production",
-    PORT: String(port),
+    PORT: "0", // set per spawn attempt below (retry on instant death)
     HOSTNAME: "127.0.0.1",
     DATABASE_URL: toFileUrl(dbPath),
     NEXT_TELEMETRY_DISABLED: "1",
@@ -303,28 +484,35 @@ async function startServer() {
       log.warn("seed-version.json read failed:", e);
     }
   }
-  serverProc = spawn(process.execPath, [entry], { cwd: dir, env, stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
-  serverProc.stdout.on("data", (d) => log.info("[next]", String(d).trim()));
-  serverProc.stderr.on("data", (d) => log.warn("[next]", String(d).trim()));
-  serverProc.on("exit", (code) => {
-    log.warn("next server exited with code", code);
-    serverProc = null;
-  });
-  serverUrl = `http://127.0.0.1:${port}`;
-  // the first health probe also runs the one-time catalog merge → give it room
-  await waitFor(serverUrl, needsCatalogRefresh ? 120000 : 30000);
-  const health = await probeDatabase(serverUrl);
+  /* If the server dies instantly (port race, antivirus lock) retry once on a
+     fresh port before surfacing an error. */
+  for (let attempt = 1; ; attempt++) {
+    env.PORT = String(await freePort());
+    serverProc = spawn(process.execPath, [entry], { cwd: dir, env, stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
+    writeServerPid(serverProc.pid);
+    attachServerLogging(serverProc);
+    serverUrl = `http://127.0.0.1:${env.PORT}`;
+    try {
+      // /api/health answers in milliseconds since v0.10.2 – the catalog
+      // merge moved to a background job (runStartupSync) and no longer
+      // blocks the startup gate
+      await waitFor(serverUrl, 90000);
+      break;
+    } catch (e) {
+      const diedEarly = !serverProc;
+      stopServer();
+      if (attempt >= 2 || !diedEarly) throw e;
+      log.warn("server process died immediately – retrying once on a fresh port");
+    }
+  }
+  await probeDatabase(serverUrl);
   if (seedHash) {
     if (!needsCatalogRefresh) {
       writeCatalogMarker(seedHash);
-    } else if (health?.catalog?.ok) {
-      log.info(
-        `catalog refreshed from bundled seed: ${health.catalog.titles} titles, ` +
-          `${health.catalog.episodes} episodes (+${health.catalog.created} new, ~${health.catalog.updated} updated, -${health.catalog.removed} removed)`
-      );
-      writeCatalogMarker(seedHash);
     } else {
-      log.error("catalog refresh failed:", health?.catalog?.error || "no catalog result");
+      // the bundled-seed merge runs in the background now – the marker is
+      // written only when it settles (a stale marker retries next boot)
+      watchCatalogSync(seedHash);
     }
   }
   homeProbeDigest = await probeHomePage(serverUrl);
@@ -356,41 +544,42 @@ let dbProbeError = null;
 /** Digest of a server-render error detected on the home page, if any. */
 let homeProbeDigest = null;
 
-function probeDatabase(baseUrl) {
-  return new Promise((resolve) => {
-    const req = http.get(baseUrl + "/api/health", (res) => {
-      let body = "";
-      res.on("data", (c) => (body += c));
-      res.on("end", () => {
-        let json = null;
-        try {
-          json = JSON.parse(body);
-          dbProbeError = json && json.db && json.db.ok === false ? String(json.db.error || "unknown database error") : null;
-        } catch {
-          dbProbeError = null;
-        }
-        if (dbProbeError) log.error("database probe failed:", dbProbeError);
-        else log.info("database probe ok");
-        resolve(json);
-      });
-    });
-    req.on("error", () => resolve(null));
-    req.setTimeout(60000, () => {
-      req.destroy();
-      resolve(null);
-    });
-  });
+async function probeDatabase(baseUrl) {
+  try {
+    const j = await httpJson(baseUrl + "/api/health", 60000);
+    dbProbeError = j && j.db && j.db.ok === false ? String(j.db.error || "unknown database error") : null;
+    if (dbProbeError) log.error("database probe failed:", dbProbeError);
+    else log.info("database probe ok", j && j.db && typeof j.db.titles === "number" ? `(${j.db.titles} titles)` : "");
+    return j;
+  } catch {
+    dbProbeError = null;
+    return null;
+  }
 }
 
 function stopServer() {
-  if (serverProc && !serverProc.killed) {
+  const proc = serverProc;
+  serverProc = null;
+  if (!proc || proc.killed) return;
+  try {
+    if (process.platform === "win32" && proc.pid) {
+      // kill() only signals the direct child; taskkill /T takes down the
+      // whole tree so nothing survives to hold nama.db locked
+      execFileSync("taskkill", ["/F", "/T", "/PID", String(proc.pid)], {
+        timeout: 8000,
+        windowsHide: true,
+        stdio: "ignore",
+      });
+    } else {
+      proc.kill("SIGTERM");
+    }
+  } catch {
     try {
-      serverProc.kill();
+      proc.kill("SIGKILL");
     } catch {
       /* ignore */
     }
   }
-  serverProc = null;
 }
 
 /* ------------------------------------------------------------------ */
@@ -442,6 +631,87 @@ function createWindow() {
 function showError(err) {
   log.error(err);
   dialog.showErrorBox("نما – خطا در اجرا", String(err && err.stack ? err.stack : err));
+}
+
+/* ------------------------------------------------------------------ */
+/* one-click database repair (v0.10.2)                                 */
+/* ------------------------------------------------------------------ */
+
+const FATAL_DB_RE =
+  /(malformed|not a database|corrupt|disk image|database (table )?is locked|unable to open|database file|SQLITE_(BUSY|CORRUPT|CANTOPEN|IOERR))/i;
+
+/** Moves a broken database (and its WAL/SHM journals) aside, then restores a
+ *  pristine copy of the bundled seed. The broken files stay next to the
+ *  original as nama.db.broken-<stamp> for support. */
+function reseedUserData() {
+  const dst = userDbPath();
+  const src = seedDbPath();
+  if (!fs.existsSync(src)) return false;
+  try {
+    stopServer();
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 24);
+    for (const suf of ["", "-wal", "-shm"]) {
+      const f = dst + suf;
+      if (!fs.existsSync(f)) continue;
+      try {
+        fs.renameSync(f, `${f}.broken-${stamp}`);
+      } catch {
+        try { fs.rmSync(f, { force: true }); } catch { /* ignore */ }
+      }
+    }
+    // atomic copy (tmp + rename) so an interrupted repair never leaves a
+    // half-written database behind
+    const tmp = dst + ".tmp";
+    fs.copyFileSync(src, tmp);
+    fs.renameSync(tmp, dst);
+    freshSeedCopy = true;
+    try { fs.rmSync(catalogMarkerPath(), { force: true }); } catch { /* ignore */ }
+    try { writeCatalogMarker(sha256File(src)); } catch { /* ignore */ }
+    log.warn("database reseeded; previous files kept with suffix .broken-" + stamp);
+    return true;
+  } catch (e) {
+    log.error("database reseed failed:", e);
+    return false;
+  }
+}
+
+/** Startup failure or fatal database error → offer one-click auto repair
+ *  (backup + fresh seed + server restart) instead of a dead-end error box. */
+async function offerRepair(kind, detail) {
+  const canRepair = fs.existsSync(seedDbPath());
+  log.error(kind + ":", detail);
+  try {
+    const r = await dialog.showMessageBox({
+      type: "error",
+      title: "نما – خطا",
+      message: kind,
+      detail:
+        `${String(detail).slice(0, 900)}\n\n` +
+        `مسیر دیتابیس:\n${userDbPath()}\n\n` +
+        (canRepair
+          ? "«تعمیر خودکار» دیتابیس را با نسخه‌ی سالم بازسازی می‌کند؛ یک نسخه‌ی پشتیبان از فایل فعلی کنار همان نگه داشته می‌شود (.broken)."
+          : "فایل seed برای تعمیر خودکار پیدا نشد. لطفاً فایل لاگ را برای پشتیبانی بفرستید:\n" + log.transports.file.getFile().path),
+      buttons: canRepair ? ["تعمیر خودکار و اجرای مجدد", "خروج"] : ["خروج"],
+      defaultId: 0,
+      cancelId: canRepair ? 1 : 0,
+      noLink: true,
+    });
+    if (canRepair && r.response === 0) {
+      if (!reseedUserData()) throw new Error("بازسازی دیتابیس ناموفق بود (فایل seed در دسترس نیست).");
+      if (mainWindow) {
+        try { mainWindow.destroy(); } catch { /* ignore */ }
+        mainWindow = null;
+      }
+      await startServer();
+      buildMenu();
+      mainWindow = createWindow();
+      setupUpdater();
+      return;
+    }
+  } catch (e) {
+    showError(e);
+  }
+  app.quit();
 }
 
 /* ------------------------------------------------------------------ */
@@ -596,7 +866,10 @@ if (!gotLock) {
       buildMenu();
       mainWindow = createWindow();
       setupUpdater();
-      if (dbProbeError || homeProbeDigest) {
+      if (dbProbeError && FATAL_DB_RE.test(dbProbeError)) {
+        // locked/corrupt database → let the user repair in one click
+        offerRepair("خطای دیتابیس", dbProbeError);
+      } else if (dbProbeError || homeProbeDigest) {
         const why = dbProbeError
           ? `خطای دیتابیس:\n${dbProbeError}`
           : `خطای رندر سرور (digest: ${homeProbeDigest})`;
@@ -604,7 +877,6 @@ if (!gotLock) {
           "نما – خطای داخلی سرور",
           `${why}\n\n` +
             `مسیر دیتابیس:\n${userDbPath()}\n\n` +
-            `راهنما: پوشه‌ی داده‌ها را از منوی راهنما باز کنید و فایل nama.db را حذف کنید تا در اجرای بعدی از نو ساخته شود.\n` +
             `لطفاً این فایل لاگ را برای پشتیبانی بفرستید:\n${log.transports.file.getFile().path}`
         );
       }
@@ -612,14 +884,17 @@ if (!gotLock) {
         if (BrowserWindow.getAllWindows().length === 0) mainWindow = createWindow();
       });
     } catch (e) {
-      showError(e);
-      app.quit();
+      // startup failure → repair dialog instead of a dead-end error box
+      offerRepair("خطا در اجرا", String(e && e.stack ? e.stack : e));
     }
   });
 
   app.on("window-all-closed", () => {
     if (process.platform !== "darwin") app.quit();
   });
-  app.on("before-quit", stopServer);
+  app.on("before-quit", () => {
+    stopServer();
+    clearServerPid();
+  });
   process.on("exit", stopServer);
 }

@@ -425,6 +425,29 @@ let seeded = false;
 /** In-flight seeding promise – concurrent first requests share one seed run instead of racing. */
 let seeding: Promise<void> | null = null;
 
+let pragmasApplied = false;
+/**
+ * SQLite hardening for the desktop build (v0.10.2):
+ *   - journal_mode=WAL → readers never block the (background) catalog merge
+ *     and vice-versa; also survives process kills far better than the default
+ *     rollback journal. Persistent in the database file, so once is enough.
+ *   - busy_timeout=10000 → a locked database waits instead of surfacing
+ *     "database is locked" to the UI (e.g. while a leftover server process
+ *     from a previous crash still holds the file).
+ *   - synchronous=NORMAL → WAL-safe durability with much less fsync churn.
+ */
+async function applyConnectionPragmas() {
+  if (pragmasApplied) return;
+  pragmasApplied = true;
+  try {
+    await db.$queryRawUnsafe("PRAGMA journal_mode=WAL");
+    await db.$queryRawUnsafe("PRAGMA busy_timeout=10000");
+    await db.$executeRawUnsafe("PRAGMA synchronous=NORMAL");
+  } catch (e) {
+    console.warn("[seed] connection pragmas skipped:", e instanceof Error ? e.message : e);
+  }
+}
+
 export async function ensureSeeded() {
   if (seeded) return;
   if (seeding) return seeding;
@@ -482,6 +505,7 @@ async function ensureSchema() {
 }
 
 async function seedOnce() {
+  await applyConnectionPragmas();
   try {
     await ensureSchema();
   } catch (e) {

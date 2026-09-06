@@ -1,6 +1,6 @@
 {
   "name": "nama",
-  "version": "0.10.1",
+  "version": "0.10.2",
   "private": true,
   "scripts": {
     "dev": "next dev -p 3000",
@@ -108,7 +108,7 @@
     "tw-animate-css": "^1.3.5",
     "typescript": "^5"
   },
-  "description": "\u0646\u0645\u0627 \u2013 \u0633\u06cc\u0646\u0645\u0627\u06cc \u0622\u0646\u0644\u0627\u06cc\u0646 (\u0648\u0628 + \u062f\u0633\u06a9\u062a\u0627\u067e)",
+  "description": "نما – سینمای آنلاین (وب + دسکتاپ)",
   "author": "Nama",
   "main": "electron/dist/main.cjs",
   "homepage": "https://github.com/pvwvuow/frame",

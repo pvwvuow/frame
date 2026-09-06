@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 
 type Props = { params: Promise<{ slug: string }>; searchParams: Promise<{ ep?: string }> };
 
-export function parseSources(json: string): { q: string; v: string; url: string; mb?: number }[] {
+function parseSources(json: string): { q: string; v: string; url: string; mb?: number }[] {
   try {
     const arr = JSON.parse(json || "[]");
     return Array.isArray(arr) ? arr.filter((s) => s && s.url) : [];
