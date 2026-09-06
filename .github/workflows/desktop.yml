@@ -78,8 +78,8 @@ jobs:
         run: |
           gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 || \
             gh release create "$TAG" --repo "$GITHUB_REPOSITORY" \
-               --title "Nama $TAG" \
-               --notes "نما $TAG — ساخته‌شده توسط CI. See the app changelog inside the release notes of the main repository." \
+               --title "Frame $TAG" \
+               --notes "Frame $TAG — ساخته‌شده توسط CI. See the app changelog inside the release notes of the main repository." \
                --latest
 
   build:
