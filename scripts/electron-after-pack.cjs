@@ -23,7 +23,16 @@ exports.default = async function afterPack(context) {
   fs.rmSync(dest, { recursive: true, force: true });
   fs.mkdirSync(dest, { recursive: true });
 
-  const skip = (src) => /\.map$/.test(src) || /[\\/]\.next[\\/]cache([\\/]|$)/.test(src);
+  /* Cover-light packaging (v0.10.1+): public/covers (~680MB for the full
+     archive) and public/catalog (~69MB index.json) are intentionally NOT
+     bundled – covers stream from the hosted site root (GitHub raw, the same
+     origin the catalog auto-update uses) and the catalog is fetched remotely
+     at boot. This keeps the installer ~200MB instead of ~900MB. The seed DB
+     (full metadata, works offline) stays bundled. */
+  const skip = (src) =>
+    /\.map$/.test(src) ||
+    /[\\/]\.next[\\/]cache([\\/]|$)/.test(src) ||
+    /[\\/]public[\\/](covers|catalog)([\\/]|$)/.test(src);
   for (const entry of STANDALONE_ENTRIES) {
     const src = path.join(standalone, entry);
     if (!fs.existsSync(src)) {
@@ -41,5 +50,17 @@ exports.default = async function afterPack(context) {
 
   const ddl = path.join(dest, "standalone", "db", "schema.sql");
   if (!fs.existsSync(ddl)) throw new Error("standalone/db/schema.sql missing – postbuild.cjs did not run? (needed for runtime schema self-heal)");
-  console.log("  • afterPack: standalone server copied →", dest);
+
+  /* Companion hash of the catalog this seed.db was exported from (written by
+     export-catalog.mjs). The server pre-stores it in SyncState on fresh
+     installs, so the boot-time remote sync fast-paths instead of downloading
+     the whole ~69MB index.json for content the seed already contains. */
+  const versionSrc = path.join(root, "public", "catalog", "version.json");
+  if (fs.existsSync(versionSrc)) {
+    fs.copyFileSync(versionSrc, path.join(dest, "seed-version.json"));
+  } else {
+    console.warn("  • afterPack: public/catalog/version.json missing – fresh installs will do a full remote sync");
+  }
+
+  console.log("  • afterPack: standalone server copied →", dest, "(cover-light: covers+catalog excluded)");
 };

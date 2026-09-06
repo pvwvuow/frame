@@ -61,6 +61,10 @@ function seedDbPath() {
 function userDbPath() {
   return path.join(app.getPath("userData"), "nama.db");
 }
+/** True only for the boot that actually copied the bundled seed (first run
+ *  or a corrupted-db recovery) – used to trigger the fast seed-adoption path
+ *  (cover-URL rebase + release-hash pre-store) instead of a full merge. */
+let freshSeedCopy = false;
 function toFileUrl(p) {
   // Prisma sqlite accepts `file:` + absolute path; use forward slashes on Windows.
   return "file:" + p.replace(/\\/g, "/");
@@ -124,6 +128,7 @@ function ensureUserDb() {
   migrateLegacyDb(dst);
   const usable = fs.existsSync(dst) && isSQLiteFile(dst) && fs.statSync(dst).size > 4096;
   if (!usable) {
+    freshSeedCopy = true;
     const src = seedDbPath();
     if (fs.existsSync(src)) {
       // atomic copy (tmp + rename) so an interrupted copy never leaves a broken db
@@ -180,6 +185,22 @@ function waitFor(url, timeoutMs = 30000) {
     };
     tick();
   });
+}
+
+/** Site root for asset rebasing – same rule as catalog-refresh.ts. A catalog
+ *  URL like <root>/main/public/catalog/index.json yields <root>/main/public/
+ *  (where covers live); plain static hosts keep their origin root. */
+function siteRootOfUrl(u) {
+  try {
+    const x = new URL(u);
+    const m = x.pathname.match(/^(.*\/)catalog\/[^/]+$/);
+    x.pathname = m ? m[1] : x.pathname.replace(/[^/]*$/, "");
+    x.search = "";
+    x.hash = "";
+    return x.toString();
+  } catch {
+    return u;
+  }
 }
 
 async function startServer() {
@@ -257,6 +278,31 @@ async function startServer() {
     NAMA_CATALOG_SEED: needsCatalogRefresh ? seed : "",
     NAMA_CATALOG_URL: catalogUrl,
   };
+
+  /* Cover-light packages (v0.10.1+): when covers are not bundled, root-relative
+     asset paths (/covers/…) must resolve against the hosted site root. The
+     server rebases them – both on the fast fresh-seed adoption path and on the
+     full seed merge. Full packages with bundled covers keep local paths. */
+  const coversBundled = fs.existsSync(path.join(standaloneDir(), "public", "covers"));
+  if (!coversBundled) {
+    env.NAMA_CATALOG_SITE_ROOT = siteRootOfUrl(catalogUrl || DEFAULT_CATALOG_URL);
+  }
+  /* Fresh seed (first run): the server only rebases cover URLs in place and
+     pre-stores the release catalog hash (seed-version.json, written by
+     afterPack) so the remote sync fast-paths instead of downloading the
+     whole ~69MB index.json for content the seed already carries. */
+  if (freshSeedCopy) {
+    env.NAMA_CATALOG_FRESH_SEED = "1";
+    try {
+      const vf = path.join(path.dirname(seed), "seed-version.json");
+      if (fs.existsSync(vf)) {
+        const vHash = (JSON.parse(fs.readFileSync(vf, "utf8")).sha256 || "").toLowerCase();
+        if (/^[0-9a-f]{64}$/.test(vHash)) env.NAMA_CATALOG_SEED_VERSION_HASH = vHash;
+      }
+    } catch (e) {
+      log.warn("seed-version.json read failed:", e);
+    }
+  }
   serverProc = spawn(process.execPath, [entry], { cwd: dir, env, stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
   serverProc.stdout.on("data", (d) => log.info("[next]", String(d).trim()));
   serverProc.stderr.on("data", (d) => log.warn("[next]", String(d).trim()));

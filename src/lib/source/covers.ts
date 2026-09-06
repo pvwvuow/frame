@@ -76,6 +76,12 @@ function artSvg(title: string, wide: boolean): string {
 </svg>`;
 }
 
+/** Generate cover SVG on the fly (no disk file) – served by /api/cover when
+ *  no pre-generated file exists (cover-light packages ship no covers dir). */
+export function artSvgFor(title: string, wide = false): string {
+  return artSvg(title || "Nama", wide);
+}
+
 /** مسیر عمومی کاورها برای <img> */
 export function coverPosterUrl(slug: string): string {
   return `/api/cover/${slug}.svg`;

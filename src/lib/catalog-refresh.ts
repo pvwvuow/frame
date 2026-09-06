@@ -148,6 +148,64 @@ function scheduleResync(url: string) {
 }
 
 /* ------------------------------------------------------------------ */
+/* fresh seed adoption (cover-light packages)                         */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Fast first-run path for cover-light packages (v0.10.1+).
+ *
+ * A freshly copied seed.db already contains the exact catalog of the release,
+ * so a full merge (or a ~69MB remote download) would be pure overhead. All
+ * that is needed:
+ *
+ *   1. rebase root-relative cover paths (/covers/…) in-place against the
+ *      hosted site root (NAMA_CATALOG_SITE_ROOT) – covers are not bundled
+ *      anymore, they stream from GitHub raw;
+ *   2. pre-store the release catalog hash (NAMA_CATALOG_SEED_VERSION_HASH,
+ *      written by afterPack as seed-version.json) in SyncState, so the
+ *      boot-time remote sync fast-paths via its version.json probe instead
+ *      of downloading the full index.json for identical content.
+ *
+ * Idempotent: rows already rebased (or absolute) never match the UPDATE
+ * predicates, so a re-run never double-prefixes. Offline first runs are fine
+ * too – the rebase is local, covers simply load once the network is back.
+ */
+export async function adoptFreshSeed(): Promise<CatalogRefreshResult> {
+  const versionHash = (process.env.NAMA_CATALOG_SEED_VERSION_HASH || "").trim().toLowerCase();
+  if (!/^[0-9a-f]{64}$/.test(versionHash)) {
+    return { ...EMPTY, error: "fresh-seed adoption skipped: no seed-version hash" };
+  }
+  const siteRoot = (process.env.NAMA_CATALOG_SITE_ROOT || "").trim();
+  const root = /^https?:\/\//i.test(siteRoot) ? siteRoot.replace(/\/+$/, "") : "";
+  let rebased = 0;
+  if (root) {
+    // Title.poster / Title.backdrop / Episode.thumbnail – local root-relative
+    // paths only (skip absolute URLs, /api/… endpoints and already-rebased rows)
+    const cols = [
+      ['"Title"', '"poster"'],
+      ['"Title"', '"backdrop"'],
+      ['"Episode"', '"thumbnail"'],
+    ];
+    for (const [table, col] of cols) {
+      rebased += await db.$executeRawUnsafe(
+        `UPDATE ${table} SET ${col} = ? || ${col}
+         WHERE ${col} LIKE '/%' AND ${col} NOT LIKE '/api/%' AND ${col} NOT LIKE ? AND ${col} NOT LIKE ?`,
+        root,
+        "http%",
+        root + "%"
+      );
+    }
+  }
+  await db.syncState.upsert({
+    where: { key: HASH_KEY },
+    update: { value: versionHash },
+    create: { key: HASH_KEY, value: versionHash },
+  });
+  const titles = await db.title.count();
+  return { ok: true, titles, episodes: 0, created: 0, updated: 0, removed: 0, skipped: true };
+}
+
+/* ------------------------------------------------------------------ */
 /* seed (offline) path                                                */
 /* ------------------------------------------------------------------ */
 
@@ -170,6 +228,11 @@ async function openSeedClient(seedPath: string): Promise<PrismaClient> {
 async function refreshCatalog(seedPath: string): Promise<CatalogRefreshResult> {
   const seed = await openSeedClient(seedPath);
   try {
+    /* Cover-light packages: root-relative asset paths of the bundled seed
+       must point at the hosted site root (covers are not bundled). */
+    const envRoot = (process.env.NAMA_CATALOG_SITE_ROOT || "").trim();
+    const siteRoot = /^https?:\/\//i.test(envRoot) ? envRoot : "";
+    const rb = (u: string) => rebaseAsset(u, siteRoot);
     const seedTitles = await seed.title.findMany({
       include: { episodes: { orderBy: [{ season: "asc" }, { number: "asc" }] } },
     });
@@ -183,8 +246,8 @@ async function refreshCatalog(seedPath: string): Promise<CatalogRefreshResult> {
       duration: t.duration,
       description: t.description,
       genres: t.genres,
-      poster: t.poster,
-      backdrop: t.backdrop,
+      poster: rb(t.poster),
+      backdrop: rb(t.backdrop),
       videoUrl: t.videoUrl,
       trailerUrl: t.trailerUrl,
       director: t.director,
@@ -205,7 +268,7 @@ async function refreshCatalog(seedPath: string): Promise<CatalogRefreshResult> {
         duration: e.duration,
         videoUrl: e.videoUrl,
         sources: e.sources,
-        thumbnail: e.thumbnail,
+        thumbnail: rb(e.thumbnail),
       })),
     }));
     return await applyCatalog(items);

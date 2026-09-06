@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { ensureSeeded } from "@/db/seed";
-import { refreshCatalogOnce, syncCatalogOnce } from "@/lib/catalog-refresh";
+import { adoptFreshSeed, refreshCatalogOnce, syncCatalogOnce } from "@/lib/catalog-refresh";
 
 export const dynamic = "force-dynamic";
 
@@ -13,6 +13,10 @@ export const dynamic = "force-dynamic";
  * before the first real page render.
  *
  * Catalog update paths (checked before the window is allowed to open):
+ *   - NAMA_CATALOG_FRESH_SEED=1 → first run of a freshly copied seed.db:
+ *     fast in-place cover-URL rebase + release-hash pre-store (no merge, no
+ *     big download – see adoptFreshSeed); the remote sync below then
+ *     fast-paths via its version.json probe
  *   - NAMA_CATALOG_URL  → hosted nama-catalog JSON (by default the GitHub
  *     raw URL of this repo, so content auto-updates without a new install);
  *     only re-merges when the hosted payload's hash changed (SyncState)
@@ -28,14 +32,19 @@ export async function GET() {
     await ensureSeeded();
     const catalogUrl = process.env.NAMA_CATALOG_URL?.trim();
     const seedPath = process.env.NAMA_CATALOG_SEED?.trim();
+    if (process.env.NAMA_CATALOG_FRESH_SEED === "1") {
+      catalog = await adoptFreshSeed();
+    }
     if (catalogUrl) {
-      catalog = await syncCatalogOnce(catalogUrl);
-      if (!catalog?.ok && seedPath) {
+      const remote = await syncCatalogOnce(catalogUrl);
+      if (remote?.ok) {
+        catalog = remote;
+      } else if (!catalog?.ok && seedPath) {
         // remote unreachable (offline / GitHub down) → fall back to the
         // bundled seed so an app update still delivers its content
         catalog = await refreshCatalogOnce(seedPath);
       }
-    } else if (seedPath) {
+    } else if (!catalog?.ok && seedPath) {
       catalog = await refreshCatalogOnce(seedPath);
     }
     await db.$queryRawUnsafe("SELECT 1");

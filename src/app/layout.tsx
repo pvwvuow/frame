@@ -32,11 +32,41 @@ export const viewport: Viewport = {
   initialScale: 1,
 };
 
+/* Global cover fallback: when a poster/backdrop image fails to load (offline
+   cover-light installs, missing remote file, …) swap it to the app-local SVG
+   generator (/api/cover/<slug>.svg) so cards never show broken images. Runs
+   as the first <body> element so it is installed before any <img> parses. */
+const IMG_FALLBACK_SCRIPT = String.raw`(function(){
+  if (window.__namaImgFb) return; window.__namaImgFb = 1;
+  document.addEventListener('error', function(e){
+    var el = e.target;
+    if (!el || el.tagName !== 'IMG' || !el.dataset || el.dataset.fb) return;
+    el.dataset.fb = '1';
+    var src = el.currentSrc || el.src || '';
+    var slug = '';
+    var wide = /backdrop|-wide/.test(src);
+    var i = src.indexOf('/covers/');
+    if (i > -1) { slug = src.slice(i + 8).split('/')[0].split('?')[0]; }
+    else {
+      i = src.indexOf('/posters/');
+      if (i > -1) { slug = src.slice(i + 9).split('?')[0].replace(/\.(jpg|jpeg|png|webp)$/i, ''); }
+      else {
+        i = src.indexOf('/api/cover/');
+        if (i > -1) { slug = src.slice(i + 11).split('?')[0].replace(/\.svg$/i, '').replace(/-wide$/i, ''); }
+      }
+    }
+    if (slug && /^[A-Za-z0-9_-]+$/.test(slug)) {
+      el.src = '/api/cover/' + slug + (wide ? '-wide.svg' : '.svg');
+    }
+  }, true);
+})();`;
+
 export default async function RootLayout({ children }: { children: ReactNode }) {
   const { locale } = await getT();
   return (
     <html lang={LOCALE_META[locale].htmlLang} dir={dirOf(locale)} data-locale={locale} data-scroll-behavior="smooth" suppressHydrationWarning>
       <body className="min-h-screen bg-ink text-zinc-100 antialiased">
+        <script id="nama-img-fallback" dangerouslySetInnerHTML={{ __html: IMG_FALLBACK_SCRIPT }} />
         <ThemeProvider>
           <LocaleProvider initial={locale}>
             <LibraryProvider>
