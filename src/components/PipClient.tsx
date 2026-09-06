@@ -17,6 +17,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { formatClock, fa } from "@/lib/format";
 import { loadProxyBase, mediaSrc } from "@/lib/video-url";
+import { applyVttToTrack, stopMediaEl } from "@/lib/media";
 import { useMkvSubs } from "@/lib/use-mkv-subs";
 import { ensurePlayableAudio } from "@/lib/audio-guard";
 import { preferredSourceIdx, rememberedVariantIdx, rememberVariantPref, variantShort } from "@/lib/variant";
@@ -73,15 +74,21 @@ export default function PipClient() {
   }, []);
 
   const videoRef = useRef<HTMLVideoElement>(null);
+  // element identity as state (see Player.tsx) — listener effects must
+  // re-run when the element appears or re-keys
+  const [videoEl, setVideoEl] = useState<HTMLVideoElement | null>(null);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSaved = useRef(0);
   const lastTick = useRef(0);
   const resumeAt = useRef<number | null>(null);
+  const [fatal, setFatal] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
+  const errCountRef = useRef(0);
 
   const sources = useMemo(() => state?.sources ?? [], [state]);
   const rawActive = sources[Math.min(srcIdx, Math.max(0, sources.length - 1))]?.url || state?.src || "";
   const activeSrc = mediaSrc(rawActive, proxyBase);
-  const { vtt: mkvVtt } = useMkvSubs(rawActive || null, proxyBase, !!state);
+  const { vtt: mkvVtt, kick: kickSubs } = useMkvSubs(rawActive || null, proxyBase, !!state);
 
   /* ---------------- boot: proxy + initial payload ---------------- */
   useEffect(() => {
@@ -210,7 +217,7 @@ export default function PipClient() {
   }, []);
 
   useEffect(() => {
-    const v = videoRef.current;
+    const v = videoEl;
     if (!v || !activeSrc) return;
     const onLoaded = () => {
       setDuration(v.duration);
@@ -265,13 +272,30 @@ export default function PipClient() {
       save(v.duration, v.duration);
       setCountdown(state?.nextEpisode ? 8 : null);
     };
+    // v0.10.12: dead source → try the next variant, then a plain notice
+    const onWaiting = () => setLoading(true);
+    const onError = () => {
+      const list = sources;
+      const next = srcIdx + 1;
+      if (next < list.length && errCountRef.current < list.length) {
+        errCountRef.current += 1;
+        if (v.currentTime > 0.5) resumeAt.current = v.currentTime;
+        setSrcIdx(next);
+        setLoading(true);
+        showNotice("پخش این نسخه ناموفق بود — نسخه‌ی بعدی امتحان می‌شود");
+      } else {
+        setFatal(true);
+        setLoading(false);
+      }
+    };
     v.addEventListener("loadedmetadata", onLoaded);
     v.addEventListener("timeupdate", onTime);
     v.addEventListener("playing", onPlaying);
     v.addEventListener("play", onPlay);
     v.addEventListener("pause", onPause);
     v.addEventListener("ended", onEnded);
-    v.addEventListener("waiting", () => setLoading(true));
+    v.addEventListener("waiting", onWaiting);
+    v.addEventListener("error", onError);
     return () => {
       v.removeEventListener("loadedmetadata", onLoaded);
       v.removeEventListener("timeupdate", onTime);
@@ -279,8 +303,10 @@ export default function PipClient() {
       v.removeEventListener("play", onPlay);
       v.removeEventListener("pause", onPause);
       v.removeEventListener("ended", onEnded);
+      v.removeEventListener("waiting", onWaiting);
+      v.removeEventListener("error", onError);
     };
-  }, [activeSrc, state, volume, muted, rate, save, bumpUi]);
+  }, [videoEl, activeSrc, state, volume, muted, rate, save, bumpUi, srcIdx, sources, showNotice]);
 
   useEffect(() => {
     const v = videoRef.current;
@@ -290,47 +316,66 @@ export default function PipClient() {
     v.playbackRate = rate;
   }, [volume, muted, rate]);
 
-  /* ---------------- extracted MKV subtitles ---------------- */
-  const mkvBlobUrl = useRef<string | null>(null);
+  /* ---------------- extracted MKV subtitles ----------------
+   * v0.10.12: ONE programmatic TextTrack fed incrementally — the old
+   * <track> swap flickered on every poll and lost the track whenever the
+   * <video> re-keyed (quality switch) with no new cues arriving. */
+  const subTrackRef = useRef<TextTrack | null>(null);
+  const subTrackElRef = useRef<HTMLVideoElement | null>(null);
+  const cueKeysRef = useRef<Set<string>>(new Set());
+  const subOnRef = useRef(subOn);
   useEffect(() => {
+    subOnRef.current = subOn;
+  }, [subOn]);
+
+  const syncSubTrack = useCallback(() => {
     const v = videoRef.current;
-    if (!v || !mkvVtt) return;
-    while (v.textTracks.length) {
-      const el = v.querySelector("track");
-      if (el) el.remove();
-      else break;
+    if (!v || !state) return;
+    let tt = subTrackRef.current;
+    if (!tt || subTrackElRef.current !== v) {
+      try {
+        tt = v.addTextTrack("subtitles", "زیرنویس فارسی", "fa");
+      } catch {
+        return;
+      }
+      tt.mode = "disabled";
+      subTrackRef.current = tt;
+      subTrackElRef.current = v;
+      cueKeysRef.current = new Set();
     }
-    try {
-      if (mkvBlobUrl.current) URL.revokeObjectURL(mkvBlobUrl.current);
-    } catch {
-      /* ignore */
-    }
-    const url = URL.createObjectURL(new Blob([mkvVtt], { type: "text/vtt" }));
-    mkvBlobUrl.current = url;
-    const tr = document.createElement("track");
-    tr.kind = "subtitles";
-    tr.srclang = "fa";
-    tr.label = "زیرنویس فارسی";
-    tr.src = url;
-    v.appendChild(tr);
-    setSubLoaded(true);
-    let on = true;
-    try {
-      on = localStorage.getItem(SUB_ON_KEY) !== "0";
-    } catch {
-      /* ignore */
-    }
-    setSubOn(on);
-    const t0 = setTimeout(() => {
-      const t = v.textTracks[0];
-      if (t) t.mode = on ? "showing" : "disabled";
-    }, 60);
-    return () => clearTimeout(t0);
-  }, [mkvVtt]);
+    if (!tt || !mkvVtt) return;
+    const added = applyVttToTrack(tt, mkvVtt, cueKeysRef.current);
+    if (added > 0) setSubLoaded(true);
+    tt.mode = subOnRef.current && (tt.cues?.length ?? 0) > 0 ? "showing" : "disabled";
+  }, [state, mkvVtt]);
+
+  useEffect(() => {
+    syncSubTrack();
+  }, [syncSubTrack, videoEl]);
+
+  // right after a seek, show the freshly scanned cues without waiting for
+  // the next scheduled poll
+  useEffect(() => {
+    if (!videoEl) return;
+    const onSeeked = () => kickSubs();
+    videoEl.addEventListener("seeked", onSeeked);
+    return () => videoEl.removeEventListener("seeked", onSeeked);
+  }, [kickSubs, videoEl]);
+
+  /* v0.10.12 lifecycle guard: whenever the playing element goes away — a
+   * quality switch re-keying it or the pip window unloading — make sure it
+   * is PAUSED and its fetch released; a detached playing <video> keeps its
+   * audio alive until GC. */
+  useEffect(() => {
+    if (!videoEl) return;
+    return () => {
+      stopMediaEl(videoEl);
+    };
+  }, [videoEl]);
 
   useEffect(() => {
     const v = videoRef.current;
-    const track = v?.textTracks[0];
+    const track = subTrackRef.current;
     if (track) track.mode = subOn && subLoaded ? "showing" : "disabled";
   }, [subOn, subLoaded]);
 
@@ -396,6 +441,8 @@ export default function PipClient() {
     const v = videoRef.current;
     if (v) resumeAt.current = v.currentTime;
     rememberVariantPref(sources[i]?.v);
+    errCountRef.current = 0;
+    setFatal(false);
     setSrcIdx(i);
     setQMenu(false);
     setLoading(true);
@@ -437,8 +484,11 @@ export default function PipClient() {
     >
       {proxyBase !== undefined && (
         <video
-          ref={videoRef}
-          key={activeSrc || "empty"}
+          ref={(el) => {
+            videoRef.current = el;
+            setVideoEl(el);
+          }}
+          key={`${activeSrc || "empty"}#${reloadKey}`}
           src={activeSrc || undefined}
           poster={state.poster || undefined}
           className="h-full w-full object-contain"
@@ -447,9 +497,38 @@ export default function PipClient() {
         />
       )}
 
-      {loading && !ended && activeSrc && (
+      {loading && !ended && !fatal && activeSrc && (
         <div className="pointer-events-none absolute inset-0 grid place-items-center">
           <div className="h-12 w-12 animate-spin rounded-full border-4 border-white/20 border-t-brand" />
+        </div>
+      )}
+
+      {/* v0.10.12 — every source failed inside the floating window */}
+      {fatal && (
+        <div className="absolute inset-0 grid place-items-center bg-black/85 px-4" data-ctrl>
+          <div className="text-center">
+            <p className="text-sm font-black text-white">پخش این نسخه ممکن نشد</p>
+            <p className="mt-1 text-[11px] leading-5 text-zinc-400">نسخه یا قسمت دیگری را امتحان کنید.</p>
+            <div className="mt-3 flex justify-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  errCountRef.current = 0;
+                  setFatal(false);
+                  setLoading(true);
+                  const v = videoRef.current;
+                  if (v && v.currentTime > 0.5) resumeAt.current = v.currentTime;
+                  setReloadKey((k) => k + 1);
+                }}
+                className="h-9 rounded-full bg-white px-4 text-xs font-bold text-black"
+              >
+                تلاش دوباره
+              </button>
+              <button type="button" onClick={() => window.nama?.pip?.close()} className="h-9 rounded-full border border-white/20 px-4 text-xs font-bold text-white hover:bg-white/10">
+                بستن
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -499,7 +578,7 @@ export default function PipClient() {
       </div>
 
       {/* center play */}
-      {!playing && !loading && !ended && activeSrc && (
+      {!playing && !loading && !ended && !fatal && activeSrc && (
         <div className="pointer-events-none absolute inset-0 grid place-items-center">
           <span className="grid h-14 w-14 place-items-center rounded-full bg-white/15 text-white ring-1 ring-white/30 backdrop-blur">
             <PlayIcon width={26} height={26} className="ms-1" />

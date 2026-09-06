@@ -10,6 +10,7 @@ import FavoriteButton from "../FavoriteButton";
 import { CloseIcon, PlayIcon, StarIcon, ClockIcon, MuteIcon, VolumeIcon, ChevronLeft, CalendarIcon } from "../Icons";
 import TitleName from "../TitleName";
 import { useI18n } from "../i18n/LocaleProvider";
+import { stopMediaEl } from "@/lib/media";
 
 type Episode = {
   id: number;
@@ -72,6 +73,16 @@ export default function TitleModal({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [title, onClose]);
+
+  // v0.10.12: the teaser <video> must never outlive the modal. Chromium
+  // keeps a DETACHED, still-playing element alive until GC — with `loop` it
+  // would keep playing «در پس‌زمینه» forever after the quick-view closes or
+  // switches to another title. Stop the exact element this title mounted.
+  useEffect(() => {
+    const el = videoRef.current;
+    if (!el) return;
+    return () => stopMediaEl(el);
+  }, [title?.id ?? null]);
 
   const t = title;
   const eps = detail?.episodes ?? [];

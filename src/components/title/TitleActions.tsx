@@ -1,20 +1,27 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { CloseIcon, PlayIcon, ShareIcon, CheckIcon } from "../Icons";
+import { stopMediaEl } from "@/lib/media";
 
 /** Trailer lightbox + share button (client-only bits of the title page) */
 export function TrailerButton({ src, poster, title }: { src: string; poster: string; title: string }) {
   const [open, setOpen] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
     window.addEventListener("keydown", onKey);
     document.body.style.overflow = "hidden";
+    // v0.10.12: stop the trailer when the lightbox goes away — closing the
+    // overlay unmounts a still-playing <video> and Chromium keeps the
+    // detached element sounding until GC (background-audio bug)
+    const el = videoRef.current;
     return () => {
       window.removeEventListener("keydown", onKey);
       document.body.style.overflow = "";
+      stopMediaEl(el);
     };
   }, [open]);
 
@@ -37,7 +44,7 @@ export function TrailerButton({ src, poster, title }: { src: string; poster: str
           onMouseDown={(e) => e.target === e.currentTarget && setOpen(false)}
         >
           <div className="relative w-full max-w-5xl overflow-hidden rounded-2xl bg-black shadow-2xl ring-1 ring-white/10">
-            <video src={src} poster={poster} controls autoPlay playsInline className="aspect-video w-full" />
+            <video ref={videoRef} src={src} poster={poster} controls autoPlay playsInline className="aspect-video w-full" />
             <div className="absolute inset-x-0 top-0 flex items-center justify-between bg-gradient-to-b from-black/80 to-transparent p-4">
               <p className="text-sm font-bold text-white">تریلر · {title}</p>
               <button

@@ -36,6 +36,7 @@ import {
 import FavoriteButton from "./FavoriteButton";
 import WatchlistButton from "./WatchlistButton";
 import { isMkvUrl, loadProxyBase, mediaSrc } from "@/lib/video-url";
+import { applyVttToTrack, clearTrackCues, srtToVtt, stopMediaEl } from "@/lib/media";
 import { useMkvSubs } from "@/lib/use-mkv-subs";
 import { ensurePlayableAudio } from "@/lib/audio-guard";
 import { preferredSourceIdx, rememberedVariantIdx, rememberVariantPref, variantShort } from "@/lib/variant";
@@ -44,16 +45,6 @@ const SUB_SIZE_KEY = "nama-sub-size";
 const SUB_ON_KEY = "nama-sub-on";
 const VOL_KEY = "nama-volume";
 const MUTED_KEY = "nama-muted";
-
-/** SRT → WebVTT (the <track> element only understands VTT). */
-function srtToVtt(input: string): string {
-  const body = input
-    .replace(/\r+\n/g, "\n")
-    .replace(/^\uFEFF/, "")
-    .replace(/(\d{2}:\d{2}:\d{2}),(\d{3})/g, "$1.$2")
-    .replace(/<[^>]+>/g, "");
-  return `WEBVTT\n\n${body}`;
-}
 
 export default function Player() {
   const router = useRouter();
@@ -76,6 +67,10 @@ export default function Player() {
   } = store;
 
   const videoRef = useRef<HTMLVideoElement>(null);
+  // element identity as STATE — effects that bind listeners must re-run when
+  // the element appears/re-keys, not when unrelated props happen to change
+  // (the proxyBase-late-resolve race left the video with NO listeners)
+  const [videoEl, setVideoEl] = useState<HTMLVideoElement | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSaved = useRef(0);
@@ -122,6 +117,10 @@ export default function Player() {
   const [ended, setEnded] = useState(false);
   const [countdown, setCountdown] = useState<number | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // v0.10.12 — dead-link handling: try the next variant, then a fatal overlay
+  const [fatal, setFatal] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
+  const errCountRef = useRef(0);
   // when switching quality we need to resume at the same second
   const resumeAt = useRef<number | null>(null);
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -276,6 +275,17 @@ export default function Player() {
   const goBackToTitle = useCallback(() => {
     const v = videoRef.current;
     if (v && v.duration) save(v.currentTime, v.duration);
+    // v0.10.12: pause BEFORE the unmount — React drops the element silently
+    // and a detached, still-playing <video> keeps sounding until GC (the
+    // «فیلم در پس‌زمینه ادامه دارد» report). The lifecycle guard below also
+    // force-clears the element as a safety net.
+    if (v) {
+      try {
+        v.pause();
+      } catch {
+        /* ignore */
+      }
+    }
     store.close();
     router.push(`/title/${slug}`);
   }, [save, store, router, slug]);
@@ -379,46 +389,89 @@ export default function Player() {
     if (pipOpen) videoRef.current?.pause();
   }, [pipOpen]);
 
-  // ---- subtitles extracted from the MKV container (v0.10.5, ASS+ in 0.10.6)
-  const { vtt: mkvVtt, info: mkvInfo } = useMkvSubs(rawActive || null, proxyBase, open);
-  const mkvBlobUrl = useRef<string | null>(null);
+  // v0.10.12 lifecycle guard: whenever the playing element goes away — the
+  // theater closing, a quality switch or a reload re-keying it — make sure
+  // it is PAUSED and its network fetch is released. Chromium keeps a
+  // detached, still-playing <video> alive until GC; an orphaned element is
+  // exactly the «پس‌زمینه همچنان فیلم پخش می‌شود» bug. The element captured
+  // at setup time survives React nulling the ref during unmount.
   useEffect(() => {
+    if (!videoEl) return;
+    return () => {
+      stopMediaEl(videoEl);
+    };
+  }, [videoEl, open]);
+
+  // new content takes over: drop any stale ended/countdown/error state. The
+  // old code never reset the auto-next countdown — after it reached 0 and
+  // pushed the next episode, the still-0 countdown fired again on every
+  // nextEpisode change and the episodes CHAIN-SKIPPED to the end of season.
+  useEffect(() => {
+    setCountdown(null);
+    setEnded(false);
+    setFatal(false);
+    errCountRef.current = 0;
+  }, [contentKey]);
+
+  // ---- subtitles extracted from the MKV container (v0.10.5, ASS+ in 0.10.6)
+  // v0.10.12: cues now feed ONE programmatic TextTrack incrementally instead
+  // of re-swapping a <track> element on every poll — the old swap flickered
+  // the subtitle every 2.5s and, worse, the track was never re-attached when
+  // the <video> re-keyed (quality switch / retry) with no NEW cues arriving,
+  // so subtitles silently disappeared for the rest of the movie.
+  const { vtt: mkvVtt, info: mkvInfo, kick: kickSubs } = useMkvSubs(rawActive || null, proxyBase, open);
+  const subTrackRef = useRef<TextTrack | null>(null);
+  const subTrackElRef = useRef<HTMLVideoElement | null>(null);
+  const cueKeysRef = useRef<Set<string>>(new Set());
+  const [fileVtt, setFileVtt] = useState<string | null>(null);
+  const subOnRef = useRef(subOn);
+  useEffect(() => {
+    subOnRef.current = subOn;
+  }, [subOn]);
+
+  const syncSubTrack = useCallback(() => {
     const v = videoRef.current;
-    if (!v || !mkvVtt) return;
-    // swap in the (growing) extracted track
-    while (v.textTracks.length) {
-      const el = v.querySelector("track");
-      if (el) el.remove();
-      else break;
+    if (!v || !open) return;
+    let tt = subTrackRef.current;
+    if (!tt || subTrackElRef.current !== v) {
+      try {
+        tt = v.addTextTrack("subtitles", "زیرنویس فارسی", "fa");
+      } catch {
+        return;
+      }
+      tt.mode = "disabled";
+      subTrackRef.current = tt;
+      subTrackElRef.current = v;
+      cueKeysRef.current = new Set();
     }
-    try {
-      if (mkvBlobUrl.current) URL.revokeObjectURL(mkvBlobUrl.current);
-    } catch {
-      /* ignore */
-    }
-    const url = URL.createObjectURL(new Blob([mkvVtt], { type: "text/vtt" }));
-    mkvBlobUrl.current = url;
-    const tr = document.createElement("track");
-    tr.kind = "subtitles";
-    tr.srclang = "fa";
-    tr.label = "زیرنویس فارسی";
-    tr.src = url;
-    tr.className = "nama-sub-track";
-    v.appendChild(tr);
-    setSubLoaded(true);
-    let pref: string | null = null;
-    try {
-      pref = localStorage.getItem(SUB_ON_KEY);
-    } catch {
-      /* ignore */
-    }
-    setSubOn(pref !== "0");
-    const t0 = setTimeout(() => {
-      const t = v.textTracks[0];
-      if (t) t.mode = pref !== "0" ? "showing" : "disabled";
-    }, 60);
-    return () => clearTimeout(t0);
-  }, [mkvVtt]);
+    const vtt = fileVtt ?? mkvVtt;
+    if (!tt || !vtt) return;
+    const added = applyVttToTrack(tt, vtt, cueKeysRef.current);
+    if (added > 0) setSubLoaded(true);
+    // keep the mode right across re-keys (the fresh track starts disabled)
+    tt.mode = subOnRef.current && (tt.cues?.length ?? 0) > 0 ? "showing" : "disabled";
+  }, [open, fileVtt, mkvVtt]);
+
+  // (re)create the track whenever the video element is (re)created — quality
+  // switch, episode change, retry — and seed it with the cues gathered so far
+  useEffect(() => {
+    syncSubTrack();
+  }, [syncSubTrack, videoEl, proxyBase]);
+
+  // right after a seek the proxy starts scanning the new byte range — kick
+  // the poller so the cues for the new position show up on the next beat,
+  // not after the remaining wait of the scheduled poll
+  useEffect(() => {
+    if (!videoEl) return;
+    const onSeeked = () => kickSubs();
+    videoEl.addEventListener("seeked", onSeeked);
+    return () => videoEl.removeEventListener("seeked", onSeeked);
+  }, [kickSubs, videoEl]);
+
+  // a user-loaded subtitle file replaces the extracted MKV cues for THIS video
+  useEffect(() => {
+    setFileVtt(null);
+  }, [contentKey]);
 
   // restore subtitle prefs
   useEffect(() => {
@@ -434,7 +487,7 @@ export default function Player() {
   }, [subLoaded]);
 
   useEffect(() => {
-    const v = videoRef.current;
+    const v = videoEl;
     if (!v) return;
     const onLoaded = () => {
       setDuration(v.duration);
@@ -488,13 +541,31 @@ export default function Player() {
       save(v.duration, v.duration);
       if (nextEpisode) setCountdown(8);
     };
+    // v0.10.12: a dead/undecodable source used to spin the loader forever —
+    // try the next variant (keeping the position), then show the fatal panel
+    const onWaiting = () => setLoading(true);
+    const onError = () => {
+      if (!usePlayerStore.getState().open) return;
+      const next = srcIdx + 1;
+      if (next < srcList.length && errCountRef.current < srcList.length) {
+        errCountRef.current += 1;
+        if (v.currentTime > 0.5) resumeAt.current = v.currentTime;
+        setSrcIdx(next);
+        setLoading(true);
+        showNotice("پخش این نسخه ناموفق بود — نسخه‌ی بعدی امتحان می‌شود");
+      } else {
+        setFatal(true);
+        setLoading(false);
+      }
+    };
     v.addEventListener("loadedmetadata", onLoaded);
     v.addEventListener("timeupdate", onTime);
     v.addEventListener("play", onPlay);
     v.addEventListener("playing", onPlaying);
     v.addEventListener("pause", onPause);
     v.addEventListener("ended", onEnded);
-    v.addEventListener("waiting", () => setLoading(true));
+    v.addEventListener("waiting", onWaiting);
+    v.addEventListener("error", onError);
     return () => {
       v.removeEventListener("loadedmetadata", onLoaded);
       v.removeEventListener("timeupdate", onTime);
@@ -502,8 +573,10 @@ export default function Player() {
       v.removeEventListener("playing", onPlaying);
       v.removeEventListener("pause", onPause);
       v.removeEventListener("ended", onEnded);
+      v.removeEventListener("waiting", onWaiting);
+      v.removeEventListener("error", onError);
     };
-  }, [startAt, save, bumpUi, nextEpisode, activeSrc, volume, muted]);
+  }, [videoEl, startAt, save, bumpUi, nextEpisode, volume, muted, srcIdx, srcList, showNotice]);
 
   // switch quality → same second, keep playing
   const pickSource = (i: number, manual = true) => {
@@ -512,6 +585,8 @@ export default function Player() {
     if (manual) {
       manualPickRef.current = true;
       rememberVariantPref(srcList[i]?.v);
+      errCountRef.current = 0;
+      setFatal(false);
     }
     setSrcIdx(i);
     setQMenu(false);
@@ -525,9 +600,7 @@ export default function Player() {
 
   // subtitle track mode sync
   useEffect(() => {
-    const v = videoRef.current;
-    if (!v) return;
-    const track = v.textTracks[0];
+    const track = subTrackRef.current;
     if (track) track.mode = subOn && subLoaded ? "showing" : "disabled";
   }, [subOn, subLoaded]);
 
@@ -537,32 +610,17 @@ export default function Player() {
     reader.onload = () => {
       const text = String(reader.result ?? "");
       const vtt = /^\uFEFF?WEBVTT/.test(text.trim()) ? text : srtToVtt(text);
-      const url = URL.createObjectURL(new Blob([vtt], { type: "text/vtt" }));
-      const v = videoRef.current;
-      if (!v) return;
-      // remove previous blob track
-      while (v.textTracks.length) {
-        const el = v.querySelector("track");
-        if (el) el.remove();
-        else break;
-      }
-      const tr = document.createElement("track");
-      tr.kind = "subtitles";
-      tr.srclang = "fa";
-      tr.label = "زیرنویس";
-      tr.src = url;
-      tr.className = "nama-sub-track";
-      v.appendChild(tr);
-      setSubLoaded(true);
+      // the uploaded file REPLACES the extracted MKV cues: empty the shared
+      // track (programmatic tracks cannot be removed, only emptied) and
+      // re-seed it from the file alone
+      clearTrackCues(subTrackRef.current);
+      cueKeysRef.current = new Set();
+      setFileVtt(vtt);
       setSubOn(true);
       try {
         localStorage.setItem(SUB_ON_KEY, "1");
       } catch {}
       setSubMenu(false);
-      setTimeout(() => {
-        const t = v.textTracks[0];
-        if (t) t.mode = "showing";
-      }, 50);
     };
     reader.readAsText(f, "utf-8");
   };
@@ -570,6 +628,7 @@ export default function Player() {
   useEffect(() => {
     if (countdown === null) return;
     if (countdown <= 0 && nextEpisode) {
+      setCountdown(null); // single-shot — the contentKey reset broke the chain
       router.push(`/watch/${slug}?ep=${nextEpisode.id}`);
       return;
     }
@@ -674,8 +733,11 @@ export default function Player() {
     >
       {proxyBase !== undefined && (
         <video
-          ref={videoRef}
-          key={activeSrc}
+          ref={(el) => {
+            videoRef.current = el;
+            setVideoEl(el);
+          }}
+          key={`${activeSrc}#${reloadKey}`}
           src={activeSrc}
           poster={poster}
           className="h-full w-full object-contain"
@@ -685,7 +747,7 @@ export default function Player() {
       )}
 
       {/* loading */}
-      {loading && !ended && (
+      {loading && !ended && !fatal && (
         <div className="pointer-events-none absolute inset-0 grid place-items-center">
           <div className="h-16 w-16 animate-spin rounded-full border-4 border-white/20 border-t-brand" />
         </div>
@@ -698,10 +760,50 @@ export default function Player() {
             <p className="text-xl font-black text-white">این نسخه در دسترس نیست</p>
             <p className="mt-2 text-sm leading-7 text-zinc-400">لینک معتبری برای این {episode ? "قسمت" : "عنوان"} پیدا نشد. قسمت یا نسخه‌ی دیگری را امتحان کنید.</p>
             <div className="mt-5 flex justify-center gap-3">
-              <Link href={`/title/${slug}`} className="flex h-11 items-center rounded-full bg-white px-6 text-sm font-bold text-black">بازگشت به جزئیات</Link>
+              <button type="button" onClick={goBackToTitle} className="flex h-11 items-center rounded-full bg-white px-6 text-sm font-bold text-black">بازگشت به جزئیات</button>
               {episodes.length > 0 && episode && episodes[episodes.findIndex((e) => e.id === episode.id) + 1] && (
                 <Link href={`/watch/${slug}?ep=${episodes[episodes.findIndex((e) => e.id === episode.id) + 1].id}`} className="flex h-11 items-center rounded-full border border-white/20 px-6 text-sm font-bold text-white hover:bg-white/10">قسمت بعد</Link>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* v0.10.12 — every source failed to play */}
+      {fatal && activeSrc && (
+        <div className="absolute inset-0 grid place-items-center bg-black/85" data-ctrl>
+          <div className="max-w-sm p-6 text-center">
+            <p className="text-xl font-black text-white">پخش این نسخه ممکن نشد</p>
+            <p className="mt-2 text-sm leading-7 text-zinc-400">اتصال به منبع پخش برقرار نشد یا فایل قابل پخش نیست. دوباره تلاش کنید یا نسخه/قسمت دیگری را امتحان کنید.</p>
+            <div className="mt-5 flex flex-wrap justify-center gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  errCountRef.current = 0;
+                  setFatal(false);
+                  setLoading(true);
+                  const v = videoRef.current;
+                  if (v && v.currentTime > 0.5) resumeAt.current = v.currentTime;
+                  setReloadKey((k) => k + 1);
+                }}
+                className="flex h-11 items-center rounded-full bg-white px-6 text-sm font-bold text-black"
+              >
+                تلاش دوباره
+              </button>
+              {srcList.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    errCountRef.current = 0;
+                    setFatal(false);
+                    pickSource(0);
+                  }}
+                  className="h-11 rounded-full border border-white/20 px-6 text-sm font-bold text-white hover:bg-white/10"
+                >
+                  نسخه اول
+                </button>
+              )}
+              <button type="button" onClick={goBackToTitle} className="h-11 rounded-full border border-white/20 px-6 text-sm font-bold text-white hover:bg-white/10">بازگشت</button>
             </div>
           </div>
         </div>
@@ -768,9 +870,13 @@ export default function Player() {
                   >
                     <PlayIcon /> تماشای دوباره
                   </button>
-                  <Link href={`/title/${slug}`} className="h-12 rounded-full border border-white/20 px-6 leading-[48px] font-bold text-white hover:bg-white/10">
+                  <button
+                    type="button"
+                    onClick={goBackToTitle}
+                    className="h-12 rounded-full border border-white/20 px-6 font-bold text-white hover:bg-white/10"
+                  >
                     بازگشت
-                  </Link>
+                  </button>
                 </div>
               </>
             )}
@@ -1031,6 +1137,8 @@ export default function Player() {
                         <p className="mb-2 rounded-xl bg-white/5 p-2.5 text-[11px] leading-5 text-zinc-400">
                           {isMkvUrl(rawActive) && mkvInfo?.probed && (mkvInfo.kinds ?? []).some((k) => /S_IMAGE|PGS|VobSub|^S_HDMV/i.test(k)) ? (
                             <>زیرنویس داخل این فایل از نوع تصویری (PGS/VobSub) است و به‌عنوان متن قابل نمایش نیست؛ نسخه‌های «زیرنویس چسبیده» زیرنویس را داخل خود تصویر دارند.</>
+                          ) : isMkvUrl(rawActive) && mkvInfo?.probed && !(mkvInfo.kinds ?? []).length ? (
+                            <>زیرنویس متنی داخل این فایل پیدا نشد؛ احتمالاً نسخه «زیرنویس چسبیده» زیرنویس را داخل تصویر دارد. می‌توانید فایل SRT خودتان را هم لود کنید.</>
                           ) : (
                             <>نسخه‌های «زیرنویس چسبیده» زیرنویس داخل تصویر دارند و به‌صورت پیش‌فرض انتخاب می‌شوند. می‌توانید فایل SRT خودتان را هم لود کنید.</>
                           )}
