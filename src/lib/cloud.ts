@@ -22,7 +22,7 @@ import { createClient, type Session, type SupabaseClient } from "@supabase/supab
 import { useEffect, useState } from "react";
 
 /** e.g. "https://xxxxxxxxxxxx.supabase.co" — fill to hard-code the project. */
-export const SUPABASE_URL_DEFAULT = "";
+export const SUPABASE_URL_DEFAULT = "https://emqsegjeiyimoyncbhfn.supabase.co";
 export const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_m23eUV8cC-xqhqD-3P6Wsg_U5WsiM3E";
 
 const URL_KEY = "frame.supabase.url";
