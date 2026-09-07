@@ -1,4 +1,4 @@
-name: Desktop (Electron) release
+name: Release (desktop + android)
 
 on:
   push:
@@ -151,3 +151,64 @@ jobs:
             release/*.blockmap
             release/latest*.yml
           if-no-files-found: warn
+
+  android:
+    name: Build Android APK
+    needs: prepare
+    if: needs.prepare.outputs.build == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      # keystore.properties + frame-release.keystore are git-ignored; in CI
+      # they come from the encrypted repo secrets. Missing secrets → unsigned
+      # APK (installable only via "install anyway", so secrets should exist).
+      - name: Restore Android signing config
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          KEYSTORE_PROPERTIES: ${{ secrets.ANDROID_KEYSTORE_PROPERTIES }}
+        run: |
+          if [[ -n "$KEYSTORE_B64" && -n "$KEYSTORE_PROPERTIES" ]]; then
+            echo "$KEYSTORE_B64" | base64 -d > android/frame-release.keystore
+            printf '%s\n' "$KEYSTORE_PROPERTIES" > android/keystore.properties
+            echo "signing config restored ($(wc -c < android/frame-release.keystore) bytes)"
+          else
+            echo "::warning::Android signing secrets missing → APK will be UNSIGNED"
+          fi
+
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+
+      - name: Build Android APK (static export + cap sync + gradle)
+        run: npm run android:apk
+        env:
+          DATABASE_URL: "file:../db/custom.db"
+          NEXT_TELEMETRY_DISABLED: "1"
+
+      - name: Upload APK to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          SRC="android/app/build/outputs/apk/release/app-release.apk"
+          DEST="Frame-${VERSION}-android.apk"
+          cp "$SRC" "$DEST"
+          gh release upload "$TAG" "$DEST" --clobber --repo "$GITHUB_REPOSITORY"
+          echo "attached $DEST to release $TAG"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nama-${{ needs.prepare.outputs.version }}-android
+          path: android/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error

@@ -1,11 +1,21 @@
 apply plugin: 'com.android.application'
 
-// Release signing (keystore.properties next to this file, git-ignored)
+// Release signing (keystore.properties next to this file, git-ignored;
+// in CI it is restored from the ANDROID_KEYSTORE_* GitHub secrets)
 def keystoreProps = new Properties()
 def keystorePropsFile = rootProject.file('keystore.properties')
 if (keystorePropsFile.exists()) {
     keystorePropsFile.withInputStream { keystoreProps.load(it) }
 }
+
+// App version authored by scripts/mobile-build.cjs (follows package.json)
+def versionProps = new Properties()
+def versionPropsFile = rootProject.file('version.properties')
+if (versionPropsFile.exists()) {
+    versionPropsFile.withInputStream { versionProps.load(it) }
+}
+def appVersionCode = (versionProps['versionCode'] ?: '1').toInteger()
+def appVersionName = versionProps['versionName'] ?: '1.0.0'
 
 android {
     namespace = "ir.frame.nama"
@@ -14,8 +24,8 @@ android {
         applicationId "ir.frame.nama"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0.0"
+        versionCode appVersionCode
+        versionName appVersionName
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

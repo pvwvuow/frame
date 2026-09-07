@@ -108,6 +108,7 @@ db/*.db-shm
 # Android build artifacts
 keystore.properties
 frame-release.keystore
+version.properties
 local.properties
 .gradle/
 build/
