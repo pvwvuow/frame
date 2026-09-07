@@ -243,21 +243,35 @@ function clearServerPid() {
 /** True when `pid` is (very likely) a leftover Nama standalone server.
  *  v0.10.15: the Windows CIM query can take >10s on a cold runner/machine
  *  (PowerShell first-launch) — the timeout is 30s now so a slow answer is
- *  still recognized as our orphan instead of "foreign, left alone". */
+ *  still recognized as our orphan instead of "foreign, left alone".
+ *  v0.10.20: 30s still loses on deeply-cold WMI (seen again on
+ *  windows-latest). A timed-out lookup is NOT evidence of a foreign
+ *  process, so retry — WMI stays warm after the first query, attempt 2
+ *  usually answers in 1-3s. Worst case ≈ 3 × 20s, typical ≈ one fast hit. */
 function isOurServerProcess(pid) {
   try {
     if (process.platform === "win32") {
-      const out = execFileSync(
-        "powershell.exe",
-        [
-          "-NoProfile",
-          "-NonInteractive",
-          "-Command",
-          `(Get-CimInstance Win32_Process -Filter "ProcessId=${pid}").CommandLine`,
-        ],
-        { timeout: 30000, windowsHide: true }
-      ).toString();
-      return /server\.js/i.test(out);
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          const out = execFileSync(
+            "powershell.exe",
+            [
+              "-NoProfile",
+              "-NonInteractive",
+              "-Command",
+              `(Get-CimInstance Win32_Process -Filter "ProcessId=${pid}").CommandLine`,
+            ],
+            { timeout: 20000, windowsHide: true }
+          ).toString();
+          return /server\.js/i.test(out);
+        } catch (e) {
+          log.info(
+            `CIM lookup attempt ${attempt}/3 for pid ${pid} failed:`,
+            (e && e.message) || e
+          );
+        }
+      }
+      return false;
     }
     if (process.platform === "darwin") {
       // macOS has no /proc – `ps -p <pid> -o command=` prints the full argv

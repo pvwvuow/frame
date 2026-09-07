@@ -138,6 +138,27 @@ check("marker rewritten after reseed", fs.existsSync(path.join(userData, "catalo
 
 /* ---- Test 3: cleanupStaleServer ---------------------------------- */
 console.log("\n[3] cleanupStaleServer reaps a leftover server.js process");
+/* v0.10.20: WMI/PowerShell cold start can exceed the orphan-lookup timeout
+ * on windows-latest (v0.10.20 CI flake) — fire one throwaway CIM query with
+ * a generous timeout so the service is warm before the timed assertions. */
+if (process.platform === "win32") {
+  console.log("  (warming up WMI/PowerShell for the pid lookups…)");
+  const { execFileSync } = await import("node:child_process");
+  try {
+    execFileSync(
+      "powershell.exe",
+      [
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        '(Get-CimInstance Win32_Process -Filter "ProcessId=$PID").CommandLine',
+      ],
+      { timeout: 120000, windowsHide: true }
+    );
+  } catch {
+    /* warm-up is best effort */
+  }
+}
 const fakeDir = path.join(tmp, "standalone");
 fs.mkdirSync(fakeDir, { recursive: true });
 const fakeServer = path.join(fakeDir, "server.js");
