@@ -18,25 +18,18 @@ import { fa } from "@/lib/format";
 
 type PlanDef = { key: Plan; title: string; note: string; noteEn: string; hot?: boolean };
 
-/* Gold Frame emblem (the user's own artwork) with a repeating gloss sweep —
-   v0.10.26: replaces the crown tile in the VIP hero. The dark amber tile +
-   breathing halo + light sweep live in globals.css (.vip-emblem/.vip-shine). */
+/* Gold Frame emblem — v0.10.27: the user's artwork, verbatim. No tile, no
+   ring, no glow, no gloss sweep (all removed per feedback); the PNG renders
+   at its natural 404×512 aspect with just a height hint for layout. */
 function VipEmblem({ size = 68 }: { size?: number }) {
   return (
-    <span
-      className="vip-emblem relative mx-auto block overflow-hidden rounded-[22px] ring-1 ring-amber-300/30"
-      style={{ width: size, height: size }}
-    >
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src="/vip/logo-gold.png"
-        alt=""
-        draggable={false}
-        className="relative h-full w-full object-contain p-1"
-        style={{ filter: "drop-shadow(0 2px 12px rgba(245,158,11,0.4))" }}
-      />
-      <span aria-hidden className="vip-shine" />
-    </span>
+    <img
+      src="/vip/logo-gold.png"
+      alt=""
+      draggable={false}
+      className="mx-auto block w-auto select-none"
+      style={{ height: size }}
+    />
   );
 }
 
