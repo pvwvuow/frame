@@ -6,7 +6,7 @@
 import { g2j } from "@/lib/jalali";
 
 export type DrFormat = "post" | "story";
-export type DrTemplateId = "spotlight" | "strip" | "type" | "split" | "journal" | "ticket" | "slate";
+export type DrTemplateId = "spotlight" | "strip" | "type" | "split" | "journal" | "ticket" | "slate" | "framed";
 export type DrLang = "fa" | "en";
 
 export const DR_FORMATS: { id: DrFormat; w: number; h: number }[] = [
@@ -22,6 +22,7 @@ export const DR_TEMPLATES: { id: DrTemplateId; fa: string; en: string }[] = [
   { id: "journal", fa: "مجله", en: "Journal" },
   { id: "ticket", fa: "بلیت", en: "Ticket" },
   { id: "slate", fa: "کلاپر", en: "Slate" },
+  { id: "framed", fa: "قاب", en: "Framed" },
 ];
 
 /** One pickable title, serialized from the server page or the search API. */

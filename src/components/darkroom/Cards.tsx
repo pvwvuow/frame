@@ -1094,6 +1094,199 @@ function Slate({ d }: { d: DrCardData }) {
 }
 
 /* ------------------------------------------------------------------ */
+/* 8 — FRAMED (the user's share-screen mock: a floating framed card on  */
+/*     a cinematic, ember-lit backdrop of the artwork itself)           */
+/* ------------------------------------------------------------------ */
+
+function Ico({ d, size, style }: { d: string; size: number; style?: S }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} style={{ display: "block", flexShrink: 0, ...style }}>
+      <path d={d} />
+    </svg>
+  );
+}
+
+const P_STAR_FILL = "M12 2.6l2.75 5.93 6.5.68-4.85 4.37 1.37 6.4L12 16.75 6.23 19.98 7.6 13.58 2.75 9.21l6.5-.68L12 2.6z";
+const P_CLAPPER = "M4 11v8a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-8M2 11h20M6 11 4.5 6.5 19 3l1.5 4.5M9 10.5l-1.5-4.5M14 9.5l-1.5-4.5";
+const P_BOOKMARK = "M19 21 12 16l-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z";
+const P_HEART = "M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21.2l7.8-7.8 1-1a5.5 5.5 0 0 0 0-7.8z";
+
+function Framed({ d }: { d: DrCardData }) {
+  const story = d.fmt === "story";
+  const t = titlesOf(d);
+  const genres = genresOf(d.title, d.lang);
+  const dir = (d.title.director || "").trim();
+
+  /* --- reference geometry (story 1080×1920 / post 1080×1080) --- */
+  const cardW = story ? 676 : 640;
+  const cardH = story ? 1436 : 892;
+  const cardTop = story ? 250 : 94;
+  const imgH = story ? 756 : 404;
+  const pad = story ? 30 : 24;
+
+  /* eyebrow — «A FILM BY …» / «فیلمی از …» (hidden when director unknown) */
+  const eyebrow =
+    dir === ""
+      ? ""
+      : d.lang === "fa"
+        ? `${d.title.type === "series" ? "سریالی" : "فیلمی"} از ${dir}`
+        : `A ${d.title.type === "series" ? "SERIES" : "FILM"} BY ${dir}`.toUpperCase();
+
+  const chipText =
+    genres.length > 0 ? genres.slice(0, 2).join(" / ") : d.title.type === "series" ? (d.lang === "fa" ? "سریال" : "Series") : d.lang === "fa" ? "فیلم" : "Film";
+
+  const half = (d.score / 2).toFixed(1);
+
+  return (
+    <div style={{ position: "absolute", inset: 0, background: "#050506" }}>
+      {/* ---- cinematic backdrop: the artwork itself, ember-lit ---- */}
+      <Img src={d.title.backdrop} style={{ position: "absolute", inset: 0, filter: `brightness(${story ? 0.56 : 0.5}) saturate(1.22) contrast(1.04)` }} />
+      <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg,rgba(0,0,0,.38) 0%,rgba(0,0,0,.1) 30%,rgba(0,0,0,.3) 68%,rgba(0,0,0,.68) 100%)" }} />
+      <div style={{ position: "absolute", inset: 0, background: "radial-gradient(90% 70% at 50% 45%,rgba(0,0,0,0) 46%,rgba(0,0,0,.6) 100%)" }} />
+      {/* red diagonal light streaks — left side, like the reference */}
+      <div style={{ position: "absolute", left: story ? -40 : -60, top: story ? 340 : 180, width: 230, height: story ? 900 : 640, background: "linear-gradient(180deg,rgba(229,9,20,0) 0%,rgba(229,9,20,.5) 45%,rgba(229,9,20,0) 100%)", transform: "rotate(23deg)", filter: `blur(${story ? 30 : 22}px)`, mixBlendMode: "screen" }} />
+      <div style={{ position: "absolute", left: story ? 150 : 120, top: story ? 240 : 120, width: 60, height: story ? 760 : 520, background: "linear-gradient(180deg,rgba(255,64,44,0) 0%,rgba(255,84,54,.6) 50%,rgba(255,64,44,0) 100%)", transform: "rotate(23deg)", filter: "blur(9px)", mixBlendMode: "screen" }} />
+      <div style={{ position: "absolute", left: story ? -120 : -140, top: story ? 1050 : 620, width: 190, height: story ? 700 : 420, background: "linear-gradient(180deg,rgba(229,9,20,0) 0%,rgba(229,9,20,.4) 50%,rgba(229,9,20,0) 100%)", transform: "rotate(-17deg)", filter: "blur(26px)", mixBlendMode: "screen" }} />
+      <div style={{ position: "absolute", left: 0, bottom: 0, width: "46%", height: story ? 480 : 300, background: "radial-gradient(70% 70% at 22% 88%,rgba(229,9,20,.26) 0%,rgba(229,9,20,0) 100%)", mixBlendMode: "screen" }} />
+
+      {/* ---- brand corner (top-left, on the backdrop) ---- */}
+      <div style={{ position: "absolute", left: story ? 56 : 40, top: story ? 52 : 38, zIndex: 3 }}>
+        {d.showLogo ? <Logo h={story ? 66 : 50} /> : <Brand d={d} faSize={story ? 28 : 23} enSub={false} />}
+      </div>
+
+      {/* ---- the floating card ---- */}
+      <div
+        style={{
+          position: "absolute",
+          left: (1080 - cardW) / 2,
+          top: cardTop,
+          width: cardW,
+          height: cardH,
+          borderRadius: story ? 26 : 22,
+          overflow: "hidden",
+          background: "linear-gradient(168deg,#101014 0%,#0a0a0d 52%,#0c0c10 100%)",
+          border: "1px solid rgba(255,255,255,.13)",
+          boxShadow: `0 ${story ? 56 : 40}px ${story ? 130 : 90}px rgba(0,0,0,.78), 0 0 ${story ? 100 : 70}px rgba(229,9,20,.17), inset 0 1px 0 rgba(255,255,255,.05)`,
+          zIndex: 2,
+        }}
+      >
+        {/* red rim-light kiss on the bottom-left edge */}
+        <div style={{ position: "absolute", left: "6%", bottom: 0, width: "46%", height: 2, background: "linear-gradient(90deg,rgba(255,96,64,.95) 0%,rgba(229,9,20,.35) 55%,rgba(229,9,20,0) 100%)", filter: "blur(1px)" }} />
+
+        {/* ---- artwork, full-bleed to the card top, fading into ink ---- */}
+        <div style={{ position: "absolute", left: 0, top: 0, width: "100%", height: imgH }}>
+          <Img src={d.title.poster} />
+          <div style={{ position: "absolute", left: 0, bottom: 0, width: "100%", height: story ? 210 : 130, background: "linear-gradient(180deg,rgba(10,10,13,0) 0%,rgba(10,10,13,.62) 55%,#0a0a0d 100%)" }} />
+          <div style={{ position: "absolute", left: 0, top: 0, width: "100%", height: story ? 130 : 90, background: "linear-gradient(180deg,rgba(0,0,0,.42) 0%,rgba(0,0,0,0) 100%)" }} />
+        </div>
+
+        {/* chips over the artwork */}
+        <div style={{ position: "absolute", left: pad, right: pad, top: pad, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <span style={{ display: "flex", alignItems: "center", gap: 10, height: story ? 52 : 42, padding: `0 ${story ? 20 : 16}px`, borderRadius: 999, background: "rgba(8,8,10,.5)", border: "1px solid rgba(255,255,255,.42)", backdropFilter: "blur(4px)" }}>
+            <Ico d={P_CLAPPER} size={story ? 22 : 18} style={{ stroke: DR_RED, fill: "none", strokeWidth: 1.9, strokeLinecap: "round", strokeLinejoin: "round" }} />
+            <span dir="auto" style={{ fontFamily: d.lang === "en" ? GRO : VAZ, fontWeight: 600, fontSize: story ? 20 : 15.5, color: "#fff" }}>{chipText}</span>
+          </span>
+          <span style={{ display: "flex", alignItems: "center", gap: 8, height: story ? 52 : 42, padding: `0 ${story ? 18 : 14}px`, borderRadius: story ? 13 : 11, background: DR_RED, boxShadow: "0 8px 26px rgba(229,9,20,.4)" }}>
+            <Ico d={P_STAR_FILL} size={story ? 22 : 18} style={{ fill: "#fff" }} />
+            <span style={{ fontFamily: GRO, fontWeight: 700, fontSize: story ? 21 : 16.5, color: "#fff", ...LTR }}>{half}</span>
+          </span>
+        </div>
+
+        {/* ---- lower content ---- */}
+        <div style={{ position: "absolute", left: 0, top: imgH - (story ? 44 : 26), width: "100%", display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center" }}>
+          {eyebrow !== "" && (
+            <div dir="auto" style={{ fontFamily: d.lang === "en" ? GRO : VAZ, fontWeight: 500, fontSize: story ? 17 : 12.5, letterSpacing: d.lang === "en" ? "0.4em" : 0, textIndent: d.lang === "en" ? "0.4em" : 0, color: "rgba(255,255,255,.74)", padding: `0 ${pad}px` }}>
+              {eyebrow}
+            </div>
+          )}
+          <h1
+            dir={t.mainDir}
+            style={{
+              margin: 0,
+              marginTop: eyebrow !== "" ? (story ? 16 : 10) : 0,
+              maxWidth: cardW - pad * 2,
+              fontFamily: d.lang === "en" ? GRO : EST,
+              fontWeight: d.lang === "en" ? 800 : 900,
+              fontSize: story ? (d.lang === "en" ? 54 : 62) : d.lang === "en" ? 38 : 42,
+              letterSpacing: d.lang === "en" ? "0.34em" : 0,
+              textIndent: d.lang === "en" ? "0.34em" : 0,
+              lineHeight: 1.22,
+              color: DR_RED,
+              textShadow: "0 0 34px rgba(229,9,20,.35)",
+              display: "-webkit-box",
+              WebkitLineClamp: 2,
+              WebkitBoxOrient: "vertical",
+              overflow: "hidden",
+              padding: `0 ${pad}px`,
+            }}
+          >
+            {t.main}
+          </h1>
+          <div style={{ marginTop: story ? 16 : 10, display: "flex", alignItems: "center", gap: 14, fontFamily: d.lang === "en" ? GRO : VAZ, fontWeight: 500, fontSize: story ? 19 : 14.5, color: "rgba(255,255,255,.56)", ...LTR }}>
+            <span>{d.lang === "fa" ? faDigits(d.title.year) : d.title.year}</span>
+            <span style={{ width: 4, height: 4, borderRadius: "50%", background: "rgba(255,255,255,.5)" }} />
+            <span>{durationLabel(d.title.duration, d.lang) || (d.lang === "fa" ? "—" : "—")}</span>
+          </div>
+
+          {/* reviewer */}
+          <div style={{ marginTop: story ? 42 : 30, width: `100%`, padding: `0 ${pad + 4}px`, display: "flex", alignItems: "center", gap: story ? 22 : 16, textAlign: "start" }}>
+            {d.avatarImage ? (
+              <img src={d.avatarImage} alt="" style={{ width: story ? 88 : 62, height: story ? 88 : 62, borderRadius: "50%", objectFit: "cover", border: `2.5px solid ${DR_RED}`, boxShadow: "0 10px 30px rgba(0,0,0,.55)", flexShrink: 0 }} />
+            ) : (
+              <span style={{ position: "relative", width: story ? 88 : 62, height: story ? 88 : 62, borderRadius: "50%", background: d.avatarGrad, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: EST, fontWeight: 900, fontSize: story ? 36 : 26, color: "#fff", flexShrink: 0 }}>
+                <span style={{ position: "absolute", inset: 0, borderRadius: "50%", border: `2.5px solid ${DR_RED}`, boxShadow: "0 10px 30px rgba(0,0,0,.55)" }} />
+                {d.userInitial}
+              </span>
+            )}
+            <span style={{ minWidth: 0 }}>
+              <span dir="auto" style={{ display: "block", fontFamily: d.lang === "en" ? GRO : VAZ, fontWeight: 600, fontSize: story ? 24 : 18, color: "#fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: cardW - pad * 2 - (story ? 110 : 78) }}>
+                {d.handle}
+              </span>
+              <span style={{ display: "flex", alignItems: "center", gap: story ? 14 : 10, marginTop: story ? 12 : 7 }}>
+                <Stars score={d.score} size={story ? 30 : 22} gap={story ? 7 : 5} />
+                <span style={{ fontFamily: GRO, fontWeight: 600, fontSize: story ? 20 : 15.5, color: "rgba(255,255,255,.8)", ...LTR }}>{half}</span>
+              </span>
+            </span>
+          </div>
+
+          {/* review quote */}
+          {d.comment.trim() !== "" && (
+            <div style={{ marginTop: story ? 34 : 24, width: "100%", padding: `0 ${pad + 4}px`, display: "flex", gap: story ? 16 : 11, alignItems: "flex-start", textAlign: "start" }}>
+              <span style={{ fontFamily: GRO, fontWeight: 900, fontSize: story ? 58 : 42, lineHeight: 0.9, color: DR_RED, flexShrink: 0, marginTop: story ? -4 : -2, ...LTR }}>
+                {d.lang === "fa" ? "«" : "“"}
+              </span>
+              <p dir="auto" style={{ margin: 0, flex: 1, fontSize: story ? 23 : 17, fontWeight: 500, lineHeight: 1.8, color: "#d9d8d2", display: "-webkit-box", WebkitLineClamp: story ? 4 : 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+                {d.comment}
+                {d.lang === "fa" ? "»" : "”"}
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* ---- footer: title tag + keep/favorite marks ---- */}
+        <div style={{ position: "absolute", left: 0, bottom: 0, width: "100%", borderTop: "1px solid rgba(255,255,255,.14)", padding: `${story ? 20 : 14}px ${pad + 4}px`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <span style={{ display: "flex", alignItems: "center", gap: story ? 18 : 13, minWidth: 0 }}>
+            <Ico d={P_CLAPPER} size={story ? 32 : 25} style={{ stroke: DR_RED, fill: "none", strokeWidth: 1.9, strokeLinecap: "round", strokeLinejoin: "round" }} />
+            <span style={{ minWidth: 0 }}>
+              <span dir="auto" style={{ display: "block", fontFamily: d.lang === "en" ? GRO : EST, fontWeight: 700, fontSize: story ? 20 : 15.5, color: "#fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: cardW * 0.52 }}>
+                {t.main}
+              </span>
+              <span style={{ display: "block", fontFamily: d.lang === "en" ? GRO : VAZ, fontWeight: 500, fontSize: story ? 15 : 12, color: "rgba(255,255,255,.55)", marginTop: 3 }}>
+                {d.lang === "fa" ? faDigits(d.title.year) : d.title.year}
+              </span>
+            </span>
+          </span>
+          <span style={{ display: "flex", alignItems: "center", gap: story ? 26 : 20, flexShrink: 0 }}>
+            <Ico d={P_BOOKMARK} size={story ? 25 : 20} style={{ stroke: "rgba(255,255,255,.62)", fill: "none", strokeWidth: 2, strokeLinecap: "round", strokeLinejoin: "round" }} />
+            <Ico d={P_HEART} size={story ? 26 : 21} style={{ fill: DR_RED }} />
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /* card view                                                            */
 /* ------------------------------------------------------------------ */
 export function DrCardView({ d }: { d: DrCardData }) {
@@ -1110,6 +1303,7 @@ export function DrCardView({ d }: { d: DrCardData }) {
       {d.tpl === "journal" && <Journal d={d} />}
       {d.tpl === "ticket" && <Ticket d={d} />}
       {d.tpl === "slate" && <Slate d={d} />}
+      {d.tpl === "framed" && <Framed d={d} />}
     </div>
   );
 }
