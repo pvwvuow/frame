@@ -521,12 +521,45 @@ async function ensureSchema() {
   schemaEnsured = true;
 }
 
+/**
+ * Additive column migrations for EXISTING installs. ensureSchema() above only
+ * runs when the whole schema is missing — an upgraded app keeps its old DB, so
+ * columns added in newer versions must be patched here (idempotent PRAGMA
+ * check → ALTER TABLE). Add every new UserProfile/… column to MIGRATE_COLUMNS.
+ */
+let columnsEnsured = false;
+const MIGRATE_COLUMNS: { table: string; column: string; ddl: string }[] = [
+  // v0.10.24 — uploaded avatar (data URL), null = use the preset gradients
+  { table: "UserProfile", column: "avatarImage", ddl: `ALTER TABLE "UserProfile" ADD COLUMN "avatarImage" TEXT` },
+];
+
+async function ensureColumns() {
+  if (columnsEnsured) return;
+  for (const m of MIGRATE_COLUMNS) {
+    try {
+      const cols = await db.$queryRawUnsafe<{ name: string }[]>(`SELECT name FROM pragma_table_info('${m.table}')`);
+      if (Array.isArray(cols) && cols.some((c) => c.name === m.column)) continue;
+      await db.$executeRawUnsafe(m.ddl);
+      console.log(`[seed] migrated column ${m.table}.${m.column}`);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (!/duplicate column/i.test(msg)) console.warn(`[seed] column migration ${m.table}.${m.column} skipped:`, msg);
+    }
+  }
+  columnsEnsured = true;
+}
+
 async function seedOnce() {
   await applyConnectionPragmas();
   try {
     await ensureSchema();
   } catch (e) {
     console.error("[seed] ensureSchema failed:", e);
+  }
+  try {
+    await ensureColumns();
+  } catch (e) {
+    console.error("[seed] ensureColumns failed:", e);
   }
   const count = await db.title.count();
   if (count > 0) {

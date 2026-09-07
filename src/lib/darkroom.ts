@@ -159,6 +159,8 @@ export type DrCardData = {
   no: string;
   userInitial: string;
   avatarGrad: string;
+  /** uploaded avatar (data URL) — null = gradient + initial */
+  avatarImage: string | null;
 };
 
 /* ------------------------------------------------------------------ */

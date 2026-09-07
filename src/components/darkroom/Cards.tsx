@@ -182,20 +182,6 @@ function Brand({ d, faSize = 29, gap = 12, enSub = true }: { d: DrCardData; faSi
   );
 }
 
-/** Open clapper glyph (Spotlight meta row). */
-function ClapperGlyph({ size = 40, color = DR_RED }: { size?: number; color?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" width={size} height={size}>
-      <g fill="none" stroke={color} strokeWidth="1.7" strokeLinejoin="round">
-        <path d="M3.5 10.5h17V19a1.6 1.6 0 0 1-1.6 1.6H5.1A1.6 1.6 0 0 1 3.5 19v-8.5z" fill="rgba(229,9,20,.16)" />
-        <path d="M3.7 9.9 20.2 5.8l-.75-2.55a1 1 0 0 0-1.22-.68L4.6 6.4a1 1 0 0 0-.7 1.22L3.7 9.9z" />
-        <path d="m7.6 8.9 1.5-3.4M12.1 7.75l1.5-3.4M16.6 6.6l1.5-3.4" strokeWidth="1.4" />
-        <path d="m10.6 13.4 4.4 2.3-4.4 2.3v-4.6z" fill={color} stroke="none" />
-      </g>
-    </svg>
-  );
-}
-
 function Q({ d, children, style }: { d: DrCardData; children: ReactNode; style?: S }) {
   const q = quoteMarks(d);
   return (
@@ -206,84 +192,91 @@ function Q({ d, children, style }: { d: DrCardData; children: ReactNode; style?:
 }
 
 /* ------------------------------------------------------------------ */
-/* 1 — SPOTLIGHT (the user's cinematic template)                        */
+/* 1 — SPOTLIGHT (the user's cinematic template — centered, symmetric)  */
 /* ------------------------------------------------------------------ */
 function Spotlight({ d }: { d: DrCardData }) {
   const story = d.fmt === "story";
   const t = titlesOf(d);
-  const c = copyOf(d);
   const w = whenLabels(d.when);
   const genres = genresOf(d.title, d.lang);
-  const mainSize = story ? 94 : 56;
+  const q = quoteMarks(d);
+
+  const posterW = story ? 468 : 292;
+  const posterH = Math.round(posterW * 1.5);
+  const av = story ? 96 : 62;
+  const titleSize = story ? 84 : 50;
+
+  const metaParts = [
+    d.lang === "fa" ? faDigits(d.title.year) : String(d.title.year),
+    d.title.type === "series" ? (d.lang === "fa" ? "سریال" : "SERIES") : d.lang === "fa" ? "فیلم" : "FILM",
+    ...genres.slice(0, 2),
+  ];
 
   return (
     <div style={{ position: "absolute", inset: 0, background: "#050507" }}>
-      <Img src={d.title.backdrop} style={{ position: "absolute", inset: 0, filter: story ? "brightness(.48) saturate(1.06)" : "brightness(.42) saturate(1.05)" }} />
-      {/* cinematic vignette + brand-red glow */}
-      <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg,rgba(0,0,0,.62) 0%,rgba(0,0,0,.12) 20%,rgba(0,0,0,.16) 55%,rgba(0,0,0,.78) 100%)" }} />
-      <div style={{ position: "absolute", inset: 0, background: "radial-gradient(78% 60% at 50% 42%,rgba(0,0,0,0) 40%,rgba(0,0,0,.5) 100%)" }} />
-      <div style={{ position: "absolute", inset: 0, background: `radial-gradient(52% 34% at 14% 92%,rgba(229,9,20,.26),transparent 72%)` }} />
+      <Img src={d.title.backdrop} style={{ position: "absolute", inset: 0, filter: "brightness(.4) saturate(1.06)" }} />
+      {/* cinematic scrims — symmetric */}
+      <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg,rgba(0,0,0,.66) 0%,rgba(0,0,0,.16) 22%,rgba(0,0,0,.2) 52%,rgba(0,0,0,.88) 100%)" }} />
+      <div style={{ position: "absolute", inset: 0, background: "radial-gradient(80% 62% at 50% 40%,rgba(0,0,0,0) 42%,rgba(0,0,0,.55) 100%)" }} />
 
-      <div style={{ position: "absolute", inset: 0, padding: story ? "56px 68px 60px" : "42px 58px 46px", display: "flex", flexDirection: "column", zIndex: 2 }}>
-        {/* header — logo lockup + darkroom wordmark */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          {d.showLogo ? <Logo h={story ? 62 : 50} /> : <Brand d={d} faSize={story ? 30 : 25} enSub={false} />}
-          <div style={{ fontFamily: GRO, fontWeight: 700, fontSize: story ? 40 : 30, letterSpacing: "0.14em", ...LTR }}>
-            <span style={{ color: "#fff" }}>dark</span>
+      <div style={{ position: "absolute", inset: 0, padding: story ? "60px 72px 48px" : "42px 56px 36px", display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", zIndex: 2 }}>
+        {/* header — centered logo + darkroom wordmark */}
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: story ? 18 : 11 }}>
+          {d.showLogo ? <Logo h={story ? 62 : 46} /> : <Brand d={d} faSize={story ? 30 : 24} enSub={false} />}
+          <div style={{ fontFamily: GRO, fontWeight: 700, fontSize: story ? 23 : 17, letterSpacing: "0.5em", textIndent: "0.5em", ...LTR }}>
+            <span style={{ color: "rgba(255,255,255,.85)" }}>dark</span>
             <span style={{ color: DR_RED }}>room</span>
           </div>
         </div>
 
-        <div style={{ flex: story ? 1 : 0.62 }} />
+        <div style={{ flex: story ? 0.8 : 0.45 }} />
 
-        {/* centered poster card */}
+        {/* centered poster */}
         <div
           style={{
-            alignSelf: "center",
-            width: story ? 462 : 306,
-            height: story ? 693 : 459,
-            borderRadius: story ? 30 : 22,
+            width: posterW,
+            height: posterH,
+            borderRadius: story ? 26 : 20,
             overflow: "hidden",
-            border: "1.5px solid rgba(229,9,20,.55)",
-            boxShadow: "0 34px 90px rgba(0,0,0,.6), 0 0 70px rgba(229,9,20,.16)",
+            border: "1.5px solid rgba(229,9,20,.5)",
+            boxShadow: "0 30px 80px rgba(0,0,0,.62), 0 0 64px rgba(229,9,20,.15)",
             flexShrink: 0,
           }}
         >
           <Img src={d.title.poster} />
         </div>
 
-        {/* identity */}
-        <div style={{ marginTop: story ? 52 : 34, display: "flex", alignItems: "center", gap: story ? 22 : 16 }}>
-          <span
-            style={{
-              width: story ? 92 : 64,
-              height: story ? 92 : 64,
-              borderRadius: "50%",
-              background: d.avatarGrad,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontFamily: EST,
-              fontWeight: 900,
-              fontSize: story ? 40 : 28,
-              color: "#fff",
-              boxShadow: "inset 0 0 0 2px rgba(255,255,255,.28)",
-              flexShrink: 0,
-            }}
-          >
-            {d.userInitial}
+        {/* big centered title + meta line */}
+        <h1
+          dir={t.mainDir}
+          style={{
+            margin: 0,
+            marginTop: story ? 42 : 24,
+            maxWidth: story ? 920 : 880,
+            fontFamily: EST,
+            fontWeight: 900,
+            fontSize: titleSize,
+            lineHeight: 1.14,
+            color: "#fff",
+            textShadow: "0 4px 34px rgba(0,0,0,.6)",
+            display: "-webkit-box",
+            WebkitLineClamp: 2,
+            WebkitBoxOrient: "vertical",
+            overflow: "hidden",
+          }}
+        >
+          {t.main}
+        </h1>
+        <div dir="auto" style={{ marginTop: story ? 20 : 11, fontFamily: d.lang === "en" ? GRO : VAZ, fontWeight: 500, fontSize: story ? 23 : 16, color: mute(0.8), letterSpacing: d.lang === "en" ? "0.14em" : 0 }}>
+          {metaParts.join("  ·  ")}
+        </div>
+
+        {/* stars + score */}
+        <div style={{ marginTop: story ? 30 : 17, display: "flex", alignItems: "center", justifyContent: "center", gap: story ? 18 : 12 }}>
+          <Stars score={d.score} size={story ? 44 : 32} gap={story ? 9 : 6} />
+          <span style={{ fontFamily: GRO, fontWeight: 600, fontSize: story ? 30 : 22, color: "#fff", ...LTR }}>
+            {(d.score / 2).toFixed(1)}
           </span>
-          <div>
-            <div dir="auto" style={{ fontFamily: GRO, fontWeight: 600, fontSize: story ? 31 : 24, color: "#fff", letterSpacing: "0.02em" }}>
-              {d.handle}
-            </div>
-            <div style={{ marginTop: story ? 12 : 8, display: "flex", alignItems: "center", gap: story ? 16 : 12 }}>
-              <Stars score={d.score} size={story ? 44 : 32} gap={story ? 8 : 6} />
-              <span style={{ fontFamily: GRO, fontWeight: 600, fontSize: story ? 28 : 21, color: "#fff" }}>
-                {(d.score / 2).toFixed(1)}
-              </span>
-            </div>
-          </div>
         </div>
 
         {/* review */}
@@ -292,60 +285,82 @@ function Spotlight({ d }: { d: DrCardData }) {
             dir="auto"
             style={{
               margin: 0,
-              marginTop: story ? 38 : 24,
-              fontSize: story ? 29 : 23,
+              marginTop: story ? 34 : 20,
+              maxWidth: story ? 830 : 640,
+              fontSize: story ? 28 : 21,
               fontWeight: 500,
               lineHeight: 1.85,
               color: "#ecebe6",
               textShadow: "0 2px 24px rgba(0,0,0,.55)",
+              display: "-webkit-box",
+              WebkitLineClamp: story ? 4 : 3,
+              WebkitBoxOrient: "vertical",
+              overflow: "hidden",
             }}
           >
-            {d.comment}
+            <span style={{ color: DR_RED }}>{q.o}</span> {d.comment} <span style={{ color: DR_RED }}>{q.c}</span>
           </p>
         )}
 
-        <div style={{ flex: story ? 1 : 0.5 }} />
+        {/* final words — red-tick line */}
+        {d.finalWords.trim() !== "" && (
+          <div style={{ marginTop: story ? 28 : 15, display: "flex", alignItems: "center", gap: story ? 18 : 12, maxWidth: story ? 800 : 620 }}>
+            <span style={{ width: story ? 36 : 26, height: 2, background: DR_RED, flexShrink: 0 }} />
+            <p dir="auto" style={{ margin: 0, fontFamily: EST, fontWeight: 700, fontSize: story ? 28 : 20, color: "#fff", lineHeight: 1.6, textShadow: "0 2px 20px rgba(0,0,0,.5)", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+              {d.finalWords}
+            </p>
+            <span style={{ width: story ? 36 : 26, height: 2, background: DR_RED, flexShrink: 0 }} />
+          </div>
+        )}
 
-        {/* meta — clapper + title/year | pills */}
-        <div style={{ borderTop: `1px solid ${line(0.16)}`, paddingTop: story ? 30 : 22, display: "flex", alignItems: "center", gap: story ? 26 : 18 }}>
-          <ClapperGlyph size={story ? 46 : 36} />
-          <div style={{ minWidth: 0 }}>
-            <div dir={t.mainDir} style={{ fontFamily: EST, fontWeight: 900, fontSize: mainSize * 0.34, color: "#fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-              {t.main}
-            </div>
-            <div style={{ fontFamily: GRO, fontWeight: 500, fontSize: story ? 22 : 17, color: mute(0.75), marginTop: 4, ...LTR }}>
-              {d.title.year}
-              {d.title.type === "series" ? ` · ${d.lang === "fa" ? "سریال" : "SERIES"}` : ""}
-            </div>
-          </div>
-          <div style={{ width: 1, height: story ? 46 : 36, background: line(0.2), marginInlineStart: "auto" }} />
-          <div style={{ display: "flex", gap: story ? 12 : 9, flexWrap: "wrap", justifyContent: "flex-end" }}>
-            {genres.slice(0, 3).map((g) => (
-              <span
-                key={g}
-                dir="auto"
-                style={{
-                  border: "1px solid rgba(255,255,255,.3)",
-                  borderRadius: 999,
-                  padding: story ? "10px 24px" : "7px 16px",
-                  fontSize: story ? 20 : 15,
-                  fontWeight: 600,
-                  color: "#fff",
-                  fontFamily: d.lang === "en" ? GRO : VAZ,
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {g}
-              </span>
-            ))}
-          </div>
-        </div>
-        {/* watch stamp */}
-        <div style={{ marginTop: story ? 22 : 16, display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-          <span style={{ fontFamily: VAZ, fontWeight: 500, fontSize: story ? 18 : 14, color: faint(0.75) }}>
-            {d.lang === "fa" ? c.watchedAt(w.fa) : c.watchedAt(w.en)}
+        <div style={{ flex: story ? 1 : 0.55 }} />
+
+        {/* identity — centered avatar + handle */}
+        {d.avatarImage ? (
+          <img
+            src={d.avatarImage}
+            alt=""
+            style={{
+              width: av,
+              height: av,
+              borderRadius: "50%",
+              objectFit: "cover",
+              boxShadow: "0 0 0 2px rgba(255,255,255,.3), 0 12px 34px rgba(0,0,0,.5)",
+              flexShrink: 0,
+            }}
+          />
+        ) : (
+          <span
+            style={{
+              width: av,
+              height: av,
+              borderRadius: "50%",
+              background: d.avatarGrad,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontFamily: EST,
+              fontWeight: 900,
+              fontSize: story ? 40 : 26,
+              color: "#fff",
+              boxShadow: "inset 0 0 0 2px rgba(255,255,255,.28)",
+              flexShrink: 0,
+            }}
+          >
+            {d.userInitial}
           </span>
-          <span style={{ fontFamily: MONO, fontSize: story ? 13 : 11, letterSpacing: "0.3em", color: faint(0.55), ...LTR }}>
+        )}
+        <div dir="auto" style={{ marginTop: story ? 20 : 12, fontFamily: GRO, fontWeight: 600, fontSize: story ? 30 : 22, color: "#fff", letterSpacing: "0.02em" }}>
+          {d.handle}
+        </div>
+
+        {/* footer */}
+        <div style={{ marginTop: story ? 30 : 18, width: "100%", borderTop: `1px solid ${line(0.16)}`, paddingTop: story ? 22 : 14, display: "flex", alignItems: "center", justifyContent: "center", gap: story ? 22 : 14 }}>
+          <span style={{ fontFamily: VAZ, fontWeight: 500, fontSize: story ? 19 : 14, color: faint(0.8) }}>
+            {d.lang === "fa" ? w.fa : w.en}
+          </span>
+          <span style={{ width: 4, height: 4, borderRadius: "50%", background: DR_RED, flexShrink: 0 }} />
+          <span style={{ fontFamily: MONO, fontSize: story ? 13 : 10, letterSpacing: "0.32em", color: faint(0.6), ...LTR }}>
             {d.lang === "fa" ? "MADE WITH FRAME" : "FRAME · DARKROOM"}
           </span>
         </div>

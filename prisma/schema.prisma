@@ -147,6 +147,8 @@ model UserProfile {
   userKey       String   @unique
   displayName   String   @default("کاربر نما")
   avatar        Int      @default(0)
+  /// آواتار آپلودی کاربر (data URL JPEG ~۳۲۰×۳۲۰) — null یعنی از گرادیان‌های پیش‌فرض استفاده شود
+  avatarImage   String?
   autoplay      Boolean  @default(true)
   autoNext      Boolean  @default(true)
   quality       String   @default("auto") // auto | 4k | 1080p | 720p | 480p

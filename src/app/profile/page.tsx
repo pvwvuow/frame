@@ -33,9 +33,13 @@ export default async function ProfilePage() {
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(229,9,20,0.18),transparent_60%)]" />
         <div className="relative mx-auto max-w-[1600px] px-4 pb-8 pt-28 sm:px-8 lg:px-12 lg:pt-36">
           <div className="flex flex-col gap-6 md:flex-row md:items-center">
-            <div className={`grid h-28 w-28 shrink-0 place-items-center rounded-[28px] bg-gradient-to-br text-5xl font-black text-white shadow-2xl ${AVATARS[p.avatar] ?? AVATARS[0]}`}>
-              <ProfileAvatarLetter localName={p.displayName} />
-            </div>
+            {p.avatarImage ? (
+              <img src={p.avatarImage} alt="" className="h-28 w-28 shrink-0 rounded-[28px] object-cover shadow-2xl ring-1 ring-white/15" />
+            ) : (
+              <div className={`grid h-28 w-28 shrink-0 place-items-center rounded-[28px] bg-gradient-to-br text-5xl font-black text-white shadow-2xl ${AVATARS[p.avatar] ?? AVATARS[0]}`}>
+                <ProfileAvatarLetter localName={p.displayName} />
+              </div>
+            )}
             <div className="min-w-0 flex-1">
               <p className="text-xs font-bold text-brand">{level}</p>
               <ProfileName localName={p.displayName} />

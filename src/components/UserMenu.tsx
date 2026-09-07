@@ -193,7 +193,11 @@ export default function UserMenu() {
           open ? "border-brand/50 bg-brand/15" : "border-white/15 bg-white/[0.06] hover:border-white/30 hover:bg-white/10"
         }`}
       >
-        <span className={`grid h-9 w-9 place-items-center rounded-full bg-gradient-to-br text-sm font-bold text-white ${grad}`}>{initial}</span>
+        {profile.avatarImage ? (
+          <img src={profile.avatarImage} alt="" className="h-9 w-9 rounded-full object-cover" />
+        ) : (
+          <span className={`grid h-9 w-9 place-items-center rounded-full bg-gradient-to-br text-sm font-bold text-white ${grad}`}>{initial}</span>
+        )}
         {unread > 0 && (
           <span
             className="absolute -top-1 start-0 grid h-4 min-w-4 place-items-center rounded-full bg-brand px-1 text-[9px] font-black text-white ring-2 ring-ink num"

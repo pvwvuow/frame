@@ -106,6 +106,7 @@ CREATE TABLE "UserProfile" (
     "userKey" TEXT NOT NULL,
     "displayName" TEXT NOT NULL DEFAULT 'کاربر نما',
     "avatar" INTEGER NOT NULL DEFAULT 0,
+    "avatarImage" TEXT,
     "autoplay" BOOLEAN NOT NULL DEFAULT true,
     "autoNext" BOOLEAN NOT NULL DEFAULT true,
     "quality" TEXT NOT NULL DEFAULT 'auto',

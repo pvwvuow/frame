@@ -9,6 +9,9 @@ const QUALITIES = new Set(["auto", "4k", "1080p", "720p", "480p"]);
 const SUBS = new Set(["fa", "en", "off"]);
 const LANGS = new Set(["fa", "en"]);
 const SPEEDS = new Set([0.5, 0.75, 1, 1.25, 1.5, 1.75, 2]);
+/** آواتار آپلودی فقط به شکل data URL تصویر پذیرفته می‌شود (کلاینت به ۳۲۰×۳۲۰ JPEG کوچک می‌کند). */
+const AVATAR_IMAGE_RE = /^data:image\/(?:png|jpe?g|webp);base64,[A-Za-z0-9+/=]+$/;
+const AVATAR_IMAGE_MAX = 400_000; // ~300KB binary — 15× بزرگ‌تر از خروجی معمول کلاینت
 
 export async function GET() {
   const userKey = await getUserKey();
@@ -22,6 +25,8 @@ export async function PATCH(req: Request) {
   const data: Record<string, unknown> = {};
   if (typeof b.displayName === "string") data.displayName = b.displayName.trim().slice(0, 40) || "کاربر نما";
   if (typeof b.avatar === "number") data.avatar = Math.max(0, Math.min(11, Math.round(b.avatar)));
+  if (b.avatarImage === null) data.avatarImage = null;
+  else if (typeof b.avatarImage === "string" && b.avatarImage.length <= AVATAR_IMAGE_MAX && AVATAR_IMAGE_RE.test(b.avatarImage)) data.avatarImage = b.avatarImage;
   for (const k of ["autoplay", "autoNext", "matureContent", "reduceMotion", "skipIntro", "dataSaver", "notifyNewEpisodes", "notifyRecommendations", "notifyContinue", "kidsMode"] as const) {
     if (typeof b[k] === "boolean") data[k] = b[k];
   }

@@ -23,6 +23,7 @@ export default async function SettingsPage() {
             initial={{
               displayName: p.displayName,
               avatar: p.avatar,
+              avatarImage: p.avatarImage ?? "",
               autoplay: p.autoplay,
               autoNext: p.autoNext,
               quality: p.quality,

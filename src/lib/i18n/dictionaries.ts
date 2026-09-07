@@ -130,6 +130,13 @@ export const fa = {
     showLogo: "لوگوی فریم",
     sizeHint: "خروجی",
     empty: "هنوز چیزی برای ساختن نداری — اول یک فیلم یا سریال انتخاب کن.",
+    avatar: "آواتار شما",
+    avatarHint: "عکس دلخواه‌ات را آپلود کن — روی کارت‌ها و همه‌جای برنامه می‌افتد.",
+    changeAvatar: "تغییر",
+    removeAvatar: "حذف",
+    avatarSaved: "آواتار ذخیره شد.",
+    avatarRemoved: "آواتار حذف شد.",
+    avatarFailed: "آپلود آواتار ناموفق بود.",
   },
 } as const;
 
@@ -260,6 +267,13 @@ export const en: Dictionary = {
     showLogo: "Frame logo",
     sizeHint: "Output",
     empty: "Nothing to design yet — pick a movie or series first.",
+    avatar: "Your avatar",
+    avatarHint: "Upload your own photo — it shows on cards and across the app.",
+    changeAvatar: "Change",
+    removeAvatar: "Remove",
+    avatarSaved: "Avatar saved.",
+    avatarRemoved: "Avatar removed.",
+    avatarFailed: "Avatar upload failed.",
   },
 };
 

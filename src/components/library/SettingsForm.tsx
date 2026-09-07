@@ -1,15 +1,16 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { useLibrary } from "./LibraryProvider";
-import { CheckIcon, TrashIcon, UserIcon, PlayIcon, SunIcon, BellIcon, ShieldIcon, LockIcon, KeyboardIcon, InfoIcon, FolderIcon, RefreshIcon, DownloadIcon, ExternalIcon, MonitorIcon } from "../Icons";
+import { CheckIcon, TrashIcon, UserIcon, PlayIcon, SunIcon, BellIcon, ShieldIcon, LockIcon, KeyboardIcon, InfoIcon, FolderIcon, RefreshIcon, DownloadIcon, ExternalIcon, MonitorIcon, CameraIcon } from "../Icons";
 import { ThemeSegment } from "../theme/ThemeToggle";
 import { bridge, useIsElectron } from "@/lib/platform";
 import { fa } from "@/lib/format";
 import { useI18n } from "../i18n/LocaleProvider";
 import { isLocale } from "@/lib/i18n";
+import { fileToAvatarDataUrl } from "@/lib/avatar";
 
 export const AVATARS = [
   "from-brand to-purple-600",
@@ -29,6 +30,7 @@ export const AVATARS = [
 export type ProfileData = {
   displayName: string;
   avatar: number;
+  avatarImage: string;
   autoplay: boolean;
   autoNext: boolean;
   quality: string;
@@ -123,6 +125,7 @@ export default function SettingsForm({ initial }: { initial: ProfileData }) {
   const [info, setInfo] = useState<Awaited<ReturnType<NonNullable<ReturnType<typeof bridge>>["getInfo"]>> | null>(null);
   const [checking, setChecking] = useState(false);
   const [storage, setStorage] = useState<{ used: number; quota: number } | null>(null);
+  const avatarFileRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
   const lib = useLibrary();
   const electron = useIsElectron();
@@ -159,7 +162,7 @@ export default function SettingsForm({ initial }: { initial: ProfileData }) {
       try {
         const r = await fetch("/api/profile", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(p) });
         if (!r.ok) throw new Error();
-        lib.setProfile({ displayName: p.displayName, avatar: p.avatar, reduceMotion: p.reduceMotion, kidsMode: p.kidsMode, hasPin: !!p.parentalPin });
+        lib.setProfile({ displayName: p.displayName, avatar: p.avatar, avatarImage: p.avatarImage || null, reduceMotion: p.reduceMotion, kidsMode: p.kidsMode, hasPin: !!p.parentalPin });
         toast.success("تنظیمات ذخیره شد");
         router.refresh();
       } catch {
@@ -245,9 +248,17 @@ export default function SettingsForm({ initial }: { initial: ProfileData }) {
         {section === "profile" && (
           <Card title="پروفایل" desc="نام و آواتار شما در سراسر فریم نمایش داده می‌شود.">
             <div className="flex flex-col gap-6 sm:flex-row sm:items-center">
-              <div className={`grid h-24 w-24 shrink-0 place-items-center rounded-3xl bg-gradient-to-br text-4xl font-black text-white shadow-xl ${AVATARS[p.avatar] ?? AVATARS[0]}`}>
-                {(p.displayName.trim() || "ن").slice(0, 1)}
-              </div>
+              {p.avatarImage ? (
+                <img
+                  src={p.avatarImage}
+                  alt=""
+                  className="h-24 w-24 shrink-0 rounded-3xl object-cover shadow-xl ring-1 ring-white/15"
+                />
+              ) : (
+                <div className={`grid h-24 w-24 shrink-0 place-items-center rounded-3xl bg-gradient-to-br text-4xl font-black text-white shadow-xl ${AVATARS[p.avatar] ?? AVATARS[0]}`}>
+                  {(p.displayName.trim() || "ن").slice(0, 1)}
+                </div>
+              )}
               <div className="flex-1">
                 <label htmlFor="displayName" className="block text-xs font-bold text-zinc-400">نام نمایشی</label>
                 <input
@@ -258,11 +269,50 @@ export default function SettingsForm({ initial }: { initial: ProfileData }) {
                   placeholder="مثلاً: آرش"
                 />
                 <p className="mt-1 text-[10px] text-zinc-600">{fa(p.displayName.length)}/{fa(40)}</p>
-                <label className="mt-3 block text-xs font-bold text-zinc-400">رنگ آواتار</label>
+                <label className="mt-3 block text-xs font-bold text-zinc-400">{locale === "en" ? "Avatar" : "آواتار"}</label>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  {/* آپلود عکس دلخواه — جایگزین گرادیان می‌شود */}
+                  <input
+                    ref={avatarFileRef}
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp"
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      e.target.value = "";
+                      if (!f) return;
+                      if (f.size > 12 * 1024 * 1024) {
+                        toast.error(locale === "en" ? "Image is too large (max 12MB)." : "حجم عکس زیاد است (حداکثر ۱۲ مگابایت).");
+                        return;
+                      }
+                      fileToAvatarDataUrl(f)
+                        .then((d) => set("avatarImage", d))
+                        .catch(() => toast.error(locale === "en" ? "Could not read this image." : "خواندن این عکس ممکن نشد."));
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => avatarFileRef.current?.click()}
+                    className={`flex h-9 items-center gap-2 rounded-xl px-3.5 text-xs font-bold transition ${p.avatarImage ? "bg-white/10 text-white hover:bg-white/15" : "bg-white text-black hover:bg-zinc-200"}`}
+                  >
+                    <CameraIcon width={14} height={14} />
+                    {p.avatarImage ? (locale === "en" ? "Change photo" : "تغییر عکس") : locale === "en" ? "Upload photo" : "آپلود عکس"}
+                  </button>
+                  {p.avatarImage && (
+                    <button
+                      type="button"
+                      onClick={() => set("avatarImage", "")}
+                      className="flex h-9 items-center gap-2 rounded-xl px-3 text-xs font-bold text-zinc-400 transition hover:bg-white/5 hover:text-rose-400"
+                    >
+                      <TrashIcon width={14} height={14} />
+                      {locale === "en" ? "Remove" : "حذف عکس"}
+                    </button>
+                  )}
+                </div>
                 <div className="mt-2 flex flex-wrap gap-2">
                   {AVATARS.map((g, i) => (
-                    <button key={g} type="button" onClick={() => set("avatar", i)} aria-label={`آواتار ${i + 1}`} aria-pressed={p.avatar === i} className={`grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br ${g} ring-offset-2 ring-offset-ink transition ${p.avatar === i ? "ring-2 ring-white" : "opacity-70 hover:opacity-100"}`}>
-                      {p.avatar === i && <CheckIcon width={16} height={16} className="text-white" />}
+                    <button key={g} type="button" onClick={() => { set("avatar", i); if (p.avatarImage) set("avatarImage", ""); }} aria-label={`آواتار ${i + 1}`} aria-pressed={!p.avatarImage && p.avatar === i} className={`grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br ${g} ring-offset-2 ring-offset-ink transition ${!p.avatarImage && p.avatar === i ? "ring-2 ring-white" : "opacity-70 hover:opacity-100"}`}>
+                      {!p.avatarImage && p.avatar === i && <CheckIcon width={16} height={16} className="text-white" />}
                     </button>
                   ))}
                 </div>

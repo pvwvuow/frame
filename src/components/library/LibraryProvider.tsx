@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import type { ListStatus } from "@/lib/library";
 import { logEvent, pushFavorite, pushRating, pushWatchlist } from "@/lib/cloud";
 
-type Profile = { displayName: string; avatar: number; reduceMotion: boolean; kidsMode?: boolean; hasPin?: boolean };
+type Profile = { displayName: string; avatar: number; avatarImage?: string | null; reduceMotion: boolean; kidsMode?: boolean; hasPin?: boolean };
 
 type Ctx = {
   ready: boolean;
@@ -51,7 +51,7 @@ export default function LibraryProvider({ children }: { children: ReactNode }) {
   const [list, setList] = useState<Map<number, ListStatus>>(new Map());
   const [favorites, setFavorites] = useState<Set<number>>(new Set());
   const [ratings, setRatings] = useState<Map<number, number>>(new Map());
-  const [profile, setProfileState] = useState<Profile>({ displayName: "کاربر فریم", avatar: 0, reduceMotion: false });
+  const [profile, setProfileState] = useState<Profile>({ displayName: "کاربر فریم", avatar: 0, avatarImage: null, reduceMotion: false });
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const refresh = useCallback(async () => {
