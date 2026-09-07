@@ -522,29 +522,148 @@ async function ensureSchema() {
 }
 
 /**
- * Additive column migrations for EXISTING installs. ensureSchema() above only
- * runs when the whole schema is missing — an upgraded app keeps its old DB, so
- * columns added in newer versions must be patched here (idempotent PRAGMA
- * check → ALTER TABLE). Add every new UserProfile/… column to MIGRATE_COLUMNS.
+ * Additive schema healing for EXISTING installs (v0.10.26).
+ *
+ * History: this used to be a hand-maintained MIGRATE_COLUMNS list, which aged
+ * terribly — a user who seeded their DB back on v0.6.1 and auto-updated since
+ * carried a database WITHOUT Title.sources, Watchlist.plannedDate/pinned,
+ * Episode.sources, most UserProfile columns… every page then died with
+ * P2022 "column does not exist" (their home page was broken for a full day).
+ *
+ * Now: parse every CREATE TABLE out of the shipped DDL (db/schema.sql, kept
+ * in lockstep with prisma/schema.prisma at build time by postbuild.cjs),
+ * compare it against the live tables (pragma_table_info) and ALTER TABLE ADD
+ * COLUMN whatever is missing, honoring SQLite's ALTER restrictions:
+ *   - constant DEFAULT (… DEFAULT '[]' / false / 0)  → added as-is; existing
+ *     rows immediately read the default (metadata-only, instant on 14k rows)
+ *   - non-constant DEFAULT (CURRENT_TIMESTAMP)        → NOT NULL cannot be
+ *     combined with ALTER ADD, so the column is added nullable and then
+ *     backfilled with CURRENT_TIMESTAMP (Prisma always writes these values
+ *     itself – @default(now())/@updatedAt are client-side – so dropping the
+ *     DB-level default is harmless)
+ *   - NOT NULL without any DEFAULT                    → added nullable with a
+ *     type-based backfill ('' / 0). Defensive only: every column added after
+ *     v0.6.1 carries a default, so this branch should never fire.
+ * A table missing entirely (created in a later version, e.g. SyncState) is
+ * created whole from the DDL; missing indexes (incl. the UNIQUE ones upserts
+ * rely on) are re-created IF NOT EXISTS.
  */
-let columnsEnsured = false;
-const MIGRATE_COLUMNS: { table: string; column: string; ddl: string }[] = [
-  // v0.10.24 — uploaded avatar (data URL), null = use the preset gradients
-  { table: "UserProfile", column: "avatarImage", ddl: `ALTER TABLE "UserProfile" ADD COLUMN "avatarImage" TEXT` },
-];
+async function loadSchemaDdl(): Promise<string | null> {
+  const candidates = [path.join(process.cwd(), "db", "schema.sql"), path.join(process.cwd(), "prisma", "schema.sql")];
+  const ddlPath = candidates.find((p) => fs.existsSync(p));
+  if (!ddlPath) {
+    console.error("[seed] schema.sql not found – cannot heal schema drift");
+    return null;
+  }
+  return fs.readFileSync(ddlPath, "utf8");
+}
 
+type DdlTable = { name: string; createSql: string; columns: { name: string; def: string }[] };
+
+function parseDdlTables(ddl: string): DdlTable[] {
+  const tables: DdlTable[] = [];
+  const re = /CREATE TABLE\s+"?(\w+)"?\s*\(([\s\S]*?)\n\);/g;
+  for (const m of ddl.matchAll(re)) {
+    const name = m[1];
+    const createSql = m[0];
+    const columns: { name: string; def: string }[] = [];
+    for (const rawLine of m[2].split("\n")) {
+      const line = rawLine.trim().replace(/,\s*$/, "");
+      if (!line || line.startsWith("--")) continue;
+      if (/^(CONSTRAINT|FOREIGN KEY|PRIMARY KEY|UNIQUE|CHECK)\b/i.test(line)) continue;
+      const cm = line.match(/^"([^"]+)"\s*([\s\S]+)$/);
+      if (cm) columns.push({ name: cm[1], def: cm[2].trim() });
+    }
+    tables.push({ name, createSql, columns });
+  }
+  return tables;
+}
+
+function liveColumns(table: string): Promise<string[]> {
+  return db
+    .$queryRawUnsafe<{ name: string }[]>(`SELECT name FROM pragma_table_info('${table.replace(/'/g, "''")}')`)
+    .then((cols) => (Array.isArray(cols) ? cols.map((c) => c.name) : []))
+    .catch(() => []);
+}
+
+/** SQLite-safe ALTER for one column definition. Returns the ALTER DDL plus an
+ *  optional backfill to run right after (non-constant defaults / NOT NULL
+ *  without default cannot go through ALTER ADD verbatim). */
+function columnAlter(def: string): { ddl: string; backfill?: string } {
+  const type = (def.match(/^(\w+)/)?.[1] ?? "TEXT").toUpperCase();
+  const hasNotNull = /\bNOT NULL\b/i.test(def);
+  const nonConstantDefault = def.match(/\bDEFAULT\s+(CURRENT_(TIMESTAMP|DATE|TIME)|strftime\s*\()/i);
+  if (nonConstantDefault) {
+    // strip DEFAULT + NOT NULL → nullable add, then backfill every row
+    return {
+      ddl: type,
+      backfill: "CURRENT_TIMESTAMP",
+    };
+  }
+  if (hasNotNull && !/\bDEFAULT\b/i.test(def)) {
+    // defensive: NOT NULL without default can't be added on a non-empty table
+    const fill = type === "TEXT" ? "''" : type === "BOOLEAN" ? "0" : "0";
+    return { ddl: type, backfill: fill };
+  }
+  return { ddl: def }; // constant default (or plain nullable) → verbatim
+}
+
+let columnsEnsured = false;
 async function ensureColumns() {
   if (columnsEnsured) return;
-  for (const m of MIGRATE_COLUMNS) {
-    try {
-      const cols = await db.$queryRawUnsafe<{ name: string }[]>(`SELECT name FROM pragma_table_info('${m.table}')`);
-      if (Array.isArray(cols) && cols.some((c) => c.name === m.column)) continue;
-      await db.$executeRawUnsafe(m.ddl);
-      console.log(`[seed] migrated column ${m.table}.${m.column}`);
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      if (!/duplicate column/i.test(msg)) console.warn(`[seed] column migration ${m.table}.${m.column} skipped:`, msg);
+  const ddl = await loadSchemaDdl();
+  if (ddl) {
+    const tables = parseDdlTables(ddl);
+    const added: string[] = [];
+    for (const t of tables) {
+      const cols = await liveColumns(t.name);
+      if (cols.length === 0) {
+        // whole table missing (created in a newer app version) → create it
+        try {
+          await db.$executeRawUnsafe(t.createSql);
+          console.log(`[seed] migrated table ${t.name} (was missing)`);
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          if (!/already exists/i.test(msg)) console.warn(`[seed] table migration ${t.name} skipped:`, msg);
+        }
+        continue;
+      }
+      for (const c of t.columns) {
+        if (cols.includes(c.name)) continue;
+        const { ddl: alter, backfill } = columnAlter(c.def);
+        try {
+          await db.$executeRawUnsafe(`ALTER TABLE "${t.name}" ADD COLUMN "${c.name}" ${alter}`);
+          if (backfill) {
+            await db.$executeRawUnsafe(`UPDATE "${t.name}" SET "${c.name}" = ${backfill} WHERE "${c.name}" IS NULL`);
+          }
+          added.push(`${t.name}.${c.name}`);
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          if (!/duplicate column/i.test(msg)) console.warn(`[seed] column migration ${t.name}.${c.name} skipped:`, msg);
+        }
+      }
     }
+    // heal missing indexes too — incl. the UNIQUE ones that upserts rely on
+    // (generated DDL has no IF NOT EXISTS, so it is injected here)
+    const idxStatements = ddl
+      .split(/;\s*\n/)
+      .map((s) =>
+        s
+          .split("\n")
+          .filter((l) => !l.trim().startsWith("--"))
+          .join("\n")
+          .trim()
+      )
+      .filter((s) => /^CREATE (UNIQUE )?INDEX\b/i.test(s));
+    for (const stmt of idxStatements) {
+      const withIfNotExists = stmt.replace(/^CREATE (UNIQUE )?INDEX\b/i, (r) => `${r} IF NOT EXISTS`);
+      try {
+        await db.$executeRawUnsafe(withIfNotExists);
+      } catch {
+        /* index already exists or is invalid for legacy data – non-fatal */
+      }
+    }
+    if (added.length) console.log(`[seed] schema drift healed, added ${added.length} columns:`, added.join(", "));
   }
   columnsEnsured = true;
 }

@@ -53,12 +53,24 @@
   --animate-shimmer: shimmer 1.6s linear infinite;
   --animate-ken: ken 18s ease-in-out infinite alternate;
   --animate-glass-in: glass-in 0.32s cubic-bezier(0.2, 0.9, 0.3, 1.1) both;
+  --animate-vip-shine: vip-shine 3.6s cubic-bezier(0.55, 0.2, 0.4, 0.9) infinite;
+  --animate-vip-glow: vip-glow 3.6s ease-in-out infinite;
 
   @keyframes pop { from { transform: scale(0.6); opacity: 0; } to { transform: scale(1); opacity: 1; } }
   @keyframes fade-up { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
   @keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
   @keyframes ken { from { transform: scale(1); } to { transform: scale(1.08); } }
   @keyframes glass-in { from { opacity: 0; transform: translateY(10px) scale(0.97); } to { opacity: 1; transform: translateY(0) scale(1); } }
+  /* VIP gold emblem: one quick diagonal sweep, then a pause before the next */
+  @keyframes vip-shine {
+    0% { transform: translateX(-190%) skewX(-18deg); }
+    42% { transform: translateX(320%) skewX(-18deg); }
+    100% { transform: translateX(320%) skewX(-18deg); }
+  }
+  @keyframes vip-glow {
+    0%, 100% { opacity: 0.5; }
+    45%, 70% { opacity: 1; }
+  }
 }
 
 /* ---------- Dark (default) ---------- */
@@ -279,6 +291,40 @@ body {
 
 .glass-in { animation: var(--animate-glass-in); }
 } /* @layer components */
+
+/* ---- VIP gold emblem (v0.10.26) — replaces the old crown tile ----
+   Dark amber-lit tile + the user's gold Frame logo + a repeating gloss sweep.
+   Lives outside @layer so the plain class names always win over Tailwind
+   utilities on the same element. */
+.vip-emblem {
+  background:
+    radial-gradient(130% 120% at 50% 0%, rgb(245 158 11 / 0.18), transparent 62%),
+    rgb(0 0 0 / 0.38);
+  box-shadow:
+    0 0 36px rgb(245 158 11 / 0.32),
+    inset 0 1px 0 rgb(255 255 255 / 0.07);
+}
+.vip-emblem::before {
+  /* breathing halo behind the artwork, synced with the shine period */
+  content: "";
+  position: absolute;
+  inset: -14%;
+  border-radius: inherit;
+  background: radial-gradient(60% 60% at 50% 45%, rgb(245 158 11 / 0.28), transparent 70%);
+  animation: var(--animate-vip-glow);
+  pointer-events: none;
+}
+.vip-shine {
+  position: absolute;
+  inset-block: -25%;
+  inset-inline-start: 0; /* direction-proof anchor; the sweep itself is physical */
+  inline-size: 42%;
+  transform: translateX(-190%) skewX(-18deg);
+  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.5) 45%, rgb(255 244 214 / 0.65) 50%, rgb(255 255 255 / 0.5) 55%, transparent);
+  mix-blend-mode: screen;
+  animation: var(--animate-vip-shine);
+  pointer-events: none;
+}
 
 .skeleton {
   background: linear-gradient(90deg, var(--skeleton-a) 25%, var(--skeleton-b) 50%, var(--skeleton-a) 75%);

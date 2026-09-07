@@ -1,6 +1,7 @@
 import { PrismaClient } from "@prisma/client";
 import { createHash } from "node:crypto";
 import { db } from "@/lib/db";
+import { ensureSeeded } from "@/db/seed";
 
 /**
  * Catalog refresh – how users get new content after an app update.
@@ -262,6 +263,7 @@ function scheduleResync(url: string) {
  * too – the rebase is local, covers simply load once the network is back.
  */
 export async function adoptFreshSeed(): Promise<CatalogRefreshResult> {
+  await ensureSeeded(); // heal legacy schemas before touching Title/Episode
   const versionHash = (process.env.NAMA_CATALOG_SEED_VERSION_HASH || "").trim().toLowerCase();
   if (!/^[0-9a-f]{64}$/.test(versionHash)) {
     return { ...EMPTY, error: "fresh-seed adoption skipped: no seed-version hash" };
@@ -317,6 +319,7 @@ async function openSeedClient(seedPath: string): Promise<PrismaClient> {
 }
 
 async function refreshCatalog(seedPath: string): Promise<CatalogRefreshResult> {
+  await ensureSeeded(); // heal legacy schemas before merging into them
   const seed = await openSeedClient(seedPath);
   try {
     /* Cover-light packages: root-relative asset paths of the bundled seed
@@ -440,6 +443,11 @@ async function probeVersionHash(catalogUrl: string): Promise<string | null> {
 }
 
 async function syncCatalog(catalogUrl: string): Promise<CatalogRefreshResult> {
+  // v0.10.26: never merge against an unhealed schema – ensureSeeded() runs the
+  // schema-drift healer (seed.ts) so legacy databases gain Title.sources &
+  // friends BEFORE the upserts below reference them (was: P2022 → merge died
+  // → "catalog sync watcher timed out" on every boot of upgraded old installs)
+  await ensureSeeded();
   const prev = await db.syncState.findUnique({ where: { key: HASH_KEY } });
 
   // fast path: the version probe tells us the payload is unchanged

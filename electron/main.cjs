@@ -630,8 +630,15 @@ async function startServer() {
     } catch (e) {
       const diedEarly = !serverProc;
       stopServer();
-      if (attempt >= 2 || !diedEarly) throw e;
-      log.warn("server process died immediately – retrying once on a fresh port");
+      // v0.10.26: retry once in BOTH failure modes. Besides the instant-death
+      // port race, real users hit a second one: the spawned server stays
+      // alive but /api/health never answers within 90s (cold antivirus scan
+      // right after an app update wedges the first spawn – two boots in a row
+      // in a user log, both fine on the NEXT manual start). A fresh spawn is
+      // usually warm by then and recovers.
+      if (attempt >= 2) throw e;
+      if (diedEarly) log.warn("server process died immediately – retrying once on a fresh port");
+      else log.warn("server never became healthy in time – restarting it once on a fresh port");
     }
   }
   await probeDatabase(serverUrl);

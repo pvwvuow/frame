@@ -18,6 +18,28 @@ import { fa } from "@/lib/format";
 
 type PlanDef = { key: Plan; title: string; note: string; noteEn: string; hot?: boolean };
 
+/* Gold Frame emblem (the user's own artwork) with a repeating gloss sweep —
+   v0.10.26: replaces the crown tile in the VIP hero. The dark amber tile +
+   breathing halo + light sweep live in globals.css (.vip-emblem/.vip-shine). */
+function VipEmblem({ size = 68 }: { size?: number }) {
+  return (
+    <span
+      className="vip-emblem relative mx-auto block overflow-hidden rounded-[22px] ring-1 ring-amber-300/30"
+      style={{ width: size, height: size }}
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src="/vip/logo-gold.png"
+        alt=""
+        draggable={false}
+        className="relative h-full w-full object-contain p-1"
+        style={{ filter: "drop-shadow(0 2px 12px rgba(245,158,11,0.4))" }}
+      />
+      <span aria-hidden className="vip-shine" />
+    </span>
+  );
+}
+
 const PLANS: PlanDef[] = [
   { key: "m1", title: "یک‌ماهه", note: "یک ماه تماشای کامل", noteEn: "1 month of full access" },
   { key: "m3", title: "سه‌ماهه", note: "سه ماه تماشای کامل", noteEn: "3 months of full access" },
@@ -75,9 +97,7 @@ export default function VipPage() {
     return (
       <main dir={dir} className="flex min-h-[calc(100dvh-72px)] items-center justify-center px-4 py-10">
         <div className="glass-strong w-full max-w-md rounded-[28px] border border-white/10 p-8 text-center shadow-[0_30px_80px_rgba(0,0,0,0.45)]">
-          <span className="mx-auto grid h-16 w-16 place-items-center rounded-2xl bg-gradient-to-br from-amber-400 to-amber-600 text-white shadow-[0_0_30px_rgba(245,158,11,0.35)]">
-            <CrownIcon width={30} height={30} />
-          </span>
+          <VipEmblem size={64} />
           <h1 className="mt-4 text-xl font-black text-white">
             {en ? "Sign in to manage your VIP" : "اول وارد حسابت شو"}
           </h1>
@@ -103,9 +123,7 @@ export default function VipPage() {
     <main dir={dir} className="mx-auto w-full max-w-3xl px-4 pb-16 pt-28 sm:px-8 lg:pt-32">
       {/* header */}
       <div className="text-center">
-        <span className="mx-auto grid h-16 w-16 place-items-center rounded-2xl bg-gradient-to-br from-amber-400 to-amber-600 text-white shadow-[0_0_34px_rgba(245,158,11,0.4)]">
-          <CrownIcon width={32} height={32} />
-        </span>
+        <VipEmblem size={76} />
         <h1 className="mt-4 text-3xl font-black text-white sm:text-4xl">
           {en ? (
             <>
