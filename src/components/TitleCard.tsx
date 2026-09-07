@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import type { TitleView } from "@/lib/queries";
+import type { TitleView } from "@/lib/mobile/db";
 import { fa, formatDuration, typeLabel } from "@/lib/format";
 import { InfoIcon, PlayIcon, StarIcon } from "./Icons";
 import { useQuickView } from "./quickview/QuickViewProvider";

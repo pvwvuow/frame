@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import type { TitleView } from "@/lib/queries";
+import type { TitleView } from "@/lib/mobile/db";
 import { fa, formatClock } from "@/lib/format";
 import { PlayIcon, CloseIcon } from "../Icons";
 import TitleName from "@/components/TitleName";

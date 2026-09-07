@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import type { TitleView } from "@/lib/queries";
+import type { TitleView } from "@/lib/mobile/db";
 import { fa, formatDuration, typeLabel } from "@/lib/format";
 import { InfoIcon, PlayIcon, StarIcon } from "./Icons";
 import WatchlistButton from "./WatchlistButton";

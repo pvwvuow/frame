@@ -1,9 +1,9 @@
+"use client";
+
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { DownloadIcon, MonitorIcon, RefreshIcon, ShieldIcon, KeyboardIcon, BellIcon } from "@/components/Icons";
 import { fa } from "@/lib/format";
-
-export const revalidate = 600;
-export const metadata = { title: "دانلود برنامه‌ی دسکتاپ" };
 
 type Asset = { name: string; browser_download_url: string; size: number };
 type Release = { tag_name: string; html_url: string; published_at: string; assets: Asset[] } | null;
@@ -12,7 +12,6 @@ async function getLatest(): Promise<Release> {
   try {
     const r = await fetch("https://api.github.com/repos/pvwvuow/frame/releases/latest", {
       headers: { Accept: "application/vnd.github+json", "User-Agent": "nama-web" },
-      next: { revalidate: 600 },
     });
     if (!r.ok) return null;
     return (await r.json()) as Release;
@@ -64,9 +63,18 @@ const FEATURES = [
   { icon: KeyboardIcon, t: "میان‌برهای بیشتر", d: "F11 برای تمام‌صفحه، Ctrl+K برای فرمان سریع و کلیدهای کامل پخش‌کننده." },
 ];
 
-export default async function DownloadPage() {
-  const rel = await getLatest();
-  const version = rel?.tag_name?.replace(/^v/, "") ?? null;
+export default function DownloadPage() {
+  const [rel, setRel] = useState<Release | undefined>(undefined);
+
+  useEffect(() => {
+    let alive = true;
+    getLatest().then((r) => alive && setRel(r));
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const version = rel === undefined ? null : (rel?.tag_name?.replace(/^v/, "") ?? null);
 
   return (
     <main className="pb-16">

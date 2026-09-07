@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import type { HistoryRow } from "@/lib/library";
+import type { HistoryRow } from "@/lib/mobile/userdata";
 import { fa, formatClock, typeLabel } from "@/lib/format";
 import FavoriteButton from "../FavoriteButton";
 import WatchlistButton from "../WatchlistButton";

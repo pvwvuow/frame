@@ -11,20 +11,22 @@ import WelcomeAuth from "@/components/auth/WelcomeAuth";
 import ElectronBridge from "@/components/electron/ElectronBridge";
 import HideOnPip from "@/components/HideOnPip";
 import GlobalPlayer from "@/components/GlobalPlayer";
-import { getT } from "@/lib/i18n/server";
-import { LOCALE_META, dirOf } from "@/lib/i18n";
+import CatalogGate from "@/components/mobile/CatalogGate";
+import { makeT, LOCALE_META, dirOf, DEFAULT_LOCALE } from "@/lib/i18n";
 import "./globals.css";
 
-export async function generateMetadata(): Promise<Metadata> {
-  const { t } = await getT();
-  return {
-    title: { default: t("app.metaTitle"), template: `%s | ${t("app.name")}` },
-    description: t("app.metaDesc"),
-    applicationName: t("app.name"),
-    icons: { icon: "/favicon.svg" },
-    manifest: "/manifest.webmanifest",
-  };
-}
+/* ANDROID BUILD (static export): no request-scope APIs here. Locale is
+   pinned to the default (fa) — LocaleProvider still lets the user switch,
+   it just hydrates from localStorage on the client. */
+const t = makeT(DEFAULT_LOCALE);
+
+export const metadata: Metadata = {
+  title: { default: t("app.metaTitle"), template: `%s | ${t("app.name")}` },
+  description: t("app.metaDesc"),
+  applicationName: t("app.name"),
+  icons: { icon: "/favicon.svg" },
+  manifest: "/manifest.webmanifest",
+};
 
 export const viewport: Viewport = {
   themeColor: [
@@ -33,41 +35,30 @@ export const viewport: Viewport = {
   ],
   width: "device-width",
   initialScale: 1,
+  viewportFit: "cover",
 };
 
-/* Global cover fallback: when a poster/backdrop image fails to load (offline
-   cover-light installs, missing remote file, …) swap it to the app-local SVG
-   generator (/api/cover/<slug>.svg) so cards never show broken images. Runs
-   as the first <body> element so it is installed before any <img> parses. */
+/* Global cover fallback (ANDROID variant): posters/backdrops ship as compact
+   WebP files next to the originals. When an <img> fails, first retry the
+   same path with .webp (bundled), then fall back to the static SVG generator
+   copy (/covers/_fallback.svg) so cards never show broken images. */
 const IMG_FALLBACK_SCRIPT = String.raw`(function(){
   if (window.__namaImgFb) return; window.__namaImgFb = 1;
   document.addEventListener('error', function(e){
     var el = e.target;
     if (!el || el.tagName !== 'IMG' || !el.dataset || el.dataset.fb) return;
-    el.dataset.fb = '1';
     var src = el.currentSrc || el.src || '';
-    var slug = '';
-    var wide = /backdrop|-wide/.test(src);
-    var i = src.indexOf('/covers/');
-    if (i > -1) { slug = src.slice(i + 8).split('/')[0].split('?')[0]; }
-    else {
-      i = src.indexOf('/posters/');
-      if (i > -1) { slug = src.slice(i + 9).split('?')[0].replace(/\.(jpg|jpeg|png|webp)$/i, ''); }
-      else {
-        i = src.indexOf('/api/cover/');
-        if (i > -1) { slug = src.slice(i + 11).split('?')[0].replace(/\.svg$/i, '').replace(/-wide$/i, ''); }
-      }
+    if (!el.dataset.fb2 && /\.jpe?g$/i.test(src)) {
+      el.dataset.fb2 = '1';
+      el.src = src.replace(/\.jpe?g$/i, '.webp');
+      return;
     }
-    if (slug && /^[A-Za-z0-9_-]+$/.test(slug)) {
-      el.src = '/api/cover/' + slug + (wide ? '-wide.svg' : '.svg');
-    }
+    el.dataset.fb = '1';
+    el.src = '/covers/_fallback' + (/backdrop|-wide/.test(src) ? '-wide' : '') + '.svg';
   }, true);
 })();`;
 
-/* Audio unlock (v0.10.4): the first media element played right after launch
-   sometimes starts with no sound on Windows/Electron because Chromium's audio
-   pipeline is still initializing. Priming it with a silent WebAudio blip on
-   the first user gesture eliminates the race. */
+/* Audio unlock: prime the audio pipeline on the first user gesture. */
 const AUDIO_UNLOCK_SCRIPT = String.raw`(function(){
   if (window.__namaAudioUnlock) return; window.__namaAudioUnlock = 1;
   var unlocked = false;
@@ -90,8 +81,8 @@ const AUDIO_UNLOCK_SCRIPT = String.raw`(function(){
   });
 })();`;
 
-export default async function RootLayout({ children }: { children: ReactNode }) {
-  const { locale } = await getT();
+export default function RootLayout({ children }: { children: ReactNode }) {
+  const locale = DEFAULT_LOCALE;
   return (
     <html lang={LOCALE_META[locale].htmlLang} dir={dirOf(locale)} data-locale={locale} data-scroll-behavior="smooth" suppressHydrationWarning>
       <body className="min-h-screen bg-ink text-zinc-100 antialiased">
@@ -104,25 +95,17 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
                 <HideOnPip>
                   <Navbar />
                   <CommandPalette />
-                  {/* v0.10.10: first-launch popup — sign in / sign up (once,
-                      signed-out only, hidden in the PiP window) */}
-                  <WelcomeAuth />
                   <ElectronBridge />
-                  {/* the <video> element lives here — outside the routed tree —
-                      so playback survives navigation (theater ↔ floating window) */}
                   <GlobalPlayer />
                 </HideOnPip>
-                <div className="min-h-screen">{children}</div>
-                {/* v0.10.8 fix: the footer MUST come after the routed content.
-                    It used to sit BEFORE {children} in the DOM, and being a
-                    static (in-flow) block it pushed the ENTIRE page ~400px down
-                    — the home hero never reached the top nav, no matter what
-                    scrim/titlebar tweaks were applied («پوستر باید بره بالاتر
-                    و کامل زیر نوشته‌های نوار بیفته»). Content first, footer
-                    last, exactly like the reference template. */}
-                <HideOnPip>
-                  <Footer />
-                </HideOnPip>
+                <CatalogGate>
+                  {/* inside the gate: first-launch auth waits for the catalog import */}
+                  <WelcomeAuth />
+                  <div className="min-h-screen">{children}</div>
+                  <HideOnPip>
+                    <Footer />
+                  </HideOnPip>
+                </CatalogGate>
               </QuickViewProvider>
             </LibraryProvider>
           </LocaleProvider>

@@ -1,11 +1,14 @@
+"use client";
+
 import Link from "next/link";
-import { Suspense } from "react";
+import { Suspense, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import TitleCard from "@/components/TitleCard";
 import CatalogFilters from "@/components/CatalogFilters";
 import CatalogLoadMore from "@/components/CatalogLoadMore";
 import { PlayIcon, StarIcon, InfoIcon, FilmIcon, TvIcon, EyeIcon } from "@/components/Icons";
-import { GENRES, getCatalogPage, getProgressMap, getCatalogStats, getYears } from "@/lib/queries";
-import { getUserKey } from "@/lib/user";
+import { GENRES, getCatalogPage, getCatalogStats, getYears, type TitleListItem } from "@/lib/mobile/db";
+import { getProgressMap } from "@/lib/mobile/userdata";
 import { fa, formatDuration, formatViews } from "@/lib/format";
 import TitleName from "@/components/TitleName";
 
@@ -14,31 +17,43 @@ export type CatalogSearchParams = { genre?: string; sort?: string; year?: string
 /** first paint size — the rest streams in via /api/catalog (load-more) */
 const PAGE_SIZE = 48;
 
-export default async function CatalogPage({
-  type,
-  heading,
-  blurb,
-  searchParams,
-}: {
-  type: "movie" | "series";
-  heading: string;
-  blurb: string;
-  searchParams: Promise<CatalogSearchParams>;
-}) {
-  const sp = await searchParams;
-  const { genre, sort = "trending" } = sp;
-  const year = sp.year ? Number(sp.year) : undefined;
-  const minRating = sp.rating ? Number(sp.rating) : undefined;
-  const userKey = await getUserKey();
-  const [{ items, total }, stats, years] = await Promise.all([
-    getCatalogPage(type, { genre, sort, year, minRating }, 0, PAGE_SIZE),
-    getCatalogStats(type),
-    getYears(type),
-  ]);
-  const progress = await getProgressMap(
-    userKey,
-    items.map((t) => t.id)
-  );
+type CatalogState = {
+  items: TitleListItem[];
+  total: number;
+  stats: { count: number; avgRating: number; totalViews: number; top: TitleListItem | null };
+  years: number[];
+  progress: Map<number, { position: number; duration: number }>;
+};
+
+function CatalogPageInner({ type, heading, blurb }: { type: "movie" | "series"; heading: string; blurb: string }) {
+  const sp = useSearchParams();
+  const genre = sp.get("genre") ?? undefined;
+  const sort = sp.get("sort") ?? "trending";
+  const year = sp.get("year") ? Number(sp.get("year")) : undefined;
+  const minRating = sp.get("rating") ? Number(sp.get("rating")) : undefined;
+  const [st, setSt] = useState<CatalogState | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    setSt(null);
+    (async () => {
+      const [{ items, total }, stats, years] = await Promise.all([
+        getCatalogPage(type, { genre, sort, year, minRating }, 0, PAGE_SIZE),
+        getCatalogStats(type),
+        getYears(type),
+      ]);
+      const progress = await getProgressMap(items.map((t) => t.id));
+      if (!alive) return;
+      setSt({ items, total, stats, years, progress });
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [type, genre, sort, year, minRating]);
+
+  if (!st) return <CatalogSkeleton />;
+
+  const { items, total, stats, years, progress } = st;
   const spotlight = !genre && !year && !minRating ? stats.top : items[0] ?? null;
   const Icon = type === "movie" ? FilmIcon : TvIcon;
   const filters = { type, genre, sort, year, minRating };
@@ -166,5 +181,32 @@ export default async function CatalogPage({
         )}
       </div>
     </main>
+  );
+}
+
+function CatalogSkeleton() {
+  return (
+    <main className="pb-16">
+      <section className="relative overflow-hidden">
+        <div className="absolute inset-0 animate-pulse bg-gradient-to-t from-white/5 to-transparent" />
+        <div className="relative mx-auto max-w-[1600px] px-4 pb-10 pt-32 sm:px-8 lg:px-12">
+          <div className="h-10 w-64 animate-pulse rounded-xl bg-white/10" />
+          <div className="mt-4 h-4 w-96 max-w-full animate-pulse rounded bg-white/5" />
+        </div>
+      </section>
+      <div className="mx-auto grid max-w-[1600px] grid-cols-2 gap-4 px-4 sm:grid-cols-3 sm:px-8 md:grid-cols-4 lg:grid-cols-5 lg:px-12 xl:grid-cols-6 2xl:grid-cols-7">
+        {Array.from({ length: 18 }).map((_, i) => (
+          <div key={i} className="aspect-[2/3] w-full animate-pulse rounded-xl bg-white/5" />
+        ))}
+      </div>
+    </main>
+  );
+}
+
+export default function CatalogPage(props: { type: "movie" | "series"; heading: string; blurb: string }) {
+  return (
+    <Suspense fallback={<CatalogSkeleton />}>
+      <CatalogPageInner {...props} />
+    </Suspense>
   );
 }

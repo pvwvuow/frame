@@ -1,22 +1,29 @@
+"use client";
+
+import { useEffect, useState } from "react";
 import HistoryList from "@/components/library/HistoryList";
 import { HistoryIcon, ClockIcon, CheckCircleIcon, PlayIcon } from "@/components/Icons";
-import { getHistory } from "@/lib/library";
-import { getUserKey } from "@/lib/user";
+import { getHistory, type HistoryRow } from "@/lib/mobile/userdata";
 import { fa, formatDuration } from "@/lib/format";
 
-export const dynamic = "force-dynamic";
-export const metadata = { title: "تاریخچه تماشا" };
+export default function HistoryPage() {
+  const [rows, setRows] = useState<HistoryRow[] | null>(null);
 
-export default async function HistoryPage() {
-  const userKey = await getUserKey();
-  const rows = await getHistory(userKey);
-  const minutes = Math.round(rows.reduce((a, r) => a + r.position, 0) / 60);
-  const finished = rows.filter((r) => r.finished).length;
+  useEffect(() => {
+    let alive = true;
+    getHistory().then((r) => alive && setRows(r));
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const minutes = rows ? Math.round(rows.reduce((a, r) => a + r.position, 0) / 60) : 0;
+  const finished = rows?.filter((r) => r.finished).length ?? 0;
 
   return (
     <main className="pb-16">
       <section className="relative overflow-hidden">
-        {rows[0] && (
+        {rows?.[0] && (
           <>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={rows[0].title.backdrop} alt="" className="absolute inset-0 h-full w-full object-cover opacity-30 blur-sm" />
@@ -32,7 +39,7 @@ export default async function HistoryPage() {
             </div>
             <div className="grid grid-cols-3 gap-3">
               {[
-                { icon: PlayIcon, v: fa(rows.length), k: "عنوان" },
+                { icon: PlayIcon, v: fa(rows?.length ?? 0), k: "عنوان" },
                 { icon: CheckCircleIcon, v: fa(finished), k: "تمام‌شده" },
                 { icon: ClockIcon, v: minutes ? formatDuration(minutes) : "۰", k: "زمان تماشا" },
               ].map((s) => (
@@ -47,7 +54,7 @@ export default async function HistoryPage() {
         </div>
       </section>
       <div className="mx-auto max-w-[1600px] px-4 sm:px-8 lg:px-12">
-        <HistoryList rows={rows} />
+        {rows ? <HistoryList rows={rows} /> : <div className="py-16 text-center text-sm text-zinc-500">در حال بارگذاری تاریخچه…</div>}
       </div>
     </main>
   );

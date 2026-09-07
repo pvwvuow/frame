@@ -1,12 +1,12 @@
+"use client";
+
 import Link from "next/link";
-import type { Metadata } from "next";
-import { getRankings } from "@/lib/queries";
+import { Suspense, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { getRankings } from "@/lib/mobile/db";
 import { fa, formatViews, typeLabel } from "@/lib/format";
 import TitleName from "@/components/TitleName";
 import { StarIcon, FilmIcon, TvIcon, SparklesIcon, EyeIcon } from "@/components/Icons";
-
-export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "رنکینگ | نما" };
 
 const TABS = [
   { v: undefined, label: "همه", icon: SparklesIcon },
@@ -20,10 +20,37 @@ const RANK_STYLES = [
   "from-amber-600 to-orange-700 text-white", // bronze
 ];
 
-export default async function RankingsPage({ searchParams }: { searchParams: Promise<{ type?: string }> }) {
-  const { type } = await searchParams;
-  const valid = type === "movie" || type === "series" ? (type as "movie" | "series") : undefined;
-  const rows = await getRankings(valid, 100);
+function RankingsInner() {
+  const sp = useSearchParams();
+  const typeParam = sp.get("type");
+  const valid = typeParam === "movie" || typeParam === "series" ? (typeParam as "movie" | "series") : undefined;
+  const [rows, setRows] = useState<Awaited<ReturnType<typeof getRankings>> | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    setRows(null);
+    getRankings(valid, 100).then((r) => alive && setRows(r));
+    return () => {
+      alive = false;
+    };
+  }, [valid]);
+
+  if (!rows) {
+    return (
+      <main className="pb-16">
+        <div className="mx-auto max-w-[1600px] px-4 pt-32 sm:px-8 lg:px-12">
+          <div className="h-10 w-72 animate-pulse rounded-xl bg-white/10" />
+          <div className="mt-8 space-y-2">
+            {Array.from({ length: 10 }).map((_, i) => (
+              <div key={i} className="h-20 animate-pulse rounded-2xl bg-white/5" />
+            ))}
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  const type = valid;
   const movies = rows.filter((t) => t.type === "movie").length;
 
   return (
@@ -111,5 +138,19 @@ export default async function RankingsPage({ searchParams }: { searchParams: Pro
         )}
       </div>
     </main>
+  );
+}
+
+export default function RankingsPage() {
+  return (
+    <Suspense fallback={
+      <main className="pb-16">
+        <div className="mx-auto max-w-[1600px] px-4 pt-32 sm:px-8 lg:px-12">
+          <div className="h-10 w-72 animate-pulse rounded-xl bg-white/10" />
+        </div>
+      </main>
+    }>
+      <RankingsInner />
+    </Suspense>
   );
 }

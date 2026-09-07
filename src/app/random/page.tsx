@@ -1,29 +1,49 @@
+"use client";
+
 import Link from "next/link";
-import { GENRES, getRandomTitle } from "@/lib/queries";
+import { Suspense, useCallback, useEffect, useState } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
+import { GENRES, getRandomTitle, getFullTitle, type TitleView } from "@/lib/mobile/db";
 import { fa, formatDuration, typeLabel } from "@/lib/format";
 import { ShuffleIcon, PlayIcon, StarIcon, ClockIcon, InfoIcon } from "@/components/Icons";
 import WatchlistButton from "@/components/WatchlistButton";
 import FavoriteButton from "@/components/FavoriteButton";
 
-export const dynamic = "force-dynamic";
-export const metadata = { title: "امشب چی ببینم؟" };
-
 type SP = { type?: string; genre?: string; not?: string };
 
-export default async function RandomPage({ searchParams }: { searchParams: Promise<SP> }) {
-  const sp = await searchParams;
-  const type = sp.type === "movie" || sp.type === "series" ? sp.type : undefined;
-  const genre = sp.genre && GENRES.includes(sp.genre) ? sp.genre : undefined;
-  const exclude = sp.not ? sp.not.split(",").map(Number).filter(Boolean).slice(-10) : [];
-  const t = (await getRandomTitle({ type, genre, excludeIds: exclude })) ?? (await getRandomTitle({ type, genre }));
+function RandomInner() {
+  const sp = useSearchParams();
+  const router = useRouter();
+  const [t, setT] = useState<TitleView | null | undefined>(undefined);
 
-  const qs = (extra: Record<string, string | undefined>) => {
-    const p = new URLSearchParams();
-    const merged = { type, genre, not: exclude.join(","), ...extra };
-    Object.entries(merged).forEach(([k, v]) => v && p.set(k, v));
-    const s = p.toString();
-    return `/random${s ? `?${s}` : ""}`;
-  };
+  const type = sp.get("type") === "movie" || sp.get("type") === "series" ? (sp.get("type") as "movie" | "series") : undefined;
+  const genreParam = sp.get("genre");
+  const genre = genreParam && GENRES.includes(genreParam) ? genreParam : undefined;
+  const exclude = sp.get("not") ? sp.get("not")!.split(",").map(Number).filter(Boolean).slice(-10) : [];
+
+  useEffect(() => {
+    let alive = true;
+    setT(undefined);
+    (async () => {
+      const pick = (await getRandomTitle({ type, genre, excludeIds: exclude })) ?? (await getRandomTitle({ type, genre }));
+      const full = pick ? await getFullTitle(pick.id) : null;
+      if (alive) setT(full);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [type, genre, sp.get("not")]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const qs = useCallback(
+    (extra: Record<string, string | undefined>) => {
+      const p = new URLSearchParams();
+      const merged = { type, genre, not: exclude.join(","), ...extra };
+      Object.entries(merged).forEach(([k, v]) => v && p.set(k, v));
+      const s = p.toString();
+      return `/random${s ? `?${s}` : ""}`;
+    },
+    [type, genre, exclude]
+  );
   const again = qs({ not: [...exclude, ...(t ? [t.id] : [])].join(",") });
 
   return (
@@ -68,7 +88,9 @@ export default async function RandomPage({ searchParams }: { searchParams: Promi
           ))}
         </div>
 
-        {t ? (
+        {t === undefined ? (
+          <div className="glass mx-auto max-w-3xl rounded-3xl p-16 text-center text-sm text-zinc-400">در حال انتخاب…</div>
+        ) : t ? (
           <div className="glass-strong glass-in mx-auto flex max-w-3xl flex-col gap-6 rounded-[32px] p-5 sm:flex-row sm:p-7">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={t.poster} alt={t.title} className="mx-auto h-[300px] w-[200px] shrink-0 rounded-2xl object-cover shadow-2xl ring-1 ring-white/20 sm:mx-0" />
@@ -111,11 +133,25 @@ export default async function RandomPage({ searchParams }: { searchParams: Promi
         )}
 
         <div className="mt-8 text-center">
-          <Link href={again} className="glass-btn inline-flex h-14 items-center gap-3 rounded-full px-8 text-base font-extrabold text-white">
+          <button onClick={() => router.push(again)} className="glass-btn inline-flex h-14 items-center gap-3 rounded-full px-8 text-base font-extrabold text-white">
             <ShuffleIcon width={20} height={20} /> یکی دیگه!
-          </Link>
+          </button>
         </div>
       </div>
     </main>
+  );
+}
+
+export default function RandomPage() {
+  return (
+    <Suspense fallback={
+      <main className="relative min-h-screen overflow-hidden pb-24 pt-24">
+        <div className="relative mx-auto max-w-[1100px] px-4 text-center sm:px-8">
+          <div className="mx-auto h-10 w-64 animate-pulse rounded-xl bg-white/10" />
+        </div>
+      </main>
+    }>
+      <RandomInner />
+    </Suspense>
   );
 }

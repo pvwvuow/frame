@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import type { FavoriteRow } from "@/lib/library";
+import type { FavoriteRow } from "@/lib/mobile/userdata";
 import { fa, formatDuration } from "@/lib/format";
 import TitleCard from "../TitleCard";
 import { useLibrary } from "./LibraryProvider";

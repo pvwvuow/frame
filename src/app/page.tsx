@@ -1,8 +1,12 @@
+"use client";
+
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import Hero from "@/components/Hero";
 import Row from "@/components/Row";
 import TitleCard from "@/components/TitleCard";
 import { PlayIcon } from "@/components/Icons";
+import { useI18n } from "@/components/i18n/LocaleProvider";
 import {
   getFeatured,
   getTrending,
@@ -10,38 +14,72 @@ import {
   getTopRated,
   getByType,
   getByGenre,
+  type TitleView,
+} from "@/lib/mobile/db";
+import {
   getWatchlistIds,
   getContinueWatching,
   getProgressMap,
-} from "@/lib/queries";
-import { getUserKey } from "@/lib/user";
-import { getFavoriteRows, getMyListRows } from "@/lib/library";
-import { fa, formatClock, episodeLabel } from "@/lib/format";
-import { getT } from "@/lib/i18n/server";
-import { titleNames } from "@/lib/title-name";
+  getFavoriteRows,
+  getMyListRows,
+  type FavoriteRow,
+  type ListRow,
+  type ContinueItem,
+} from "@/lib/mobile/userdata";
+import { formatClock, episodeLabel } from "@/lib/format";
 import TitleName from "@/components/TitleName";
 
-export const dynamic = "force-dynamic";
+type HomeData = {
+  featured: TitleView[];
+  trending: TitleView[];
+  newest: TitleView[];
+  topRated: TitleView[];
+  series: TitleView[];
+  action: TitleView[];
+  scifi: TitleView[];
+  watchlistIds: number[];
+  continueItems: ContinueItem[];
+  favRows: FavoriteRow[];
+  listRows: ListRow[];
+};
 
-export default async function HomePage() {
-  const { t: tr, locale } = await getT();
-  const userKey = await getUserKey();
-  const [featured, trending, newest, topRated, series, action, scifi, watchlistIds, continueItems] = await Promise.all([
-    getFeatured(),
-    getTrending(),
-    getNewest(),
-    getTopRated(),
-    getByType("series", { limit: 24 }),
-    getByGenre("هیجان‌انگیز"),
-    getByGenre("علمی‌تخیلی"),
-    getWatchlistIds(userKey),
-    getContinueWatching(userKey),
-  ]);
-  const [favRows, listRows] = await Promise.all([getFavoriteRows(userKey), getMyListRows(userKey)]);
+export default function HomePage() {
+  const { t: tr, locale } = useI18n();
+  const [d, setD] = useState<HomeData | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const [featured, trending, newest, topRated, series, action, scifi, watchlistIds, continueItems] = await Promise.all([
+        getFeatured(),
+        getTrending(),
+        getNewest(),
+        getTopRated(),
+        getByType("series", { limit: 24 }),
+        getByGenre("هیجان‌انگیز"),
+        getByGenre("علمی‌تخیلی"),
+        getWatchlistIds(),
+        getContinueWatching(),
+      ]);
+      const [favRows, listRows] = await Promise.all([getFavoriteRows(), getMyListRows()]);
+      const progressMap = await getProgressMap(
+        Array.from(new Set([...trending, ...newest, ...topRated, ...series].map((t) => t.id)))
+      );
+      if (!alive) return;
+      setD({ featured, trending, newest, topRated, series, action, scifi, watchlistIds, continueItems, favRows, listRows });
+      window.__namaProgress = { ...window.__namaProgress, ...Object.fromEntries(Array.from(progressMap.entries()).map(([k, v]) => [String(k), v])) };
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  if (!d) return <HomeSkeleton />;
+
+  const { featured, trending, newest, topRated, series, action, scifi, watchlistIds, continueItems, favRows, listRows } = d;
   const myQueue = listRows.filter((r) => r.status !== "watched").slice(0, 12);
-  const progressMap = await getProgressMap(
-    userKey,
-    Array.from(new Set([...trending, ...newest, ...topRated, ...series].map((t) => t.id)))
+  const progressMap = new Map<number, { position: number; duration: number }>(
+    Object.entries(window.__namaProgress ?? {}).map(([k, v]) => [Number(k), v])
   );
 
   return (
@@ -58,8 +96,7 @@ export default async function HomePage() {
                 className="group relative w-[260px] shrink-0 snap-start sm:w-[320px]"
               >
                 <div className="relative aspect-video overflow-hidden rounded-xl ring-1 ring-white/5 transition group-hover:ring-white/20">
-                  { }
-                  <img src={c.title.backdrop} alt={titleNames(c.title, locale).primary} className="h-full w-full object-cover transition duration-500 group-hover:scale-105" />
+                  <img src={c.title.backdrop} alt={c.title.title} className="h-full w-full object-cover transition duration-500 group-hover:scale-105" />
                   <div className="card-gradient absolute inset-0" />
                   <div className="absolute inset-0 grid place-items-center opacity-0 transition group-hover:opacity-100">
                     <span className="grid h-14 w-14 place-items-center rounded-full bg-white/90 text-black">
@@ -126,7 +163,6 @@ export default async function HomePage() {
         {featured[1] && (
           <section className="mt-12 px-4 sm:px-8 lg:px-12">
             <div className="relative overflow-hidden rounded-3xl ring-1 ring-white/10">
-              { }
               <img src={featured[1].backdrop} alt="" className="absolute inset-0 h-full w-full object-cover" />
               <div className={`absolute inset-0 ${locale === "en" ? "bg-gradient-to-r" : "bg-gradient-to-l"} from-ink via-ink/80 to-ink/20`} />
               <div className="relative flex min-h-[300px] flex-col justify-center gap-4 p-8 sm:p-14 lg:max-w-2xl">
@@ -163,6 +199,25 @@ export default async function HomePage() {
             <TitleCard key={t.id} t={t} />
           ))}
         </Row>
+      </div>
+    </main>
+  );
+}
+
+function HomeSkeleton() {
+  return (
+    <main className="pb-10">
+      <div className="h-[82vh] min-h-[560px] w-full animate-pulse bg-gradient-to-t from-white/5 to-transparent" />
+      <div className="relative z-10 -mt-16 space-y-6 px-4 sm:px-8 lg:px-12">
+        {[0, 1, 2].map((i) => (
+          <div key={i} className="flex gap-4 overflow-hidden">
+            {Array.from({ length: 6 }).map((_, j) => (
+              <div key={j} className="w-[170px] shrink-0">
+                <div className="aspect-[2/3] w-full animate-pulse rounded-xl bg-white/5" />
+              </div>
+            ))}
+          </div>
+        ))}
       </div>
     </main>
   );

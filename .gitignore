@@ -104,3 +104,17 @@ db/*.db-shm
 /build/*
 !/build/icon.png
 .packsim/
+
+# Android build artifacts
+keystore.properties
+frame-release.keystore
+local.properties
+.gradle/
+build/
+app/build/
+capacitor-cordova-android-plugins/build/
+
+# mobile build artifacts (regenerable)
+out/
+.mobile-tmp-api/
+android/app/src/main/assets/public/

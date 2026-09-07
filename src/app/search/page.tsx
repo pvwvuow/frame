@@ -1,32 +1,55 @@
+"use client";
+
 import Link from "next/link";
+import { Suspense, useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import TitleCard from "@/components/TitleCard";
-import { search, getTrending, GENRES } from "@/lib/queries";
-import { getUserKey } from "@/lib/user";
-import { getProgressMap } from "@/lib/queries";
+import { search, getTrending, GENRES } from "@/lib/mobile/db";
+import { getProgressMap } from "@/lib/mobile/userdata";
 import { fa } from "@/lib/format";
 import { SearchIcon, FlameIcon, FilmIcon, TvIcon, SparkIcon } from "@/components/Icons";
-
-export const dynamic = "force-dynamic";
-export const metadata = { title: "جستجو | نما" };
 
 // verified against the live catalog – every chip must return results
 // (genres are stored in Persian; cast names are Latin, so actor names
 // in Persian would find nothing)
 const POPULAR_QUERIES = ["کمدی", "اکشن", "انیمیشن", "ترسناک", "علمی‌تخیلی", "جنایی", "معمایی"];
 
-export default async function SearchPage({ searchParams }: { searchParams: Promise<{ q?: string; type?: string }> }) {
-  const { q = "", type } = await searchParams;
+function SearchInner() {
+  const sp = useSearchParams();
+  const router = useRouter();
+  const q = sp.get("q") ?? "";
+  const type = sp.get("type") ?? undefined;
   const term = q.trim();
-  const all = term ? await search(q) : [];
+  const [st, setSt] = useState<{ all: Awaited<ReturnType<typeof search>>; trending: Awaited<ReturnType<typeof getTrending>>; progress: Map<number, { position: number; duration: number }> } | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const all = term ? await search(q) : [];
+      const trending = await getTrending(8);
+      const results0 = term ? all : [];
+      const progress = await getProgressMap(results0.map((t) => t.id));
+      if (alive) setSt({ all, trending, progress });
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [q, term]);
+
+  if (!st) {
+    return (
+      <main className="pb-16">
+        <div className="mx-auto max-w-[1600px] px-4 pt-32 text-center sm:px-8 lg:px-12">
+          <div className="mx-auto h-10 w-72 animate-pulse rounded-xl bg-white/10" />
+        </div>
+      </main>
+    );
+  }
+
+  const { all, trending, progress } = st;
   const results = type === "movie" || type === "series" ? all.filter((t) => t.type === type) : all;
   const movies = all.filter((t) => t.type === "movie").length;
   const series = all.length - movies;
-  const trending = await getTrending(8);
-  const userKey = await getUserKey();
-  const progress = await getProgressMap(
-    userKey,
-    results.map((t) => t.id)
-  );
 
   const tabs = [
     { v: undefined, label: "همه", n: all.length, icon: SparkIcon },
@@ -44,7 +67,11 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
           <p className="mt-2 text-sm text-zinc-400">نام فیلم، سریال، بازیگر، کارگردان یا حتی ژانر را بنویسید.</p>
 
           <form
-            action="/search"
+            onSubmit={(e) => {
+              e.preventDefault();
+              const v = (e.currentTarget.elements.namedItem("q") as HTMLInputElement).value;
+              router.push(`/search?q=${encodeURIComponent(v)}`);
+            }}
             className="mx-auto mt-8 flex max-w-2xl items-center gap-3 rounded-full border border-white/10 bg-ink-700/70 py-2 pe-2 ps-5 shadow-[0_20px_60px_rgba(0,0,0,0.5)] backdrop-blur transition focus-within:border-brand/60 focus-within:shadow-[0_0_0_4px_rgba(229,9,20,0.15)]"
           >
             <SearchIcon className="shrink-0 text-zinc-400" />
@@ -183,5 +210,19 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
         )}
       </div>
     </main>
+  );
+}
+
+export default function SearchPage() {
+  return (
+    <Suspense fallback={
+      <main className="pb-16">
+        <div className="mx-auto max-w-[1600px] px-4 pt-32 text-center sm:px-8 lg:px-12">
+          <div className="mx-auto h-10 w-72 animate-pulse rounded-xl bg-white/10" />
+        </div>
+      </main>
+    }>
+      <SearchInner />
+    </Suspense>
   );
 }

@@ -1,15 +1,34 @@
+"use client";
+
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import Row from "@/components/Row";
 import TitleCard from "@/components/TitleCard";
-import { getCollections } from "@/lib/queries";
+import { getCollections } from "@/lib/mobile/db";
 import { fa } from "@/lib/format";
 import { LayersIcon, ChevronLeft } from "@/components/Icons";
 
-export const dynamic = "force-dynamic";
-export const metadata = { title: "مجموعه‌ها" };
+export default function CollectionsPage() {
+  const [collections, setCollections] = useState<Awaited<ReturnType<typeof getCollections>> | null>(null);
 
-export default async function CollectionsPage() {
-  const collections = await getCollections(12);
+  useEffect(() => {
+    let alive = true;
+    getCollections(12).then((c) => alive && setCollections(c));
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  if (!collections) {
+    return (
+      <main className="pb-16">
+        <div className="mx-auto max-w-[1600px] px-4 pt-32 sm:px-8 lg:px-12">
+          <div className="h-10 w-56 animate-pulse rounded-xl bg-white/10" />
+        </div>
+      </main>
+    );
+  }
+
   const hero = collections.slice(0, 4);
 
   return (

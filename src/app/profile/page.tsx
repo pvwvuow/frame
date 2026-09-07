@@ -1,4 +1,7 @@
+"use client";
+
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import TitleCard from "@/components/TitleCard";
 import ContinueCard from "@/components/library/ContinueCard";
 import { AVATARS } from "@/components/library/SettingsForm";
@@ -6,17 +9,39 @@ import CloudIdentityBadge from "@/components/auth/CloudIdentityBadge";
 import SubscriptionBadge from "@/components/auth/SubscriptionBadge";
 import { ProfileName, ProfileAvatarLetter } from "@/components/auth/ProfileIdentity";
 import { BookmarkIcon, HeartIcon, HistoryIcon, SettingsIcon, StarIcon, ClockIcon, CheckCircleIcon, ChevronLeft } from "@/components/Icons";
-import { getProfile, getUserStats, getFavoriteRows, getMyListRows } from "@/lib/library";
-import { getContinueWatching } from "@/lib/queries";
-import { getUserKey } from "@/lib/user";
+import { getProfile, getUserStats, getFavoriteRows, getMyListRows, getContinueWatching } from "@/lib/mobile/userdata";
 import { fa, formatDuration } from "@/lib/format";
 
-export const dynamic = "force-dynamic";
-export const metadata = { title: "پروفایل" };
+export default function ProfilePage() {
+  const [st, setSt] = useState<{
+    p: Awaited<ReturnType<typeof getProfile>>;
+    stats: Awaited<ReturnType<typeof getUserStats>>;
+    favs: Awaited<ReturnType<typeof getFavoriteRows>>;
+    list: Awaited<ReturnType<typeof getMyListRows>>;
+    cont: Awaited<ReturnType<typeof getContinueWatching>>;
+  } | null>(null);
 
-export default async function ProfilePage() {
-  const userKey = await getUserKey();
-  const [p, stats, favs, list, cont] = await Promise.all([getProfile(userKey), getUserStats(userKey), getFavoriteRows(userKey), getMyListRows(userKey), getContinueWatching(userKey, 3)]);
+  useEffect(() => {
+    let alive = true;
+    Promise.all([getProfile(), getUserStats(), getFavoriteRows(), getMyListRows(), getContinueWatching(3)]).then(
+      ([p, stats, favs, list, cont]) => alive && setSt({ p, stats, favs, list, cont })
+    );
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  if (!st) {
+    return (
+      <main className="pb-16">
+        <div className="mx-auto max-w-[1600px] px-4 pt-32 sm:px-8">
+          <div className="h-28 w-28 animate-pulse rounded-[28px] bg-white/10" />
+        </div>
+      </main>
+    );
+  }
+
+  const { p, stats, favs, list, cont } = st;
   const level = stats.minutesWatched > 1200 ? "سینه‌فیل" : stats.minutesWatched > 300 ? "تماشاگر حرفه‌ای" : stats.minutesWatched > 60 ? "علاقه‌مند" : "تازه‌وارد";
   const maxGenre = stats.topGenres[0]?.count ?? 1;
 

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import type { Notification } from "@/lib/notifications";
+import type { Notification } from "@/lib/mobile/userdata";
 import { BellIcon, CheckIcon, CloseIcon, TvIcon, PlayIcon, SparkIcon, FlameIcon, InfoIcon, SettingsIcon } from "../Icons";
 import { fa } from "@/lib/format";
 import { bridge } from "@/lib/platform";

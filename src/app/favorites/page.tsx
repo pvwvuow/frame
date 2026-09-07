@@ -1,19 +1,26 @@
+"use client";
+
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import FavoritesGrid from "@/components/library/FavoritesGrid";
 import { HeartIcon, BookmarkIcon, StarIcon, FilmIcon, TvIcon } from "@/components/Icons";
-import { getFavoriteRows } from "@/lib/library";
-import { getUserKey } from "@/lib/user";
+import { getFavoriteRows, type FavoriteRow } from "@/lib/mobile/userdata";
 import { fa } from "@/lib/format";
 
-export const dynamic = "force-dynamic";
-export const metadata = { title: "علاقه‌مندی‌ها" };
+export default function FavoritesPage() {
+  const [rows, setRows] = useState<FavoriteRow[] | null>(null);
 
-export default async function FavoritesPage() {
-  const userKey = await getUserKey();
-  const rows = await getFavoriteRows(userKey);
-  const movies = rows.filter((r) => r.title.type === "movie").length;
-  const avg = rows.length ? (rows.reduce((a, r) => a + r.title.rating, 0) / rows.length).toFixed(1) : "—";
-  const backdrop = rows[0]?.title.backdrop;
+  useEffect(() => {
+    let alive = true;
+    getFavoriteRows().then((r) => alive && setRows(r));
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const movies = rows?.filter((r) => r.title.type === "movie").length ?? 0;
+  const avg = rows && rows.length ? (rows.reduce((a, r) => a + r.title.rating, 0) / rows.length).toFixed(1) : "—";
+  const backdrop = rows?.[0]?.title.backdrop;
 
   return (
     <main className="pb-16">
@@ -39,9 +46,9 @@ export default async function FavoritesPage() {
             </div>
             <div className="flex flex-wrap items-center gap-2">
               {[
-                { icon: HeartIcon, v: fa(rows.length), k: "علاقه‌مندی", c: "border-rose-500/40 bg-rose-500/10 text-rose-300" },
+                { icon: HeartIcon, v: fa(rows?.length ?? 0), k: "علاقه‌مندی", c: "border-rose-500/40 bg-rose-500/10 text-rose-300" },
                 { icon: FilmIcon, v: fa(movies), k: "فیلم", c: "border-sky-400/25 bg-sky-500/10 text-sky-300" },
-                { icon: TvIcon, v: fa(rows.length - movies), k: "سریال", c: "border-violet-400/25 bg-violet-500/10 text-violet-300" },
+                { icon: TvIcon, v: fa((rows?.length ?? 0) - movies), k: "سریال", c: "border-violet-400/25 bg-violet-500/10 text-violet-300" },
                 { icon: StarIcon, v: fa(avg), k: "میانگین امتیاز", c: "border-amber-400/25 bg-amber-500/10 text-amber-300" },
               ].map((s) => (
                 <span key={s.k} className={`flex items-center gap-2 rounded-full border px-4 py-2 text-xs font-bold backdrop-blur ${s.c}`}>
@@ -55,8 +62,18 @@ export default async function FavoritesPage() {
         </div>
       </section>
       <div className="mx-auto max-w-[1600px] px-4 sm:px-8 lg:px-12">
-        <FavoritesGrid rows={rows} />
+        {rows ? <FavoritesGrid rows={rows} /> : <GridSkeleton />}
       </div>
     </main>
+  );
+}
+
+function GridSkeleton() {
+  return (
+    <div className="grid grid-cols-2 gap-4 py-8 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
+      {Array.from({ length: 12 }).map((_, i) => (
+        <div key={i} className="aspect-[2/3] w-full animate-pulse rounded-xl bg-white/5" />
+      ))}
+    </div>
   );
 }

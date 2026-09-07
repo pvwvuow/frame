@@ -1,86 +1,77 @@
-import type { Metadata } from "next";
-import { db } from "@/lib/db";
-import { ensureSeeded } from "@/db/seed";
-import { getUserKey } from "@/lib/user";
+"use client";
+
+import { Suspense, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import DarkroomApp from "@/components/darkroom/DarkroomApp";
+import { getFullTitle, getTrending, type TitleView } from "@/lib/mobile/db";
+import { getUserScore, getHistory } from "@/lib/mobile/userdata";
 import type { DrTitle } from "@/lib/darkroom";
 
-export const dynamic = "force-dynamic";
-
-export const metadata: Metadata = {
-  title: "تاریکخانه | فریم",
-  description: "از فیلم‌ها و لیستت پست و استوری بساز — تاریکخانه فریم",
-};
-
-/** Minimal structural shape of an included Title row. */
-type Row = {
-  id: number;
-  slug: string;
-  title: string;
-  titleEn: string;
-  type: string;
-  year: number;
-  genres: string;
-  poster: string;
-  backdrop: string;
-  duration: number;
-  director: string;
-  country: string;
-  rating: number;
-};
-
-function toDrTitle(t: Row, myScore: number | null = null, when: string | null = null): DrTitle {
-  let genres: string[] = [];
-  try {
-    genres = JSON.parse(t.genres || "[]");
-  } catch {
-    /* ignore */
-  }
-  return { ...t, genres, myScore, when };
+function toDrTitle(t: TitleView, myScore: number | null = null, when: string | null = null): DrTitle {
+  return { ...t, myScore, when };
 }
 
-export default async function DarkroomPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ title?: string }>;
-}) {
-  await ensureSeeded();
-  const userKey = await getUserKey();
-  const sp = await searchParams;
+function DarkroomInner() {
+  const sp = useSearchParams();
+  const [candidates, setCandidates] = useState<DrTitle[] | null>(null);
 
-  // the user's world: rated ∪ watched ∪ favorites — most recent activity first
-  const [rts, wls, favs] = await Promise.all([
-    db.userRating.findMany({ where: { userKey }, include: { title: true }, orderBy: { updatedAt: "desc" }, take: 60 }),
-    db.watchlist.findMany({ where: { userKey, status: "watched" }, include: { title: true }, orderBy: { updatedAt: "desc" }, take: 60 }),
-    db.favorite.findMany({ where: { userKey }, include: { title: true }, orderBy: { createdAt: "desc" }, take: 40 }),
-  ]);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      // the user's world: rated ∪ watched ∪ favorites — most recent activity first
+      const [hist, favs] = await Promise.all([getHistory(), (await import("@/lib/mobile/userdata")).getFavoriteRows()]);
+      const acc = new Map<number, { title: TitleView; when: string | null; score: number | null }>();
+      const put = (title: TitleView, when: string | null, score?: number | null) => {
+        const prev = acc.get(title.id);
+        const newer = !prev?.when || (when !== null && when > prev.when);
+        acc.set(title.id, { title, when: newer ? when : (prev?.when ?? when), score: score ?? prev?.score ?? null });
+      };
+      for (const h of hist.slice(0, 60)) put(h.title, h.updatedAt);
+      for (const f of favs.slice(0, 40)) put(f.title, f.addedAt);
+      for (const h of hist.slice(0, 60)) {
+        const s = await getUserScore(h.title.id);
+        if (s) put(h.title, h.updatedAt, s);
+      }
 
-  const acc = new Map<number, { row: Row; when: Date | null; score: number | null }>();
-  const put = (title: Row, when: Date | null, score?: number) => {
-    const prev = acc.get(title.id);
-    const newer = !prev?.when || (when !== null && when > prev.when);
-    acc.set(title.id, {
-      row: title,
-      when: newer ? when : (prev?.when ?? when),
-      score: score ?? prev?.score ?? null,
-    });
-  };
+      let out: DrTitle[];
+      if (acc.size > 0) {
+        out = [...acc.values()]
+          .sort((a, b) => (b.when ?? "").localeCompare(a.when ?? ""))
+          .slice(0, 40)
+          .map(({ title, when, score }) => toDrTitle(title, score, when));
+      } else {
+        // fresh account — suggest from trending so the room is never empty
+        const rows = await getTrending(12);
+        out = [];
+        for (const r of rows) {
+          const full = await getFullTitle(r.id);
+          if (full) out.push(toDrTitle(full));
+        }
+      }
+      if (alive) setCandidates(out);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
 
-  for (const r of rts) put(r.title, r.updatedAt, r.score);
-  for (const w of wls) put(w.title, w.updatedAt);
-  for (const fv of favs) put(fv.title, fv.createdAt);
-
-  let candidates: DrTitle[];
-  if (acc.size > 0) {
-    candidates = [...acc.values()]
-      .sort((a, b) => (b.when?.getTime() ?? 0) - (a.when?.getTime() ?? 0))
-      .slice(0, 40)
-      .map(({ row, when, score }) => toDrTitle(row, score, when ? when.toISOString() : null));
-  } else {
-    // fresh account — suggest from trending so the room is never empty
-    const rows = await db.title.findMany({ orderBy: [{ trendingScore: "desc" }], take: 12 });
-    candidates = rows.map((r) => toDrTitle(r));
+  if (!candidates) {
+    return (
+      <main className="pb-16">
+        <div className="mx-auto max-w-6xl px-4 pt-32">
+          <div className="h-10 w-56 animate-pulse rounded-xl bg-white/10" />
+        </div>
+      </main>
+    );
   }
 
-  return <DarkroomApp candidates={candidates} initialSlug={sp.title} />;
+  return <DarkroomApp candidates={candidates} initialSlug={sp.get("title") ?? undefined} />;
+}
+
+export default function DarkroomPage() {
+  return (
+    <Suspense fallback={null}>
+      <DarkroomInner />
+    </Suspense>
+  );
 }

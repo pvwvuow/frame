@@ -2,7 +2,7 @@ import Link from "next/link";
 import FavoriteButton from "../FavoriteButton";
 import { StarIcon, ChevronRight, FilmIcon, TvIcon } from "../Icons";
 import { fa } from "@/lib/format";
-import type { FavoriteRow } from "@/lib/library";
+import type { FavoriteRow } from "@/lib/mobile/userdata";
 
 export type AsideCollection = {
   slug: string;

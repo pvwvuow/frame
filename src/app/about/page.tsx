@@ -1,14 +1,25 @@
+"use client";
+
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import InfoPage, { Section } from "@/components/pages/InfoPage";
 import { SparkIcon, FilmIcon, TvIcon, GlobeIcon, ShieldIcon, SubtitleIcon, ClapperIcon, DownloadIcon } from "@/components/Icons";
-import { getCatalogStats } from "@/lib/queries";
+import { getCatalogStats } from "@/lib/mobile/db";
 import { fa, formatViews } from "@/lib/format";
 
-export const dynamic = "force-dynamic";
-export const metadata = { title: "درباره فریم" };
+export default function AboutPage() {
+  const [stats, setStats] = useState<{ m: Awaited<ReturnType<typeof getCatalogStats>>; s: Awaited<ReturnType<typeof getCatalogStats>> } | null>(null);
 
-export default async function AboutPage() {
-  const [m, s] = await Promise.all([getCatalogStats("movie"), getCatalogStats("series")]);
+  useEffect(() => {
+    let alive = true;
+    Promise.all([getCatalogStats("movie"), getCatalogStats("series")]).then(([m, s]) => alive && setStats({ m, s }));
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const m = stats?.m;
+  const s = stats?.s;
   const feats = [
     { icon: ClapperIcon, t: "کیفیت 4K HDR", d: "پخش با بالاترین کیفیت و صدای فراگیر، متناسب با سرعت اینترنت شما." },
     { icon: SubtitleIcon, t: "زیرنویس و دوبله", d: "زیرنویس فارسی و انگلیسی برای همه آثار؛ دوبله برای منتخب‌ها." },
@@ -21,10 +32,10 @@ export default async function AboutPage() {
     <InfoPage current="/about" icon={SparkIcon} eyebrow="داستان ما" title="درباره فریم" lead="فریم یک سینمای آنلاین فارسی است؛ جایی که هر شب می‌توانید یک تجربه‌ی سینمایی تازه داشته باشید. ما با عشق به سینما و وسواس در جزئیات، تلاش می‌کنیم بهترین تجربه‌ی تماشا را با زبان و حس‌وحال ایرانی بسازیم.">
       <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
         {[
-          { icon: FilmIcon, v: fa(m.count), k: "فیلم" },
-          { icon: TvIcon, v: fa(s.count), k: "سریال" },
-          { icon: SparkIcon, v: formatViews(m.totalViews + s.totalViews), k: "بازدید" },
-          { icon: ClapperIcon, v: fa(((m.avgRating + s.avgRating) / 2).toFixed(1)), k: "میانگین امتیاز" },
+          { icon: FilmIcon, v: fa(m?.count ?? 0), k: "فیلم" },
+          { icon: TvIcon, v: fa(s?.count ?? 0), k: "سریال" },
+          { icon: SparkIcon, v: formatViews((m?.totalViews ?? 0) + (s?.totalViews ?? 0)), k: "بازدید" },
+          { icon: ClapperIcon, v: fa(m && s ? ((m.avgRating + s.avgRating) / 2).toFixed(1) : "0"), k: "میانگین امتیاز" },
         ].map((x) => (
           <div key={x.k} className="glass rounded-2xl px-4 py-3">
             <x.icon width={16} height={16} className="text-zinc-400" />

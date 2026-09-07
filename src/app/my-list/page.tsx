@@ -1,4 +1,8 @@
+"use client";
+
 import Link from "next/link";
+import { Suspense, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import TitleCard from "@/components/TitleCard";
 import MyListManager from "@/components/library/MyListManager";
 import ListCalendar, { type WatchEvent } from "@/components/library/ListCalendar";
@@ -16,29 +20,68 @@ import {
   ChevronRight,
   ClockIcon,
 } from "@/components/Icons";
-import { getContinueWatching, getTrending, getCollections } from "@/lib/queries";
-import { getMyListRows, getUserStats, getFavoriteRows, getHistory } from "@/lib/library";
-import { getUserKey } from "@/lib/user";
+import { getTrending, getCollections } from "@/lib/mobile/db";
+import { getMyListRows, getUserStats, getFavoriteRows, getHistory, getContinueWatching } from "@/lib/mobile/userdata";
 import { g2j } from "@/lib/jalali";
 import { fa } from "@/lib/format";
 
-export const dynamic = "force-dynamic";
-export const metadata = { title: "لیست من" };
+function MyListInner() {
+  const sp = useSearchParams();
+  const view = sp.get("view") === "list" ? "list" : "calendar";
 
-export default async function MyListPage({ searchParams }: { searchParams: Promise<{ view?: string }> }) {
-  const { view: viewParam } = await searchParams;
-  const view = viewParam === "list" ? "list" : "calendar";
+  const [st, setSt] = useState<{
+    rows: Awaited<ReturnType<typeof getMyListRows>>;
+    stats: Awaited<ReturnType<typeof getUserStats>>;
+    cont: Awaited<ReturnType<typeof getContinueWatching>>;
+    trending: Awaited<ReturnType<typeof getTrending>>;
+    history: Awaited<ReturnType<typeof getHistory>>;
+    favRows: Awaited<ReturnType<typeof getFavoriteRows>>;
+    collections: AsideCollection[];
+  } | null>(null);
 
-  const userKey = await getUserKey();
-  const [rows, stats, cont, trending, history, favRows, collectionsRaw] = await Promise.all([
-    getMyListRows(userKey),
-    getUserStats(userKey),
-    getContinueWatching(userKey, 6),
-    getTrending(16),
-    getHistory(userKey),
-    getFavoriteRows(userKey),
-    getCollections(30),
-  ]);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const [rows, stats, cont, trending, history, favRows, collectionsRaw] = await Promise.all([
+        getMyListRows(),
+        getUserStats(),
+        getContinueWatching(6),
+        getTrending(16),
+        getHistory(),
+        getFavoriteRows(),
+        getCollections(30),
+      ]);
+      const collections: AsideCollection[] = collectionsRaw.slice(0, 5).map((c) => ({
+        slug: c.slug,
+        title: c.title,
+        count: c.count,
+        movies: c.items.filter((t) => t.type === "movie").length,
+        series: c.items.filter((t) => t.type === "series").length,
+        thumb: c.items[0]?.backdrop ?? c.items[0]?.poster ?? "",
+      }));
+      if (alive) setSt({ rows, stats, cont, trending, history, favRows, collections });
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  if (!st) {
+    return (
+      <main className="pb-16">
+        <div className="mx-auto max-w-[1600px] px-4 pt-28 sm:px-8 lg:px-12 lg:pt-32">
+          <div className="h-8 w-32 animate-pulse rounded-lg bg-white/10" />
+          <div className="mt-6 grid gap-6 lg:grid-cols-[220px_minmax(0,1fr)_320px]">
+            <div className="hidden h-64 animate-pulse rounded-2xl bg-white/5 lg:block" />
+            <div className="h-96 animate-pulse rounded-3xl bg-white/5" />
+            <div className="hidden h-64 animate-pulse rounded-2xl bg-white/5 lg:block" />
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  const { rows, stats, cont, trending, history, favRows, collections } = st;
 
   /* ---- رویدادهای تماشا برای تقویم (سبز) + شمارنده‌ی این ماه ---- */
   const events: WatchEvent[] = history.slice(0, 400).map((h) => ({
@@ -62,14 +105,6 @@ export default async function MyListPage({ searchParams }: { searchParams: Promi
   const hours = Math.round(stats.minutesWatched / 60);
 
   /* ---- مجموعه‌ها برای ستون کنار ---- */
-  const collections: AsideCollection[] = collectionsRaw.slice(0, 5).map((c) => ({
-    slug: c.slug,
-    title: c.title,
-    count: c.count,
-    movies: c.items.filter((t) => t.type === "movie").length,
-    series: c.items.filter((t) => t.type === "series").length,
-    thumb: c.items[0]?.backdrop ?? c.items[0]?.poster ?? "",
-  }));
 
   const heroBackdrop =
     history[0]?.title.backdrop ?? cont[0]?.title.backdrop ?? rows[0]?.title.backdrop ?? trending[0]?.backdrop;
@@ -252,5 +287,19 @@ export default async function MyListPage({ searchParams }: { searchParams: Promi
         </div>
       </div>
     </main>
+  );
+}
+
+export default function MyListPage() {
+  return (
+    <Suspense fallback={
+      <main className="pb-16">
+        <div className="mx-auto max-w-[1600px] px-4 pt-28 sm:px-8 lg:px-12 lg:pt-32">
+          <div className="h-8 w-32 animate-pulse rounded-lg bg-white/10" />
+        </div>
+      </main>
+    }>
+      <MyListInner />
+    </Suspense>
   );
 }

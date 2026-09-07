@@ -1,17 +1,34 @@
+"use client";
+
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import SettingsForm from "@/components/library/SettingsForm";
 import SourceSyncCard from "@/components/settings/SourceSyncCard";
 import CatalogUpdateCard from "@/components/settings/CatalogUpdateCard";
 import { SettingsIcon, HelpIcon, ShieldIcon, KeyboardIcon, InfoIcon, MailIcon } from "@/components/Icons";
-import { getProfile } from "@/lib/library";
-import { getUserKey } from "@/lib/user";
+import { getProfile } from "@/lib/mobile/userdata";
 
-export const dynamic = "force-dynamic";
-export const metadata = { title: "تنظیمات" };
+export default function SettingsPage() {
+  const [p, setP] = useState<Awaited<ReturnType<typeof getProfile>> | null>(null);
 
-export default async function SettingsPage() {
-  const userKey = await getUserKey();
-  const p = await getProfile(userKey);
+  useEffect(() => {
+    let alive = true;
+    getProfile().then((r) => alive && setP(r));
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  if (!p) {
+    return (
+      <main className="pb-16">
+        <div className="mx-auto max-w-6xl px-4 pt-32 sm:px-8">
+          <div className="h-10 w-48 animate-pulse rounded-xl bg-white/10" />
+        </div>
+      </main>
+    );
+  }
+
   return (
     <main className="pb-16">
       <div className="mx-auto max-w-6xl px-4 pt-28 sm:px-8 lg:pt-36">

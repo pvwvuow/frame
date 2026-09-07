@@ -1,10 +1,11 @@
+"use client";
+
 import Link from "next/link";
-import { getPeopleIndex } from "@/lib/queries";
+import { Suspense, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { getPeopleIndex } from "@/lib/mobile/db";
 import { fa } from "@/lib/format";
 import { UsersIcon, StarIcon, ClapperIcon } from "@/components/Icons";
-
-export const dynamic = "force-dynamic";
-export const metadata = { title: "هنرمندان" };
 
 const HUES = [350, 265, 200, 150, 35, 320, 15, 230, 100, 45, 280, 180];
 
@@ -20,9 +21,35 @@ const RANK_STYLES = [
   "from-amber-600 to-orange-700 text-white", // bronze
 ];
 
-export default async function PeoplePage({ searchParams }: { searchParams: Promise<{ role?: string; sort?: string }> }) {
-  const { role, sort = "rating" } = await searchParams;
-  const all = await getPeopleIndex();
+function PeopleInner() {
+  const sp = useSearchParams();
+  const role = sp.get("role") ?? undefined;
+  const sort = sp.get("sort") ?? "rating";
+  const [all, setAll] = useState<Awaited<ReturnType<typeof getPeopleIndex>> | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    getPeopleIndex().then((p) => alive && setAll(p));
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  if (!all) {
+    return (
+      <main className="pb-16">
+        <div className="mx-auto max-w-[1600px] px-4 pt-32 sm:px-8 lg:px-12">
+          <div className="h-10 w-64 animate-pulse rounded-xl bg-white/10" />
+          <div className="mt-8 grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
+            {Array.from({ length: 18 }).map((_, i) => (
+              <div key={i} className="h-44 animate-pulse rounded-3xl bg-white/5" />
+            ))}
+          </div>
+        </div>
+      </main>
+    );
+  }
+
   const roleFiltered = role === "director" ? all.filter((p) => p.roles.includes("director")) : role === "actor" ? all.filter((p) => p.roles.includes("actor")) : all;
 
   // رنک‌بندی: بر اساس میانگین امتیاز آثار / تعداد اثر / نام
@@ -146,5 +173,19 @@ export default async function PeoplePage({ searchParams }: { searchParams: Promi
         </div>
       </div>
     </main>
+  );
+}
+
+export default function PeoplePage() {
+  return (
+    <Suspense fallback={
+      <main className="pb-16">
+        <div className="mx-auto max-w-[1600px] px-4 pt-32 sm:px-8 lg:px-12">
+          <div className="h-10 w-64 animate-pulse rounded-xl bg-white/10" />
+        </div>
+      </main>
+    }>
+      <PeopleInner />
+    </Suspense>
   );
 }

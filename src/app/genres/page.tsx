@@ -1,15 +1,34 @@
+"use client";
+
 import Link from "next/link";
-import { getGenreSummaries } from "@/lib/queries";
+import { useEffect, useState } from "react";
+import { getGenreSummaries } from "@/lib/mobile/db";
 import { fa } from "@/lib/format";
 import { SparkIcon, StarIcon, FilmIcon, TvIcon, ChevronLeft } from "@/components/Icons";
 
-export const dynamic = "force-dynamic";
-export const metadata = { title: "ژانرها | نما" };
-
 const HUES = [350, 265, 200, 150, 35, 320, 15, 230, 100, 45, 280, 180, 0, 210];
 
-export default async function GenresPage() {
-  const genres = await getGenreSummaries();
+export default function GenresPage() {
+  const [genres, setGenres] = useState<Awaited<ReturnType<typeof getGenreSummaries>> | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    getGenreSummaries().then((g) => alive && setGenres(g));
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  if (!genres) {
+    return (
+      <main className="pb-16">
+        <div className="mx-auto max-w-[1600px] px-4 pt-32 sm:px-8 lg:px-12">
+          <div className="h-10 w-56 animate-pulse rounded-xl bg-white/10" />
+        </div>
+      </main>
+    );
+  }
+
   const big = genres.slice(0, 2);
   const rest = genres.slice(2);
 

@@ -3,7 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import type { ListStatus } from "@/lib/library";
+import type { ListStatus } from "@/lib/library-shared";
 import { logEvent, pushFavorite, pushRating, pushWatchlist } from "@/lib/cloud";
 
 type Profile = { displayName: string; avatar: number; avatarImage?: string | null; reduceMotion: boolean; kidsMode?: boolean; hasPin?: boolean };
