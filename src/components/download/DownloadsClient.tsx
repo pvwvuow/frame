@@ -113,7 +113,7 @@ export default function DownloadsClient() {
               <div className="min-w-0">
                 <p className="text-sm font-extrabold text-white">{t("dl.folderTitle")}</p>
                 <p className="truncate text-xs text-zinc-400" dir="ltr">
-                  {state.dir ? state.dir + "\\Frame" : t("dl.folderEmpty")}
+                  {state.dir ? state.dir + (state.dir.includes("\\") ? "\\Frame" : "/Frame") : t("dl.folderEmpty")}
                 </p>
               </div>
             </div>
