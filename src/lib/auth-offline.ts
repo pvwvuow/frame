@@ -101,6 +101,7 @@ export function saveAuthSnapshot(session: Session | null | undefined) {
   } catch {
     /* ignore */
   }
+  mirrorAuthCacheToDisk();
 }
 
 /** Mark that the user EXPLICITLY signed out. supabase-js can write the
@@ -138,6 +139,80 @@ export function clearAuthSnapshot() {
   } catch {
     /* ignore */
   }
+  mirrorAuthCacheToDisk();
+}
+
+/* ------------------------------------------------------------------ */
+/* Disk mirror (Electron, v0.10.14)                                    */
+/* ------------------------------------------------------------------ */
+
+/* localStorage is keyed by ORIGIN. In Electron the app is normally served on
+ * a stable origin (v0.10.14 stable server port), but as a second line of
+ * defense the auth/subscription snapshots are ALSO mirrored to a file in the
+ * userData folder. If the origin ever changes (port file lost, preferred
+ * port squatted), the login is restored from disk instead of being lost.
+ * Only the publishable-key session data ever touches this file. */
+
+type AuthCacheBridge = {
+  read: () => Promise<string | null>;
+  write: (data: string) => Promise<boolean>;
+};
+
+function authBridge(): AuthCacheBridge | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return (window as unknown as { nama?: { authCache?: AuthCacheBridge } }).nama?.authCache ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** Push the CURRENT localStorage snapshots to the disk mirror (fire & forget;
+ *  silently no-ops outside Electron). Called on every save/clear below. */
+export function mirrorAuthCacheToDisk() {
+  const bridge = authBridge();
+  if (!bridge) return;
+  try {
+    const payload = {
+      auth: readJson<unknown>(AUTH_KEY),
+      sub: readJson<unknown>(SUB_KEY),
+    };
+    void bridge.write(JSON.stringify(payload))?.catch(() => {
+      /* non-fatal */
+    });
+  } catch {
+    /* non-fatal */
+  }
+}
+
+let hydratePromise: Promise<void> | null = null;
+
+/** One-shot restore (idempotent): when localStorage has no snapshots (fresh
+ *  origin after an update/port change) but the disk mirror remembers the
+ *  login, refill the missing keys. NEVER overwrites fresher local data.
+ *  Safe to await from any number of hooks – they all share one promise. */
+export function hydrateAuthCacheFromDisk(): Promise<void> {
+  if (typeof window === "undefined") return Promise.resolve();
+  if (!hydratePromise) {
+    hydratePromise = (async () => {
+      const bridge = authBridge();
+      if (!bridge) return;
+      try {
+        const raw = await bridge.read();
+        if (!raw) return;
+        const parsed = JSON.parse(raw) as { auth?: unknown; sub?: unknown };
+        if (parsed?.auth && !localStorage.getItem(AUTH_KEY)) {
+          localStorage.setItem(AUTH_KEY, JSON.stringify(parsed.auth));
+        }
+        if (parsed?.sub && !localStorage.getItem(SUB_KEY)) {
+          localStorage.setItem(SUB_KEY, JSON.stringify(parsed.sub));
+        }
+      } catch {
+        /* corrupt mirror → ignore; localStorage is the source of truth */
+      }
+    })();
+  }
+  return hydratePromise;
 }
 
 /* ------------------------------------------------------------------ */
@@ -154,6 +229,7 @@ export function readSubSnapshot(): SubSnapshot | null {
 export function saveSubSnapshot(sub: { plan: string | null; expiresAt: string | null; lifetime: boolean }) {
   if (!sub.plan) return;
   writeJson(SUB_KEY, { ...sub, savedAt: Date.now() } satisfies SubSnapshot);
+  mirrorAuthCacheToDisk();
 }
 
 export function clearSubSnapshot() {
@@ -162,6 +238,7 @@ export function clearSubSnapshot() {
   } catch {
     /* ignore */
   }
+  mirrorAuthCacheToDisk();
 }
 
 /** Judge "subscription active" purely from the cached snapshot (works offline). */

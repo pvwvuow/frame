@@ -18,6 +18,12 @@ contextBridge.exposeInMainWorld("nama", {
   openExternal: (url) => ipcRenderer.invoke("nama:open-external", url),
   /** base URL of the local stream proxy ("" when unavailable / web mode) */
   proxyUrl: () => ipcRenderer.invoke("nama:proxy-url"),
+  /* v0.10.14 – disk mirror of the login/subscription snapshots (see main.cjs):
+     keeps the user logged in even if the localStorage origin ever changes */
+  authCache: {
+    read: () => ipcRenderer.invoke("nama:auth-cache-read"),
+    write: (data) => ipcRenderer.invoke("nama:auth-cache-write", data),
+  },
   window: {
     minimize: () => ipcRenderer.send("nama:win", "minimize"),
     maximize: () => ipcRenderer.send("nama:win", "maximize"),

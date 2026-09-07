@@ -25,6 +25,7 @@ import {
   clearSignOutTombstone,
   clearSubSnapshot,
   fakeSessionFromSnapshot,
+  hydrateAuthCacheFromDisk,
   isSignOutTombstoned,
   readAuthSnapshot,
   saveAuthSnapshot,
@@ -142,97 +143,109 @@ export function useCloudSession(): CloudSessionState {
 
   useEffect(() => {
     let alive = true;
-    const sb = getSupabase();
+    let cleanup: (() => void) | undefined;
 
-    if (!sb) {
-      // No supabase endpoint configured → still respect a cached login.
-      const snap = readAuthSnapshot();
-      setState({ ready: true, session: snap ? fakeSessionFromSnapshot(snap) : null });
-      return;
-    }
+    // v0.10.14 – restore the disk-mirrored snapshots (if any) BEFORE the
+    // first session check, so even a fresh-origin launch can see the saved
+    // login. No-op / instant when localStorage already has the session.
+    void hydrateAuthCacheFromDisk().then(() => {
+      if (!alive) return;
+      const sb = getSupabase();
 
-    sb.auth
-      .getSession()
-      .then(async ({ data }) => {
-        if (!alive) return;
-        if (data.session) {
-          // a sign-out that started while this promise was in flight WINS —
-          // never resurrect a session the user just killed
-          if (expectingSignOut) return;
-          // ZOMBIE GUARD: supabase's offline sign-out internals can write the
-          // session back into storage AFTER we wiped it. session-in-storage
-          // + explicit sign-out tombstone = the user logged this out.
-          if (!readAuthSnapshot() && isSignOutTombstoned()) {
-            forceClearSupabaseStorage();
-            setState({ ready: true, session: null });
-            return;
-          }
-          saveAuthSnapshot(data.session);
-          setState({ ready: true, session: data.session });
-          return;
-        }
-        // Supabase storage is empty but WE remember a login → restore it
-        // (a previous offline run may have wiped the stored session).
-        if (!expectingSignOut && readAuthSnapshot()) {
-          const restored = await reattachSession(sb);
-          if (restored && alive) {
-            setState({ ready: true, session: restored });
-            return;
-          }
-          // offline → keep showing the cached identity
-        }
-        if (alive) {
-          const snap = readAuthSnapshot();
-          setState({ ready: true, session: snap ? fakeSessionFromSnapshot(snap) : null });
-        }
-      })
-      .catch(() => {
-        if (!alive) return;
+      if (!sb) {
+        // No supabase endpoint configured → still respect a cached login.
         const snap = readAuthSnapshot();
         setState({ ready: true, session: snap ? fakeSessionFromSnapshot(snap) : null });
-      });
-
-    const { data: sub } = sb.auth.onAuthStateChange((event, session) => {
-      if (!alive) return;
-      if (event === "SIGNED_OUT") {
-        if (expectingSignOut || !readAuthSnapshot()) {
-          clearAuthSnapshot();
-          setState({ ready: true, session: null });
-        }
-        // else: spurious sign-out (offline refresh wipe) → ignore, stay logged in
         return;
       }
-      if (session && !expectingSignOut) {
-        // zombie guard (same as in getSession) — but NEVER for SIGNED_IN:
-        // that event is a deliberate login (or a restore we initiated), it
-        // must always win over an old tombstone
-        if (event !== "SIGNED_IN" && !readAuthSnapshot() && isSignOutTombstoned()) {
-          forceClearSupabaseStorage();
+
+      sb.auth
+        .getSession()
+        .then(async ({ data }) => {
+          if (!alive) return;
+          if (data.session) {
+            // a sign-out that started while this promise was in flight WINS —
+            // never resurrect a session the user just killed
+            if (expectingSignOut) return;
+            // ZOMBIE GUARD: supabase's offline sign-out internals can write the
+            // session back into storage AFTER we wiped it. session-in-storage
+            // + explicit sign-out tombstone = the user logged this out.
+            if (!readAuthSnapshot() && isSignOutTombstoned()) {
+              forceClearSupabaseStorage();
+              setState({ ready: true, session: null });
+              return;
+            }
+            saveAuthSnapshot(data.session);
+            setState({ ready: true, session: data.session });
+            return;
+          }
+          // Supabase storage is empty but WE remember a login → restore it
+          // (a previous offline run may have wiped the stored session).
+          if (!expectingSignOut && readAuthSnapshot()) {
+            const restored = await reattachSession(sb);
+            if (restored && alive) {
+              setState({ ready: true, session: restored });
+              return;
+            }
+            // offline → keep showing the cached identity
+          }
+          if (alive) {
+            const snap = readAuthSnapshot();
+            setState({ ready: true, session: snap ? fakeSessionFromSnapshot(snap) : null });
+          }
+        })
+        .catch(() => {
+          if (!alive) return;
+          const snap = readAuthSnapshot();
+          setState({ ready: true, session: snap ? fakeSessionFromSnapshot(snap) : null });
+        });
+
+      const { data: sub } = sb.auth.onAuthStateChange((event, session) => {
+        if (!alive) return;
+        if (event === "SIGNED_OUT") {
+          if (expectingSignOut || !readAuthSnapshot()) {
+            clearAuthSnapshot();
+            setState({ ready: true, session: null });
+          }
+          // else: spurious sign-out (offline refresh wipe) → ignore, stay logged in
           return;
         }
-        saveAuthSnapshot(session);
-        setState({ ready: true, session });
-      }
+        if (session && !expectingSignOut) {
+          // zombie guard (same as in getSession) — but NEVER for SIGNED_IN:
+          // that event is a deliberate login (or a restore we initiated), it
+          // must always win over an old tombstone
+          if (event !== "SIGNED_IN" && !readAuthSnapshot() && isSignOutTombstoned()) {
+            forceClearSupabaseStorage();
+            return;
+          }
+          saveAuthSnapshot(session);
+          setState({ ready: true, session });
+        }
+      });
+
+      // VPN back on → silently revalidate and refresh the token.
+      const onOnline = () => {
+        if (expectingSignOut) return;
+        void reattachSession(sb).then((s) => {
+          if (s && alive && !expectingSignOut) setState({ ready: true, session: s });
+        });
+      };
+      window.addEventListener("online", onOnline);
+
+      // instant local sign-out (never wait for the server revoke — with the
+      // network down supabase's signOut can grind for many seconds)
+      const onForcedSignOut = () => setState({ ready: true, session: null });
+      signOutListeners.add(onForcedSignOut);
+      cleanup = () => {
+        sub.subscription.unsubscribe();
+        window.removeEventListener("online", onOnline);
+        signOutListeners.delete(onForcedSignOut);
+      };
     });
 
-    // VPN back on → silently revalidate and refresh the token.
-    const onOnline = () => {
-      if (expectingSignOut) return;
-      void reattachSession(sb).then((s) => {
-        if (s && alive && !expectingSignOut) setState({ ready: true, session: s });
-      });
-    };
-    window.addEventListener("online", onOnline);
-
-    // instant local sign-out (never wait for the server revoke — with the
-    // network down supabase's signOut can grind for many seconds)
-    const onForcedSignOut = () => setState({ ready: true, session: null });
-    signOutListeners.add(onForcedSignOut);
     return () => {
       alive = false;
-      sub.subscription.unsubscribe();
-      window.removeEventListener("online", onOnline);
-      signOutListeners.delete(onForcedSignOut);
+      cleanup?.();
     };
   }, []);
   return state;

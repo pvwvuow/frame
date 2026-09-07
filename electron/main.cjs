@@ -311,6 +311,67 @@ function freePort() {
   });
 }
 
+/* v0.10.14 – STABLE ORIGIN = A LOGIN THAT SURVIVES RESTARTS.
+ * The renderer keeps the Supabase session, the auth snapshot, the VIP
+ * subscription snapshot and UI prefs in localStorage – which Chromium keys
+ * by ORIGIN. Serving the app on a random port per launch (the old
+ * freePort()-every-time behavior) changed the origin on every restart, so
+ * the app «forgot» the logged-in user and asked for login again after each
+ * restart. We now try, in order: the port saved from the previous run → a
+ * fixed preferred port → a random free port (last resort). The chosen port
+ * is persisted only after the server actually became healthy. */
+const PREFERRED_SERVER_PORT = 47213;
+
+function serverPortFile() {
+  return path.join(app.getPath("userData"), "server-port.txt");
+}
+
+function readSavedServerPort() {
+  try {
+    const v = Number(fs.readFileSync(serverPortFile(), "utf8").trim());
+    return Number.isInteger(v) && v >= 1024 && v <= 65535 ? v : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function saveServerPort(port) {
+  try {
+    fs.mkdirSync(path.dirname(serverPortFile()), { recursive: true });
+    fs.writeFileSync(serverPortFile(), String(port), "utf8");
+    log.info("server port saved for a stable origin:", port);
+  } catch (e) {
+    log.warn("could not save server port:", e);
+  }
+}
+
+function portIsFree(port) {
+  return new Promise((resolve) => {
+    const srv = net.createServer();
+    srv.unref();
+    srv.once("error", () => resolve(false));
+    srv.listen(port, "127.0.0.1", () => {
+      srv.close(() => resolve(true));
+    });
+  });
+}
+
+/** Preferred port for the embedded server: last run's port first, then the
+ *  fixed default – so the origin (and the localStorage with it) survives
+ *  restarts. Falls back to a random free port only when both are taken. */
+async function pickPreferredPort() {
+  const candidates = [];
+  const saved = readSavedServerPort();
+  if (saved) candidates.push(saved);
+  if (!candidates.includes(PREFERRED_SERVER_PORT)) candidates.push(PREFERRED_SERVER_PORT);
+  for (const p of candidates) {
+    // eslint-disable-next-line no-await-in-loop
+    if (await portIsFree(p)) return p;
+    log.info("preferred server port busy, skipping:", p);
+  }
+  return freePort();
+}
+
 /** Waits until the embedded server answers /api/health. Fails FAST when the
  *  server process dies, and never hammers a busy-but-alive server (a cold
  *  start under antivirus scanning can legitimately take a while). */
@@ -530,9 +591,13 @@ async function startServer() {
     }
   }
   /* If the server dies instantly (port race, antivirus lock) retry once on a
-     fresh port before surfacing an error. */
+     fresh port before surfacing an error. v0.10.14: the FIRST attempt uses
+     the previous run's port when free – a stable origin is what keeps the
+     user logged in across restarts (localStorage is keyed by origin). */
   for (let attempt = 1; ; attempt++) {
-    env.PORT = String(await freePort());
+    // eslint-disable-next-line no-await-in-loop
+    const port = attempt === 1 ? await pickPreferredPort() : await freePort();
+    env.PORT = String(port);
     serverProc = spawn(process.execPath, [entry], { cwd: dir, env, stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
     writeServerPid(serverProc.pid);
     attachServerLogging(serverProc);
@@ -542,6 +607,7 @@ async function startServer() {
       // merge moved to a background job (runStartupSync) and no longer
       // blocks the startup gate
       await waitFor(serverUrl, 90000);
+      saveServerPort(port); // remember for the next launch (stable origin)
       break;
     } catch (e) {
       const diedEarly = !serverProc;
@@ -901,6 +967,37 @@ ipcMain.on("nama:badge", (_e, count) => {
   if (process.platform === "darwin") app.dock?.setBadge(n ? String(n) : "");
   else if (process.platform === "linux") app.setBadgeCount(n);
   else if (mainWindow) mainWindow.setOverlayIcon(null, n ? `${n} اعلان` : "");
+});
+
+/* v0.10.14 – disk mirror of the auth/subscription snapshots (belt and
+ * suspenders for the stable-origin fix): localStorage is normally persistent,
+ * but if the origin ever changes anyway (port file lost, preferred port
+ * squatted by another app), the renderer restores the login from this file
+ * instead of asking the user to sign in again. Content is OUR cached snapshot
+ * shape (frame.auth.snapshot.v1 / frame.sub.snapshot.v1 values), never the
+ * secret key; size-capped and JSON-validated on both ends. */
+function authCacheFile() {
+  return path.join(app.getPath("userData"), "frame-auth-cache.json");
+}
+ipcMain.handle("nama:auth-cache-read", () => {
+  try {
+    const raw = fs.readFileSync(authCacheFile(), "utf8");
+    return raw && raw.length <= 128 * 1024 ? raw : null;
+  } catch {
+    return null;
+  }
+});
+ipcMain.handle("nama:auth-cache-write", (_e, data) => {
+  try {
+    if (typeof data !== "string" || data.length > 128 * 1024) return false;
+    const parsed = JSON.parse(data); // must be valid JSON
+    if (!parsed || typeof parsed !== "object") return false;
+    fs.mkdirSync(path.dirname(authCacheFile()), { recursive: true });
+    fs.writeFileSync(authCacheFile(), data, "utf8");
+    return true;
+  } catch {
+    return false;
+  }
 });
 
 /* ------------------------------------------------------------------ */
