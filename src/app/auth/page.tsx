@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { useI18n } from "@/components/i18n/LocaleProvider";
 import { UserIcon, RefreshIcon, HeartIcon, BookmarkIcon } from "@/components/Icons";
 import {
+  explicitSignOut,
   fullSync,
   getSupabase,
   getSupabaseUrl,
@@ -124,9 +125,9 @@ export default function AuthPage() {
     }
   }
 
-  async function doSignOut() {
-    const sb = getSupabase();
-    await sb?.auth.signOut();
+  function doSignOut() {
+    // v0.10.13: instant local sign-out; server revoke in background
+    void explicitSignOut();
     toast.success(en ? "Signed out." : "از حساب خارج شدی.");
   }
 

@@ -30,7 +30,7 @@ import { bridge, useIsElectron } from "@/lib/platform";
 import { toast } from "sonner";
 import { useI18n } from "./i18n/LocaleProvider";
 import { LOCALES, LOCALE_META, type TKey } from "@/lib/i18n";
-import { getSupabase, useCloudSession } from "@/lib/cloud";
+import { explicitSignOut, useCloudSession } from "@/lib/cloud";
 
 type IconCmp = typeof UserIcon;
 type Entry = { href: string; label: TKey; icon: IconCmp; key?: "list" | "fav" | "notif"; tint?: string };
@@ -327,15 +327,13 @@ export default function UserMenu() {
               {session && (
                 <button
                   type="button"
-                  onClick={async () => {
+                  onClick={() => {
                     setOpen(false);
-                    try {
-                      await getSupabase()?.auth.signOut();
-                      toast.success(locale === "en" ? "Signed out." : "از حساب خارج شدی.");
-                      router.refresh();
-                    } catch {
-                      toast.error(locale === "en" ? "Sign out failed." : "خروج از حساب ناموفق بود.");
-                    }
+                    // v0.10.13: instant local sign-out (snapshots cleared
+                    // synchronously); the server revoke runs in background
+                    void explicitSignOut();
+                    toast.success(locale === "en" ? "Signed out." : "از حساب خارج شدی.");
+                    router.refresh();
                   }}
                   className="mt-2 flex w-full items-center gap-3 rounded-full border border-transparent bg-white/[0.04] px-3.5 py-2.5 text-sm text-rose-300 transition hover:border-rose-500/30 hover:bg-rose-500/10 hover:text-rose-200"
                 >

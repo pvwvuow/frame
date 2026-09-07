@@ -16,6 +16,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { getSupabase, useCloudSession } from "./cloud";
+import { readSubSnapshot, saveSubSnapshot, subSnapshotActive, clearSubSnapshot } from "./auth-offline";
 
 export type Plan = "m1" | "m3" | "m6" | "y1" | "life";
 
@@ -87,11 +88,23 @@ export function useSubscription(): SubState & {
         const lifetime = plan === "life" || (plan !== null && expiresAt === null);
         const active =
           plan !== null && (lifetime || (expiresAt ? new Date(expiresAt).getTime() > Date.now() : false));
+        // persist for offline runs (VPN off) — judged locally by expiry date
+        if (plan) saveSubSnapshot({ plan, expiresAt, lifetime });
+        else clearSubSnapshot(); // genuinely no subscription row → drop a stale cache
         setState({ ready: true, signedIn: true, active, lifetime, plan, expiresAt });
       } catch {
-        // table missing (SQL not run yet) / offline → safe default: not entitled
+        // OFFLINE (VPN off) or transient error → fall back to the LAST KNOWN
+        // snapshot instead of punishing the user with «اشتراک فعالی نداری».
+        const snap = readSubSnapshot();
         if (alive)
-          setState({ ready: true, signedIn: true, active: false, lifetime: false, plan: null, expiresAt: null });
+          setState({
+            ready: true,
+            signedIn: true,
+            active: subSnapshotActive(snap),
+            lifetime: snap?.lifetime ?? false,
+            plan: (snap?.plan as Plan | null) ?? null,
+            expiresAt: snap?.expiresAt ?? null,
+          });
       }
     })();
 

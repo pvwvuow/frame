@@ -19,7 +19,17 @@
  */
 
 import { createClient, type Session, type SupabaseClient } from "@supabase/supabase-js";
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useState } from "react";
+import {
+  clearAuthSnapshot,
+  clearSignOutTombstone,
+  clearSubSnapshot,
+  fakeSessionFromSnapshot,
+  isSignOutTombstoned,
+  readAuthSnapshot,
+  saveAuthSnapshot,
+  writeSignOutTombstone,
+} from "./auth-offline";
 
 /** e.g. "https://xxxxxxxxxxxx.supabase.co" — fill to hard-code the project. */
 export const SUPABASE_URL_DEFAULT = "https://emqsegjeiyimoyncbhfn.supabase.co";
@@ -79,33 +89,210 @@ export function getSupabase(): SupabaseClient | null {
 
 export type CloudSessionState = { ready: boolean; session: Session | null };
 
-/** Subscribes to the Supabase auth session (persists across app restarts). */
+/** True while an explicit user-initiated sign-out is in flight. Spurious
+ *  SIGNED_OUT events (offline token-refresh wipe) must NOT log the user out. */
+let expectingSignOut = false;
+
+/** Immediate local sign-out listeners (one per mounted useCloudSession). */
+const signOutListeners = new Set<(s: Session | null) => void>();
+
+/** Restore our cached tokens into the supabase client so it can refresh on
+ *  its own once the network is back. Fails silently when offline. */
+async function reattachSession(sb: SupabaseClient): Promise<Session | null> {
+  const snap = readAuthSnapshot();
+  if (!snap?.raw?.refresh_token) return null;
+  try {
+    const { data } = await sb.auth.setSession({
+      access_token: snap.raw.access_token,
+      refresh_token: snap.raw.refresh_token,
+    });
+    if (data.session) {
+      saveAuthSnapshot(data.session);
+      return data.session;
+    }
+  } catch {
+    /* offline / expired refresh token → the snapshot UI state stays */
+  }
+  return null;
+}
+
+/** Subscribes to the Supabase auth session (persists across app restarts).
+ *
+ *  v0.10.13 OFFLINE RESILIENCE:
+ *   - a localStorage snapshot (auth-offline.ts) is applied BEFORE first paint,
+ *     so a returning user never sees the signed-out UI flash;
+ *   - network failures NEVER log the user out — only an explicit sign-out
+ *     clears the snapshot (fixes «after turning the VPN off the app forgets
+ *     the login»);
+ *   - when supabase's own storage lost the session, the cached refresh token
+ *     re-attaches it; when the network returns the session revalidates. */
 export function useCloudSession(): CloudSessionState {
   const [state, setState] = useState<CloudSessionState>({ ready: false, session: null });
+
+  // Apply the cached snapshot BEFORE first paint. useLayoutEffect would warn
+  // during SSR, so pick the right hook per environment (same render order).
+  const useIsoLayoutEffect = typeof window !== "undefined" ? useLayoutEffect : useEffect;
+  useIsoLayoutEffect(() => {
+    const snap = readAuthSnapshot();
+    if (snap) {
+      clearSignOutTombstone(); // a live snapshot = an active login
+      setState({ ready: true, session: fakeSessionFromSnapshot(snap) });
+    }
+  }, []);
+
   useEffect(() => {
     let alive = true;
     const sb = getSupabase();
+
     if (!sb) {
-      setState({ ready: true, session: null });
+      // No supabase endpoint configured → still respect a cached login.
+      const snap = readAuthSnapshot();
+      setState({ ready: true, session: snap ? fakeSessionFromSnapshot(snap) : null });
       return;
     }
+
     sb.auth
       .getSession()
-      .then(({ data }) => {
-        if (alive) setState({ ready: true, session: data.session });
+      .then(async ({ data }) => {
+        if (!alive) return;
+        if (data.session) {
+          // a sign-out that started while this promise was in flight WINS —
+          // never resurrect a session the user just killed
+          if (expectingSignOut) return;
+          // ZOMBIE GUARD: supabase's offline sign-out internals can write the
+          // session back into storage AFTER we wiped it. session-in-storage
+          // + explicit sign-out tombstone = the user logged this out.
+          if (!readAuthSnapshot() && isSignOutTombstoned()) {
+            forceClearSupabaseStorage();
+            setState({ ready: true, session: null });
+            return;
+          }
+          saveAuthSnapshot(data.session);
+          setState({ ready: true, session: data.session });
+          return;
+        }
+        // Supabase storage is empty but WE remember a login → restore it
+        // (a previous offline run may have wiped the stored session).
+        if (!expectingSignOut && readAuthSnapshot()) {
+          const restored = await reattachSession(sb);
+          if (restored && alive) {
+            setState({ ready: true, session: restored });
+            return;
+          }
+          // offline → keep showing the cached identity
+        }
+        if (alive) {
+          const snap = readAuthSnapshot();
+          setState({ ready: true, session: snap ? fakeSessionFromSnapshot(snap) : null });
+        }
       })
       .catch(() => {
-        if (alive) setState({ ready: true, session: null });
+        if (!alive) return;
+        const snap = readAuthSnapshot();
+        setState({ ready: true, session: snap ? fakeSessionFromSnapshot(snap) : null });
       });
-    const { data: sub } = sb.auth.onAuthStateChange((_event, session) => {
-      if (alive) setState({ ready: true, session });
+
+    const { data: sub } = sb.auth.onAuthStateChange((event, session) => {
+      if (!alive) return;
+      if (event === "SIGNED_OUT") {
+        if (expectingSignOut || !readAuthSnapshot()) {
+          clearAuthSnapshot();
+          setState({ ready: true, session: null });
+        }
+        // else: spurious sign-out (offline refresh wipe) → ignore, stay logged in
+        return;
+      }
+      if (session && !expectingSignOut) {
+        // zombie guard (same as in getSession) — but NEVER for SIGNED_IN:
+        // that event is a deliberate login (or a restore we initiated), it
+        // must always win over an old tombstone
+        if (event !== "SIGNED_IN" && !readAuthSnapshot() && isSignOutTombstoned()) {
+          forceClearSupabaseStorage();
+          return;
+        }
+        saveAuthSnapshot(session);
+        setState({ ready: true, session });
+      }
     });
+
+    // VPN back on → silently revalidate and refresh the token.
+    const onOnline = () => {
+      if (expectingSignOut) return;
+      void reattachSession(sb).then((s) => {
+        if (s && alive && !expectingSignOut) setState({ ready: true, session: s });
+      });
+    };
+    window.addEventListener("online", onOnline);
+
+    // instant local sign-out (never wait for the server revoke — with the
+    // network down supabase's signOut can grind for many seconds)
+    const onForcedSignOut = () => setState({ ready: true, session: null });
+    signOutListeners.add(onForcedSignOut);
     return () => {
       alive = false;
       sub.subscription.unsubscribe();
+      window.removeEventListener("online", onOnline);
+      signOutListeners.delete(onForcedSignOut);
     };
   }, []);
   return state;
+}
+
+/** User-initiated sign out — ALWAYS works (even offline) and clears every
+ *  cached snapshot so the app truly forgets the account this time.
+ *
+ *  v0.10.13: the LOCAL cleanup runs FIRST (snapshots + live hooks), so the UI
+ *  flips to signed-out instantly; the server-side token revoke continues in
+ *  the background (with the VPN off it can take seconds — never block on it).
+ *  supabase's _signOut can early-return WITHOUT local cleanup when the stored
+ *  session is unreadable offline — so we force-wipe its storage keys too and
+ *  drop the client (kills any auto-refresh timer that could resurrect the
+ *  account when the VPN comes back). */
+export function explicitSignOut(): Promise<void> {
+  expectingSignOut = true;
+  clearAuthSnapshot();
+  clearSubSnapshot();
+  writeSignOutTombstone();
+  forceClearSupabaseStorage();
+  for (const l of signOutListeners) {
+    try {
+      l(null);
+    } catch {
+      /* listener errors must never break sign-out */
+    }
+  }
+  const sb = getSupabase();
+  // drop the client immediately: fresh instances get a session-less client and
+  // no stale auto-refresh timer can silently log the user back in later
+  client = null;
+  clientUrl = "";
+  // best-effort server revoke in the background; supabase's slow internals may
+  // write the session back into storage afterwards — re-wipe when it returns
+  return (async () => {
+    try {
+      await sb?.auth.signOut();
+    } catch {
+      /* offline revoke fails → forced cleanup below still runs */
+    }
+    forceClearSupabaseStorage();
+    clearAuthSnapshot();
+    clearSubSnapshot();
+    writeSignOutTombstone();
+    expectingSignOut = false;
+  })();
+}
+
+/** Directly remove supabase's own localStorage session keys (its signOut may
+ *  skip cleanup when the network is down). */
+function forceClearSupabaseStorage() {
+  try {
+    const ref = new URL(getSupabaseUrl()).hostname.split(".")[0];
+    localStorage.removeItem(`sb-${ref}-auth-token`);
+    localStorage.removeItem(`sb-${ref}-auth-token-user`);
+    localStorage.removeItem(`sb-${ref}-auth-code-verifier`);
+  } catch {
+    /* ignore */
+  }
 }
 
 async function currentUserId(): Promise<string | null> {
