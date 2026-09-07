@@ -158,6 +158,9 @@ class SubStore {
     this.vttCache = null;
     this.vttCount = -1;
     this.touched = Date.now();
+    /** v0.10.16 self-healing head-scan state (see /subs) */
+    this.scanning = false;
+    this.scanTries = 0;
   }
 
   addCue(startMs, text, endMs = null) {
@@ -648,6 +651,47 @@ function startStreamProxy(log, opts = {}) {
       const store = stores.get(target);
       const cues = store.cues.size;
       stats.cues = cues;
+      /* v0.10.16 – SELF-HEALING HEADER SCAN. Cue recognition needs Tracks
+       * (the subtitle track number) which lives at the FILE HEAD. The old
+       * flow depended on the playback stream or the audio-guard probe
+       * covering bytes 0-…: when playback resumed mid-file and Chromium
+       * aborted the bytes=0- pass early — or the PiP window was the first
+       * to touch the URL, or the probe timed out on a slow host — Tracks
+       * were never parsed and the subtitles NEVER appeared for that
+       * session («گاهی زیرنویس اصلا لود نمیشه»). Any /subs poll on an
+       * unprobed MKV now kicks the same one-shot 2.5MB head scan /probe
+       * uses, so the track header lands in the shared store no matter how
+       * playback started. Capped at 3 tries so a Tracks-less/broken file
+       * cannot trigger endless head fetches. */
+      if (
+        !store.probed &&
+        !store.scanning &&
+        store.scanTries < 3 &&
+        /^https?:\/\//i.test(target) &&
+        isMatroska(target, "")
+      ) {
+        store.scanning = true;
+        store.scanTries += 1;
+        const settle = () => {
+          store.scanning = false;
+        };
+        proxyFetch(target, "bytes=0-2621439", 0)
+          .then((up) => {
+            const scanner = new MkvScanner(store);
+            up.on("data", (chunk) => {
+              try {
+                scanner.feed(chunk);
+              } catch {
+                up.destroy();
+              }
+              if (store.probed) up.destroy(); // Tracks parsed – that's all we need
+            });
+            up.on("end", settle);
+            up.on("close", settle);
+            up.on("error", settle);
+          })
+          .catch(settle);
+      }
       return res.end(
         JSON.stringify({
           found: store.found,

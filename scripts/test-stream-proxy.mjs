@@ -391,6 +391,28 @@ await withUpstream(async (upstreamUrl) => {
   check("codec: A_EAC3 no", isAudioCodecSupported("A_EAC3") === false);
   check("codec: assFrameToCue timing", JSON.stringify(assFrameToCue(Buffer.from(ASS1, "utf8"))) === JSON.stringify({ start: 2000, end: 4500, text: "سلام دوباره" }));
 
+  // 13) v0.10.16 self-healing /subs: polling /subs WITHOUT any prior /stream
+  //     or /probe pass must kick the head-scan itself → Tracks parsed → the
+  //     subtitle track is found (the «resume mid-file / PiP first» recovery)
+  const selfHeal = await serveFixture(mkv);
+  try {
+    const shSubs = `${base}/subs?u=${encodeURIComponent(selfHeal.url)}`;
+    let sawFound = false;
+    let sawCues = false;
+    let last = null;
+    for (let i = 0; i < 25 && !(sawFound && sawCues); i++) {
+      await new Promise((r) => setTimeout(r, 200));
+      last = (await getJson(shSubs)).body;
+      sawFound = sawFound || last.found === true;
+      sawCues = sawCues || last.cues >= 2;
+    }
+    check("self-heal: /subs alone parses Tracks", sawFound === true, JSON.stringify(last));
+    check("self-heal: cues extracted without playback", sawCues === true, `cues=${last?.cues}`);
+    check("self-heal: probed=true afterwards", last?.probed === true);
+  } finally {
+    selfHeal.server.close();
+  }
+
   proxy.close();
   console.log(`\n${passed} passed, ${failed} failed`);
   process.exit(failed ? 1 : 0);
