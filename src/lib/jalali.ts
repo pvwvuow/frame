@@ -47,38 +47,25 @@ export function g2j(gy: number, gm: number, gd: number): { jy: number; jm: numbe
 }
 
 export function j2g(jy: number, jm: number, jd: number): { gy: number; gm: number; gd: number } {
-  let days =
-    355666 +
-    365 * jy +
-    div(jy + 3, 4) -
-    div(jy + 99, 100) +
-    div(jy + 399, 400) +
-    (jm <= 6 ? 31 * (jm - 1) : 186 + 30 * (jm - 7)) +
-    jd -
-    1;
-  let gy = 400 * div(days, 146097);
-  days %= 146097;
-  if (days > 36524) {
-    gy += 100 * div(--days, 36524);
-    days %= 36524;
-    if (days >= 365) days++;
+  /* g2j بالا درست و اکیداً یکنواست؛ روزِ میلادیِ متناظر را باینری‌جستجو می‌کنیم —
+     روی «شماره‌ی روزِ صحیح» نه میلی‌ثانیه، تا نیم‌روزِ وسطِ جستجو مسیر را منحرف نکند.
+     (فرمول بسته‌ی قبلی ~۱۰۰۰ سال خطا داشت و تقویمِ «لیست من» هرگز رویداد نمی‌گرفت.) */
+  const target = jy * 10000 + jm * 100 + jd;
+  // سال شمسی jy ≈ مارسِ (jy+621) میلادی؛ بازه سخاوتمندانه در واحدهی روز:
+  let lo = Math.floor(Date.UTC(jy + 620, 0, 1) / 86400000);
+  let hi = Math.floor(Date.UTC(jy + 622, 11, 31) / 86400000);
+  while (lo <= hi) {
+    const mid = Math.floor((lo + hi) / 2);
+    const d = new Date(mid * 86400000);
+    const j = g2j(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate());
+    const v = j.jy * 10000 + j.jm * 100 + j.jd;
+    if (v === target) return { gy: d.getUTCFullYear(), gm: d.getUTCMonth() + 1, gd: d.getUTCDate() };
+    if (v < target) lo = mid + 1;
+    else hi = mid - 1;
   }
-  gy += 4 * div(days, 1461);
-  days %= 1461;
-  if (days > 365) {
-    gy += div(days - 1, 365);
-    days = (days - 1) % 365;
-  }
-  let gd = days + 1;
-  const sal_a = [
-    0,
-    31,
-    (gy % 4 === 0 && gy % 100 !== 0) || gy % 400 === 0 ? 29 : 28,
-    31, 30, 31, 30, 31, 31, 30, 31, 30, 31,
-  ];
-  let gm = 0;
-  for (gm = 1; gm <= 12 && gd > sal_a[gm]; gm++) gd -= sal_a[gm];
-  return { gy, gm, gd };
+  // برای تاریخ معتبر نباید رخ دهد — fallback امن (نزدیکِ ابتدای سال)
+  const d = new Date(Date.UTC(jy + 621, 2, 21));
+  return { gy: d.getUTCFullYear(), gm: d.getUTCMonth() + 1, gd: d.getUTCDate() };
 }
 
 export function jMonthLen(jy: number, jm: number): number {

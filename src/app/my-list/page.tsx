@@ -1,147 +1,255 @@
 import Link from "next/link";
 import TitleCard from "@/components/TitleCard";
 import MyListManager from "@/components/library/MyListManager";
-import ListCalendar from "@/components/library/ListCalendar";
+import ListCalendar, { type WatchEvent } from "@/components/library/ListCalendar";
+import MyListAside, { type AsideCollection } from "@/components/library/MyListAside";
 import ContinueCard from "@/components/library/ContinueCard";
-import { BookmarkIcon, ClockIcon, FilmIcon, TvIcon, SparkIcon, HeartIcon, HistoryIcon, CheckCircleIcon } from "@/components/Icons";
-import { getContinueWatching, getTrending } from "@/lib/queries";
-import { getMyListRows, getUserStats } from "@/lib/library";
+import {
+  BookmarkIcon,
+  CalendarIcon,
+  HeartIcon,
+  HistoryIcon,
+  CheckCircleIcon,
+  SparkIcon,
+  DownloadIcon,
+  LayersIcon,
+  ChevronRight,
+  ClockIcon,
+} from "@/components/Icons";
+import { getContinueWatching, getTrending, getCollections } from "@/lib/queries";
+import { getMyListRows, getUserStats, getFavoriteRows, getHistory } from "@/lib/library";
 import { getUserKey } from "@/lib/user";
-import { fa, formatDuration } from "@/lib/format";
+import { g2j } from "@/lib/jalali";
+import { fa } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "لیست من" };
 
-export default async function MyListPage() {
-  const userKey = await getUserKey();
-  const [rows, cont, trending, stats] = await Promise.all([getMyListRows(userKey), getContinueWatching(userKey, 6), getTrending(16), getUserStats(userKey)]);
+export default async function MyListPage({ searchParams }: { searchParams: Promise<{ view?: string }> }) {
+  const { view: viewParam } = await searchParams;
+  const view = viewParam === "list" ? "list" : "calendar";
 
-  const movies = rows.filter((l) => l.title.type === "movie").length;
-  const series = rows.length - movies;
-  const totalMinutes = rows.reduce((a, l) => a + l.title.duration, 0);
-  const topGenre = stats.topGenres[0]?.genre;
-  const heroBackdrop = cont[0]?.title.backdrop ?? rows[0]?.title.backdrop ?? trending[0]?.backdrop;
-  const watchedPct = rows.length ? Math.round((stats.watchedCount / rows.length) * 100) : 0;
+  const userKey = await getUserKey();
+  const [rows, stats, cont, trending, history, favRows, collectionsRaw] = await Promise.all([
+    getMyListRows(userKey),
+    getUserStats(userKey),
+    getContinueWatching(userKey, 6),
+    getTrending(16),
+    getHistory(userKey),
+    getFavoriteRows(userKey),
+    getCollections(30),
+  ]);
+
+  /* ---- رویدادهای تماشا برای تقویم (سبز) + شمارنده‌ی این ماه ---- */
+  const events: WatchEvent[] = history.slice(0, 400).map((h) => ({
+    titleId: h.title.id,
+    slug: h.title.slug,
+    name: h.title.title,
+    poster: h.title.poster,
+    backdrop: h.title.backdrop,
+    date: h.updatedAt.slice(0, 10),
+    iso: h.updatedAt,
+  }));
+  const tj = g2j(new Date().getFullYear(), new Date().getMonth() + 1, new Date().getDate());
+  const thisMonthCount = events.filter((e) => {
+    const [y, m, d] = e.date.split("-").map(Number);
+    const j = g2j(y, m, d);
+    return j.jy === tj.jy && j.jm === tj.jm;
+  }).length;
+
+  /* ---- آمار ---- */
+  const seriesCompleted = rows.filter((r) => r.title.type === "series" && r.status === "watched").length;
+  const hours = Math.round(stats.minutesWatched / 60);
+
+  /* ---- مجموعه‌ها برای ستون کنار ---- */
+  const collections: AsideCollection[] = collectionsRaw.slice(0, 5).map((c) => ({
+    slug: c.slug,
+    title: c.title,
+    count: c.count,
+    movies: c.items.filter((t) => t.type === "movie").length,
+    series: c.items.filter((t) => t.type === "series").length,
+    thumb: c.items[0]?.backdrop ?? c.items[0]?.poster ?? "",
+  }));
+
+  const heroBackdrop =
+    history[0]?.title.backdrop ?? cont[0]?.title.backdrop ?? rows[0]?.title.backdrop ?? trending[0]?.backdrop;
+
+  const NAV = [
+    { href: "/my-list?view=list", label: "واچ‌لیست", icon: BookmarkIcon, active: view === "list" },
+    { href: "/my-list?view=calendar", label: "تقویم", icon: CalendarIcon, active: view === "calendar" },
+    { href: "/favorites", label: "علاقه‌مندی‌ها", icon: HeartIcon, active: false },
+    { href: "/collections", label: "مجموعه‌ها", icon: LayersIcon, active: false },
+    { href: "/history", label: "تاریخچه", icon: HistoryIcon, active: false },
+    { href: "/downloads", label: "دانلودها", icon: DownloadIcon, active: false },
+  ];
 
   return (
     <main className="pb-16">
-      {/* header */}
-      <section className="relative overflow-hidden">
-        {heroBackdrop && (
-          <>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={heroBackdrop} alt="" className="absolute inset-0 h-full w-full object-cover opacity-40 blur-sm" />
-            <div className="absolute inset-0 bg-gradient-to-b from-ink/60 via-ink/85 to-ink" />
-          </>
-        )}
-        <div className="relative mx-auto max-w-[1600px] px-4 pb-8 pt-28 sm:px-8 lg:px-12 lg:pt-36">
-          <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+      <div className="mx-auto max-w-[1600px] px-4 pt-28 sm:px-8 lg:px-12 lg:pt-32">
+        <div className="grid gap-6 lg:grid-cols-[220px_minmax(0,1fr)_320px]">
+          {/* ================= ستون ناوبری + آمار ================= */}
+          <aside className="space-y-6 lg:sticky lg:top-24 lg:self-start">
             <div>
-              <p className="mb-3 flex items-center gap-2 text-xs font-bold text-brand">
-                <BookmarkIcon width={16} height={16} /> فضای شخصی شما
-              </p>
-              <h1 className="text-4xl font-black text-white sm:text-5xl">لیست من</h1>
-              <p className="mt-3 max-w-xl text-sm leading-7 text-zinc-300">
-                همه‌ی آثاری که ذخیره کرده‌اید را این‌جا مدیریت کنید: وضعیت تماشا، یادداشت، سنجاق، امتیاز شخصی، انتخاب گروهی و خروجی گرفتن.
-              </p>
-              <div className="mt-4 flex flex-wrap gap-2 text-xs">
-                <Link href="/favorites" className="flex items-center gap-1.5 rounded-full border border-rose-500/30 bg-rose-500/10 px-3 py-1.5 font-bold text-rose-300 hover:bg-rose-500/20">
-                  <HeartIcon width={13} height={13} filled /> علاقه‌مندی‌ها ({fa(stats.favCount)})
-                </Link>
-                <Link href="/history" className="flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 font-bold text-zinc-200 hover:bg-white/10">
-                  <HistoryIcon width={13} height={13} /> تاریخچه تماشا ({fa(stats.historyCount)})
-                </Link>
-              </div>
+              <h1 className="text-2xl font-black text-white">لیست من</h1>
+              <nav className="mt-4 space-y-1">
+                {NAV.map((n) => (
+                  <Link
+                    key={n.label}
+                    href={n.href}
+                    className={`flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-[13px] font-bold transition ${
+                      n.active
+                        ? "bg-gradient-to-l from-brand/80 to-brand/40 text-white shadow-[0_8px_24px_rgba(229,9,20,0.25)]"
+                        : "text-zinc-400 hover:bg-white/5 hover:text-white"
+                    }`}
+                  >
+                    <n.icon width={16} height={16} className={n.active ? "text-white" : "text-zinc-500"} />
+                    {n.label}
+                  </Link>
+                ))}
+              </nav>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2">
-              {[
-                { icon: BookmarkIcon, v: fa(rows.length), k: "ذخیره‌شده", c: "text-brand" },
-                { icon: FilmIcon, v: fa(movies), k: "فیلم", c: "text-sky-400" },
-                { icon: TvIcon, v: fa(series), k: "سریال", c: "text-violet-400" },
-                { icon: CheckCircleIcon, v: `${fa(watchedPct)}٪`, k: "تماشا شده", c: "text-emerald-400" },
-                { icon: ClockIcon, v: totalMinutes ? formatDuration(totalMinutes) : "۰", k: "زمان کل", c: "text-amber-400" },
-              ].map((s) => (
-                <span
-                  key={s.k}
-                  className="flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-xs font-bold text-white backdrop-blur transition hover:border-white/25"
-                >
-                  <s.icon width={15} height={15} className={s.c} />
-                  <span className="num">{s.v}</span>
-                  <span className="font-medium text-zinc-400">{s.k}</span>
-                </span>
-              ))}
+            {/* آمار */}
+            <div className="rounded-2xl border border-white/5 bg-white/[0.03] p-4">
+              <p className="text-xs font-black text-white">آمار</p>
+              <ul className="mt-3 space-y-3.5">
+                {[
+                  { icon: CalendarIcon, label: "دیده‌شده", v: fa(stats.watchedCount), c: "text-sky-400" },
+                  { icon: HeartIcon, label: "علاقه‌مندی‌ها", v: fa(stats.favCount), c: "text-rose-400" },
+                  { icon: CheckCircleIcon, label: "سریال کامل‌شده", v: fa(seriesCompleted), c: "text-emerald-400" },
+                  { icon: ClockIcon, label: "ساعت تماشا", v: `${fa(hours)} ساعت`, c: "text-amber-400" },
+                ].map((s) => (
+                  <li key={s.label} className="flex items-center gap-3">
+                    <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-white/5 ${s.c}`}>
+                      <s.icon width={16} height={16} />
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block text-[10px] text-zinc-500">{s.label}</span>
+                      <span className="num block text-sm font-black text-white">{s.v}</span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
             </div>
+
+            <p className="hidden px-1 text-[13px] font-bold italic leading-7 text-zinc-500 lg:block">
+              داستان‌های خوب، روزهای بهتری می‌سازند.
+              <span className="mt-2 block h-0.5 w-8 rounded-full bg-brand" />
+            </p>
+          </aside>
+
+          {/* ================= ستون میانی ================= */}
+          <div className="min-w-0">
+            {view === "calendar" ? (
+              <>
+                {/* هیروی تقویم */}
+                <section className="relative overflow-hidden rounded-3xl border border-white/5">
+                  {heroBackdrop && (
+                    <>
+                      { }
+                      <img src={heroBackdrop} alt="" className="absolute inset-0 h-full w-full object-cover" />
+                      <div className="absolute inset-0 bg-gradient-to-t from-ink via-ink/55 to-ink/10" />
+                      <div className="absolute inset-0 bg-gradient-to-l from-ink/70 via-ink/20 to-transparent" />
+                    </>
+                  )}
+                  <div className="relative flex min-h-[190px] items-end justify-between gap-4 p-6 sm:p-8">
+                    <div className="min-w-0">
+                      <p className="mb-2 flex items-center gap-2 text-[11px] font-black text-zinc-300">
+                        لیست من
+                      </p>
+                      <h2 className="text-3xl font-black text-white sm:text-4xl">تقویم</h2>
+                      <p className="mt-2 max-w-md text-[13px] leading-6 text-zinc-300">
+                        ثبتِ بصری فیلم‌ها و سریال‌هایی که دیده‌اید — همه در یک جا.
+                      </p>
+                    </div>
+                    <Link
+                      href="/history"
+                      className="group hidden shrink-0 items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.07] p-4 backdrop-blur transition hover:border-white/25 sm:flex"
+                    >
+                      <span className="grid h-10 w-10 place-items-center rounded-xl bg-brand/20 text-brand">
+                        <CalendarIcon width={20} height={20} />
+                      </span>
+                      <span>
+                        <span className="block text-[10px] text-zinc-400">این ماه</span>
+                        <span className="num block text-2xl font-black leading-7 text-white">{fa(thisMonthCount)}</span>
+                        <span className="block text-[10px] text-zinc-400">عنوان دیده‌شده</span>
+                      </span>
+                      <ChevronRight width={16} height={16} className="rotate-180 text-zinc-500 transition group-hover:text-white" />
+                    </Link>
+                  </div>
+                </section>
+
+                {/* تقویم */}
+                <section className="mt-5">
+                  <ListCalendar rows={rows} events={events} />
+                </section>
+              </>
+            ) : (
+              <>
+                {/* ادامه تماشا */}
+                {cont.length > 0 && (
+                  <section>
+                    <div className="mb-4 flex items-end justify-between">
+                      <div>
+                        <h2 className="text-xl font-extrabold text-white">ادامه تماشا</h2>
+                        <p className="text-xs text-zinc-500">از همان‌جا که رها کردید</p>
+                      </div>
+                      <Link href="/history" className="text-xs text-zinc-400 transition hover:text-brand">
+                        تاریخچه کامل
+                      </Link>
+                    </div>
+                    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                      {cont.map((c) => (
+                        <ContinueCard key={c.title.id} c={c} />
+                      ))}
+                    </div>
+                  </section>
+                )}
+
+                {/* مدیریت لیست */}
+                <section className="mt-10">
+                  <div className="mb-2 flex items-end justify-between">
+                    <div>
+                      <h2 className="text-xl font-extrabold text-white">مدیریت لیست</h2>
+                      <p className="text-xs text-zinc-500">{fa(rows.length)} عنوان در لیست شما</p>
+                    </div>
+                  </div>
+                  <MyListManager rows={rows} />
+                </section>
+
+                {/* پیشنهاد */}
+                <section className="mt-14">
+                  <div className="mb-4 flex items-end justify-between">
+                    <div>
+                      <h2 className="flex items-center gap-2 text-xl font-extrabold text-white">
+                        <SparkIcon width={18} height={18} className="text-brand" /> پیشنهاد برای شما
+                      </h2>
+                      <p className="text-xs text-zinc-500">پرطرفدارترین‌های این هفته</p>
+                    </div>
+                    <Link href="/movies?sort=trending" className="text-xs text-zinc-400 transition hover:text-brand">
+                      مشاهده همه
+                    </Link>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8">
+                    {trending
+                      .filter((t) => !rows.some((l) => l.title.id === t.id))
+                      .slice(0, 8)
+                      .map((t) => (
+                        <div key={t.id} className="[&>div]:w-full">
+                          <TitleCard t={t} />
+                        </div>
+                      ))}
+                  </div>
+                </section>
+              </>
+            )}
           </div>
+
+          {/* ================= ستون مجموعه‌ها + علاقه‌مندی‌ها ================= */}
+          <aside className="min-w-0 lg:sticky lg:top-24 lg:self-start">
+            <MyListAside favs={favRows.slice(0, 6)} collections={collections} />
+          </aside>
         </div>
-      </section>
-
-      <div className="mx-auto max-w-[1600px] px-4 sm:px-8 lg:px-12">
-        {/* continue watching */}
-        {cont.length > 0 && (
-          <section className="mt-2">
-            <div className="mb-4 flex items-end justify-between">
-              <div>
-                <h2 className="text-xl font-extrabold text-white">ادامه تماشا</h2>
-                <p className="text-xs text-zinc-500">از همان‌جا که رها کردید</p>
-              </div>
-              <Link href="/history" className="text-xs text-zinc-400 hover:text-brand">تاریخچه کامل</Link>
-            </div>
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-              {cont.map((c) => (
-                <ContinueCard key={c.title.id} c={c} />
-              ))}
-            </div>
-          </section>
-        )}
-
-        {/* calendar — برنامه‌ریزی تماشا بر اساس تاریخ */}
-        <section className="mt-12">
-          <div className="mb-4 flex items-end justify-between">
-            <div>
-              <h2 className="text-xl font-extrabold text-white">تقویم تماشا</h2>
-              <p className="text-xs text-zinc-500">فیلم‌ها و سریال‌های لیست‌تان را روی تقویم ثبت کنید تا ببینید کِی چه چیزی می‌بینید</p>
-            </div>
-          </div>
-          <ListCalendar rows={rows} />
-        </section>
-
-        {/* manager */}
-        <section className="mt-12">
-          <div className="mb-2 flex items-end justify-between">
-            <div>
-              <h2 className="text-xl font-extrabold text-white">مدیریت لیست</h2>
-              <p className="text-xs text-zinc-500">
-                {rows.length ? <>{fa(rows.length)} عنوان{topGenre && <> · بیشتر از همه <span className="text-zinc-300">{topGenre}</span> دوست دارید</>}</> : "هنوز چیزی ذخیره نکرده‌اید"}
-              </p>
-            </div>
-          </div>
-          <MyListManager rows={rows} />
-        </section>
-
-        {/* suggestions */}
-        <section className="mt-16">
-          <div className="mb-4 flex items-end justify-between">
-            <div>
-              <h2 className="flex items-center gap-2 text-xl font-extrabold text-white">
-                <SparkIcon width={18} height={18} className="text-brand" /> پیشنهاد برای شما
-              </h2>
-              <p className="text-xs text-zinc-500">{topGenre ? `بر اساس علاقه‌تان به ${topGenre}` : "پرطرفدارترین‌های این هفته"}</p>
-            </div>
-            <Link href="/movies?sort=trending" className="text-xs text-zinc-400 hover:text-brand">مشاهده همه</Link>
-          </div>
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8">
-            {trending
-              .filter((t) => !rows.some((l) => l.title.id === t.id))
-              .sort((a, b) => (topGenre ? Number(b.genres.includes(topGenre)) - Number(a.genres.includes(topGenre)) : 0))
-              .slice(0, 8)
-              .map((t) => (
-                <div key={t.id} className="[&>div]:w-full">
-                  <TitleCard t={t} />
-                </div>
-              ))}
-          </div>
-        </section>
       </div>
     </main>
   );
