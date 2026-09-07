@@ -71,6 +71,7 @@ const ID = {
   SEEKHEAD: 0x114d9b74,
   VOID: 0xec,
   INFO: 0x1549a966,
+  TIMESTAMPSCALE: 0x2ad7b1,
   TRACKS: 0x1654ae6b,
   TRACK_ENTRY: 0xae,
   TRACK_NUMBER: 0xd7,
@@ -161,6 +162,11 @@ class SubStore {
     /** v0.10.16 self-healing head-scan state (see /subs) */
     this.scanning = false;
     this.scanTries = 0;
+    /** v0.10.17 – Matroska TimestampScale (nanoseconds per tick, default 1ms).
+     *  Block timecodes are raw ticks; cue times must be ms. Files with a
+     *  non-default scale produced cue times off by the scale factor — the
+     *  «زیرنویس اصلا لود نمیشه» family for those releases. */
+    this.timestampScale = 1000000;
   }
 
   addCue(startMs, text, endMs = null) {
@@ -316,7 +322,13 @@ class MkvScanner {
     this.stack = [];
     this.skipBytes = 0; // remaining bytes to silently consume
     this.clusterTc = 0;
-    this.subTrack = store.trackNumber ?? null; // marker-inclusive preferred text track
+    /** ms per block-timecode tick (TimestampScale / 1e6) */
+    this.scaleMs = (store.timestampScale || 1000000) / 1e6;
+    /** v0.10.17 fallback only — parseBlock reads store.trackNumber LIVE so a
+     *  pass that started before the head-scan discovered the track (resumed
+     *  playback, self-healing scan) starts recognising subtitle blocks the
+     *  moment Tracks lands, instead of staying blind for its whole life. */
+    this.subTrack = store.trackNumber ?? null;
     this.dead = false;
   }
 
@@ -388,10 +400,17 @@ class MkvScanner {
     switch (el.id) {
       case ID.EBML:
       case ID.SEEKHEAD:
-      case ID.INFO:
       case ID.CUES:
       case ID.VOID:
         return this.skipElement(el);
+      case ID.INFO: {
+        // small header element → read TimestampScale (cue-time correctness)
+        if (el.unknown || el.size > 1 << 16) return this.skipElement(el);
+        if (el.dataStart + el.size > buf.length) return "more";
+        this.parseInfo(buf.subarray(el.dataStart, el.dataStart + el.size));
+        this.pos = el.dataStart + el.size;
+        return "ok";
+      }
       case ID.SEGMENT:
         this.stack.push({ end: elEndAbs });
         this.pos = el.dataStart;
@@ -432,6 +451,27 @@ class MkvScanner {
         return "ok";
       default:
         return this.skipElement(el);
+    }
+  }
+
+  /** Info children → TimestampScale (nanoseconds per tick). */
+  parseInfo(buf) {
+    let p = 0;
+    while (p < buf.length - 1) {
+      const idV = readVint(buf, p, true);
+      if (!idV) return;
+      const sizeV = readVint(buf, p + idV.len);
+      if (!sizeV) return;
+      const ds = p + idV.len + sizeV.len;
+      if (idV.value === ID.TIMESTAMPSCALE && sizeV.value >= 1 && sizeV.value <= 8) {
+        let scale = 0;
+        for (let i = 0; i < sizeV.value; i++) scale = scale * 256 + buf[ds + i];
+        if (scale >= 1 && scale <= 1e9) {
+          this.store.timestampScale = scale;
+          this.scaleMs = scale / 1e6;
+        }
+      }
+      p = ds + sizeV.value;
     }
   }
 
@@ -582,7 +622,12 @@ class MkvScanner {
   /** SimpleBlock / Block header → subtitle frame when it belongs to a text
    *  subtitle track. Layout: [track vint][timecode int16][flags u8][frames…]. */
   parseBlock(buf, start, size) {
-    if (this.subTrack == null) return; // tracks not seen yet (or no text sub)
+    // LIVE store read (v0.10.17): a pass that started before Tracks was ever
+    // seen (resumed playback + self-healing head scan) used to stay blind for
+    // its whole life — the store was updated but this scanner kept its
+    // construction-time null. Read the shared store on every block.
+    const prefTrack = this.store.trackNumber ?? this.subTrack;
+    if (prefTrack == null) return; // tracks not seen yet (or no text sub)
     const tv = readVint(buf, start, true);
     if (!tv || tv.len > 8) return;
     if (tv.len + 3 > size) return;
@@ -590,13 +635,14 @@ class MkvScanner {
     const tcRel = buf.readInt16BE(start + tv.len);
     const flags = buf[start + tv.len + 2];
     const lacing = (flags >> 1) & 0x03;
-    if (track !== this.subTrack) return;
+    if (track !== prefTrack) return;
     if (lacing !== 0) return; // subtitles are never laced in practice
     const frameStart = start + tv.len + 3;
     const frame = buf.subarray(frameStart, start + size);
     const info = this.store.textTracks.get(track);
     const kind = (info && typeof info === "object" ? info.codec : info) || "utf8";
-    const base = this.clusterTc + tcRel;
+    // raw ticks × ms-per-tick — default scale is exactly 1ms (factor 1)
+    const base = Math.round((this.clusterTc + tcRel) * this.scaleMs);
     if (kind === "ass") {
       const cue = assFrameToCue(frame);
       if (!cue) return;
@@ -666,7 +712,7 @@ function startStreamProxy(log, opts = {}) {
       if (
         !store.probed &&
         !store.scanning &&
-        store.scanTries < 3 &&
+        store.scanTries < 5 &&
         /^https?:\/\//i.test(target) &&
         isMatroska(target, "")
       ) {
@@ -675,7 +721,10 @@ function startStreamProxy(log, opts = {}) {
         const settle = () => {
           store.scanning = false;
         };
-        proxyFetch(target, "bytes=0-2621439", 0)
+        // v0.10.17: 6MB window — some muxers put large cover Attachments
+        // before Tracks; 2.5MB missed them (scan burned a try, subs stayed
+        // dead for the session). We still stop the instant Tracks is parsed.
+        proxyFetch(target, "bytes=0-6291455", 0)
           .then((up) => {
             const scanner = new MkvScanner(store);
             up.on("data", (chunk) => {
@@ -748,8 +797,21 @@ function startStreamProxy(log, opts = {}) {
         }
       };
       const guard = setTimeout(done, 12000); // never hang the caller
-      proxyFetch(target, "bytes=0-2621439", 0)
+      let probeUp = null;
+      // client gone → stop the head scan too (no background download)
+      res.on("close", () => {
+        clearTimeout(guard);
+        if (!settled && probeUp) {
+          try {
+            probeUp.destroy();
+          } catch {
+            /* ignore */
+          }
+        }
+      });
+      proxyFetch(target, "bytes=0-6291455", 0)
         .then((up) => {
+          probeUp = up;
           const scanner = new MkvScanner(store);
           up.on("data", (chunk) => {
             try {
@@ -787,8 +849,57 @@ function startStreamProxy(log, opts = {}) {
 
     const range = req.headers.range;
     const isFullPass = !range || /^bytes=0(?:-\d*)?$/.test(String(range).trim());
-    proxyFetch(target, range, 0)
-      .then((up) => {
+
+    /* v0.10.17 — BACKGROUND-DOWNLOAD LEAK FIX. When the <video> element goes
+     * away (theater closed, quality switch, window reload, PiP handoff)
+     * Chromium aborts its socket — but this handler never noticed and kept
+     * pumping the upstream response to the very last byte: the movie kept
+     * DOWNLOADING in the background long after the player was closed (the
+     * «بعد از بستن فیلم همچنان دانلود می‌کند» report). Now the upstream is
+     * destroyed the moment the downstream client disappears — including
+     * while the upstream headers are still in flight. */
+    let up = null;          // upstream response once its headers arrive
+    let upstreamReq = null; // upstream request (abortable during redirects)
+    let clientGone = false;
+    const killUpstream = () => {
+      if (up) {
+        try {
+          up.destroy();
+        } catch {
+          /* ignore */
+        }
+      }
+      if (upstreamReq) {
+        try {
+          upstreamReq.destroy();
+        } catch {
+          /* ignore */
+        }
+      }
+    };
+    const onClientGone = () => {
+      if (res.writableEnded) return; // normal completion — nothing to kill
+      if (clientGone) return;
+      clientGone = true;
+      killUpstream();
+    };
+    res.on("close", onClientGone);
+    req.on("error", onClientGone);
+
+    proxyFetch(target, range, 0, (r) => {
+      upstreamReq = r;
+      if (clientGone) r.destroy(); // aborted before the socket even opened
+    })
+      .then((upRes) => {
+        if (clientGone) {
+          try {
+            upRes.destroy();
+          } catch {
+            /* ignore */
+          }
+          return;
+        }
+        up = upRes;
         const headers = {};
         for (const h of PASS_HEADERS) {
           if (up.headers[h] !== undefined) headers[h] = up.headers[h];
@@ -854,8 +965,10 @@ function startStreamProxy(log, opts = {}) {
   });
 }
 
-/** http(s) GET with Range passthrough and manual redirects. */
-function proxyFetch(url, range, depth) {
+/** http(s) GET with Range passthrough and manual redirects.
+ *  `onRequest` (optional) receives the outgoing ClientRequest as soon as it
+ *  exists, so callers can abort even before the response headers arrive. */
+function proxyFetch(url, range, depth, onRequest) {
   return new Promise((resolve, reject) => {
     if (depth > MAX_REDIRECTS) return reject(new Error("too many redirects"));
     let mod;
@@ -870,10 +983,11 @@ function proxyFetch(url, range, depth) {
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
         res.resume();
         const next = new URL(res.headers.location, url).toString();
-        return resolve(proxyFetch(next, range, depth + 1));
+        return resolve(proxyFetch(next, range, depth + 1, onRequest));
       }
       resolve(res);
     });
+    if (typeof onRequest === "function") onRequest(req);
     req.on("error", reject);
     req.setTimeout(REQUEST_TIMEOUT, () => req.destroy(new Error("upstream timeout")));
   });

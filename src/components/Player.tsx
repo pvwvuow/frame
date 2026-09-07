@@ -168,8 +168,9 @@ export default function Player() {
     manualPickRef.current = false; // new content → the guard may act again
     setQMenu(false);
     if (proxyBase) {
+      const guardCtl = new AbortController(); // v0.10.17: kill probes on teardown
       let alive = true;
-      void ensurePlayableAudio(srcList, initial, proxyBase).then((r) => {
+      void ensurePlayableAudio(srcList, initial, proxyBase, guardCtl.signal).then((r) => {
         if (!alive || !r) return;
         if (r.switchedTo != null && r.switchedTo !== srcIdxRef.current) {
           // v0.10.8: carry the EXACT position across the variant switch — the
@@ -184,6 +185,7 @@ export default function Player() {
       });
       return () => {
         alive = false;
+        guardCtl.abort(); // no probe fetch outliving the closed player
       };
     }
   }, [contentKey, srcList.length, proxyBase]);

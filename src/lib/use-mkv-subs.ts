@@ -32,6 +32,9 @@ export function useMkvSubs(rawUrl: string | null | undefined, proxyBase: string 
     let alive = true;
     let timer: ReturnType<typeof setTimeout> | null = null;
     let inFlight = false;
+    // v0.10.17: abort the in-flight poll the moment this hook stops (theater
+    // closed, quality switch) — no stray /subs request outliving the player
+    const ctl = new AbortController();
 
     const schedule = (wait: number) => {
       if (!alive) return;
@@ -47,7 +50,7 @@ export function useMkvSubs(rawUrl: string | null | undefined, proxyBase: string 
       inFlight = true;
       let wait = 1600;
       try {
-        const r = await fetch(url, { cache: "no-store" });
+        const r = await fetch(url, { cache: "no-store", signal: ctl.signal });
         if (r.ok) {
           const j = (await r.json()) as ProxySubsResponse;
           if (!alive) return;
@@ -64,7 +67,7 @@ export function useMkvSubs(rawUrl: string | null | undefined, proxyBase: string 
           else if (lastCount.current === 0) wait = 900; // no cues yet → find them fast
         }
       } catch {
-        /* proxy briefly busy – retry */
+        /* proxy briefly busy or aborted with the player – retry only if alive */
       }
       inFlight = false;
       schedule(wait);
@@ -83,6 +86,7 @@ export function useMkvSubs(rawUrl: string | null | undefined, proxyBase: string 
       inFlight = false;
       tickRef.current = null;
       if (timer) clearTimeout(timer);
+      ctl.abort(); // kill any in-flight /subs fetch
     };
   }, [rawUrl, proxyBase, enabled]);
 

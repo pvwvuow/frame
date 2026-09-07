@@ -4,15 +4,18 @@ import WatchClient from "@/components/WatchClient";
 import { getTitleBySlug, getEpisodes, getProgressFor, incrementViews } from "@/lib/queries";
 import { getUserKey } from "@/lib/user";
 import { fa } from "@/lib/format";
+import { normalizeSources } from "@/lib/source-fix";
 
 export const dynamic = "force-dynamic";
 
 type Props = { params: Promise<{ slug: string }>; searchParams: Promise<{ ep?: string }> };
 
-function parseSources(json: string): { q: string; v: string; url: string; mb?: number }[] {
+function parseSources(json: string) {
   try {
     const arr = JSON.parse(json || "[]");
-    return Array.isArray(arr) ? arr.filter((s) => s && s.url) : [];
+    // v0.10.17: labels re-derived from the URL (the catalog's q/v rows were
+    // zipped wrong at import time — user picks 480p and got the 720p file)
+    return normalizeSources(Array.isArray(arr) ? arr.filter((s) => s && s.url) : []);
   } catch {
     return [];
   }

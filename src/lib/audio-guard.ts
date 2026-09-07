@@ -38,13 +38,13 @@ function variantScore(v?: string): number {
 }
 
 /** Header info for one source; falls back to the live /subs data. */
-async function probeSource(url: string, proxyBase: string): Promise<ProxyProbeResponse | null> {
+async function probeSource(url: string, proxyBase: string, signal?: AbortSignal): Promise<ProxyProbeResponse | null> {
   const pUrl = probeUrl(url, proxyBase);
   const sUrl = subsUrl(url, proxyBase);
   const grab = async (u: string | null): Promise<ProxySubsResponse | ProxyProbeResponse | null> => {
     if (!u) return null;
     try {
-      const r = await fetch(u, { cache: "no-store" });
+      const r = await fetch(u, { cache: "no-store", signal });
       if (!r.ok) return null;
       return (await r.json()) as ProxySubsResponse | ProxyProbeResponse;
     } catch {
@@ -71,14 +71,20 @@ async function probeSource(url: string, proxyBase: string): Promise<ProxyProbeRe
  * track is undecodable (AC3/DTS/…). Only MKV-family sources are probed —
  * MP4 audio is effectively always AAC/MP3.
  */
-export async function ensurePlayableAudio(list: SourceLike[], currentIdx: number, proxyBase: string | null | undefined): Promise<AudioGuardResult> {
+export async function ensurePlayableAudio(
+  list: SourceLike[],
+  currentIdx: number,
+  proxyBase: string | null | undefined,
+  signal?: AbortSignal
+): Promise<AudioGuardResult> {
   if (!proxyBase || !list.length) return KEEP;
+  if (signal?.aborted) return KEEP;
   const idx = Math.min(Math.max(currentIdx, 0), list.length - 1);
   const current = list[idx];
   if (!current?.url) return KEEP;
 
   // header info may already exist from the ongoing playback pass
-  const cur = await probeSource(current.url, proxyBase);
+  const cur = await probeSource(current.url, proxyBase, signal);
   if (!cur || cur.audioOk !== false) return KEEP;
 
   const label = cur.audioLabel || (cur.audio?.[0] ?? "ناشناخته");
@@ -92,7 +98,7 @@ export async function ensurePlayableAudio(list: SourceLike[], currentIdx: number
   // probe every other variant in parallel, prefer hardsub/dub among playable
   const others = list.map((s, i) => ({ s, i })).filter(({ s, i }) => i !== idx && isMkvUrl(s.url));
   const probed = await Promise.all(
-    others.map(async ({ s, i }) => ({ i, info: await probeSource(s.url, proxyBase) }))
+    others.map(async ({ s, i }) => ({ i, info: await probeSource(s.url, proxyBase, signal) }))
   );
   const playable = probed
     .filter(({ info }) => info && info.audioOk !== false)

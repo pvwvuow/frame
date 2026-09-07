@@ -10,6 +10,7 @@
    window owns playback, this store keeps mirroring WHAT is playing
    (pipOpen + last payload) so "expand back into the app" is seamless. */
 import { create } from "zustand";
+import { normalizeSources } from "@/lib/source-fix";
 
 export type PlayerEpisode = { id: number; season: number; number: number; name: string; videoUrl: string; thumbnail: string };
 export type PlayerSource = { q: string; v: string; url: string; mb?: number };
@@ -69,8 +70,13 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
   nextEpisode: null,
   episodes: [],
 
-  play: (p) => {
+  play: (incoming) => {
     const cur = get();
+    // v0.10.17: the source labels are normalized HERE — the single choke
+    // point every playback path goes through (theater, float handoff,
+    // expand-back). The quality menu then always tells the truth about the
+    // file it plays, whatever the catalog shipped.
+    const p = { ...incoming, sources: normalizeSources(incoming.sources) };
     // pip window owns playback right now?
     if (cur.pipOpen) {
       if (sameVideo(cur, p)) {

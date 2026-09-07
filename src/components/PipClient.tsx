@@ -141,8 +141,9 @@ export default function PipClient() {
     const initial = hint >= 0 && hint < list.length ? hint : remembered >= 0 ? remembered : preferredSourceIdx(list);
     setSrcIdx(initial);
     if (proxyBase) {
+      const guardCtl = new AbortController(); // v0.10.17: kill probes on teardown
       let alive = true;
-      void ensurePlayableAudio(list, initial, proxyBase).then((r) => {
+      void ensurePlayableAudio(list, initial, proxyBase, guardCtl.signal).then((r) => {
         if (!alive || !r) return;
         if (r.switchedTo != null && r.switchedTo !== initial) {
           // v0.10.8: keep the exact position across the audio-guard variant
@@ -155,6 +156,7 @@ export default function PipClient() {
       });
       return () => {
         alive = false;
+        guardCtl.abort();
       };
     }
   }, [guardKey]);

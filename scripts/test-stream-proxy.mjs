@@ -413,6 +413,104 @@ await withUpstream(async (upstreamUrl) => {
     selfHeal.server.close();
   }
 
+  // 14) v0.10.17 — BACKGROUND-DOWNLOAD LEAK: a client that aborts mid-stream
+  //     (theater closed / quality switch) must have its upstream killed, not
+  //     silently pumped to the last byte.
+  const slowBuf = Buffer.alloc(4 << 20, 7); // 4MB, 16 chunks
+  const slow = await new Promise((resolve) => {
+    const state = { served: 0, closed: false, total: slowBuf.length };
+    const server = http.createServer((req, res) => {
+      let start = 0;
+      const m = /^bytes=(\d+)-/.exec(req.headers.range || "");
+      if (m) start = Number(m[1]);
+      res.writeHead(206, {
+        "content-type": "video/x-matroska",
+        "accept-ranges": "bytes",
+        "content-range": `bytes ${start}-${slowBuf.length - 1}/${slowBuf.length}`,
+      });
+      res.on("close", () => {
+        state.closed = true;
+      });
+      let i = start;
+      const timer = setInterval(() => {
+        if (res.destroyed || res.writableEnded) {
+          clearInterval(timer);
+          return;
+        }
+        const end = Math.min(i + (256 << 10), slowBuf.length);
+        res.write(slowBuf.subarray(i, end));
+        state.served = Math.max(state.served, end);
+        i = end;
+        if (i >= slowBuf.length) {
+          clearInterval(timer);
+          res.end();
+        }
+      }, 40);
+    });
+    server.listen(0, "127.0.0.1", () => resolve({ url: `http://127.0.0.1:${server.address().port}/slow.mkv`, server, state }));
+  });
+  try {
+    const ctl = new AbortController();
+    const r = await fetch(`${base}/stream?u=${encodeURIComponent(slow.url)}`, { signal: ctl.signal });
+    const reader = r.body.getReader();
+    await reader.read(); // ~1 chunk
+    await reader.read();
+    const servedAtAbort = slow.state.served;
+    ctl.abort(); // the <video> just went away
+    await new Promise((res) => setTimeout(res, 700)); // a leaking proxy finishes all 16 chunks here
+    check(
+      "disconnect: upstream socket closed early",
+      slow.state.closed,
+      `closed=${slow.state.closed}`
+    );
+    check(
+      "disconnect: upstream download stopped (not pumped to the end)",
+      slow.state.served <= servedAtAbort + (2 << 20),
+      `served=${slow.state.served}/${slow.state.total} atAbort=${servedAtAbort}`
+    );
+  } finally {
+    slow.server.close();
+  }
+
+  // 15) v0.10.17 — TimestampScale: block timecodes are raw ticks; with a
+  //     non-default scale (0.5ms/tick here) cue times must be scaled
+  const scaledMkv = Buffer.concat([
+    el(0x1a45dfa3, el(0x4282, Buffer.from("matroska", "ascii"))),
+    el(0x18538067, Buffer.concat([
+      el(0x1549a966, el(0x2ad7b1, uint32(500000))), // 0.5ms per tick
+      el(0x1654ae6b, Buffer.concat([
+        trackEntry(1, 1, "V_MPEG4/ISO/AVC"),
+        trackEntry(3, 0x11, "S_TEXT/UTF8"),
+      ])),
+      el(0x1f43b675, Buffer.concat([
+        el(0xe7, uint16(0)),
+        simpleBlock(3, 2000, 0x00, "1\n00:00:02,000 --> 00:00:03,000\nمقیاس نیم‌میلی‌ثانیه\n"), // 2000×0.5 = 1000ms
+      ])),
+    ])),
+  ]);
+  {
+    const st = new SubStore("test://scaled");
+    const sc = new MkvScanner(st);
+    sc.feed(scaledMkv);
+    sc.end();
+    const cue = [...st.cues.values()][0];
+    check("timescale: cue time scaled to ms", !!cue && cue.s === 1000, JSON.stringify(cue));
+  }
+
+  // 16) v0.10.17 — LIVE trackNumber: a pass that started before Tracks was
+  //     known (resumed playback + self-heal) must start recognising subtitle
+  //     blocks the moment the store learns the track — no new pass required.
+  {
+    const st = new SubStore("test://live");
+    const sc = new MkvScanner(st); // store.trackNumber === null → blind
+    sc.feed(cluster1);
+    check("live-track: blind pass adds nothing", st.cues.size === 0, `cues=${st.cues.size}`);
+    st.trackNumber = 0x83; // marker-inclusive vint of track 3 (3 | 0x80)
+    st.textTracks.set(0x83, { codec: "utf8", lang: "fas", name: "" });
+    sc.feed(cluster1); // same scanner, new bytes → now sees the track
+    check("live-track: heals without a new pass", st.cues.size === 1, `cues=${st.cues.size}`);
+  }
+
   proxy.close();
   console.log(`\n${passed} passed, ${failed} failed`);
   process.exit(failed ? 1 : 0);

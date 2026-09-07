@@ -65,6 +65,8 @@ server.log
 !/scripts/test-startup-fixes.mjs
 !/scripts/test-stream-proxy.mjs
 !/scripts/fix-variant-labels.cjs
+!/scripts/fix-quality-labels.cjs
+!/scripts/test-source-fix.mjs
 !/scripts/preflight.mjs
 /scripts/mock-od/tree/
 /electron/dist/

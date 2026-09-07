@@ -35,6 +35,7 @@ import {
 import { getUserKey } from "@/lib/user";
 import { fa, formatDuration, formatViews, typeLabel, formatClock } from "@/lib/format";
 import { titleNames } from "@/lib/title-name";
+import { normalizeSources } from "@/lib/source-fix";
 
 export const dynamic = "force-dynamic";
 
@@ -58,7 +59,8 @@ const AVATAR_GRADIENTS = [
 function parseSources(json: string) {
   try {
     const arr = JSON.parse(json || "[]");
-    return Array.isArray(arr) ? arr.filter((s) => s && s.url) : [];
+    // v0.10.17: labels re-derived from the URL (import zipped them wrong)
+    return normalizeSources(Array.isArray(arr) ? arr.filter((s) => s && s.url) : []);
   } catch {
     return [];
   }
@@ -96,7 +98,8 @@ export default async function TitlePage({ params }: Props) {
       ? Object.values(
           eps.reduce<Record<string, { q: string; v: string; url: string; mb?: number }>>((acc, e) => {
             try {
-              for (const s of JSON.parse(e.sources || "[]")) {
+              // v0.10.17: normalize each episode's rows before aggregating
+              for (const s of normalizeSources(JSON.parse(e.sources || "[]"))) {
                 if (!s?.url) continue;
                 const k = `${s.q}|${s.v}`;
                 if (!acc[k]) acc[k] = { q: s.q || "", v: s.v || "", url: s.url, mb: s.mb };

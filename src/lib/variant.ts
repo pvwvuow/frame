@@ -4,6 +4,7 @@
  * window. Labels come from the archive; since v0.10.5 they are derived from
  * the actual file names (SoftSub → «زیرنویس چسبیده», Dubbed → «دوبله فارسی»,
  * NoSub → «بدون زیرنویس») so a variant pick always matches the file. */
+import { sourceQualityRank } from "@/lib/source-fix";
 
 export function variantShort(v: string) {
   if (!v) return "";
@@ -12,17 +13,23 @@ export function variantShort(v: string) {
 }
 
 /** Which source should start by default? Burned/bundled-subtitle versions
- *  first, then Persian dub, then catalog order. */
-export function preferredSourceIdx(list: { q: string; v: string }[]): number {
+ *  first, then Persian dub, then catalog order. v0.10.17: sources with the
+ *  SAME variant taste are tie-broken by their REAL quality (from the URL) —
+ *  the best-quality hardsub wins, not the first row that happened to be
+ *  zipped onto the hardsub label. */
+export function preferredSourceIdx(list: { q: string; v: string; url: string }[]): number {
   if (list.length <= 1) return 0;
   const score = (v: string) => (v.includes("چسبیده") ? 3 : v.includes("دوبله") ? 2 : v.includes("زیرنویس") ? 1 : 0);
   let best = 0;
   let bestScore = -1;
+  let bestQ = -1;
   for (let i = 0; i < list.length; i++) {
     const s = score(list[i].v || "");
-    if (s > bestScore) {
+    const q = sourceQualityRank(list[i]);
+    if (s > bestScore || (s === bestScore && q > bestQ)) {
       best = i;
       bestScore = s;
+      bestQ = q;
     }
   }
   return best;
