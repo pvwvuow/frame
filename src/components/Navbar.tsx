@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useDeferredValue, useEffect, useRef, useState } from "react";
-import { SearchIcon, CloseIcon, FilmIcon, TvIcon, BookmarkIcon, HomeIcon, SparkIcon, UserIcon, LayersIcon, UsersIcon, ShuffleIcon, ChevronDown, BellIcon, StarIcon, DownloadIcon } from "./Icons";
+import { SearchIcon, CloseIcon, FilmIcon, TvIcon, BookmarkIcon, HomeIcon, SparkIcon, UserIcon, LayersIcon, UsersIcon, ShuffleIcon, ChevronDown, BellIcon, StarIcon, DownloadIcon, CameraIcon } from "./Icons";
 import UserMenu from "./UserMenu";
 import ThemeToggle from "./theme/ThemeToggle";
 import LanguageToggle from "./i18n/LanguageToggle";
@@ -38,6 +38,7 @@ const links: NavLink[] = [
   { href: "/my-list", key: "nav.myList", icon: BookmarkIcon },
 ];
 const more: NavLink[] = [
+  { href: "/darkroom", key: "nav.darkroom", icon: CameraIcon, hint: "nav.darkroomHint" },
   { href: "/rankings", key: "nav.rankings", icon: StarIcon, hint: "nav.rankingsHint" },
   { href: "/downloads", key: "nav.downloads", icon: DownloadIcon, hint: "nav.downloadsHint" },
   { href: "/people", key: "nav.people", icon: UsersIcon, hint: "nav.peopleHint" },

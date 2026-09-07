@@ -410,3 +410,9 @@ export const FolderPlusIcon = (p: P) => (
     <path d="M12 11v6M9 14h6" />
   </svg>
 );
+export const CameraIcon = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M4 8.5A1.5 1.5 0 0 1 5.5 7h2.7l1.3-2a1 1 0 0 1 .84-.45h3.32a1 1 0 0 1 .84.45l1.3 2h2.7A1.5 1.5 0 0 1 20 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 17.5v-9z" />
+    <circle cx="12" cy="12.7" r="3.2" />
+  </svg>
+);

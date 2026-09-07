@@ -16,10 +16,6 @@ import {
   ChevronDown,
   CloseIcon,
   BellIcon,
-  UsersIcon,
-  ShuffleIcon,
-  LayersIcon,
-  StarIcon,
   RefreshIcon,
   LogoutIcon,
   CrownIcon,
@@ -29,7 +25,7 @@ import { THEMES } from "./theme/ThemeToggle";
 import { bridge, useIsElectron } from "@/lib/platform";
 import { toast } from "sonner";
 import { useI18n } from "./i18n/LocaleProvider";
-import { LOCALES, LOCALE_META, type TKey } from "@/lib/i18n";
+import type { TKey } from "@/lib/i18n";
 import { explicitSignOut, useCloudSession } from "@/lib/cloud";
 
 type IconCmp = typeof UserIcon;
@@ -42,12 +38,9 @@ const PERSONAL: Entry[] = [
   { href: "/history", label: "user.history", icon: HistoryIcon, tint: "text-sky-400" },
   { href: "/notifications", label: "user.notifications", icon: BellIcon, key: "notif", tint: "text-amber-400" },
 ];
-const DISCOVER: Entry[] = [
-  { href: "/rankings", label: "nav.rankings", icon: StarIcon, tint: "text-amber-400" },
-  { href: "/collections", label: "user.collections", icon: LayersIcon, tint: "text-violet-400" },
-  { href: "/people", label: "user.people", icon: UsersIcon, tint: "text-emerald-400" },
-  { href: "/random", label: "user.random", icon: ShuffleIcon, tint: "text-pink-400" },
-];
+// v0.10.23: the «کشف» group (rankings/collections/people/random) was removed
+// from this menu at the user's request — those pages stay reachable from the
+// navbar «بیشتر» dropdown.
 const SETTINGS_ENTRY: Entry = { href: "/settings", label: "user.settings", icon: SettingsIcon, tint: "text-zinc-200" };
 
 /* Hoisted out of the component so React keeps DOM nodes between renders
@@ -93,7 +86,7 @@ export default function UserMenu() {
   const { session } = useCloudSession();
   const router = useRouter();
   const { theme, setTheme } = useTheme();
-  const { t: tr, locale, dir, setLocale } = useI18n();
+  const { t: tr, locale, dir } = useI18n();
   const electron = useIsElectron();
   const reduce = useReducedMotion();
   const [mounted, setMounted] = useState(false);
@@ -226,7 +219,8 @@ export default function UserMenu() {
             style={{ transformOrigin: dir === "rtl" ? "top left" : "top right", willChange: "transform, opacity" }}
             className="glass-strong glass-in absolute end-0 top-12 z-[95] max-h-[calc(100dvh-88px)] w-[min(360px,calc(100vw-24px))] overflow-hidden rounded-3xl border border-white/10 shadow-[0_30px_80px_rgba(0,0,0,0.6)]"
           >
-            {/* header */}
+            {/* header — v0.10.23: the quick pills row under the account name was
+                removed at the user's request (those entries live in the list below) */}
             <div className="relative shrink-0 border-b border-white/5 p-4">
               <div className={`pointer-events-none absolute inset-0 ${dir === "rtl" ? "bg-[radial-gradient(ellipse_at_top_right,rgba(229,9,20,0.16),transparent_60%)]" : "bg-[radial-gradient(ellipse_at_top_left,rgba(229,9,20,0.16),transparent_60%)]"}`} />
               <div className="relative flex items-center gap-3">
@@ -253,18 +247,8 @@ export default function UserMenu() {
                   <CloseIcon width={14} height={14} />
                 </button>
               </div>
-              {/* quick pills — heart/+ design language */}
-              <div className="relative mt-3 flex flex-wrap gap-1.5">
-                <Link href="/my-list" className="flex items-center gap-1.5 rounded-full border border-brand/30 bg-brand/10 px-3 py-1.5 text-[11px] font-bold text-white transition hover:bg-brand/20">
-                  <BookmarkIcon width={12} height={12} className="text-brand" /> <span className="num">{fa(list.size)}</span> {tr("user.myList")}
-                </Link>
-                <Link href="/favorites" className="flex items-center gap-1.5 rounded-full border border-rose-500/30 bg-rose-500/10 px-3 py-1.5 text-[11px] font-bold text-white transition hover:bg-rose-500/20">
-                  <HeartIcon width={12} height={12} filled className="text-rose-400" /> <span className="num">{fa(favorites.size)}</span> {tr("user.favorites")}
-                </Link>
-                <Link href="/notifications" className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[11px] font-bold transition ${unread ? "border-amber-400/40 bg-amber-500/15 text-white hover:bg-amber-500/25" : "border-white/10 bg-white/5 text-zinc-300 hover:bg-white/10"}`}>
-                  <BellIcon width={12} height={12} className={unread ? "text-amber-400" : "text-zinc-400"} /> <span className="num">{fa(unread)}</span> {tr("user.notifications")}
-                </Link>
-              </div>
+              {/* v0.10.23: the quick pills row under the account name was removed
+                  at the user's request — those entries live in the list below */}
             </div>
 
             {/* body */}
@@ -312,12 +296,6 @@ export default function UserMenu() {
                   />
                 ))}
               </ul>
-              <p className="px-2 pb-1.5 pt-3 text-[10px] font-bold text-zinc-500">{tr("user.discover")}</p>
-              <ul className="space-y-1">
-                {DISCOVER.map((it) => (
-                  <Item key={it.href} {...it} label={tr(it.label)} active={isActive(it.href)} />
-                ))}
-              </ul>
               <p className="px-2 pb-1.5 pt-3 text-[10px] font-bold text-zinc-500">{tr("user.support")}</p>
               <ul className="space-y-1">
                 <Item {...SETTINGS_ENTRY} label={tr(SETTINGS_ENTRY.label)} active={isActive("/settings")} />
@@ -342,29 +320,8 @@ export default function UserMenu() {
                 </button>
               )}
 
-              {/* quick language */}
-              <div className="mt-3 rounded-2xl border border-white/5 bg-white/[0.03] p-2">
-                <p className="mb-1.5 px-1 text-[10px] font-bold text-zinc-500">{tr("user.language")}</p>
-                <div className="flex gap-1">
-                  {LOCALES.map((l) => {
-                    const on = l === locale;
-                    return (
-                      <button
-                        key={l}
-                        type="button"
-                        onClick={() => setLocale(l)}
-                        aria-pressed={on}
-                        dir={LOCALE_META[l].dir}
-                        className={`flex flex-1 items-center justify-center gap-1.5 rounded-full border py-1.5 text-[11px] font-bold transition ${
-                          on ? "border-white bg-white text-black shadow" : "border-transparent bg-white/5 text-zinc-300 hover:bg-white/10 hover:text-white"
-                        }`}
-                      >
-                        <span>{LOCALE_META[l].flag}</span> {LOCALE_META[l].nativeLabel}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
+              {/* v0.10.23: the quick language switcher was removed from this
+                  menu at the user's request — language lives in the navbar + settings */}
 
               {/* quick theme */}
               <div className="mt-2 rounded-2xl border border-white/5 bg-white/[0.03] p-2">

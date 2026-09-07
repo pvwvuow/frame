@@ -24,6 +24,7 @@ import {
   UsersIcon,
   SubtitleIcon,
   FlameIcon,
+  CameraIcon,
 } from "@/components/Icons";
 import {
   getTitleBySlug,
@@ -272,6 +273,15 @@ export default async function TitlePage({ params }: Props) {
               <TrailerButton src={t.trailerUrl ?? t.videoUrl} poster={t.backdrop} title={t.title} />
               <WatchlistButton titleId={t.id} name={t.title} initial={inList} variant="icon" />
               <FavoriteButton titleId={t.id} name={t.title} variant="icon" />
+              {/* v0.10.23: تاریکخانه — design a shareable card for this title */}
+              <Link
+                href={`/darkroom?title=${t.slug}`}
+                aria-label={t.type === "series" ? "ساخت پست از سریال" : "ساخت پست از فیلم"}
+                title="تاریکخانه — ساخت پست و استوری"
+                className="grid h-12 w-12 place-items-center rounded-full border border-white/30 bg-white/10 text-white transition hover:bg-white/20"
+              >
+                <CameraIcon width={20} height={20} />
+              </Link>
               <ShareButton title={t.title} />
             </div>
 

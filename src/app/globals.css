@@ -1,5 +1,12 @@
 @import "tailwindcss";
 
+/* ---- Darkroom editorial fonts (share-card typography) ---- */
+@font-face { font-family: "Frame Grotesk"; src: url("/fonts/SpaceGrotesk-var.woff2") format("woff2-variations"); font-weight: 300 700; font-display: swap; }
+@font-face { font-family: "Frame Mono"; src: url("/fonts/IBMPlexMono-Regular.woff2") format("woff2"); font-weight: 400; font-display: swap; }
+@font-face { font-family: "Frame Mono"; src: url("/fonts/IBMPlexMono-Medium.woff2") format("woff2"); font-weight: 500; font-display: swap; }
+@font-face { font-family: "Frame Mono"; src: url("/fonts/IBMPlexMono-SemiBold.woff2") format("woff2"); font-weight: 600; font-display: swap; }
+@font-face { font-family: "Frame Mono"; src: url("/fonts/IBMPlexMono-Bold.woff2") format("woff2"); font-weight: 700; font-display: swap; }
+
 /* ---- Local Vazirmatn (offline-ready for Electron) ---- */
 @font-face { font-family: "Vazirmatn"; src: url("/fonts/Vazirmatn-Light.woff2") format("woff2"); font-weight: 300; font-display: swap; }
 @font-face { font-family: "Vazirmatn"; src: url("/fonts/Vazirmatn-Regular.woff2") format("woff2"); font-weight: 400; font-display: swap; }
