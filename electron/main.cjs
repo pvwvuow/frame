@@ -239,7 +239,10 @@ function clearServerPid() {
   }
 }
 
-/** True when `pid` is (very likely) a leftover Nama standalone server. */
+/** True when `pid` is (very likely) a leftover Nama standalone server.
+ *  v0.10.15: the Windows CIM query can take >10s on a cold runner/machine
+ *  (PowerShell first-launch) — the timeout is 30s now so a slow answer is
+ *  still recognized as our orphan instead of "foreign, left alone". */
 function isOurServerProcess(pid) {
   try {
     if (process.platform === "win32") {
@@ -251,7 +254,7 @@ function isOurServerProcess(pid) {
           "-Command",
           `(Get-CimInstance Win32_Process -Filter "ProcessId=${pid}").CommandLine`,
         ],
-        { timeout: 10000, windowsHide: true }
+        { timeout: 30000, windowsHide: true }
       ).toString();
       return /server\.js/i.test(out);
     }
