@@ -1,6 +1,6 @@
 "use client";
 
-/* نما – shared media & subtitle-track helpers (v0.10.12)
+/* نما – shared media & cue helpers (v0.10.18)
  *
  * WHY THIS EXISTS
  * 1) Chromium keeps a DETACHED <video>/<audio> element playing until GC
@@ -8,10 +8,11 @@
  *    removes the element from the DOM without pausing it → the film keeps
  *    playing «در پس‌زمینه» — the classic bug report. Every place that lets a
  *    media element go must stopMediaEl() it first.
- * 2) The player needs stable subtitles. Swapping a <track> element on every
- *    poll flickers and loses the track when the video re-keys. Instead we
- *    keep ONE programmatic TextTrack per video element and feed it cues
- *    incrementally (VTTCue API) — zero flicker, survives re-keys.
+ * 2) Subtitle cue plumbing: parseVtt() turns the proxy's VTT into a plain
+ *    sorted cue list and srtToVtt() converts user-loaded SRT files. Since
+ *    v0.10.18 cues are rendered by the SubOverlay component directly — the
+ *    old programmatic-TextTrack helpers (applyVttToTrack/clearTrackCues)
+ *    are gone with that whole fragile chain.
  */
 
 /** Stop a (possibly already detached) media element for good: pause, drop
@@ -60,46 +61,7 @@ export function parseVtt(vtt: string): ParsedCue[] {
   return out;
 }
 
-/** Add every cue of `vtt` that the keys-set does not hold yet. Returns how
- *  many cues were added. The keys set belongs to ONE track on ONE element —
- *  reset it whenever the track is recreated. */
-export function applyVttToTrack(tt: TextTrack, vtt: string, keys: Set<string>): number {
-  const cues = parseVtt(vtt);
-  let added = 0;
-  for (const c of cues) {
-    const key = `${c.s}|${c.t}`;
-    if (keys.has(key)) continue;
-    keys.add(key);
-    try {
-      tt.addCue(new VTTCue(c.s / 1000, c.e / 1000, c.t));
-      added += 1;
-    } catch {
-      keys.delete(key);
-    }
-  }
-  return added;
-}
-
-/** Programmatic TextTracks cannot be removed — empty them instead (used when
- *  a user-loaded subtitle file replaces the extracted MKV cues). */
-export function clearTrackCues(tt: TextTrack | null) {
-  if (!tt || !tt.cues) return;
-  // snapshot: removeCue mutates the live list while we iterate it
-  const list: TextTrackCue[] = [];
-  for (let i = 0; i < tt.cues.length; i++) {
-    const c = tt.cues[i];
-    if (c) list.push(c);
-  }
-  for (const c of list) {
-    try {
-      tt.removeCue(c);
-    } catch {
-      /* already gone */
-    }
-  }
-}
-
-/** SRT → WebVTT (the TextTrack cue parser only understands VTT timings). */
+/** SRT → WebVTT (the parser above only understands VTT timings). */
 export function srtToVtt(input: string): string {
   const body = input
     .replace(/\r+\n/g, "\n")

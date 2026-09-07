@@ -1,4 +1,4 @@
-/* Regression tests for the local stream proxy + MKV subtitle scanner.
+/* Regression tests for the local stream proxy + MKV subtitle scanner (Subs v3).
  *
  * Builds synthetic Matroska files (video+audio+text tracks), serves them from
  * a local dummy upstream with Range support, then drives the real proxy:
@@ -13,6 +13,16 @@
  *   7. v0.10.6: audio codec capture → audioOk=false for DTS/AC3, true for AAC
  *   8. v0.10.6: /probe endpoint reports tracks without touching playback
  *   9. v0.10.6: UTF8 preferred over ASS when both exist; bitmap-only → found=false
+ *  10-16. v0.10.16/17 regressions (self-heal head scan, disconnect kill,
+ *         TimestampScale, live track healing)
+ *  17. v0.10.18: ONE-BYTE straddle feed → zero data loss (the resync bug)
+ *  18. v0.10.18: extension-less token URL + octet-stream → content sniff
+ *      still extracts subtitles
+ *  19. v0.10.18: eng+fas tracks WITHOUT language tags → Persian-script
+ *      content detection picks the Persian track
+ *  20. v0.10.18: position-aware BACKFILL → cues for a far position are
+ *      actively scanned when coverage does not reach it
+ *  21. v0.10.18: /subs diagnostics (matroska, cov)
  *
  * Run: node scripts/test-stream-proxy.mjs
  */
@@ -46,7 +56,11 @@ function vint(val) {
     const v = val | 0x200000;
     return Buffer.from([(v >> 16) & 0xff, (v >> 8) & 0xff, v & 0xff]);
   }
-  throw new Error("test sizes must stay below 2MB");
+  if (val < 0x0fffffff) {
+    const v = val | 0x10000000;
+    return Buffer.from([(v >>> 24) & 0xff, (v >>> 16) & 0xff, (v >>> 8) & 0xff, v & 0xff]);
+  }
+  throw new Error("test sizes must stay below 256MB");
 }
 function el(id, payload) {
   const idBytes = id > 0xffffff ? 4 : id > 0xffff ? 3 : id > 0xff ? 2 : 1;
@@ -509,6 +523,158 @@ await withUpstream(async (upstreamUrl) => {
     st.textTracks.set(0x83, { codec: "utf8", lang: "fas", name: "" });
     sc.feed(cluster1); // same scanner, new bytes → now sees the track
     check("live-track: heals without a new pass", st.cues.size === 1, `cues=${st.cues.size}`);
+  }
+
+  // 17) v0.10.18 — ZERO-LOSS PARSER: the old scanner treated a Matroska
+  //     element ID straddling the end of the receive buffer as garbage and
+  //     RESYNCED, silently dropping every byte up to the next cluster
+  //     header (subtitle blocks included). Feeding the file ONE BYTE AT A
+  //     TIME maximises straddles — every cue must still come out.
+  {
+    const st = new SubStore("test://bytefeed");
+    const sc = new MkvScanner(st);
+    for (let i = 0; i < mkv.length; i += 1) sc.feed(mkv.subarray(i, i + 1));
+    sc.end();
+    check("straddle: 1-byte feed extracts every cue", st.cues.size === 2, `got ${st.cues.size}`);
+    check("straddle: 1-byte feed keeps times", [...st.cues.values()].some((c) => c.s === 5200), JSON.stringify([...st.cues.values()]));
+    // and random-ish odd sizes (prime stride) for good measure
+    const st2 = new SubStore("test://primefeed");
+    const sc2 = new MkvScanner(st2);
+    for (let i = 0; i < mkv.length; i += 13) sc2.feed(mkv.subarray(i, i + 13));
+    sc2.end();
+    check("straddle: 13-byte stride extracts every cue", st2.cues.size === 2, `got ${st2.cues.size}`);
+  }
+
+  // 18) v0.10.18 — CONTENT SNIFF: an extension-less token URL served as
+  //     application/octet-stream used to get NO extraction at all (neither
+  //     the mediaSrc routing nor the scanner attach fired). The /subs head
+  //     scan now sniffs the EBML magic and extracts regardless.
+  const sniffed = await new Promise((resolve) => {
+    const server = http.createServer((req, res) => {
+      const range = req.headers.range;
+      if (range) {
+        const m = /^bytes=(\d+)-/.exec(range);
+        const start = m ? Number(m[1]) : 0;
+        const slice = mkv.subarray(start);
+        res.writeHead(206, {
+          "content-type": "application/octet-stream",
+          "content-length": String(slice.length),
+          "content-range": `bytes ${start}-${mkv.length - 1}/${mkv.length}`,
+          "accept-ranges": "bytes",
+        });
+        res.end(slice);
+        return;
+      }
+      res.writeHead(200, { "content-type": "application/octet-stream", "content-length": String(mkv.length), "accept-ranges": "bytes" });
+      res.end(mkv);
+    });
+    server.listen(0, "127.0.0.1", () => resolve({ server, url: `http://127.0.0.1:${server.address().port}/dl/998877` }));
+  });
+  try {
+    const sniffSubs = `${base}/subs?u=${encodeURIComponent(sniffed.url)}`;
+    let lastSniff = null;
+    let sniffOk = false;
+    for (let i = 0; i < 25 && !sniffOk; i++) {
+      await new Promise((r) => setTimeout(r, 200));
+      lastSniff = (await getJson(sniffSubs)).body;
+      sniffOk = lastSniff.found === true && lastSniff.cues >= 2;
+    }
+    check("sniff: token URL without extension extracts subs", sniffOk === true, JSON.stringify(lastSniff));
+    check("sniff: matroska flag reported", lastSniff?.matroska === true);
+    check("sniff: cov diagnostics present", Array.isArray(lastSniff?.cov) && lastSniff.cov[1] >= 5, JSON.stringify(lastSniff?.cov));
+  } finally {
+    sniffed.server.close();
+  }
+
+  // 19) v0.10.18 — CONTENT PICK: eng + fas tracks WITHOUT language tags —
+  //     the old extractor followed the mux order (English). The served
+  //     track must be the one whose TEXT contains Persian script.
+  const noTagMkv = Buffer.concat([
+    el(0x1a45dfa3, el(0x4282, Buffer.from("matroska", "ascii"))),
+    el(0x18538067, Buffer.concat([
+      el(0x1654ae6b, Buffer.concat([
+        trackEntry(1, 1, "V_MPEG4/ISO/AVC"),
+        trackEntry(2, 2, "A_AAC"),
+        trackEntry(3, 0x11, "S_TEXT/UTF8"), // english, muxed FIRST, no lang
+        trackEntry(4, 0x11, "S_TEXT/UTF8"), // persian, no lang
+      ])),
+      el(0x1f43b675, Buffer.concat([
+        el(0xe7, uint16(0)),
+        simpleBlock(3, 1000, 0x00, "1\n00:00:01,000 --> 00:00:02,000\nenglish line one\n"),
+        simpleBlock(3, 3000, 0x00, "2\n00:00:03,000 --> 00:00:04,000\nenglish line two\n"),
+        simpleBlock(4, 2000, 0x00, "1\n00:00:02,000 --> 00:00:03,000\nخط فارسی بدون تگ\n"),
+      ])),
+    ])),
+  ]);
+  {
+    const st = new SubStore("test://notag");
+    const sc = new MkvScanner(st);
+    sc.feed(noTagMkv);
+    sc.end();
+    st.maybePickByContent(); // the /subs endpoint calls this on every poll
+    check("content-pick: persian track served", st.textTracks.get(st.trackNumber) && [...st.cues.values()].some((c) => c.t.includes("خط فارسی بدون تگ")), JSON.stringify([...st.cues.values()]));
+    check("content-pick: english cues not served", ![...st.cues.values()].some((c) => c.t.includes("english line")));
+  }
+
+  // 20) v0.10.18 — POSITION-AWARE BACKFILL: a >6MB file whose last subtitle
+  //     sits past the head-scan window; polling /subs at a far position
+  //     must actively scan the estimated byte window and surface the cue.
+  const lateMkv = Buffer.concat([
+    el(0x1a45dfa3, el(0x4282, Buffer.from("matroska", "ascii"))),
+    el(0x18538067, Buffer.concat([
+      el(0x1549a966, el(0x2ad7b1, uint32(1000000))),
+      el(0x1654ae6b, Buffer.concat([
+        trackEntry(1, 1, "V_MPEG4/ISO/AVC"),
+        trackEntry(3, 0x11, "S_TEXT/UTF8"),
+      ])),
+      el(0x1f43b675, Buffer.concat([
+        el(0xe7, uint16(0)),
+        simpleBlock(1, 0, 0x80, Buffer.alloc(64, 1)),
+        simpleBlock(3, 1000, 0x00, "1\n00:00:01,000 --> 00:00:03,000\nزیرنویس اول\n"),
+      ])),
+      el(0xec, Buffer.alloc(6 << 20, 0x11)), // VOID filler the scanner skips
+      el(0x1f43b675, Buffer.concat([
+        el(0xe7, uint32(120000)), // cluster at 120s
+        simpleBlock(1, 0, 0x80, Buffer.alloc(64, 2)),
+        simpleBlock(3, 0, 0x00, "2\n00:02:00,000 --> 00:02:03,000\nزیرنویس آخر\n"),
+      ])),
+    ])),
+  ]);
+  const late = await new Promise((resolve) => {
+    const server = http.createServer((req, res) => {
+      const range = req.headers.range;
+      if (range) {
+        const m = /^bytes=(\d+)-(\d+)?/.exec(range);
+        const start = m ? Number(m[1]) : 0;
+        const end = m && m[2] ? Math.min(Number(m[2]), lateMkv.length - 1) : lateMkv.length - 1;
+        const slice = lateMkv.subarray(start, end + 1);
+        res.writeHead(206, {
+          "content-type": "video/x-matroska",
+          "content-length": String(slice.length),
+          "content-range": `bytes ${start}-${end}/${lateMkv.length}`,
+          "accept-ranges": "bytes",
+        });
+        res.end(slice);
+        return;
+      }
+      res.writeHead(200, { "content-type": "video/x-matroska", "content-length": String(lateMkv.length), "accept-ranges": "bytes" });
+      res.end(lateMkv);
+    });
+    server.listen(0, "127.0.0.1", () => resolve({ server, url: `http://127.0.0.1:${server.address().port}/late/movie.mkv` }));
+  });
+  try {
+    const lateSubs = (pos, dur) => `${base}/subs?u=${encodeURIComponent(late.url)}&pos=${pos}&dur=${dur}`;
+    let lastLate = null;
+    let lateOk = false;
+    for (let i = 0; i < 40 && !lateOk; i++) {
+      await new Promise((r) => setTimeout(r, 250));
+      lastLate = (await getJson(lateSubs(118, 125))).body;
+      lateOk = lastLate.cues >= 2 && (lastLate.vtt || "").includes("زیرنویس آخر");
+    }
+    check("backfill: far-position cue actively scanned", lateOk === true, JSON.stringify({ cues: lastLate?.cues, cov: lastLate?.cov }));
+    check("backfill: coverage reaches the watched position", Array.isArray(lastLate?.cov) && lastLate.cov[1] >= 118, JSON.stringify(lastLate?.cov));
+  } finally {
+    late.server.close();
   }
 
   proxy.close();

@@ -1,20 +1,27 @@
 "use client";
 
-/* Local stream-proxy helpers (v0.10.5).
+/* Local stream-proxy helpers (v0.10.18).
  *
- * The archive's «زیرنویس چسبیده» releases are MKV files with the Persian SRT
- * muxed INSIDE the container (S_TEXT/UTF8). Chromium never renders embedded
- * Matroska subtitles, so the Electron main process runs a tiny localhost
- * proxy: /stream pipes the bytes to the <video> element 1:1 (Range intact)
- * while a passive EBML scanner collects the subtitle packets; /subs returns
- * the VTT gathered so far. MP4/other containers play directly. */
+ * The archive's releases are MKV files with the Persian SRT muxed INSIDE the
+ * Matroska container (S_TEXT/UTF8, confirmed by probing). Chromium never
+ * renders embedded Matroska subtitles, so the Electron main process runs a
+ * tiny localhost proxy: /stream pipes the bytes to the <video> element 1:1
+ * (Range intact) while a streaming EBML scanner collects the subtitle
+ * packets; /subs returns the VTT gathered so far.
+ *
+ * v0.10.18: routing is no longer extension-ONLY. Known matroska extensions
+ * always go through the proxy; extension-LESS/token URLs (redirectors,
+ * /dl/<id> style links) go through it too — the proxy sniffs the EBML magic
+ * and behaves as a pure 1:1 pipe for non-matroska content. Plain .mp4 and
+ * friends keep the direct fast path.
+ */
 
 export type ProxySubsResponse = {
   found: boolean;
   cues: number;
   complete: boolean;
   vtt: string | null;
-  /** v0.10.6 header intelligence */
+  /** header intelligence */
   probed?: boolean;
   kinds?: string[]; // subtitle CodecIDs seen in Tracks (incl. bitmap ones)
   audio?: string[]; // audio track CodecIDs in file order
@@ -22,6 +29,9 @@ export type ProxySubsResponse = {
   /** is the first audio track decodable by Chromium? null = unknown yet */
   audioOk?: boolean | null;
   audioLabel?: string | null; // e.g. "DTS", "AC3 (Dolby Digital)"
+  /** v0.10.18 diagnostics: content-sniffed Matroska + cue coverage [min,max]s */
+  matroska?: boolean;
+  cov?: [number, number] | null;
 };
 
 export type ProxyProbeResponse = Omit<ProxySubsResponse, "complete" | "vtt"> & { cues: number };
@@ -31,10 +41,20 @@ export function isMkvUrl(url: string): boolean {
   return /\.mkv|\.mk3d|\.webm(\?|$)/i.test(url || "");
 }
 
-/** Media src for a raw catalog URL – via the proxy for MKV, direct otherwise. */
+const KNOWN_VIDEO_EXT = /\.(mp4|m4v|mkv|mk3d|webm|avi|mov|wmv|mpg|mpeg|ts|flv)(\?|#|$)/i;
+
+/** Media src for a raw catalog URL – via the proxy for MKV (and any URL
+ *  whose container the proxy must sniff), direct for plain video files. */
 export function mediaSrc(rawUrl: string, proxyBase: string | null | undefined): string {
   if (!rawUrl) return rawUrl;
-  if (proxyBase && isMkvUrl(rawUrl)) return `${proxyBase}/stream?u=${encodeURIComponent(rawUrl)}`;
+  if (!proxyBase) return rawUrl;
+  if (isMkvUrl(rawUrl)) return `${proxyBase}/stream?u=${encodeURIComponent(rawUrl)}`;
+  // extension-less / token URLs: let the proxy sniff the real container so
+  // embedded subtitles survive disguise (its pipe is byte-transparent for
+  // everything else)
+  if (/^https?:\/\//i.test(rawUrl) && !KNOWN_VIDEO_EXT.test(rawUrl)) {
+    return `${proxyBase}/stream?u=${encodeURIComponent(rawUrl)}`;
+  }
   return rawUrl;
 }
 

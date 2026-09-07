@@ -11,14 +11,16 @@
  *   • pin         → always-on-top toggle (screen-saver level)
  *   • expand      → hand playback back to the in-app theater at this position
  *   • next        → advance to the next episode inside the floating window
- *   • subtitles   → the muxed Persian SRT is extracted live by the local
- *                   stream proxy and attached as a WebVTT track
+ *   • subtitles   → the muxed Persian SRT/ASS is extracted live by the local
+ *                   stream proxy and rendered by the shared SubOverlay
+ *                   (v0.10.18 Subs v3 — no native TextTrack involved)
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { formatClock, fa } from "@/lib/format";
 import { loadProxyBase, mediaSrc } from "@/lib/video-url";
-import { applyVttToTrack, stopMediaEl } from "@/lib/media";
-import { useMkvSubs } from "@/lib/use-mkv-subs";
+import { stopMediaEl } from "@/lib/media";
+import { useSubs } from "@/lib/subs-engine";
+import SubOverlay from "./SubOverlay";
 import { ensurePlayableAudio } from "@/lib/audio-guard";
 import { preferredSourceIdx, rememberedVariantIdx, rememberVariantPref, variantShort } from "@/lib/variant";
 import type { PipPayload } from "@/lib/platform";
@@ -63,7 +65,6 @@ export default function PipClient() {
   const [countdown, setCountdown] = useState<number | null>(null);
   const [showUi, setShowUi] = useState(true);
   const [subOn, setSubOn] = useState(true);
-  const [subLoaded, setSubLoaded] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -88,7 +89,15 @@ export default function PipClient() {
   const sources = useMemo(() => state?.sources ?? [], [state]);
   const rawActive = sources[Math.min(srcIdx, Math.max(0, sources.length - 1))]?.url || state?.src || "";
   const activeSrc = mediaSrc(rawActive, proxyBase);
-  const { vtt: mkvVtt, kick: kickSubs } = useMkvSubs(rawActive || null, proxyBase, !!state);
+  // v0.10.18 Subs v3 — shared engine, position-aware polls, overlay rendering
+  const { cues: mkvCues, kick: kickSubs } = useSubs(
+    rawActive || null,
+    proxyBase,
+    !!state,
+    () => videoRef.current?.currentTime ?? 0,
+    () => videoRef.current?.duration ?? 0
+  );
+  const subLoaded = mkvCues.length > 0;
 
   /* ---------------- boot: proxy + initial payload ---------------- */
   useEffect(() => {
@@ -318,43 +327,10 @@ export default function PipClient() {
     v.playbackRate = rate;
   }, [volume, muted, rate]);
 
-  /* ---------------- extracted MKV subtitles ----------------
-   * v0.10.12: ONE programmatic TextTrack fed incrementally — the old
-   * <track> swap flickered on every poll and lost the track whenever the
-   * <video> re-keyed (quality switch) with no new cues arriving. */
-  const subTrackRef = useRef<TextTrack | null>(null);
-  const subTrackElRef = useRef<HTMLVideoElement | null>(null);
-  const cueKeysRef = useRef<Set<string>>(new Set());
-  const subOnRef = useRef(subOn);
-  useEffect(() => {
-    subOnRef.current = subOn;
-  }, [subOn]);
-
-  const syncSubTrack = useCallback(() => {
-    const v = videoRef.current;
-    if (!v || !state) return;
-    let tt = subTrackRef.current;
-    if (!tt || subTrackElRef.current !== v) {
-      try {
-        tt = v.addTextTrack("subtitles", "زیرنویس فارسی", "fa");
-      } catch {
-        return;
-      }
-      tt.mode = "disabled";
-      subTrackRef.current = tt;
-      subTrackElRef.current = v;
-      cueKeysRef.current = new Set();
-    }
-    if (!tt || !mkvVtt) return;
-    const added = applyVttToTrack(tt, mkvVtt, cueKeysRef.current);
-    if (added > 0) setSubLoaded(true);
-    tt.mode = subOnRef.current && (tt.cues?.length ?? 0) > 0 ? "showing" : "disabled";
-  }, [state, mkvVtt]);
-
-  useEffect(() => {
-    syncSubTrack();
-  }, [syncSubTrack, videoEl]);
-
+  /* ---------------- extracted MKV subtitles (v0.10.18 Subs v3) ----------------
+   * The shared engine returns plain sorted cues; rendering is the SubOverlay
+   * div — the old programmatic-TextTrack chain (mode juggling + re-seed
+   * effects that silently died on re-keys) is gone for good. */
   // right after a seek, show the freshly scanned cues without waiting for
   // the next scheduled poll
   useEffect(() => {
@@ -374,12 +350,6 @@ export default function PipClient() {
       stopMediaEl(videoEl);
     };
   }, [videoEl]);
-
-  useEffect(() => {
-    const v = videoRef.current;
-    const track = subTrackRef.current;
-    if (track) track.mode = subOn && subLoaded ? "showing" : "disabled";
-  }, [subOn, subLoaded]);
 
   /* ---------------- ended countdown → next episode inside the pip ---------------- */
   useEffect(() => {
@@ -498,6 +468,9 @@ export default function PipClient() {
           preload="metadata"
         />
       )}
+
+      {/* v0.10.18 Subs v3 — extracted cues rendered as an overlay (no TextTrack) */}
+      <SubOverlay cues={mkvCues} videoRef={videoRef} on={subOn} pip />
 
       {loading && !ended && !fatal && activeSrc && (
         <div className="pointer-events-none absolute inset-0 grid place-items-center">

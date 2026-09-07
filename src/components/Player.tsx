@@ -36,8 +36,9 @@ import {
 import FavoriteButton from "./FavoriteButton";
 import WatchlistButton from "./WatchlistButton";
 import { isMkvUrl, loadProxyBase, mediaSrc } from "@/lib/video-url";
-import { applyVttToTrack, clearTrackCues, srtToVtt, stopMediaEl } from "@/lib/media";
-import { useMkvSubs } from "@/lib/use-mkv-subs";
+import { parseVtt, srtToVtt, stopMediaEl, type ParsedCue } from "@/lib/media";
+import { useSubs } from "@/lib/subs-engine";
+import SubOverlay from "./SubOverlay";
 import { ensurePlayableAudio } from "@/lib/audio-guard";
 import { preferredSourceIdx, rememberedVariantIdx, rememberVariantPref, variantShort } from "@/lib/variant";
 
@@ -100,7 +101,6 @@ export default function Player() {
   // ---- subtitles ----------------------------------------------------------
   const [subOn, setSubOn] = useState(false);
   const [subSize, setSubSize] = useState<"s" | "m" | "l">("m");
-  const [subLoaded, setSubLoaded] = useState(false);
   const [subMenu, setSubMenu] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -415,50 +415,36 @@ export default function Player() {
     errCountRef.current = 0;
   }, [contentKey]);
 
-  // ---- subtitles extracted from the MKV container (v0.10.5, ASS+ in 0.10.6)
-  // v0.10.12: cues now feed ONE programmatic TextTrack incrementally instead
-  // of re-swapping a <track> element on every poll — the old swap flickered
-  // the subtitle every 2.5s and, worse, the track was never re-attached when
-  // the <video> re-keyed (quality switch / retry) with no NEW cues arriving,
-  // so subtitles silently disappeared for the rest of the movie.
-  const { vtt: mkvVtt, info: mkvInfo, kick: kickSubs } = useMkvSubs(rawActive || null, proxyBase, open);
-  const subTrackRef = useRef<TextTrack | null>(null);
-  const subTrackElRef = useRef<HTMLVideoElement | null>(null);
-  const cueKeysRef = useRef<Set<string>>(new Set());
-  const [fileVtt, setFileVtt] = useState<string | null>(null);
-  const subOnRef = useRef(subOn);
+  // ---- subtitles (v0.10.18 Subs v3 rewrite) ————————————————
+  // One shared engine (subs-engine.ts) polls the proxy WITH the playback
+  // position so it can backfill gaps around the watched region, and returns
+  // plain sorted cues. Rendering is the SubOverlay div — no TextTrack, no
+  // VTTCue, no mode juggling: nothing left to silently de-sync when the
+  // <video> re-keys (quality switch / retry / episode change).
+  const { cues: mkvCues, status: subInfo, kick: kickSubs } = useSubs(
+    rawActive || null,
+    proxyBase,
+    open,
+    () => videoRef.current?.currentTime ?? 0,
+    () => videoRef.current?.duration ?? 0
+  );
+  // a user-loaded subtitle file replaces the extracted MKV cues for THIS video
+  const [fileCues, setFileCues] = useState<ParsedCue[] | null>(null);
   useEffect(() => {
-    subOnRef.current = subOn;
-  }, [subOn]);
+    setFileCues(null);
+  }, [contentKey]);
+  const subCues = fileCues ?? mkvCues;
+  const subLoaded = subCues.length > 0;
 
-  const syncSubTrack = useCallback(() => {
-    const v = videoRef.current;
-    if (!v || !open) return;
-    let tt = subTrackRef.current;
-    if (!tt || subTrackElRef.current !== v) {
-      try {
-        tt = v.addTextTrack("subtitles", "زیرنویس فارسی", "fa");
-      } catch {
-        return;
-      }
-      tt.mode = "disabled";
-      subTrackRef.current = tt;
-      subTrackElRef.current = v;
-      cueKeysRef.current = new Set();
+  // restore subtitle prefs — default ON: the extracted MKV subs are the
+  // archive's subtitle experience; only an explicit user "off" keeps them hidden
+  useEffect(() => {
+    try {
+      setSubOn(localStorage.getItem(SUB_ON_KEY) !== "0");
+    } catch {
+      /* ignore */
     }
-    const vtt = fileVtt ?? mkvVtt;
-    if (!tt || !vtt) return;
-    const added = applyVttToTrack(tt, vtt, cueKeysRef.current);
-    if (added > 0) setSubLoaded(true);
-    // keep the mode right across re-keys (the fresh track starts disabled)
-    tt.mode = subOnRef.current && (tt.cues?.length ?? 0) > 0 ? "showing" : "disabled";
-  }, [open, fileVtt, mkvVtt]);
-
-  // (re)create the track whenever the video element is (re)created — quality
-  // switch, episode change, retry — and seed it with the cues gathered so far
-  useEffect(() => {
-    syncSubTrack();
-  }, [syncSubTrack, videoEl, proxyBase]);
+  }, []);
 
   // right after a seek the proxy starts scanning the new byte range — kick
   // the poller so the cues for the new position show up on the next beat,
@@ -469,24 +455,6 @@ export default function Player() {
     videoEl.addEventListener("seeked", onSeeked);
     return () => videoEl.removeEventListener("seeked", onSeeked);
   }, [kickSubs, videoEl]);
-
-  // a user-loaded subtitle file replaces the extracted MKV cues for THIS video
-  useEffect(() => {
-    setFileVtt(null);
-  }, [contentKey]);
-
-  // restore subtitle prefs
-  useEffect(() => {
-    try {
-      // default ON: the extracted MKV subs are the archive's subtitle
-      // experience; only an explicit user "off" keeps them hidden
-      const pref = localStorage.getItem(SUB_ON_KEY);
-      setSubOn((pref === null || pref === "1") && !!subLoaded);
-    } catch {
-      /* ignore */
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [subLoaded]);
 
   useEffect(() => {
     const v = videoEl;
@@ -600,24 +568,16 @@ export default function Player() {
     srcIdxRef.current = srcIdx;
   }, [srcIdx]);
 
-  // subtitle track mode sync
-  useEffect(() => {
-    const track = subTrackRef.current;
-    if (track) track.mode = subOn && subLoaded ? "showing" : "disabled";
-  }, [subOn, subLoaded]);
-
   const onSubFile = (f: File | undefined) => {
     if (!f) return;
     const reader = new FileReader();
     reader.onload = () => {
       const text = String(reader.result ?? "");
       const vtt = /^\uFEFF?WEBVTT/.test(text.trim()) ? text : srtToVtt(text);
-      // the uploaded file REPLACES the extracted MKV cues: empty the shared
-      // track (programmatic tracks cannot be removed, only emptied) and
-      // re-seed it from the file alone
-      clearTrackCues(subTrackRef.current);
-      cueKeysRef.current = new Set();
-      setFileVtt(vtt);
+      // the uploaded file REPLACES the extracted MKV cues for this video
+      const parsed = parseVtt(vtt);
+      if (parsed.length > 1) parsed.sort((a, b) => a.s - b.s);
+      setFileCues(parsed);
       setSubOn(true);
       try {
         localStorage.setItem(SUB_ON_KEY, "1");
@@ -747,6 +707,9 @@ export default function Player() {
           preload="metadata"
         />
       )}
+
+      {/* v0.10.18 Subs v3 — extracted cues rendered as an overlay (no TextTrack) */}
+      <SubOverlay cues={subCues} videoRef={videoRef} on={subOn} size={subSize} />
 
       {/* loading */}
       {loading && !ended && !fatal && (
@@ -1137,9 +1100,9 @@ export default function Player() {
                         </button>
                       ) : (
                         <p className="mb-2 rounded-xl bg-white/5 p-2.5 text-[11px] leading-5 text-zinc-400">
-                          {isMkvUrl(rawActive) && mkvInfo?.probed && (mkvInfo.kinds ?? []).some((k) => /S_IMAGE|PGS|VobSub|^S_HDMV/i.test(k)) ? (
+                          {isMkvUrl(rawActive) && subInfo?.probed && (subInfo.kinds ?? []).some((k) => /S_IMAGE|PGS|VobSub|^S_HDMV/i.test(k)) ? (
                             <>زیرنویس داخل این فایل از نوع تصویری (PGS/VobSub) است و به‌عنوان متن قابل نمایش نیست؛ نسخه‌های «زیرنویس چسبیده» زیرنویس را داخل خود تصویر دارند.</>
-                          ) : isMkvUrl(rawActive) && mkvInfo?.probed && !(mkvInfo.kinds ?? []).length ? (
+                          ) : isMkvUrl(rawActive) && subInfo?.probed && !(subInfo.kinds ?? []).length ? (
                             <>زیرنویس متنی داخل این فایل پیدا نشد؛ احتمالاً نسخه «زیرنویس چسبیده» زیرنویس را داخل تصویر دارد. می‌توانید فایل SRT خودتان را هم لود کنید.</>
                           ) : (
                             <>نسخه‌های «زیرنویس چسبیده» زیرنویس داخل تصویر دارند و به‌صورت پیش‌فرض انتخاب می‌شوند. می‌توانید فایل SRT خودتان را هم لود کنید.</>

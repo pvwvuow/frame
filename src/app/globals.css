@@ -316,16 +316,44 @@ html[data-reduce-motion="1"] *, html[data-reduce-motion="1"] *::before, html[dat
 .heart-pop { animation: var(--animate-pop); }
 .checkbox-brand { accent-color: var(--color-brand); }
 
-/* ---- Player subtitles (loaded SRT/VTT tracks) ---- */
+/* ---- Player subtitles v0.10.18 (Subs v3 overlay — no native TextTrack) ----
+ * The overlay is absolutely positioned inside the player root; cues render
+ * as plain divs so RTL Persian text and the app font always match. */
+.sub-overlay {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 7%;
+  z-index: 30;
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+  padding-inline: 5%;
+  pointer-events: none;
+}
+.sub-overlay--pip { bottom: 9%; padding-inline: 3%; }
+.sub-overlay__text {
+  font-family: Vazirmatn, sans-serif;
+  white-space: pre-line;
+  text-align: center;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.62);
+  line-height: 1.7;
+  font-weight: 500;
+  padding: 0.06em 0.55em;
+  border-radius: 0.3em;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+  max-width: 100%;
+}
+.sub-overlay[data-subsize="s"] .sub-overlay__text { font-size: clamp(12px, 2.4vh, 26px); }
+.sub-overlay[data-subsize="m"] .sub-overlay__text { font-size: clamp(14px, 3.2vh, 34px); }
+.sub-overlay[data-subsize="l"] .sub-overlay__text { font-size: clamp(16px, 4.2vh, 44px); }
+.sub-overlay--pip .sub-overlay__text { font-size: clamp(11px, 4.2vh, 20px); }
 video::cue {
   font-family: Vazirmatn, sans-serif;
   background: rgba(0, 0, 0, 0.72);
   color: #fff;
   line-height: 1.7;
 }
-[data-subsize="s"] video::cue { font-size: 2.4cqh; }
-[data-subsize="m"] video::cue { font-size: 3.2cqh; }
-[data-subsize="l"] video::cue { font-size: 4.2cqh; }
 
 /* ---- Electron desktop shell ---- */
 html[data-electron="1"] .web-only { display: none !important; }
