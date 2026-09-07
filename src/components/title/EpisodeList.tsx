@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { fa } from "@/lib/format";
 import { PlayIcon, CheckIcon } from "../Icons";
+import DownloadButton from "../download/DownloadButton";
+import { normalizeSources } from "@/lib/source-fix";
 
 export type EpisodeItem = {
   id: number;
@@ -13,16 +15,23 @@ export type EpisodeItem = {
   synopsis: string;
   duration: number;
   thumbnail: string;
+  /** raw sources JSON (v0.10.19) — enables the per-episode download menu */
+  sources?: string | null;
 };
 
 export default function EpisodeList({
   slug,
   episodes,
   progress,
+  name,
+  year,
 }: {
   slug: string;
   episodes: EpisodeItem[];
   progress: { episodeId: number | null; position: number; duration: number } | null;
+  /** title metadata for the download payload (v0.10.19) */
+  name?: string;
+  year?: number;
 }) {
   const seasons = useMemo(() => Array.from(new Set(episodes.map((e) => e.season))), [episodes]);
   const currentEp = episodes.find((e) => e.id === progress?.episodeId);
@@ -30,6 +39,22 @@ export default function EpisodeList({
   const list = episodes.filter((e) => e.season === season);
   const currentIdx = currentEp ? episodes.findIndex((e) => e.id === currentEp.id) : -1;
   const totalMinutes = list.reduce((a, e) => a + e.duration, 0);
+
+  // parse each episode's source rows once (quality menu for the download button)
+  const sourcesById = useMemo(() => {
+    const map = new Map<number, { q: string; v: string; url: string; mb?: number }[]>();
+    for (const e of episodes) {
+      try {
+        const arr = normalizeSources(JSON.parse(e.sources || "[]")).filter(
+          (s): s is { q: string; v: string; url: string; mb?: number } => !!s && !!s.url
+        );
+        if (arr.length) map.set(e.id, arr);
+      } catch {
+        /* ignore */
+      }
+    }
+    return map;
+  }, [episodes]);
 
   return (
     <div>
@@ -59,15 +84,15 @@ export default function EpisodeList({
           const active = progress?.episodeId === e.id;
           const watched = currentIdx > idx;
           const pct = active && progress && progress.duration > 0 ? (progress.position / progress.duration) * 100 : watched ? 100 : 0;
+          const dlSources = sourcesById.get(e.id);
           return (
             <li key={e.id}>
-              <Link
-                href={`/watch/${slug}?ep=${e.id}`}
+              <div
                 className={`group flex gap-4 rounded-2xl border p-3 transition ${
                   active ? "border-brand/50 bg-brand/10 shadow-[0_0_0_1px_rgba(229,9,20,0.2)]" : "border-white/5 bg-ink-700/40 hover:border-white/15 hover:bg-ink-700"
                 }`}
               >
-                <div className="relative h-[92px] w-[164px] shrink-0 overflow-hidden rounded-xl">
+                <Link href={`/watch/${slug}?ep=${e.id}`} className="relative h-[92px] w-[164px] shrink-0 overflow-hidden rounded-xl">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={e.thumbnail} alt={e.name} className="h-full w-full object-cover transition duration-500 group-hover:scale-105" />
                   <div className="absolute inset-0 grid place-items-center bg-black/35 opacity-0 transition group-hover:opacity-100">
@@ -86,16 +111,32 @@ export default function EpisodeList({
                       <div className={`h-full ${watched && !active ? "bg-emerald-500" : "bg-brand"}`} style={{ width: `${pct}%` }} />
                     </div>
                   )}
+                </Link>
+                <div className="flex min-w-0 flex-1 gap-2">
+                  <Link href={`/watch/${slug}?ep=${e.id}`} className="min-w-0 flex-1 py-0.5">
+                    <div className="flex items-center gap-2">
+                      <span className="text-2xl font-black leading-none text-zinc-600">{fa(e.number)}</span>
+                      <p className="truncate font-bold text-white">{e.name}</p>
+                      {active && <span className="rounded-md bg-brand/20 px-1.5 py-0.5 text-[10px] font-bold text-brand">در حال تماشا</span>}
+                    </div>
+                    <p className="mt-2 line-clamp-3 text-xs leading-6 text-zinc-400">{e.synopsis}</p>
+                  </Link>
+                  {dlSources && name && (
+                    <div className="self-start pt-1">
+                      <DownloadButton
+                        name={name}
+                        year={year}
+                        kind="series"
+                        season={e.season}
+                        episode={e.number}
+                        label={`S${String(e.season).padStart(2, "0")}E${String(e.number).padStart(2, "0")}`}
+                        sources={dlSources}
+                        compact
+                      />
+                    </div>
+                  )}
                 </div>
-                <div className="min-w-0 flex-1 py-0.5">
-                  <div className="flex items-center gap-2">
-                    <span className="text-2xl font-black leading-none text-zinc-600">{fa(e.number)}</span>
-                    <p className="truncate font-bold text-white">{e.name}</p>
-                    {active && <span className="rounded-md bg-brand/20 px-1.5 py-0.5 text-[10px] font-bold text-brand">در حال تماشا</span>}
-                  </div>
-                  <p className="mt-2 line-clamp-3 text-xs leading-6 text-zinc-400">{e.synopsis}</p>
-                </div>
-              </Link>
+              </div>
             </li>
           );
         })}

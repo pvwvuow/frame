@@ -22,6 +22,7 @@ const http = require("node:http");
 const log = require("electron-log");
 const { startStreamProxy } = require("./stream-proxy.cjs");
 const { setupPip, pipOpen } = require("./pip.cjs");
+const { setupDownloads } = require("./downloads.cjs");
 
 log.transports.file.level = "info";
 log.initialize?.();
@@ -865,6 +866,7 @@ function buildMenu() {
         { label: "امشب چی ببینم؟", accelerator: "CmdOrCtrl+Shift+R", click: () => nav("/random") },
         { type: "separator" },
         { label: "لیست من", accelerator: "CmdOrCtrl+L", click: () => nav("/my-list") },
+        { label: "دانلودها", accelerator: "CmdOrCtrl+D", click: () => nav("/downloads") },
         { label: "اعلان‌ها", accelerator: "CmdOrCtrl+Shift+N", click: () => nav("/notifications") },
         { label: "تنظیمات", accelerator: "CmdOrCtrl+,", click: () => nav("/settings") },
         { type: "separator" },
@@ -1039,6 +1041,14 @@ if (!gotLock) {
         getServerUrl: () => serverUrl,
         isQuitting: () => quitting,
         getUserData: () => app.getPath("userData"),
+      });
+      setupDownloads({
+        log,
+        getMainWindow: () => mainWindow,
+        getUserData: () => app.getPath("userData"),
+        dialog,
+        shell,
+        app,
       });
       await startServer();
       buildMenu();

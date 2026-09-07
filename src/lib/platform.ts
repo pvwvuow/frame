@@ -22,18 +22,68 @@ export type PipPayload = {
 };
 
 export type NamaPipBridge = {
-  open: (payload: PipPayload) => Promise<string>;
-  close: () => void;
+  /** opens a NEW floating window → { id } | "max" | "invalid" (v0.10.19) */
+  open: (payload: PipPayload) => Promise<{ id: number } | "max" | "invalid">;
+  /** close a specific window (by id) or, from inside a float, itself */
+  close: (id?: number) => void;
   expand: (currentTime: number, srcIdx: number) => void;
   pin: (on: boolean) => void;
   time: (t: number) => void;
   next: () => void;
-  getState: () => Promise<PipPayload | null>;
+  getState: () => Promise<(PipPayload & { id: number }) | null>;
   onState: (cb: (p: PipPayload) => void) => () => void;
-  onExpand: (cb: (p: PipPayload) => void) => () => void;
-  onClosed: (cb: () => void) => () => void;
-  onTime: (cb: (t: number) => void) => () => void;
-  onSync: (cb: (p: PipPayload) => void) => () => void;
+  onExpand: (cb: (p: { id: number; payload: PipPayload }) => void) => () => void;
+  onClosed: (cb: (p: { id: number }) => void) => () => void;
+  onTime: (cb: (p: { id: number; t: number }) => void) => () => void;
+  onSync: (cb: (p: { id: number; state: PipPayload }) => void) => () => void;
+};
+
+export type DownloadItem = {
+  id: string;
+  url: string;
+  name: string;
+  year: number;
+  kind: "movie" | "series";
+  season: number;
+  episode: number;
+  quality: string;
+  variant: string;
+  mb: number;
+  label: string;
+  status: "queued" | "downloading" | "paused" | "completed" | "failed" | "canceled";
+  received: number;
+  total: number;
+  speed: number;
+  error: string | null;
+  filePath?: string;
+  createdAt?: number;
+  completedAt?: number;
+};
+
+export type DownloadState = { dir: string | null; items: DownloadItem[] };
+
+export type NamaDownloadsBridge = {
+  getState: () => Promise<DownloadState>;
+  enqueue: (item: {
+    url: string;
+    name: string;
+    year?: number;
+    kind?: "movie" | "series";
+    season?: number;
+    episode?: number;
+    quality?: string;
+    variant?: string;
+    mb?: number;
+    label?: string;
+  }) => Promise<{ ok: boolean; id?: string; dup?: boolean; error?: string; needDir?: boolean }>;
+  pause: (id: string) => void;
+  resume: (id: string) => void;
+  cancel: (id: string) => void;
+  remove: (id: string) => void;
+  chooseDir: () => Promise<string | null>;
+  setDir: (dir: string) => Promise<boolean>;
+  openFolder: (id?: string | null) => Promise<boolean>;
+  onState: (cb: (s: DownloadState) => void) => () => void;
 };
 
 export type NamaBridge = {
@@ -47,6 +97,7 @@ export type NamaBridge = {
   openExternal: (url: string) => Promise<void>;
   proxyUrl?: () => Promise<string>;
   pip?: NamaPipBridge;
+  downloads?: NamaDownloadsBridge;
   window: { minimize: () => void; maximize: () => void; close: () => void; isMaximized: () => Promise<boolean>; toggleFullscreen: () => void };
   onNavigate: (cb: (path: string) => void) => () => void;
   onUpdateStatus: (cb: (s: { status: string; version?: string; percent?: number; message?: string }) => void) => () => void;
@@ -56,6 +107,7 @@ export type NamaBridge = {
 declare global {
   interface Window {
     nama?: NamaBridge;
+    __namaPopGuard?: boolean;
   }
 }
 

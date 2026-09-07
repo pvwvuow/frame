@@ -22,7 +22,8 @@ import { stopMediaEl } from "@/lib/media";
 import { useSubs } from "@/lib/subs-engine";
 import SubOverlay from "./SubOverlay";
 import { ensurePlayableAudio } from "@/lib/audio-guard";
-import { preferredSourceIdx, rememberedVariantIdx, rememberVariantPref, variantShort } from "@/lib/variant";
+import { preferredSourceIdx, qualityPrefIdx, rememberedVariantIdx, rememberVariantPref, variantShort } from "@/lib/variant";
+import { setQualityPref } from "@/lib/quality-pref";
 import type { PipPayload } from "@/lib/platform";
 import {
   BackIcon,
@@ -131,10 +132,10 @@ export default function PipClient() {
     return un;
   }, []);
 
-  /* resolve which source plays: hint → remembered taste → hardsub → dub →
-   * catalog order; then the v0.10.6 audio guard — a variant whose first
-   * audio track is DTS/AC3 (undecodable by Chromium) is swapped for the
-   * closest variant that will actually sound. */
+  /* resolve which source plays: hint → the user's quality pick → remembered
+   * taste → hardsub → dub → catalog order; then the v0.10.6 audio guard — a
+   * variant whose first audio track is DTS/AC3 (undecodable by Chromium) is
+   * swapped for the closest variant that will actually sound. */
   const stateKey = state ? `${state.slug}|${state.episode?.id ?? 0}|${state.src}` : "";
   // re-runs when the proxy comes up late so the guard always gets its chance
   const guardKey = `${stateKey}|${proxyBase ?? ""}`;
@@ -146,8 +147,16 @@ export default function PipClient() {
       return;
     }
     const hint = state.srcIdx ?? -1;
+    const qp = qualityPrefIdx(list);
     const remembered = rememberedVariantIdx(list);
-    const initial = hint >= 0 && hint < list.length ? hint : remembered >= 0 ? remembered : preferredSourceIdx(list);
+    const initial =
+      hint >= 0 && hint < list.length
+        ? hint
+        : qp >= 0
+          ? qp
+          : remembered >= 0
+            ? remembered
+            : preferredSourceIdx(list);
     setSrcIdx(initial);
     if (proxyBase) {
       const guardCtl = new AbortController(); // v0.10.17: kill probes on teardown
@@ -413,6 +422,7 @@ export default function PipClient() {
     const v = videoRef.current;
     if (v) resumeAt.current = v.currentTime;
     rememberVariantPref(sources[i]?.v);
+    setQualityPref(sources[i]?.q || "best");
     errCountRef.current = 0;
     setFatal(false);
     setSrcIdx(i);

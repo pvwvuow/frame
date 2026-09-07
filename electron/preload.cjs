@@ -34,19 +34,41 @@ contextBridge.exposeInMainWorld("nama", {
   onNavigate: (cb) => on("nama:navigate", cb),
   onUpdateStatus: (cb) => on("nama:update-status", cb),
   setBadge: (count) => ipcRenderer.send("nama:badge", count),
-  /* desktop-wide floating player (real OS window, v0.10.5) */
+  /* desktop floating players (real OS windows) — v0.10.19 multi-window */
   pip: {
+    /** opens a NEW floating window → resolves { id } | "max" | "invalid" */
     open: (payload) => ipcRenderer.invoke("pip:open", payload),
-    close: () => ipcRenderer.send("pip:close"),
+    /** close a specific window (by id) or, from inside a float, itself */
+    close: (id) => ipcRenderer.send("pip:close", id),
     expand: (currentTime, srcIdx) => ipcRenderer.send("pip:expand", { currentTime, srcIdx }),
     pin: (on) => ipcRenderer.send("pip:pin", !!on),
     time: (t) => ipcRenderer.send("pip:time", t),
     next: () => ipcRenderer.send("pip:next"),
     getState: () => ipcRenderer.invoke("pip:get-state"),
     onState: (cb) => on("pip:state", cb),
+    /** { id, payload } */
     onExpand: (cb) => on("pip:expand-to-main", cb),
+    /** { id } */
     onClosed: (cb) => on("pip:closed", cb),
+    /** { id, t } */
     onTime: (cb) => on("nama:pip-time", cb),
+    /** { id, state } */
     onSync: (cb) => on("nama:pip-sync", cb),
+  },
+  /* download manager (v0.10.19) — main-process queue with pause/resume,
+     speed reporting and the Frame folder structure */
+  downloads: {
+    getState: () => ipcRenderer.invoke("dl:get-state"),
+    enqueue: (item) => ipcRenderer.invoke("dl:enqueue", item),
+    pause: (id) => ipcRenderer.send("dl:pause", id),
+    resume: (id) => ipcRenderer.send("dl:resume", id),
+    cancel: (id) => ipcRenderer.send("dl:cancel", id),
+    remove: (id) => ipcRenderer.send("dl:remove", id),
+    chooseDir: () => ipcRenderer.invoke("dl:choose-dir"),
+    setDir: (dir) => ipcRenderer.invoke("dl:set-dir", dir),
+    /** open the folder of an item (or the Frame root when id is null) */
+    openFolder: (id) => ipcRenderer.invoke("dl:open-folder", id ?? null),
+    /** { dir, items } */
+    onState: (cb) => on("nama:dl-state", cb),
   },
 });

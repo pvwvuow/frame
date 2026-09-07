@@ -2,8 +2,8 @@
 
 import { useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { toast } from "sonner";
 import { bridge, isElectron } from "@/lib/platform";
+import UpdaterPopup, { pushUpdaterStatus } from "./UpdaterPopup";
 
 /** Pages that only make sense on the public website (marketing / legal / contact). */
 export const WEB_ONLY_ROUTES: Record<string, string> = {
@@ -19,7 +19,7 @@ export const WEB_ONLY_ROUTES: Record<string, string> = {
  * - marks <html data-electron="1"> so CSS can hide web-only chrome
  * - redirects web-only pages to their in-app equivalents
  * - listens for menu / tray navigation requests
- * - surfaces auto-update status as toasts
+ * - surfaces auto-update status in a designed popup (v0.10.19)
  * - opens external links in the system browser
  */
 export default function ElectronBridge() {
@@ -40,18 +40,9 @@ export default function ElectronBridge() {
     html.dataset.platform = bridge()?.platform ?? "";
 
     const offNav = bridge()?.onNavigate((p) => router.push(p));
-    const offUpd = bridge()?.onUpdateStatus((s) => {
-      if (s.status === "available") toast.info(`نسخه‌ی ${s.version} در حال دانلود است…`, { id: "upd" });
-      else if (s.status === "downloading" && typeof s.percent === "number")
-        toast.loading(`دانلود به‌روزرسانی… ${Math.round(s.percent)}٪`, { id: "upd" });
-      else if (s.status === "downloaded")
-        toast.success("به‌روزرسانی آماده است؛ با بستن برنامه نصب می‌شود.", {
-          id: "upd",
-          duration: 10000,
-          action: { label: "همین حالا", onClick: () => bridge()?.installUpdate?.() },
-        });
-      else if (s.status === "error") toast.error(`خطا در به‌روزرسانی: ${s.message ?? ""}`, { id: "upd" });
-    });
+    // v0.10.19: the updater popup replaces the old plain toasts — designed
+    // card, brand progress bar, home-style pill buttons
+    const offUpd = bridge()?.onUpdateStatus((s) => pushUpdaterStatus(s));
 
     const onClick = (e: MouseEvent) => {
       const a = (e.target as HTMLElement).closest?.("a[href]") as HTMLAnchorElement | null;
@@ -78,5 +69,5 @@ export default function ElectronBridge() {
     };
   }, [router]);
 
-  return null;
+  return <UpdaterPopup />;
 }

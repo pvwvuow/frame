@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { SearchIcon, CloseIcon, FilmIcon, TvIcon, BookmarkIcon, HomeIcon, SparkIcon, UserIcon, LayersIcon, UsersIcon, ShuffleIcon, ChevronDown, BellIcon, StarIcon } from "./Icons";
+import { SearchIcon, CloseIcon, FilmIcon, TvIcon, BookmarkIcon, HomeIcon, SparkIcon, UserIcon, LayersIcon, UsersIcon, ShuffleIcon, ChevronDown, BellIcon, StarIcon, DownloadIcon } from "./Icons";
 import UserMenu from "./UserMenu";
 import ThemeToggle from "./theme/ThemeToggle";
 import LanguageToggle from "./i18n/LanguageToggle";
@@ -39,6 +39,7 @@ const links: NavLink[] = [
 ];
 const more: NavLink[] = [
   { href: "/rankings", key: "nav.rankings", icon: StarIcon, hint: "nav.rankingsHint" },
+  { href: "/downloads", key: "nav.downloads", icon: DownloadIcon, hint: "nav.downloadsHint" },
   { href: "/people", key: "nav.people", icon: UsersIcon, hint: "nav.peopleHint" },
   { href: "/random", key: "nav.random", icon: ShuffleIcon, hint: "nav.randomHint" },
   { href: "/notifications", key: "nav.notifications", icon: BellIcon, hint: "nav.notificationsHint" },
@@ -146,7 +147,11 @@ export default function Navbar() {
   const isActive = (href: string) => (href === "/" ? pathname === "/" : pathname?.startsWith(href));
   const moreActive = more.some((m) => pathname?.startsWith(m.href));
   const showPanel = open && q.trim().length > 0;
-  const solid = scrolled || showPanel || moreOpen;
+  // v0.10.19: an expanded search bar must never sit ON TOP of the language /
+  // theme toggles or the user menu — while it is open they fade out and the
+  // search takes over the whole header row cleanly.
+  const hideWhileSearch = open ? "opacity-0 pointer-events-none" : "transition-opacity duration-200";
+  const solid = scrolled || open || showPanel || moreOpen;
 
   const submit = () => {
     if (!q.trim()) return;
@@ -223,8 +228,8 @@ export default function Navbar() {
           </nav>
 
           <div className="app-no-drag ms-auto flex items-center gap-1.5">
-            <LanguageToggle className="hidden sm:flex" />
-            <ThemeToggle className="hidden sm:grid" />
+            <LanguageToggle className={`hidden sm:flex ${hideWhileSearch}`} />
+            <ThemeToggle className={`hidden sm:grid ${hideWhileSearch}`} />
             {/* Fixed-width slot: the expanded search renders as an absolute
                 overlay anchored to the magnifier's edge, so opening it never
                 reflows the other navbar controls (language/theme used to jump
@@ -339,31 +344,33 @@ export default function Navbar() {
             </div>
 
             {/* VIP — gold pill, always visible (v0.10.11) */}
-            <Link
-              href="/vip"
-              aria-label={locale === "en" ? "VIP subscription" : "اشتراک ویژه"}
-              title={locale === "en" ? "VIP subscription" : "اشتراک ویژه"}
-              className="app-no-drag flex items-center gap-1.5 rounded-full border border-amber-400/40 bg-gradient-to-l from-amber-400/15 to-amber-500/10 px-3 py-2 text-sm font-black text-amber-300 transition hover:border-amber-300/60 hover:from-amber-400/25"
-            >
-              <CrownIcon width={15} height={15} />
-              <span className="hidden sm:inline">VIP</span>
-            </Link>
-
-            {/* Prominent entry point: while signed out the avatar menu is replaced
-                with a visible Sign in button (users could not discover the
-                entry hidden inside the menu). While signed in the UserMenu
-                (avatar → email + sign out) renders as before. */}
-            {authReady && !authSession ? (
+            <div className={`flex items-center gap-1.5 ${hideWhileSearch}`}>
               <Link
-                href="/auth"
-                className="app-no-drag flex items-center gap-1.5 rounded-full bg-brand px-3.5 py-2 text-sm font-black text-white shadow-[0_0_20px_var(--color-brand-glow)] transition hover:bg-brand/85"
+                href="/vip"
+                aria-label={locale === "en" ? "VIP subscription" : "اشتراک ویژه"}
+                title={locale === "en" ? "VIP subscription" : "اشتراک ویژه"}
+                className="app-no-drag flex items-center gap-1.5 rounded-full border border-amber-400/40 bg-gradient-to-l from-amber-400/15 to-amber-500/10 px-3 py-2 text-sm font-black text-amber-300 transition hover:border-amber-300/60 hover:from-amber-400/25"
               >
-                <UserIcon width={15} height={15} />
-                {locale === "en" ? "Sign in" : "ورود / ثبت‌نام"}
+                <CrownIcon width={15} height={15} />
+                <span className="hidden sm:inline">VIP</span>
               </Link>
-            ) : (
-              <UserMenu />
-            )}
+
+              {/* Prominent entry point: while signed out the avatar menu is replaced
+                  with a visible Sign in button (users could not discover the
+                  entry hidden inside the menu). While signed in the UserMenu
+                  (avatar → email + sign out) renders as before. */}
+              {authReady && !authSession ? (
+                <Link
+                  href="/auth"
+                  className="app-no-drag flex items-center gap-1.5 rounded-full bg-brand px-3.5 py-2 text-sm font-black text-white shadow-[0_0_20px_var(--color-brand-glow)] transition hover:bg-brand/85"
+                >
+                  <UserIcon width={15} height={15} />
+                  {locale === "en" ? "Sign in" : "ورود / ثبت‌نام"}
+                </Link>
+              ) : (
+                <UserMenu />
+              )}
+            </div>
           </div>
         </div>
       </header>

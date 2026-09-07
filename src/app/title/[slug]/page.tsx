@@ -11,6 +11,8 @@ import ReviewForm from "@/components/ReviewForm";
 import DetailTabs from "@/components/title/DetailTabs";
 import EpisodeList from "@/components/title/EpisodeList";
 import { TrailerButton, ShareButton } from "@/components/title/TitleActions";
+import DownloadButton from "@/components/download/DownloadButton";
+import QualityPrefPicker from "@/components/download/QualityPrefPicker";
 import {
   PlayIcon,
   StarIcon,
@@ -263,11 +265,23 @@ export default async function TitlePage({ params }: Props) {
                 <PlayIcon width={20} height={20} className="transition group-hover:scale-110" />
                 {hasProgress && progress ? `ادامه از ${formatClock(progress.position)}` : t.type === "series" ? "پخش قسمت اول" : "پخش فیلم"}
               </Link>
+              {/* v0.10.19: download with a chosen quality (desktop app only) */}
+              {t.type !== "series" && (
+                <DownloadButton name={t.title} year={t.year} kind="movie" sources={allSources} />
+              )}
               <TrailerButton src={t.trailerUrl ?? t.videoUrl} poster={t.backdrop} title={t.title} />
               <WatchlistButton titleId={t.id} name={t.title} initial={inList} variant="icon" />
               <FavoriteButton titleId={t.id} name={t.title} variant="icon" />
               <ShareButton title={t.title} />
             </div>
+
+            {/* v0.10.19: pick the playback quality BEFORE playing — every
+                episode you click afterwards starts with this quality */}
+            {qualities.length > 0 && (
+              <div className="mt-5">
+                <QualityPrefPicker qualities={qualities} />
+              </div>
+            )}
 
             <div className="mt-5 flex flex-wrap items-center gap-x-8 gap-y-3">
               <RatingControl titleId={t.id} />
@@ -341,6 +355,8 @@ export default async function TitlePage({ params }: Props) {
               <EpisodeList
                 slug={t.slug}
                 episodes={eps}
+                name={t.title}
+                year={t.year}
                 progress={progress ? { episodeId: progress.episodeId, position: progress.position, duration: progress.duration } : null}
               />
             </section>

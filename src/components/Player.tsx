@@ -40,7 +40,8 @@ import { parseVtt, srtToVtt, stopMediaEl, type ParsedCue } from "@/lib/media";
 import { useSubs } from "@/lib/subs-engine";
 import SubOverlay from "./SubOverlay";
 import { ensurePlayableAudio } from "@/lib/audio-guard";
-import { preferredSourceIdx, rememberedVariantIdx, rememberVariantPref, variantShort } from "@/lib/variant";
+import { preferredSourceIdx, qualityPrefIdx, rememberedVariantIdx, rememberVariantPref, variantShort } from "@/lib/variant";
+import { setQualityPref } from "@/lib/quality-pref";
 
 const SUB_SIZE_KEY = "nama-sub-size";
 const SUB_ON_KEY = "nama-sub-on";
@@ -53,7 +54,6 @@ export default function Player() {
   const store = usePlayerStore();
   const {
     open,
-    pipOpen,
     titleId,
     slug,
     title,
@@ -153,17 +153,28 @@ export default function Player() {
     }
   }, [volume, muted]);
 
-  // default variant: pip's pick (srcHint) → remembered taste → hardsub → dub
-  // → catalog order. Re-applied when the source list changes (new title /
-  // episode), but a manual pick always wins for the current video.
+  // default variant: pip's pick (srcHint) → the user's quality pick →
+  // remembered variant taste → hardsub → dub → catalog order. Re-applied when
+  // the source list changes (new title / episode), but a manual pick always
+  // wins for the current video.
   // v0.10.6: the same pass runs the AUDIO GUARD — if the chosen variant's
   // first audio track is undecodable (DTS/AC3/…) we switch to the closest
   // variant that will actually sound, instead of a silent picture.
+  // v0.10.19: the quality chosen on the title page (qualityPrefIdx) now wins
+  // over the variant heuristics — clicking any episode plays THAT quality.
   useEffect(() => {
     if (!srcList.length) return;
     const hint = usePlayerStore.getState().srcHint;
+    const qp = qualityPrefIdx(srcList);
     const remembered = rememberedVariantIdx(srcList);
-    const initial = hint >= 0 && hint < srcList.length ? hint : remembered >= 0 ? remembered : preferredSourceIdx(srcList);
+    const initial =
+      hint >= 0 && hint < srcList.length
+        ? hint
+        : qp >= 0
+          ? qp
+          : remembered >= 0
+            ? remembered
+            : preferredSourceIdx(srcList);
     setSrcIdx(initial);
     manualPickRef.current = false; // new content → the guard may act again
     setQMenu(false);
@@ -212,24 +223,23 @@ export default function Player() {
 
   // while the pip window owns playback, never leave the user staring at a
   // bare /watch page (its only content is the black backdrop); browsing away
-  // from /watch with the theater open → auto-float to the desktop window.
-  // v0.10.7: react to NAVIGATION only. The old dependency array also re-ran
-  // this effect whenever open/pipOpen flipped — so pressing "expand back to
-  // the app" while browsing any page other than /watch re-floated IMMEDIATELY:
-  // the theater never appeared («بزرگ نمیشه») and the film restarted inside a
-  // rogue floating window («دوبار پلی شده، صداش از یه جای رندوم میاد»). The
-  // expand/float guards below close that race for good.
+  // from /watch with the theater open → auto-float to a NEW desktop window
+  // (v0.10.19: floats keep running independently — this is how several
+  // movies play at once). With the theater closed but floats alive, a stray
+  // /watch page still navigates back to the title page.
+  // v0.10.7: react to NAVIGATION only — the old dependency array also re-ran
+  // this effect whenever open/pipOpen flipped, so pressing "expand back to
+  // the app" while browsing any page other than /watch re-floated IMMEDIATELY.
   useEffect(() => {
     if (Date.now() - expandAtRef.current < 2000) return; // just expanded
     if (floatingRef.current) return; // float already in flight
     const s = usePlayerStore.getState();
-    if (s.pipOpen) {
-      navigateAwayFromWatch();
+    const onWatch = pathname?.startsWith("/watch/") ?? false;
+    if (s.open) {
+      if (!onWatch) floatToPip();
       return;
     }
-    if (!s.open) return;
-    const onWatch = pathname?.startsWith("/watch/") ?? false;
-    if (!onWatch) floatToPip();
+    if (s.pipOpen && onWatch) navigateAwayFromWatch();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname]);
 
@@ -304,13 +314,9 @@ export default function Player() {
     else router.push(`/title/${usePlayerStore.getState().slug}`);
   }, [router]);
 
-  /** Hand playback to the always-on-top desktop window (v0.10.5).
-   *  v0.10.7 fixes: (1) the payload now carries the EXACT position —
-   *  startAt used to be hard-coded 0 while the pip window ignored
-   *  `currentTime`, so floating restarted the film from the beginning
-   *  («فیلم ریست میشه»); (2) a re-entrancy guard — the double invocation
-   *  from the button + the auto-float effect opened the pip twice and the
-   *  second open re-keyed the video mid-handoff. */
+  /** Hand playback to a NEW always-on-top desktop window (v0.10.19): every
+   *  float owns its movie INDEPENDENTLY, so the previous float keeps playing
+   *  and several movies can run at once. */
   const floatingRef = useRef(false);
   const floatToPip = useCallback(() => {
     if (floatingRef.current) return;
@@ -323,7 +329,7 @@ export default function Player() {
     }, 1500);
     const at = v ? v.currentTime : 0;
     if (v && v.duration) save(at, v.duration);
-    void pip.open({
+    const payload = {
       titleId,
       slug,
       title,
@@ -340,19 +346,26 @@ export default function Player() {
       muted,
       rate,
       srcIdx,
+    };
+    void pip.open(payload).then((r) => {
+      if (r && typeof r === "object" && typeof r.id === "number") {
+        usePlayerStore.getState().pipOpened(r.id, payload);
+      } else if (r === "max") {
+        showNotice("حداکثر ۴ پخش شناور هم‌زمان ممکن است");
+      }
     });
     v?.pause();
-    store.setPipOpen(true);
     store.close();
     navigateAwayFromWatch();
-  }, [titleId, slug, title, subtitle, rawActive, srcList, poster, episode, nextEpisode, episodes, volume, muted, rate, srcIdx, save, store, navigateAwayFromWatch]);
+  }, [titleId, slug, title, subtitle, rawActive, srcList, poster, episode, nextEpisode, episodes, volume, muted, rate, srcIdx, save, store, navigateAwayFromWatch, showNotice]);
 
-  // pip window events: expand-back, closed, position ticker, content sync
+  // float window events: expand-back, closed, position ticker, content sync
+  // (v0.10.19 — every event carries the window id so N floats stay in sync)
   const expandAtRef = useRef(0);
   useEffect(() => {
     const pip = window.nama?.pip;
     if (!pip) return;
-    const un1 = pip.onExpand((payload) => {
+    const un1 = pip.onExpand(({ payload }) => {
       // remember the expand so the navigation effect above never re-floats
       expandAtRef.current = Date.now();
       floatingRef.current = true;
@@ -363,20 +376,18 @@ export default function Player() {
       usePlayerStore.setState({
         ...payload,
         open: true,
-        pipOpen: false,
         srcHint: payload.srcIdx ?? -1,
         contentKey: cur.contentKey + 1,
       });
     });
-    const un2 = pip.onClosed(() => {
-      usePlayerStore.getState().setPipOpen(false);
+    const un2 = pip.onClosed(({ id }) => {
+      usePlayerStore.getState().pipClosed(id);
     });
-    const un3 = pip.onTime((t) => {
-      usePlayerStore.getState().setPipTime(t);
+    const un3 = pip.onTime(({ id, t }) => {
+      usePlayerStore.getState().setPipTime(id, t);
     });
-    const un4 = pip.onSync((payload) => {
-      const cur = usePlayerStore.getState();
-      usePlayerStore.setState({ ...payload, open: false, pipOpen: true, srcHint: payload.srcIdx ?? -1, contentKey: cur.contentKey + 1 });
+    const un4 = pip.onSync(({ id, state }) => {
+      usePlayerStore.getState().pipSynced(id, state);
     });
     return () => {
       un1?.();
@@ -386,10 +397,8 @@ export default function Player() {
     };
   }, []);
 
-  // pause the in-app element while the pip window owns playback
-  useEffect(() => {
-    if (pipOpen) videoRef.current?.pause();
-  }, [pipOpen]);
+  // while a float owns playback the theater is closed anyway; the theater CAN
+  // now play at the same time as floats (v0.10.19 multi-play) — never pause it
 
   // v0.10.12 lifecycle guard: whenever the playing element goes away — the
   // theater closing, a quality switch or a reload re-keying it — make sure
@@ -548,13 +557,15 @@ export default function Player() {
     };
   }, [videoEl, startAt, save, bumpUi, nextEpisode, volume, muted, srcIdx, srcList, showNotice]);
 
-  // switch quality → same second, keep playing
+  // switch quality → same second, keep playing. A manual pick also becomes
+  // the user's global quality choice (v0.10.19) — the next video starts with it.
   const pickSource = (i: number, manual = true) => {
     const v = videoRef.current;
     if (v) resumeAt.current = v.currentTime;
     if (manual) {
       manualPickRef.current = true;
       rememberVariantPref(srcList[i]?.v);
+      setQualityPref(srcList[i]?.q || "best");
       errCountRef.current = 0;
       setFatal(false);
     }

@@ -19,7 +19,8 @@
  *   - if the live check later DENIES (revoked sub / signed out), the player
  *     is closed so nothing plays behind the gate. */
 import { useEffect, useState } from "react";
-import { usePlayerStore, type PlayerEpisode, type PlayerSource } from "@/lib/player-store";
+import { useRouter } from "next/navigation";
+import { usePlayerStore, wasRecentTraversal, type PlayerEpisode, type PlayerSource } from "@/lib/player-store";
 import { logEvent } from "@/lib/cloud";
 import { SUBSCRIPTION_REQUIRED, useSubscription } from "@/lib/subscription";
 import { readAuthSnapshot, readSubSnapshot, subSnapshotActive } from "@/lib/auth-offline";
@@ -38,6 +39,7 @@ export default function WatchClient(p: {
   nextEpisode: PlayerEpisode | null;
   episodes: PlayerEpisode[];
 }) {
+  const router = useRouter();
   const play = usePlayerStore((s) => s.play);
   const close = usePlayerStore((s) => s.close);
   const sub = useSubscription();
@@ -59,6 +61,15 @@ export default function WatchClient(p: {
     if (!allowed) {
       // entitlement denied/revoked → nothing may keep playing behind the gate
       close();
+      return;
+    }
+    // v0.10.19 mouse-back fix: a /watch/[slug] entry reached via back/forward
+    // (mouse side button, Alt+←, …) is the LEFTOVER of a past playback — it
+    // must land on the movie/series page, never restart the movie. A fresh
+    // Link/programmatic navigation never fires popstate, so normal clicks
+    // still play instantly.
+    if (wasRecentTraversal()) {
+      router.replace(`/title/${p.slug}`);
       return;
     }
     play(p);

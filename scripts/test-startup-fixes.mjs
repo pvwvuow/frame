@@ -68,6 +68,7 @@ const sandbox = {
     if (m === "electron-log") return logStub;
     if (m === "./stream-proxy.cjs") return require(path.join(ROOT, "electron", "stream-proxy.cjs"));
     if (m === "./pip.cjs") return require(path.join(ROOT, "electron", "pip.cjs"));
+    if (m === "./downloads.cjs") return require(path.join(ROOT, "electron", "downloads.cjs"));
     return require(m);
   },
   module: { exports: {} },

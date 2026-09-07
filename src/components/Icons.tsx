@@ -398,3 +398,15 @@ export const SparklesIcon = (p: P) => (
     <path d="m12 3 1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9zM19 17l.8 2.2L22 20l-2.2.8L19 23l-.8-2.2L16 20l2.2-.8zM5 2l.6 1.6L7.2 4.2 5.6 4.8 5 6.4 4.4 4.8 2.8 4.2l1.6-.6z" />
   </svg>
 );
+export const GaugeIcon = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M12 15l3.5-3.5" />
+    <path d="M20.3 18a9 9 0 1 0-16.6 0" />
+  </svg>
+);
+export const FolderPlusIcon = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+    <path d="M12 11v6M9 14h6" />
+  </svg>
+);
