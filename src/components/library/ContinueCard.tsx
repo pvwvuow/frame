@@ -8,6 +8,7 @@ import type { TitleView } from "@/lib/mobile/db";
 import { fa, formatClock } from "@/lib/format";
 import { PlayIcon, CloseIcon } from "../Icons";
 import TitleName from "@/components/TitleName";
+import { titleHref, watchHref } from "@/lib/mobile-links";
 
 export type ContinueLike = {
   title: TitleView;
@@ -25,7 +26,7 @@ export default function ContinueCard({ c, removable = true }: { c: ContinueLike;
   const [pending, start] = useTransition();
   const router = useRouter();
   const p = c.duration > 0 ? Math.min(100, (c.position / c.duration) * 100) : 0;
-  const href = `/watch/${c.title.slug}${c.episodeId ? `?ep=${c.episodeId}` : ""}`;
+  const href = watchHref(c.title.slug, c.episodeId);
 
   const remove = () =>
     start(async () => {
@@ -58,7 +59,7 @@ export default function ContinueCard({ c, removable = true }: { c: ContinueLike;
           </div>
         </Link>
         <div className="min-w-0 flex-1 py-1">
-          <Link href={`/title/${c.title.slug}`} className="block text-base font-extrabold text-white hover:text-brand">
+          <Link href={titleHref(c.title.slug)} className="block text-base font-extrabold text-white hover:text-brand">
             <TitleName t={c.title} layout="inline" secondaryClass="text-xs" />
           </Link>
           <p className="mt-0.5 text-[11px] text-zinc-400">

@@ -3,6 +3,7 @@ import FavoriteButton from "../FavoriteButton";
 import { StarIcon, ChevronRight, FilmIcon, TvIcon } from "../Icons";
 import { fa } from "@/lib/format";
 import type { FavoriteRow } from "@/lib/mobile/userdata";
+import { titleHref, collectionHref } from "@/lib/mobile-links";
 
 export type AsideCollection = {
   slug: string;
@@ -36,7 +37,7 @@ export default function MyListAside({ favs, collections }: { favs: FavoriteRow[]
             {collections.map((c) => (
               <li key={c.slug}>
                 <Link
-                  href={`/collections/${c.slug}`}
+                  href={collectionHref(c.slug)}
                   className="group flex items-center gap-3 rounded-2xl border border-white/5 bg-white/[0.03] p-2.5 transition hover:border-white/15 hover:bg-white/[0.07]"
                 >
                   { }
@@ -80,7 +81,7 @@ export default function MyListAside({ favs, collections }: { favs: FavoriteRow[]
                 key={f.title.id}
                 className="group flex items-center gap-3 rounded-2xl border border-transparent p-2 transition hover:border-white/5 hover:bg-white/[0.04]"
               >
-                <Link href={`/title/${f.title.slug}`} className="flex min-w-0 flex-1 items-center gap-3">
+                <Link href={titleHref(f.title.slug)} className="flex min-w-0 flex-1 items-center gap-3">
                   { }
                   <img src={f.title.poster} alt="" className="h-14 w-10 shrink-0 rounded-lg object-cover" loading="lazy" />
                   <span className="min-w-0">

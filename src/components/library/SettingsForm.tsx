@@ -218,7 +218,7 @@ export default function SettingsForm({ initial }: { initial: ProfileData }) {
   const visibleSections = SECTIONS.filter((s) => s.id !== "about" || true);
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[240px_1fr]">
+    <div className="grid grid-cols-1 gap-6 lg:grid-cols-[240px_1fr]">
       {/* side nav */}
       <aside className="lg:sticky lg:top-28 lg:self-start">
         <nav className="no-scrollbar flex gap-1 overflow-x-auto pb-2 lg:flex-col lg:overflow-visible" aria-label="بخش‌های تنظیمات">

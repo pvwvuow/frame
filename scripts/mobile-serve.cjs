@@ -26,10 +26,17 @@ http.createServer((req, res) => {
       if (fs.existsSync(idx)) file = idx;
     }
     if (!fs.existsSync(file) || fs.statSync(file).isDirectory()) {
-      // SPA fallback: extension-less route → root index.html
+      // extension-less route → its exported .html document, else SPA root.
+      // (On-device Capacitor falls back to the root doc for these; the app
+      // reaches them client-side, so serving X.html here tests the real page.)
       if (!path.extname(p)) {
-        file = path.join(ROOT, "index.html");
-        p = "/index.html";
+        const asHtml = file + ".html";
+        if (fs.existsSync(asHtml)) {
+          file = asHtml;
+        } else {
+          file = path.join(ROOT, "index.html");
+          p = "/index.html";
+        }
       } else {
         res.writeHead(404, { "content-type": "text/plain" });
         return res.end("not found: " + p);

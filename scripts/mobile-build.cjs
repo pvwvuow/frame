@@ -23,10 +23,16 @@ function main() {
     console.log("api/ moved aside");
   }
   try {
+    const APP_VERSION = require(path.join(ROOT, "package.json")).version;
     execSync("npx next build", {
       cwd: ROOT,
       stdio: "inherit",
-      env: { ...process.env, NAMA_MOBILE: "1" },
+      env: {
+        ...process.env,
+        NAMA_MOBILE: "1",
+        NEXT_PUBLIC_NAMA_MOBILE: "1",
+        NEXT_PUBLIC_APP_VERSION: APP_VERSION,
+      },
     });
   } finally {
     if (fs.existsSync(TMP_DIR)) {

@@ -19,6 +19,7 @@ import {
   CheckCircleIcon, SquareIcon, NoteIcon, DownloadIcon, ShuffleIcon, InfoIcon, HeartIcon, ChevronDown,
 } from "../Icons";
 import TitleName from "@/components/TitleName";
+import { titleHref, watchHref } from "@/lib/mobile-links";
 
 type Tab = "all" | "movie" | "series" | "planned" | "watching" | "watched" | "favorite";
 type Sort = "added" | "title" | "rating" | "year" | "duration" | "myScore" | "progress";
@@ -306,7 +307,7 @@ export default function MyListManager({ rows }: { rows: ListRow[] }) {
     const pool = filtered.filter((r) => r.status !== "watched");
     if (!pool.length) return toast.info("چیزی برای پیشنهاد نمانده!");
     const pick = pool[Math.floor(Math.random() * pool.length)];
-    toast(`امشب: «${pick.title.title}»`, { description: pick.title.description.slice(0, 80) + "…", action: { label: "پخش", onClick: () => router.push(`/watch/${pick.title.slug}`) } });
+    toast(`امشب: «${pick.title.title}»`, { description: pick.title.description.slice(0, 80) + "…", action: { label: "پخش", onClick: () => router.push(watchHref(pick.title.slug)) } });
     open(pick.title);
   };
 
@@ -585,7 +586,7 @@ function ListItem({ r, selectMode, selected, onSelect, onRemove, onPin, onNote, 
           <div className="min-w-0">
             <p className="flex items-center gap-2 truncate text-base font-extrabold text-white">
               {r.pinned && <PinIcon width={14} height={14} filled className="text-amber-400" />}
-              <Link href={`/title/${r.title.slug}`} className="min-w-0 hover:text-brand"><TitleName t={r.title} layout="inline" secondaryClass="text-xs" /></Link>
+              <Link href={titleHref(r.title.slug)} className="min-w-0 hover:text-brand"><TitleName t={r.title} layout="inline" secondaryClass="text-xs" /></Link>
               {r.isFavorite && <HeartIcon width={14} height={14} filled className="text-rose-500" />}
             </p>
             <p className="truncate text-xs text-zinc-400" dir="ltr">{r.title.titleEn}</p>
@@ -609,7 +610,7 @@ function ListItem({ r, selectMode, selected, onSelect, onRemove, onPin, onNote, 
       </div>
       {!selectMode && (
         <div className="flex shrink-0 flex-col items-center gap-1.5">
-          <Link href={r.progress?.episodeId ? `/watch/${r.title.slug}?ep=${r.progress.episodeId}` : `/watch/${r.title.slug}`} aria-label="پخش" className="grid h-9 w-9 place-items-center rounded-full bg-white text-black hover:bg-brand hover:text-white">
+          <Link href={watchHref(r.title.slug, r.progress?.episodeId)} aria-label="پخش" className="grid h-9 w-9 place-items-center rounded-full bg-white text-black hover:bg-brand hover:text-white">
             <PlayIcon width={14} height={14} className="ms-0.5" />
           </Link>
           <FavoriteButton titleId={r.title.id} name={r.title.title} variant="mini" className="!h-9 !w-9" />

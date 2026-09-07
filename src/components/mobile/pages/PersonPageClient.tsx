@@ -3,16 +3,15 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
 import TitleCard from "@/components/TitleCard";
 import { getByPerson } from "@/lib/mobile/db";
 import { getProgressMap } from "@/lib/mobile/userdata";
 import { fa, formatDuration } from "@/lib/format";
 import { ChevronRight, StarIcon, ClapperIcon, UsersIcon, FilmIcon, TvIcon } from "@/components/Icons";
+import { titleHref, personHref , useRouteSlug } from "@/lib/mobile-links";
 
 export default function PersonPage() {
-  const params = useParams<{ name: string }>();
-  const name = decodeURIComponent(params?.name ?? "");
+  const name = decodeURIComponent(useRouteSlug("name") ?? "");
   const [st, setSt] = useState<{ p: Awaited<ReturnType<typeof getByPerson>>; progress: Map<number, { position: number; duration: number }> } | null>(null);
   const [missing, setMissing] = useState(false);
 
@@ -135,7 +134,7 @@ export default function PersonPage() {
             <h2 className="mb-4 text-lg font-extrabold text-white">همکاران مکرر</h2>
             <div className="flex flex-wrap gap-2">
               {collaborators.map((c) => (
-                <Link key={c} href={`/person/${encodeURIComponent(c)}`} className="glass-btn rounded-full px-4 py-2 text-sm font-bold text-white">
+                <Link key={c} href={personHref(c)} className="glass-btn rounded-full px-4 py-2 text-sm font-bold text-white">
                   {c}
                 </Link>
               ))}
@@ -152,7 +151,7 @@ export default function PersonPage() {
               <TvIcon width={16} height={16} className="text-zinc-500" /> {fa(all.filter((t) => t.type === "series").length)} سریال
             </span>
             <span className="ms-auto text-xs text-zinc-500">
-              پرامتیازترین: <Link href={`/title/${best.slug}`} className="font-bold text-white hover:text-brand">{best.title}</Link> ({fa(best.rating)})
+              پرامتیازترین: <Link href={titleHref(best.slug)} className="font-bold text-white hover:text-brand">{best.title}</Link> ({fa(best.rating)})
             </span>
           </div>
         </section>

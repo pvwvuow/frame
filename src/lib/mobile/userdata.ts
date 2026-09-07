@@ -6,6 +6,7 @@
 import { db, episodeId, getEpisodes, getFullTitle, getTitleLiteBySlug, type LiteTitle } from "./db";
 import { LIST_STATUSES, type ListStatus } from "@/lib/library-shared";
 import type { TitleView } from "./db";
+import { titleHref, watchHref } from "@/lib/mobile-links";
 
 export { LIST_STATUSES };
 export type { ListStatus };
@@ -534,7 +535,7 @@ export async function getNotifications(userKey = getUserKey()): Promise<Notifica
         kind: "episode",
         title: `قسمت ${last.number} فصل ${last.season} «${r.title.title}»`,
         body: last.name,
-        href: `/watch/${r.title.slug}?ep=${last.id}`,
+        href: watchHref(r.title.slug, last.id),
         image: last.thumbnail || r.title.backdrop,
         at: new Date(nowMs - 1000 * 60 * 60 * (2 + (last.id % 20))).toISOString(),
       });
@@ -549,7 +550,7 @@ export async function getNotifications(userKey = getUserKey()): Promise<Notifica
         kind: "continue",
         title: `ادامه‌ی «${c.title.title}»`,
         body: c.episodeName ? `قسمت ${c.episodeNumber} · ${pct}٪ دیده‌اید` : `${pct}٪ دیده‌اید؛ از همان‌جا ادامه دهید`,
-        href: `/watch/${c.title.slug}${c.episodeId ? `?ep=${c.episodeId}` : ""}`,
+        href: watchHref(c.title.slug, c.episodeId),
         image: c.title.backdrop,
         at: new Date(nowMs - 1000 * 60 * 60 * 26).toISOString(),
       });
@@ -569,7 +570,7 @@ export async function getNotifications(userKey = getUserKey()): Promise<Notifica
           kind: "recommend",
           title: `پیشنهاد برای شما: «${t.title}»`,
           body: top,
-          href: `/title/${t.slug}`,
+          href: titleHref(t.slug),
           image: t.poster,
           at: new Date(nowMs - 1000 * 60 * 60 * 40).toISOString(),
         });
@@ -585,7 +586,7 @@ export async function getNotifications(userKey = getUserKey()): Promise<Notifica
       kind: "new",
       title: `تازه اضافه شد: «${t.title}»`,
       body: `${t.type === "series" ? "سریال" : "فیلم"} · ${t.year} · ${t.genres.slice(0, 2).join("، ")}`,
-      href: `/title/${t.slug}`,
+      href: titleHref(t.slug),
       image: t.poster,
       at: manifestAt,
     });

@@ -11,6 +11,7 @@ import { useLibrary } from "./library/LibraryProvider";
 import { useI18n } from "./i18n/LocaleProvider";
 import { titleNames } from "@/lib/title-name";
 import TitleName from "./TitleName";
+import { watchHref } from "@/lib/mobile-links";
 
 /** Shape needed by the card grid — list endpoints may ship the lightweight
  *  variant (no description/cast/sources) while full TitleView still fits. */
@@ -55,7 +56,7 @@ export default function TitleCard({
         className="relative block w-full text-start focus:outline-none"
       >
         <div className="relative aspect-[2/3] overflow-hidden rounded-xl bg-ink-700 ring-1 ring-white/5 transition-all duration-300 group-hover:-translate-y-1.5 group-hover:shadow-[0_20px_50px_rgba(0,0,0,0.6),0_0_0_1px_rgba(255,255,255,0.14)] group-focus-visible:ring-2 group-focus-visible:ring-brand">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
+          { }
           <img
             src={t.poster}
             alt={names.label}
@@ -132,7 +133,7 @@ export default function TitleCard({
 
       {/* direct play button (outside the modal trigger) */}
       <Link
-        href={`/watch/${t.slug}`}
+        href={watchHref(t.slug)}
         aria-label={tr("card.play", { name: names.label })}
         onClick={(e) => e.stopPropagation()}
         className="absolute bottom-[76px] end-2 grid h-9 w-9 translate-y-2 place-items-center rounded-full bg-white text-black opacity-0 shadow-lg transition-all duration-300 hover:scale-110 hover:bg-brand hover:text-white group-hover:translate-y-0 group-hover:opacity-100"

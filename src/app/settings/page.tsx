@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import SettingsForm from "@/components/library/SettingsForm";
 import SourceSyncCard from "@/components/settings/SourceSyncCard";
 import CatalogUpdateCard from "@/components/settings/CatalogUpdateCard";
+import AppUpdateCard from "@/components/settings/AppUpdateCard";
 import { SettingsIcon, HelpIcon, ShieldIcon, KeyboardIcon, InfoIcon, MailIcon } from "@/components/Icons";
 import { getProfile } from "@/lib/mobile/userdata";
 
@@ -60,6 +61,7 @@ export default function SettingsPage() {
             }}
           />
         </div>
+        <AppUpdateCard />
         <CatalogUpdateCard />
         <SourceSyncCard />
 

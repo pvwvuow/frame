@@ -11,6 +11,7 @@ import { CloseIcon, PlayIcon, StarIcon, ClockIcon, MuteIcon, VolumeIcon, Chevron
 import TitleName from "../TitleName";
 import { useI18n } from "../i18n/LocaleProvider";
 import { stopMediaEl } from "@/lib/media";
+import { titleHref, watchHref } from "@/lib/mobile-links";
 
 type Episode = {
   id: number;
@@ -89,7 +90,7 @@ export default function TitleModal({
   const progress = detail?.progress ?? null;
   const hasProgress = !!(progress && progress.duration > 0 && progress.position > 5 && progress.position / progress.duration < 0.97);
   const pct = hasProgress && progress ? (progress.position / progress.duration) * 100 : 0;
-  const resumeHref = t ? `/watch/${t.slug}${progress?.episodeId ? `?ep=${progress.episodeId}` : ""}` : "#";
+  const resumeHref = t ? watchHref(t.slug, progress?.episodeId) : "#";
   // episodes teaser: the one in progress + the next, otherwise the first two
   const startIdx = progress?.episodeId ? Math.max(0, eps.findIndex((e) => e.id === progress.episodeId)) : 0;
   const teaserEps = eps.slice(startIdx, startIdx + 2);
@@ -122,7 +123,7 @@ export default function TitleModal({
           >
             {/* ── media strip (always dark, like a film cell) ─────────── */}
             <div className="force-dark relative z-0 h-[150px] w-full overflow-hidden sm:h-[170px]">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
+              { }
               <img src={t.backdrop} alt="" className="absolute inset-0 h-full w-full object-cover" />
               <video
                 ref={videoRef}
@@ -176,7 +177,7 @@ export default function TitleModal({
             {/* ── body ───────────────────────────────────────────────── */}
             <div className="relative z-10 p-4 sm:p-5">
               <div className="flex items-start gap-4">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
+                { }
                 <img
                   src={t.poster}
                   alt={t.title}
@@ -224,13 +225,13 @@ export default function TitleModal({
                         return (
                           <li key={e.id}>
                             <Link
-                              href={`/watch/${t.slug}?ep=${e.id}`}
+                              href={watchHref(t.slug, e.id)}
                               className={`group flex items-center gap-3 rounded-xl border p-1.5 pe-3 transition ${
                                 active ? "border-brand/40 bg-brand/10" : "border-white/5 bg-white/[0.03] hover:bg-white/[0.07]"
                               }`}
                             >
                               <div className="relative h-11 w-[76px] shrink-0 overflow-hidden rounded-lg">
-                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                { }
                                 <img src={e.thumbnail} alt="" className="h-full w-full object-cover" />
                                 <span className="absolute inset-0 grid place-items-center bg-black/30 text-white opacity-0 transition group-hover:opacity-100">
                                   <PlayIcon width={18} height={18} />
@@ -274,7 +275,7 @@ export default function TitleModal({
               </div>
 
               <Link
-                href={`/title/${t.slug}`}
+                href={titleHref(t.slug)}
                 className="glass-btn mt-2.5 flex h-11 items-center justify-center gap-1.5 rounded-full text-sm font-bold text-white"
               >
                 {tr("modal.continueInDetails")}

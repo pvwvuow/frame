@@ -14,6 +14,7 @@ import { useCloudSession } from "@/lib/cloud";
 import { CrownIcon } from "./Icons";
 import { useI18n } from "./i18n/LocaleProvider";
 import type { TKey } from "@/lib/i18n";
+import { titleHref } from "@/lib/mobile-links";
 
 type Result = {
   id: number;
@@ -283,7 +284,7 @@ export default function Navbar() {
                       setActive((a) => Math.max(-1, a - 1));
                     } else if (e.key === "Enter" && active >= 0) {
                       e.preventDefault();
-                      router.push(`/title/${results[active].slug}`);
+                      router.push(titleHref(results[active].slug));
                     }
                   }}
                   placeholder={t("nav.searchPlaceholder")}
@@ -323,7 +324,7 @@ export default function Navbar() {
                       {results.map((r, i) => (
                         <li key={r.id} role="option" aria-selected={i === active}>
                           <Link
-                            href={`/title/${r.slug}`}
+                            href={titleHref(r.slug)}
                             onMouseEnter={() => setActive(i)}
                             className={`flex items-center gap-3 px-3 py-2 transition-colors ${i === active ? "bg-white/10" : "hover:bg-white/5"}`}
                           >

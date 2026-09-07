@@ -7,6 +7,7 @@ import { getRankings } from "@/lib/mobile/db";
 import { fa, formatViews, typeLabel } from "@/lib/format";
 import TitleName from "@/components/TitleName";
 import { StarIcon, FilmIcon, TvIcon, SparklesIcon, EyeIcon } from "@/components/Icons";
+import { titleHref } from "@/lib/mobile-links";
 
 const TABS = [
   { v: undefined, label: "همه", icon: SparklesIcon },
@@ -100,7 +101,7 @@ function RankingsInner() {
               return (
                 <li key={t.id}>
                   <Link
-                    href={`/title/${t.slug}`}
+                    href={titleHref(t.slug)}
                     className="group flex items-center gap-3 rounded-2xl border border-white/5 bg-ink-700/40 p-3 transition hover:border-white/15 hover:bg-ink-700 sm:gap-4 sm:p-4"
                   >
                     {/* rank */}

@@ -25,6 +25,7 @@ import { logEvent } from "@/lib/cloud";
 import { SUBSCRIPTION_REQUIRED, useSubscription } from "@/lib/subscription";
 import { readAuthSnapshot, readSubSnapshot, subSnapshotActive } from "@/lib/auth-offline";
 import WatchGate from "./watch/WatchGate";
+import { titleHref } from "@/lib/mobile-links";
 
 export default function WatchClient(p: {
   titleId: number;
@@ -69,7 +70,7 @@ export default function WatchClient(p: {
     // Link/programmatic navigation never fires popstate, so normal clicks
     // still play instantly.
     if (wasRecentTraversal()) {
-      router.replace(`/title/${p.slug}`);
+      router.replace(titleHref(p.slug));
       return;
     }
     play(p);

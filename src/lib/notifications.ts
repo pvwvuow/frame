@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { ensureSeeded } from "@/db/seed";
 import { getProfile, getMyListRows } from "@/lib/library";
 import { getContinueWatching, getNewest, getByGenre } from "@/lib/queries";
+import { titleHref, watchHref } from "@/lib/mobile-links";
 
 export type Notification = {
   id: string;
@@ -40,7 +41,7 @@ export async function getNotifications(userKey: string): Promise<Notification[]>
           kind: "episode",
           title: `قسمت ${e.number} فصل ${e.season} «${e.title.title}»`,
           body: e.name,
-          href: `/watch/${e.title.slug}?ep=${e.id}`,
+          href: watchHref(e.title.slug, e.id),
           image: e.thumbnail,
           at: new Date(now - 1000 * 60 * 60 * (2 + (e.id % 20))).toISOString(),
         });
@@ -56,7 +57,7 @@ export async function getNotifications(userKey: string): Promise<Notification[]>
         kind: "continue",
         title: `ادامه‌ی «${c.title.title}»`,
         body: c.episodeName ? `قسمت ${c.episodeNumber} · ${pct}٪ دیده‌اید` : `${pct}٪ دیده‌اید؛ از همان‌جا ادامه دهید`,
-        href: `/watch/${c.title.slug}${c.episodeId ? `?ep=${c.episodeId}` : ""}`,
+        href: watchHref(c.title.slug, c.episodeId),
         image: c.title.backdrop,
         at: new Date(now - 1000 * 60 * 60 * 26).toISOString(),
       });
@@ -76,7 +77,7 @@ export async function getNotifications(userKey: string): Promise<Notification[]>
           kind: "recommend",
           title: `چون ${top} دوست دارید: «${t.title}»`,
           body: t.description.slice(0, 90) + "…",
-          href: `/title/${t.slug}`,
+          href: titleHref(t.slug),
           image: t.poster,
           at: new Date(now - 1000 * 60 * 60 * 48).toISOString(),
         });
@@ -90,7 +91,7 @@ export async function getNotifications(userKey: string): Promise<Notification[]>
       kind: "new",
       title: `تازه اضافه شد: «${t.title}»`,
       body: `${t.type === "series" ? "سریال" : "فیلم"} · ${t.year} · ${t.genres.slice(0, 2).join("، ")}`,
-      href: `/title/${t.slug}`,
+      href: titleHref(t.slug),
       image: t.poster,
       at: new Date(new Date(t.createdAt).getTime()).toISOString(),
     });

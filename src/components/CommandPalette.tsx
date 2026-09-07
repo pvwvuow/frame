@@ -25,6 +25,7 @@ import {
   UserIcon,
 } from "./Icons";
 import TitleName from "@/components/TitleName";
+import { titleHref } from "@/lib/mobile-links";
 
 type Result = { id: number; slug: string; title: string; titleEn: string; poster: string; year: number; type: string; rating: number };
 
@@ -132,7 +133,7 @@ export default function CommandPalette() {
   const items: Item[] = [
     ...results.map((r) => ({
       key: `t-${r.id}`,
-      run: () => go(`/title/${r.slug}`),
+      run: () => go(titleHref(r.slug)),
       node: (
         <>
           {/* eslint-disable-next-line @next/next/no-img-element */}

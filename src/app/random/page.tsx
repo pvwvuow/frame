@@ -8,6 +8,7 @@ import { fa, formatDuration, typeLabel } from "@/lib/format";
 import { ShuffleIcon, PlayIcon, StarIcon, ClockIcon, InfoIcon } from "@/components/Icons";
 import WatchlistButton from "@/components/WatchlistButton";
 import FavoriteButton from "@/components/FavoriteButton";
+import { titleHref, watchHref, personHref } from "@/lib/mobile-links";
 
 type SP = { type?: string; genre?: string; not?: string };
 
@@ -114,13 +115,13 @@ function RandomInner() {
                 <span className="text-xs text-zinc-400">{t.genres.join(" · ")}</span>
               </div>
               <p className="mt-4 line-clamp-4 text-sm leading-7 text-zinc-300">{t.description}</p>
-              <p className="mt-2 text-xs text-zinc-500">کارگردان: <Link href={`/person/${encodeURIComponent(t.director)}`} className="text-zinc-300 hover:text-brand">{t.director}</Link></p>
+              <p className="mt-2 text-xs text-zinc-500">کارگردان: <Link href={personHref(t.director)} className="text-zinc-300 hover:text-brand">{t.director}</Link></p>
 
               <div className="mt-auto flex flex-wrap items-center gap-2 pt-6">
-                <Link href={`/watch/${t.slug}`} className="flex h-12 items-center gap-2 rounded-full bg-white px-6 text-sm font-extrabold text-black transition hover:scale-[1.03]">
+                <Link href={watchHref(t.slug)} className="flex h-12 items-center gap-2 rounded-full bg-white px-6 text-sm font-extrabold text-black transition hover:scale-[1.03]">
                   <PlayIcon width={18} height={18} /> پخش
                 </Link>
-                <Link href={`/title/${t.slug}`} className="glass-btn flex h-12 items-center gap-2 rounded-full px-5 text-sm font-bold text-white">
+                <Link href={titleHref(t.slug)} className="glass-btn flex h-12 items-center gap-2 rounded-full px-5 text-sm font-bold text-white">
                   <InfoIcon width={16} height={16} /> جزئیات
                 </Link>
                 <WatchlistButton titleId={t.id} name={t.title} variant="icon" />

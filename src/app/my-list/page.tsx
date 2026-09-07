@@ -71,7 +71,7 @@ function MyListInner() {
       <main className="pb-16">
         <div className="mx-auto max-w-[1600px] px-4 pt-28 sm:px-8 lg:px-12 lg:pt-32">
           <div className="h-8 w-32 animate-pulse rounded-lg bg-white/10" />
-          <div className="mt-6 grid gap-6 lg:grid-cols-[220px_minmax(0,1fr)_320px]">
+          <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[220px_minmax(0,1fr)_320px]">
             <div className="hidden h-64 animate-pulse rounded-2xl bg-white/5 lg:block" />
             <div className="h-96 animate-pulse rounded-3xl bg-white/5" />
             <div className="hidden h-64 animate-pulse rounded-2xl bg-white/5 lg:block" />
@@ -121,7 +121,7 @@ function MyListInner() {
   return (
     <main className="pb-16">
       <div className="mx-auto max-w-[1600px] px-4 pt-28 sm:px-8 lg:px-12 lg:pt-32">
-        <div className="grid gap-6 lg:grid-cols-[220px_minmax(0,1fr)_320px]">
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-[220px_minmax(0,1fr)_320px]">
           {/* ================= ستون ناوبری + آمار ================= */}
           <aside className="space-y-6 lg:sticky lg:top-24 lg:self-start">
             <div>

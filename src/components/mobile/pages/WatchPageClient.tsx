@@ -1,13 +1,14 @@
 "use client";
 
 import { notFound } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
-import { useParams, useSearchParams } from "next/navigation";
 import WatchClient from "@/components/WatchClient";
 import { getFullTitle, getEpisodes, bumpViews, getTitleLiteBySlug } from "@/lib/mobile/db";
 import { getProgressFor } from "@/lib/mobile/userdata";
 import { fa } from "@/lib/format";
 import { normalizeSources } from "@/lib/source-fix";
+import { useRouteSlug } from "@/lib/mobile-links";
 
 function parseSources(json: string) {
   try {
@@ -21,9 +22,8 @@ function parseSources(json: string) {
 }
 
 export default function WatchPage() {
-  const params = useParams<{ slug: string }>();
+  const slug = useRouteSlug("slug");
   const sp = useSearchParams();
-  const slug = params?.slug as string;
   const ep = sp.get("ep") ?? undefined;
   const [st, setSt] = useState<{
     t: NonNullable<Awaited<ReturnType<typeof getFullTitle>>>;

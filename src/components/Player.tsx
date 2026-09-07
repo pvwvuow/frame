@@ -42,6 +42,7 @@ import SubOverlay from "./SubOverlay";
 import { ensurePlayableAudio } from "@/lib/audio-guard";
 import { preferredSourceIdx, qualityPrefIdx, rememberedVariantIdx, rememberVariantPref, variantShort } from "@/lib/variant";
 import { setQualityPref } from "@/lib/quality-pref";
+import { titleHref, watchHref } from "@/lib/mobile-links";
 
 const SUB_SIZE_KEY = "nama-sub-size";
 const SUB_ON_KEY = "nama-sub-on";
@@ -299,7 +300,7 @@ export default function Player() {
       }
     }
     store.close();
-    router.push(`/title/${slug}`);
+    router.push(titleHref(slug));
   }, [save, store, router, slug]);
 
   /** Leave the bare /watch route (black backdrop only) for the title page. */
@@ -311,7 +312,7 @@ export default function Player() {
     leftWatchRef.current = p;
     const idx = typeof window.history.state?.idx === "number" ? window.history.state.idx : 0;
     if (idx > 0) router.back();
-    else router.push(`/title/${usePlayerStore.getState().slug}`);
+    else router.push(titleHref(usePlayerStore.getState().slug));
   }, [router]);
 
   /** Hand playback to a NEW always-on-top desktop window (v0.10.19): every
@@ -602,7 +603,7 @@ export default function Player() {
     if (countdown === null) return;
     if (countdown <= 0 && nextEpisode) {
       setCountdown(null); // single-shot — the contentKey reset broke the chain
-      router.push(`/watch/${slug}?ep=${nextEpisode.id}`);
+      router.push(watchHref(slug, nextEpisode.id));
       return;
     }
     const t = setTimeout(() => setCountdown((c) => (c === null ? null : c - 1)), 1000);
@@ -738,7 +739,7 @@ export default function Player() {
             <div className="mt-5 flex justify-center gap-3">
               <button type="button" onClick={goBackToTitle} className="flex h-11 items-center rounded-full bg-white px-6 text-sm font-bold text-black">بازگشت به جزئیات</button>
               {episodes.length > 0 && episode && episodes[episodes.findIndex((e) => e.id === episode.id) + 1] && (
-                <Link href={`/watch/${slug}?ep=${episodes[episodes.findIndex((e) => e.id === episode.id) + 1].id}`} className="flex h-11 items-center rounded-full border border-white/20 px-6 text-sm font-bold text-white hover:bg-white/10">قسمت بعد</Link>
+                <Link href={watchHref(slug, episodes[episodes.findIndex((e) => e.id === episode.id) + 1].id)} className="flex h-11 items-center rounded-full border border-white/20 px-6 text-sm font-bold text-white hover:bg-white/10">قسمت بعد</Link>
               )}
             </div>
           </div>
@@ -815,7 +816,7 @@ export default function Player() {
                 </p>
                 <div className="mt-6 flex justify-center gap-3">
                   <Link
-                    href={`/watch/${slug}?ep=${nextEpisode.id}`}
+                    href={watchHref(slug, nextEpisode.id)}
                     className="flex h-12 items-center gap-2 rounded-full bg-white px-6 font-bold text-black"
                   >
                     <PlayIcon /> پخش قسمت بعد
@@ -919,7 +920,7 @@ export default function Player() {
                 {episodes.map((e) => (
                   <li key={e.id}>
                     <Link
-                      href={`/watch/${slug}?ep=${e.id}`}
+                      href={watchHref(slug, e.id)}
                       className={`flex gap-3 rounded-xl p-2 transition ${e.id === episode?.id ? "bg-brand/20 ring-1 ring-brand/60" : "hover:bg-white/5"}`}
                     >
                       <img src={e.thumbnail} alt="" className="h-14 w-24 rounded-lg object-cover" loading="lazy" />
@@ -1157,7 +1158,7 @@ export default function Player() {
 
                 {nextEpisode && (
                   <Link
-                    href={`/watch/${slug}?ep=${nextEpisode.id}`}
+                    href={watchHref(slug, nextEpisode.id)}
                     className="hidden h-9 items-center gap-1 rounded-full border border-white/20 bg-white/10 px-3 text-xs font-bold text-white hover:bg-white/20 sm:flex"
                   >
                     قسمت بعد

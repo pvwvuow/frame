@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
 import Row from "@/components/Row";
 import TitleCard from "@/components/TitleCard";
 import WatchlistButton from "@/components/WatchlistButton";
@@ -46,6 +45,7 @@ import {
 import { fa, formatDuration, formatViews, typeLabel, formatClock } from "@/lib/format";
 import { titleNames } from "@/lib/title-name";
 import { normalizeSources } from "@/lib/source-fix";
+import { titleHref, watchHref, personHref , useRouteSlug } from "@/lib/mobile-links";
 
 const AVATAR_GRADIENTS = [
   "from-rose-500 to-orange-400",
@@ -69,8 +69,7 @@ function parseSources(json: string) {
 const TIERS_ORD: Record<string, number> = { "4K": 5, "1080p": 4, "720p": 3, "540p": 2, "480p": 1 };
 
 export default function TitlePage() {
-  const params = useParams<{ slug: string }>();
-  const slug = params?.slug as string;
+  const slug = useRouteSlug("slug");
   const [st, setSt] = useState<{
     t: NonNullable<Awaited<ReturnType<typeof getFullTitle>>>;
     eps: Awaited<ReturnType<typeof getEpisodes>>;
@@ -127,7 +126,7 @@ export default function TitlePage() {
   const names = titleNames(t);
 
   const avgUser = revs.length ? revs.reduce((a, r) => a + r.rating, 0) / revs.length : null;
-  const resumeHref = progress?.episodeId ? `/watch/${t.slug}?ep=${progress.episodeId}` : `/watch/${t.slug}`;
+  const resumeHref = watchHref(t.slug, progress?.episodeId);
   const hasProgress = !!(progress && progress.duration > 0 && progress.position / progress.duration < 0.97 && progress.position > 5);
   const pct = hasProgress && progress ? Math.round((progress.position / progress.duration) * 100) : 0;
   const seasons = Array.from(new Set(eps.map((e) => e.season)));
@@ -181,7 +180,7 @@ export default function TitlePage() {
     <main className="pb-16">
       {/* ── HERO ─────────────────────────────────────────────────────── */}
       <section className="relative min-h-[88vh] overflow-hidden">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
+        { }
         <img src={t.backdrop} alt="" className="absolute inset-0 h-full w-full object-cover" />
         <div className="absolute inset-0 bg-gradient-to-l from-ink/95 via-ink/60 to-ink/20" />
         <div className="absolute inset-0 bg-gradient-to-t from-ink via-ink/50 to-black/20" />
@@ -207,7 +206,7 @@ export default function TitlePage() {
           <div className="relative hidden w-[260px] shrink-0 lg:block">
             <div className="absolute -inset-4 rounded-[28px] bg-brand/20 blur-3xl" />
             <div className="relative overflow-hidden rounded-2xl shadow-[0_30px_80px_rgba(0,0,0,0.75)] ring-1 ring-white/10">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
+              { }
               <img src={t.poster} alt={t.title} className="aspect-[2/3] w-full object-cover" />
               {hasProgress && (
                 <div className="absolute inset-x-0 bottom-0 h-1.5 bg-white/20">
@@ -416,22 +415,24 @@ export default function TitlePage() {
           <section id="cast" className="scroll-mt-32">
             <h2 className="mb-5 text-xl font-extrabold text-white">عوامل و بازیگران</h2>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
-              <Link
-                href={`/person/${encodeURIComponent(t.director)}`}
-                className="group flex items-center gap-3 rounded-2xl border border-brand/20 bg-brand/5 p-3 transition hover:border-brand/50 hover:bg-brand/10"
-              >
-                <span className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-gradient-to-br from-brand to-purple-600 text-white">
-                  <ClapperIcon width={20} height={20} />
-                </span>
-                <span className="min-w-0">
-                  <span className="block truncate text-sm font-bold text-white">{t.director}</span>
-                  <span className="block text-[11px] text-zinc-400">کارگردان</span>
-                </span>
-              </Link>
+              {t.director?.trim() && (
+                <Link
+                  href={personHref(t.director)}
+                  className="group flex items-center gap-3 rounded-2xl border border-brand/20 bg-brand/5 p-3 transition hover:border-brand/50 hover:bg-brand/10"
+                >
+                  <span className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-gradient-to-br from-brand to-purple-600 text-white">
+                    <ClapperIcon width={20} height={20} />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-bold text-white">{t.director}</span>
+                    <span className="block text-[11px] text-zinc-400">کارگردان</span>
+                  </span>
+                </Link>
+              )}
               {t.cast.map((c, i) => (
                 <Link
                   key={c}
-                  href={`/person/${encodeURIComponent(c)}`}
+                  href={personHref(c)}
                   className="group flex items-center gap-3 rounded-2xl border border-white/5 bg-ink-700/40 p-3 transition hover:border-white/15 hover:bg-ink-700"
                 >
                   <span
@@ -539,7 +540,7 @@ export default function TitlePage() {
           </div>
 
           <div className="relative overflow-hidden rounded-3xl border border-white/5 p-5">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
+            { }
             <img src={t.backdrop} alt="" className="absolute inset-0 h-full w-full object-cover opacity-30 blur-sm" />
             <div className="absolute inset-0 bg-gradient-to-b from-ink-700/70 to-ink-800" />
             <div className="relative">
@@ -565,8 +566,8 @@ export default function TitlePage() {
               <ul className="space-y-2">
                 {byDirector.slice(0, 4).map((s) => (
                   <li key={s.id}>
-                    <Link href={`/title/${s.slug}`} className="flex items-center gap-3 rounded-xl p-1.5 transition hover:bg-white/5">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <Link href={titleHref(s.slug)} className="flex items-center gap-3 rounded-xl p-1.5 transition hover:bg-white/5">
+                      { }
                       <img src={s.poster} alt={s.title} className="h-14 w-10 rounded-md object-cover" />
                       <span className="min-w-0">
                         <span className="block truncate text-sm font-bold text-white">{s.title}</span>

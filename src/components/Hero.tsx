@@ -9,6 +9,7 @@ import WatchlistButton from "./WatchlistButton";
 import FavoriteButton from "./FavoriteButton";
 import { useI18n } from "./i18n/LocaleProvider";
 import { titleNames } from "@/lib/title-name";
+import { titleHref, watchHref } from "@/lib/mobile-links";
 
 export default function Hero({ items, watchlistIds }: { items: TitleView[]; watchlistIds: number[] }) {
   const [idx, setIdx] = useState(0);
@@ -86,14 +87,14 @@ export default function Hero({ items, watchlistIds }: { items: TitleView[]; watc
 
           <div className="mt-7 flex flex-wrap items-center gap-3">
             <Link
-              href={`/watch/${cur.slug}`}
+              href={watchHref(cur.slug)}
               className="flex h-12 items-center gap-2 rounded-full bg-white px-7 text-sm font-extrabold text-black shadow-[0_10px_40px_rgba(255,255,255,0.15)] transition hover:scale-[1.03] hover:bg-zinc-200"
             >
               <PlayIcon width={20} height={20} />
               {tr("common.play")}
             </Link>
             <Link
-              href={`/title/${cur.slug}`}
+              href={titleHref(cur.slug)}
               className="flex h-12 items-center gap-2 rounded-full border border-white/20 bg-white/10 px-6 text-sm font-bold text-white backdrop-blur transition hover:bg-white/20"
             >
               <InfoIcon />

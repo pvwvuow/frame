@@ -68,8 +68,8 @@ export default function CatalogGate({ children }: { children: React.ReactNode })
     return (
       <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center gap-6 bg-[#070709] px-10" dir="rtl">
         <div className="flex flex-col items-center gap-2">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/vip/logo-gold.png" alt="فریم" className="h-20 w-auto select-none" draggable={false} />
+          { }
+          <img src="/app-icon.png" alt="فریم" className="h-20 w-20 rounded-2xl select-none" draggable={false} />
           <p className="mt-2 text-sm font-bold tracking-wide text-white/80">فریم — سینمای خانگی</p>
         </div>
         <div className="w-full max-w-xs">

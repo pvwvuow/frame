@@ -8,6 +8,7 @@ import type { ListRow } from "@/lib/mobile/userdata";
 import { JMONTHS, JWEEKDAYS, jMonthGrid, todayJ, jToISO, jDayLabel, g2j } from "@/lib/jalali";
 import { fa } from "@/lib/format";
 import { CalendarIcon, PlusIcon, CloseIcon, ChevronRight } from "../Icons";
+import { titleHref } from "@/lib/mobile-links";
 
 /** رویداد تماشای واقعی (از تاریخچه) که صفحه به‌صورت server-side می‌سازد. */
 export type WatchEvent = {
@@ -257,7 +258,7 @@ export default function ListCalendar({ rows, events }: { rows: ListRow[]; events
                 <li key={t.titleId} className="flex items-center gap-3 rounded-2xl border border-white/5 bg-white/[0.03] p-2.5">
                   <img src={t.backdrop ?? t.poster} alt="" loading="lazy" className="h-16 w-28 shrink-0 rounded-xl object-cover" />
                   <span className="min-w-0 flex-1">
-                    <Link href={`/title/${t.slug}`} className="block truncate text-[13px] font-bold text-white hover:text-brand">
+                    <Link href={titleHref(t.slug)} className="block truncate text-[13px] font-bold text-white hover:text-brand">
                       {t.name}
                     </Link>
                     <span className="mt-1 flex items-center gap-2 text-[10px] text-zinc-500">
@@ -348,7 +349,7 @@ export default function ListCalendar({ rows, events }: { rows: ListRow[]; events
         ) : mode === "day" ? null : dayItems.length > 0 ? (
           <div className="mt-4 flex gap-3 overflow-x-auto pb-1">
             {dayItems.map((t) => (
-              <Link key={t.titleId} href={`/title/${t.slug}`} className="group w-36 shrink-0">
+              <Link key={t.titleId} href={titleHref(t.slug)} className="group w-36 shrink-0">
                 <span className="relative block overflow-hidden rounded-xl border border-white/5">
                   <img
                     src={t.backdrop ?? t.poster}

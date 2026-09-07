@@ -10,6 +10,7 @@ import FavoriteButton from "../FavoriteButton";
 import WatchlistButton from "../WatchlistButton";
 import { PlayIcon, TrashIcon, HistoryIcon, CheckCircleIcon } from "../Icons";
 import TitleName from "@/components/TitleName";
+import { titleHref, watchHref } from "@/lib/mobile-links";
 
 function dayLabel(iso: string) {
   const d = new Date(iso);
@@ -85,7 +86,7 @@ export default function HistoryList({ rows }: { rows: HistoryRow[] }) {
             <div className="space-y-2">
               {items.map((r) => {
                 const pct = r.duration > 0 ? Math.round((r.position / r.duration) * 100) : 0;
-                const href = `/watch/${r.title.slug}${r.episodeId ? `?ep=${r.episodeId}` : ""}`;
+                const href = watchHref(r.title.slug, r.episodeId);
                 return (
                   <div key={`${r.title.id}-${r.episodeId}`} className="group flex items-center gap-4 rounded-2xl border border-white/5 bg-ink-700/40 p-2.5 transition hover:border-white/15">
                     <Link href={href} className="relative h-[68px] w-[120px] shrink-0 overflow-hidden rounded-lg">
@@ -95,7 +96,7 @@ export default function HistoryList({ rows }: { rows: HistoryRow[] }) {
                       <span className="absolute inset-x-0 bottom-0 h-1 bg-white/20"><span className={`block h-full ${r.finished ? "bg-emerald-500" : "bg-brand"}`} style={{ width: `${pct}%` }} /></span>
                     </Link>
                     <div className="min-w-0 flex-1">
-                      <Link href={`/title/${r.title.slug}`} className="block text-sm font-extrabold text-white hover:text-brand"><TitleName t={r.title} layout="inline" secondaryClass="text-[11px]" /></Link>
+                      <Link href={titleHref(r.title.slug)} className="block text-sm font-extrabold text-white hover:text-brand"><TitleName t={r.title} layout="inline" secondaryClass="text-[11px]" /></Link>
                       <p className="mt-0.5 truncate text-[11px] text-zinc-400">
                         {r.episodeId ? `فصل ${fa(r.season ?? 1)} · قسمت ${fa(r.episodeNumber ?? 1)} · ${r.episodeName}` : `${typeLabel(r.title.type)} · ${fa(r.title.year)}`}
                       </p>

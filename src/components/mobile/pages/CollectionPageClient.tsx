@@ -3,16 +3,15 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
 import TitleCard from "@/components/TitleCard";
 import { COLLECTIONS, getCollection, type TitleListItem } from "@/lib/mobile/db";
 import { getProgressMap } from "@/lib/mobile/userdata";
 import { fa, formatDuration } from "@/lib/format";
 import { LayersIcon, ChevronRight, StarIcon, ClockIcon, PlayIcon } from "@/components/Icons";
+import { watchHref, collectionHref , useRouteSlug } from "@/lib/mobile-links";
 
 export default function CollectionPage() {
-  const params = useParams<{ slug: string }>();
-  const slug = params?.slug as string;
+  const slug = useRouteSlug("slug");
   const [st, setSt] = useState<{ c: NonNullable<Awaited<ReturnType<typeof getCollection>>>; progress: Map<number, { position: number; duration: number }> } | null>(null);
   const [missing, setMissing] = useState(false);
 
@@ -88,7 +87,7 @@ export default function CollectionPage() {
             </div>
           </div>
           {lead && (
-            <Link href={`/watch/${lead.slug}`} className="glass-btn flex h-12 w-fit items-center gap-2 rounded-full px-6 text-sm font-extrabold text-white">
+            <Link href={watchHref(lead.slug)} className="glass-btn flex h-12 w-fit items-center gap-2 rounded-full px-6 text-sm font-extrabold text-white">
               <PlayIcon width={18} height={18} /> پخش «{lead.title}»
             </Link>
           )}
@@ -108,7 +107,7 @@ export default function CollectionPage() {
           <h2 className="mb-4 text-lg font-extrabold text-white">مجموعه‌های دیگر</h2>
           <div className="flex flex-wrap gap-2">
             {others.map((o) => (
-              <Link key={o.slug} href={`/collections/${o.slug}`} className="glass-btn rounded-full px-4 py-2 text-sm font-bold text-white">
+              <Link key={o.slug} href={collectionHref(o.slug)} className="glass-btn rounded-full px-4 py-2 text-sm font-bold text-white">
                 <span className="me-2 inline-block h-2 w-2 rounded-full" style={{ background: `hsl(${o.hue} 85% 55%)` }} />
                 {o.title}
               </Link>

@@ -6,6 +6,7 @@ import { fa } from "@/lib/format";
 import { PlayIcon, CheckIcon } from "../Icons";
 import DownloadButton from "../download/DownloadButton";
 import { absolutizeUrl, normalizeSources } from "@/lib/source-fix";
+import { watchHref } from "@/lib/mobile-links";
 
 export type EpisodeItem = {
   id: number;
@@ -103,7 +104,7 @@ export default function EpisodeList({
                   active ? "border-brand/50 bg-brand/10 shadow-[0_0_0_1px_rgba(229,9,20,0.2)]" : "border-white/5 bg-ink-700/40 hover:border-white/15 hover:bg-ink-700"
                 }`}
               >
-                <Link href={`/watch/${slug}?ep=${e.id}`} className="relative h-[92px] w-[164px] shrink-0 overflow-hidden rounded-xl">
+                <Link href={watchHref(slug, e.id)} className="relative h-[92px] w-[164px] shrink-0 overflow-hidden rounded-xl">
                   <img src={e.thumbnail} alt={e.name} className="h-full w-full object-cover transition duration-500 group-hover:scale-105" />
                   <div className="absolute inset-0 grid place-items-center bg-black/35 opacity-0 transition group-hover:opacity-100">
                     <span className="grid h-10 w-10 place-items-center rounded-full bg-white text-black">
@@ -123,7 +124,7 @@ export default function EpisodeList({
                   )}
                 </Link>
                 <div className="flex min-w-0 flex-1 gap-2">
-                  <Link href={`/watch/${slug}?ep=${e.id}`} className="min-w-0 flex-1 py-0.5">
+                  <Link href={watchHref(slug, e.id)} className="min-w-0 flex-1 py-0.5">
                     <div className="flex items-center gap-2">
                       <span className="text-2xl font-black leading-none text-zinc-600">{fa(e.number)}</span>
                       <p className="truncate font-bold text-white">{e.name}</p>

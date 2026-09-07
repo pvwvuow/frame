@@ -11,6 +11,7 @@ import { GENRES, getCatalogPage, getCatalogStats, getYears, type TitleListItem }
 import { getProgressMap } from "@/lib/mobile/userdata";
 import { fa, formatDuration, formatViews } from "@/lib/format";
 import TitleName from "@/components/TitleName";
+import { titleHref, watchHref } from "@/lib/mobile-links";
 
 export type CatalogSearchParams = { genre?: string; sort?: string; year?: string; rating?: string };
 
@@ -114,13 +115,13 @@ function CatalogPageInner({ type, heading, blurb }: { type: "movie" | "series"; 
                 </p>
                 <div className="mt-3 flex gap-2">
                   <Link
-                    href={`/watch/${spotlight.slug}`}
+                    href={watchHref(spotlight.slug)}
                     className="flex h-9 items-center gap-1.5 rounded-full bg-white px-4 text-xs font-extrabold text-black hover:bg-zinc-200"
                   >
                     <PlayIcon width={14} height={14} /> پخش
                   </Link>
                   <Link
-                    href={`/title/${spotlight.slug}`}
+                    href={titleHref(spotlight.slug)}
                     className="flex h-9 items-center gap-1.5 rounded-full border border-white/20 bg-white/10 px-4 text-xs font-bold text-white hover:bg-white/20"
                   >
                     <InfoIcon width={14} height={14} /> جزئیات
