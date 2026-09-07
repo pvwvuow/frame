@@ -74,6 +74,16 @@ export function urlQuality(url: string): string | null {
   return Q_LABEL[m[1].toLowerCase()] ?? null;
 }
 
+/** v0.10.22: playback resolves protocol-relative links («//host/file.mkv»)
+ *  through the stream proxy, but the DOWNLOAD gate needs a real scheme —
+ *  assume https for those, so the download menu sees exactly the links the
+ *  player can already play. Returns "" for empty input. */
+export function absolutizeUrl(u: string): string {
+  const s = String(u || "").trim();
+  if (s.startsWith("//")) return "https:" + s;
+  return s;
+}
+
 /** Variant label from the file name — the exact rules of
  *  scripts/fix-variant-labels.cjs (Dubbed / SoftSub / HardSub / NoSub). */
 export function canonicalVariant(url: string, current: string): string {

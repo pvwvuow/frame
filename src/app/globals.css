@@ -401,9 +401,11 @@ html[data-electron="1"] body { overscroll-behavior: none; }
   transition:
     background-color 0.28s ease,
     border-color 0.28s ease,
-    box-shadow 0.28s ease,
-    -webkit-backdrop-filter 0.28s ease,
-    backdrop-filter 0.28s ease;
+    box-shadow 0.28s ease;
+  /* v0.10.22: backdrop-filter is deliberately NOT in the transition list —
+     animating blur re-composites the whole page behind the header every
+     frame (the «laggy search opening» report). The blur now snaps in; the
+     background/border still fade so the flip stays visually smooth. */
   will-change: background-color, border-color;
 }
 /* nav text stays readable over the bright artwork without hiding it */

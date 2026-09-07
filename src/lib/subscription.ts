@@ -66,9 +66,25 @@ export function useSubscription(): SubState & {
     const sb = getSupabase();
 
     if (!sessionReady) return; // wait for the session to resolve
-    if (!session || !sb) {
+    if (!session) {
       if (alive)
         setState({ ready: true, signedIn: false, active: false, lifetime: false, plan: null, expiresAt: null });
+      return;
+    }
+    if (!sb) {
+      // v0.10.22: session known but the Supabase client is unavailable
+      // (offline launch) → judge from the disk snapshot instead of claiming
+      // «signed out» and stripping a paying user of their entitlement.
+      const snap = readSubSnapshot();
+      if (alive)
+        setState({
+          ready: true,
+          signedIn: true,
+          active: subSnapshotActive(snap),
+          lifetime: snap?.lifetime ?? false,
+          plan: (snap?.plan as Plan | null) ?? null,
+          expiresAt: snap?.expiresAt ?? null,
+        });
       return;
     }
 
@@ -76,11 +92,15 @@ export function useSubscription(): SubState & {
       try {
         const uid = session.user.id;
         // .maybeSingle(): no row yet = valid "no subscription" state, not an error
-        const { data, error } = await sb
-          .from("subscriptions")
-          .select("plan, expires_at")
-          .eq("user_id", uid)
-          .maybeSingle();
+        // v0.10.22: race a 7s timeout — a stalled Supabase connection (VPN
+        // half-on) used to leave ready=false forever, which the download gate
+        // then read as «no subscription». On timeout we fall into the catch
+        // below and judge from the LAST KNOWN snapshot, exactly like offline.
+        const query = sb.from("subscriptions").select("plan, expires_at").eq("user_id", uid).maybeSingle();
+        const { data, error } = await Promise.race([
+          query,
+          new Promise<never>((_, rej) => setTimeout(() => rej(new Error("subscriptions query timeout")), 7000)),
+        ]) as Awaited<typeof query>;
         if (!alive) return;
         if (error) throw error;
         const plan = (data?.plan as Plan | undefined) ?? null;

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useDeferredValue, useEffect, useRef, useState } from "react";
 import { SearchIcon, CloseIcon, FilmIcon, TvIcon, BookmarkIcon, HomeIcon, SparkIcon, UserIcon, LayersIcon, UsersIcon, ShuffleIcon, ChevronDown, BellIcon, StarIcon, DownloadIcon } from "./Icons";
 import UserMenu from "./UserMenu";
 import ThemeToggle from "./theme/ThemeToggle";
@@ -101,17 +101,21 @@ export default function Navbar() {
     setQ("");
   }, [pathname]);
 
+  // v0.10.22: the results fetch + panel render are driven by a DEFERRED copy
+  // of the query — every keystroke updates the input at full priority (no
+  // typing lag) while the heavier panel work yields to the browser.
+  const dq = useDeferredValue(q);
   useEffect(() => {
     setActive(-1);
-    if (!q.trim()) {
+    if (!dq.trim()) {
       setResults([]);
       setLoading(false);
       return;
     }
     const ctrl = new AbortController();
-    setLoading(true);
     const timer = setTimeout(() => {
-      fetch(`/api/search?q=${encodeURIComponent(q)}`, { signal: ctrl.signal })
+      setLoading(true);
+      fetch(`/api/search?q=${encodeURIComponent(dq)}`, { signal: ctrl.signal })
         .then((r) => r.json())
         .then((d: Result[]) => setResults(Array.isArray(d) ? d : []))
         .catch(() => {})
@@ -121,7 +125,7 @@ export default function Navbar() {
       clearTimeout(timer);
       ctrl.abort();
     };
-  }, [q]);
+  }, [dq]);
 
   useEffect(() => {
     const onDoc = (e: MouseEvent) => {
@@ -241,7 +245,7 @@ export default function Navbar() {
                   e.preventDefault();
                   submit();
                 }}
-                className={`flex h-10 items-center gap-2 rounded-full border transition-[width,background-color,border-color] duration-300 ${
+                className={`flex h-10 items-center gap-2 rounded-full border transition-[background-color,border-color] duration-300 ${
                   open
                     ? "fixed inset-x-2 top-4 z-40 w-auto max-w-[360px] border-white/20 bg-black/80 px-3 shadow-[0_18px_50px_rgba(0,0,0,0.45)] sm:absolute sm:inset-y-0 sm:inset-x-auto sm:top-auto sm:end-0 sm:w-[min(360px,calc(100vw-2rem))] sm:shadow-none"
                     : "absolute inset-y-0 end-0 w-full justify-center border-transparent bg-transparent px-0 sm:justify-start sm:border-white/15 sm:bg-white/[0.06] sm:px-3"

@@ -12,9 +12,11 @@ import { toast } from "sonner";
 import { CloseIcon, DownloadIcon } from "../Icons";
 import { useI18n } from "../i18n/LocaleProvider";
 import { SUBSCRIPTION_REQUIRED, useSubscription } from "@/lib/subscription";
+import { readAuthSnapshot, readSubSnapshot, subSnapshotActive } from "@/lib/auth-offline";
 import { dlEnqueue, dlSupported } from "@/lib/downloads";
 import { getQualityPref } from "@/lib/quality-pref";
 import { variantShort } from "@/lib/variant";
+import { absolutizeUrl } from "@/lib/source-fix";
 import type { PlayerSource } from "@/lib/player-store";
 
 export type DownloadSourceInput = { q: string; v: string; url: string; mb?: number };
@@ -43,11 +45,26 @@ export default function DownloadButton({
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [electronOk, setElectronOk] = useState(false);
+  const [optimistic, setOptimistic] = useState(false);
   const boxRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setElectronOk(dlSupported());
   }, []);
+
+  /* v0.10.22 — the download gate used to read «not allowed» while the cloud
+   * entitlement was still resolving, so a paying VIP user clicking download
+   * could get «برای دانلود باید اشتراک فعال داشته باشید» even though
+   * playback worked (the player already judged optimistically from the disk
+   * snapshot). Same remedy as WatchClient: while !ready, trust the last
+   * known entitlement snapshot instead of hard-blocking. */
+  useEffect(() => {
+    if (sub.ready) {
+      setOptimistic(false);
+      return;
+    }
+    setOptimistic(!!readAuthSnapshot() && subSnapshotActive(readSubSnapshot()));
+  }, [sub.ready]);
 
   useEffect(() => {
     if (!open) return;
@@ -64,13 +81,18 @@ export default function DownloadButton({
   }, [open]);
 
   const list = useMemo(() => {
-    const clean = (sources || []).filter((s) => s && s.url && /^https?:\/\//i.test(s.url));
+    // v0.10.22: protocol-relative links (//host/file.mkv) play fine via the
+    // stream proxy — absolutize them so the download menu shows them too.
+    const clean = (sources || [])
+      .map((s) => (s ? { ...s, url: absolutizeUrl(s.url) } : s))
+      .filter((s) => s && s.url && /^https?:\/\//i.test(s.url));
     return clean as PlayerSource[];
   }, [sources]);
 
   if (!electronOk || list.length === 0) return null;
 
-  const allowed = !SUBSCRIPTION_REQUIRED || (sub.ready ? sub.signedIn && sub.active : false);
+  const allowed =
+    !SUBSCRIPTION_REQUIRED || (sub.ready ? sub.signedIn && sub.active : optimistic);
 
   const pref = () => {
     try {
@@ -83,6 +105,15 @@ export default function DownloadButton({
   const enqueue = async (s: PlayerSource) => {
     if (!allowed) {
       setOpen(false);
+      // v0.10.22: entitlement still resolving → never demand a purchase yet;
+      // nudge the store to re-check and tell the user we are checking.
+      if (!sub.ready) {
+        sub.refresh();
+        toast.info(
+          locale === "en" ? "Checking your subscription…" : "در حال بررسی اشتراک شما…"
+        );
+        return;
+      }
       toast.error(locale === "en" ? "An active subscription is required to download." : "برای دانلود باید اشتراک فعال داشته باشید.", {
         action: { label: locale === "en" ? "VIP" : "اشتراک ویژه", onClick: () => (window.location.href = "/vip") },
       });

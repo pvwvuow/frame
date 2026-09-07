@@ -5,7 +5,7 @@ import { useMemo, useState } from "react";
 import { fa } from "@/lib/format";
 import { PlayIcon, CheckIcon } from "../Icons";
 import DownloadButton from "../download/DownloadButton";
-import { normalizeSources } from "@/lib/source-fix";
+import { absolutizeUrl, normalizeSources } from "@/lib/source-fix";
 
 export type EpisodeItem = {
   id: number;
@@ -17,6 +17,9 @@ export type EpisodeItem = {
   thumbnail: string;
   /** raw sources JSON (v0.10.19) — enables the per-episode download menu */
   sources?: string | null;
+  /** v0.10.22: the episode's own main link — the player falls back to this
+   *  when the sources JSON is empty, and so does the download button now */
+  videoUrl?: string | null;
 };
 
 export default function EpisodeList({
@@ -41,13 +44,21 @@ export default function EpisodeList({
   const totalMinutes = list.reduce((a, e) => a + e.duration, 0);
 
   // parse each episode's source rows once (quality menu for the download button)
+  // v0.10.22: many series carry NO per-episode sources JSON — playback still
+  // works because the player falls back to the episode's own `videoUrl`.
+  // The download button now falls back the same way, so every playable
+  // episode gets a download menu (at least the exact file playback uses).
   const sourcesById = useMemo(() => {
     const map = new Map<number, { q: string; v: string; url: string; mb?: number }[]>();
     for (const e of episodes) {
       try {
-        const arr = normalizeSources(JSON.parse(e.sources || "[]")).filter(
-          (s): s is { q: string; v: string; url: string; mb?: number } => !!s && !!s.url
-        );
+        const raw: { q?: string; v?: string; url?: string; mb?: number }[] = [];
+        const parsed = JSON.parse(e.sources || "[]");
+        if (Array.isArray(parsed)) for (const s of parsed) if (s && s.url) raw.push(s);
+        if (!raw.length && e.videoUrl) raw.push({ url: e.videoUrl });
+        const arr = normalizeSources(
+          raw.map((s) => ({ ...s, url: absolutizeUrl(s.url || "") }))
+        ).filter((s): s is { q: string; v: string; url: string; mb?: number } => !!s && !!s.url);
         if (arr.length) map.set(e.id, arr);
       } catch {
         /* ignore */
@@ -93,7 +104,6 @@ export default function EpisodeList({
                 }`}
               >
                 <Link href={`/watch/${slug}?ep=${e.id}`} className="relative h-[92px] w-[164px] shrink-0 overflow-hidden rounded-xl">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={e.thumbnail} alt={e.name} className="h-full w-full object-cover transition duration-500 group-hover:scale-105" />
                   <div className="absolute inset-0 grid place-items-center bg-black/35 opacity-0 transition group-hover:opacity-100">
                     <span className="grid h-10 w-10 place-items-center rounded-full bg-white text-black">
