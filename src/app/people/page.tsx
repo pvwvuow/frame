@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { getPeopleIndex } from "@/lib/mobile/db";
 import { fa } from "@/lib/format";
-import { UsersIcon, StarIcon, ClapperIcon } from "@/components/Icons";
+import { UsersIcon, StarIcon, ClapperIcon, SearchIcon } from "@/components/Icons";
+import { personHref } from "@/lib/links";
 
 const HUES = [350, 265, 200, 150, 35, 320, 15, 230, 100, 45, 280, 180];
 
@@ -21,11 +22,20 @@ const RANK_STYLES = [
   "from-amber-600 to-orange-700 text-white", // bronze
 ];
 
+/* v0.11.0: the full directory (22k+ cards = 240k+ DOM nodes) froze phones.
+ * Render in chunks behind an IntersectionObserver sentinel + a client-side
+ * name search; "more" keeps appending until the filtered set is exhausted. */
+const CHUNK = 120;
+
 function PeopleInner() {
   const sp = useSearchParams();
   const role = sp.get("role") ?? undefined;
   const sort = sp.get("sort") ?? "rating";
   const [all, setAll] = useState<Awaited<ReturnType<typeof getPeopleIndex>> | null>(null);
+  const [rawQ, setRawQ] = useState("");
+  const q = useDeferredValue(rawQ).trim();
+  const [limit, setLimit] = useState(CHUNK);
+  const sentinelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let alive = true;
@@ -34,6 +44,36 @@ function PeopleInner() {
       alive = false;
     };
   }, []);
+
+  // new filter/sort/search → back to the first chunk
+  useEffect(() => {
+    setLimit(CHUNK);
+  }, [role, sort, q]);
+
+  // auto-append the next chunk when the sentinel scrolls into view
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el || !all) return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) setLimit((l) => l + CHUNK);
+      },
+      { rootMargin: "800px 0px" }
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [all, limit, role, sort, q]);
+
+  const filtered = useMemo(() => {
+    if (!all) return [];
+    const needle = q.toLowerCase();
+    const base = role === "director" ? all.filter((p) => p.roles.includes("director")) : role === "actor" ? all.filter((p) => p.roles.includes("actor")) : all;
+    const hit = needle ? base.filter((p) => p.name.toLowerCase().includes(needle)) : base;
+    // رنک‌بندی: بر اساس میانگین امتیاز آثار / تعداد اثر / نام
+    return [...hit].sort((a, b) =>
+      sort === "count" ? b.count - a.count || b.avg - a.avg : sort === "name" ? a.name.localeCompare(b.name) : b.avg - a.avg || b.count - a.count
+    );
+  }, [all, role, sort, q]);
 
   if (!all) {
     return (
@@ -50,14 +90,9 @@ function PeopleInner() {
     );
   }
 
-  const roleFiltered = role === "director" ? all.filter((p) => p.roles.includes("director")) : role === "actor" ? all.filter((p) => p.roles.includes("actor")) : all;
-
-  // رنک‌بندی: بر اساس میانگین امتیاز آثار / تعداد اثر / نام
-  const people = [...roleFiltered].sort((a, b) =>
-    sort === "count" ? b.count - a.count || b.avg - a.avg : sort === "name" ? a.name.localeCompare(b.name) : b.avg - a.avg || b.count - a.count
-  );
-
-  const top3 = sort === "name" ? [] : people.slice(0, 3);
+  const people = filtered;
+  const shown = people.slice(0, limit);
+  const top3 = sort === "name" || q ? [] : people.slice(0, 3);
 
   return (
     <main className="pb-16">
@@ -69,7 +104,20 @@ function PeopleInner() {
           </p>
           <h1 className="text-4xl font-black text-white sm:text-5xl">بازیگران و کارگردانان</h1>
           <p className="mt-3 max-w-xl text-sm leading-7 text-zinc-300">{fa(all.length)} کارگردان و بازیگر؛ رتبه‌ی هر هنرمند از میانگین امتیاز آثارش در نما محاسبه می‌شود.</p>
-          <div className="mt-6 flex flex-wrap gap-2">
+          <div className="mt-6 flex flex-wrap items-center gap-2">
+            {/* name search — the directory is huge; typing narrows it instantly */}
+            <div className="relative me-1">
+              <span className="pointer-events-none absolute inset-y-0 start-3 grid place-items-center text-zinc-500">
+                <SearchIcon width={15} height={15} />
+              </span>
+              <input
+                value={rawQ}
+                onChange={(e) => setRawQ(e.target.value)}
+                placeholder="جستجوی نام هنرمند…"
+                aria-label="جستجوی هنرمند"
+                className="h-10 w-full min-w-[210px] rounded-full border border-white/15 bg-white/[0.06] ps-9 pe-4 text-sm text-white placeholder:text-zinc-500 focus:border-brand/50 focus:outline-none sm:w-[260px]"
+              />
+            </div>
             {[
               ["", "همه"],
               ["director", "کارگردان‌ها"],
@@ -108,7 +156,7 @@ function PeopleInner() {
             {top3.map((p, i) => (
               <Link
                 key={p.name}
-                href={`/person/${encodeURIComponent(p.name)}`}
+                href={personHref(p.name)}
                 className={`relative flex items-center gap-4 overflow-hidden rounded-3xl border p-5 transition hover:-translate-y-1 ${
                   i === 0 ? "border-amber-400/30 bg-gradient-to-bl from-amber-500/10 to-ink-700/60" : "border-white/10 bg-ink-700/50"
                 }`}
@@ -130,16 +178,16 @@ function PeopleInner() {
         )}
 
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
-          {people.map((p, i) => {
+          {shown.map((p, i) => {
             const rank = i + 1;
-            const medal = sort !== "name" && rank <= 3 ? RANK_STYLES[rank - 1] : "";
+            const medal = !q && sort !== "name" && rank <= 3 ? RANK_STYLES[rank - 1] : "";
             return (
               <Link
                 key={p.name}
-                href={`/person/${encodeURIComponent(p.name)}`}
+                href={personHref(p.name)}
                 className="glass group relative flex flex-col items-center overflow-hidden rounded-3xl p-5 text-center transition hover:-translate-y-1"
               >
-                {sort !== "name" && (
+                {sort !== "name" && !q && (
                   <span className={`absolute end-3 top-3 grid h-7 min-w-7 place-items-center rounded-full text-[11px] font-black num ${medal ? `bg-gradient-to-br ${medal}` : "bg-white/5 text-zinc-400"}`}>
                     {fa(rank)}
                   </span>
@@ -171,6 +219,22 @@ function PeopleInner() {
             );
           })}
         </div>
+
+        {/* next chunk loads automatically as the sentinel approaches */}
+        <div ref={sentinelRef} aria-hidden="true" className="h-2" />
+        {shown.length < people.length ? (
+          <button
+            type="button"
+            onClick={() => setLimit((l) => l + CHUNK)}
+            className="glass-btn mx-auto mt-4 flex h-11 items-center gap-2 rounded-full px-6 text-sm font-bold text-white"
+          >
+            نمایش بیشتر ({fa(people.length - shown.length)} نفر باقی مانده)
+          </button>
+        ) : people.length === 0 ? (
+          <p className="py-16 text-center text-sm text-zinc-400">هنرمندی با این نام پیدا نشد.</p>
+        ) : (
+          <p className="py-8 text-center text-xs text-zinc-500">{fa(people.length)} هنرمند نمایش داده شد</p>
+        )}
       </div>
     </main>
   );

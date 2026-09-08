@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { collectionHref } from "@/lib/links";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import Row from "@/components/Row";
@@ -256,7 +257,7 @@ export default function CollectionsPage() {
           {hero.map((c) => (
             <Link
               key={c.slug}
-              href={`/collections/${c.slug}`}
+              href={collectionHref(c.slug)}
               className="glass group relative flex min-h-[200px] flex-col justify-end overflow-hidden rounded-3xl p-5 transition hover:-translate-y-1"
             >
               <div className="absolute inset-0 grid grid-cols-3 opacity-60 transition duration-700 group-hover:scale-105">
@@ -280,12 +281,12 @@ export default function CollectionsPage() {
       {/* shelves */}
       <div className="mt-14 space-y-2">
         {collections.map((c) => (
-          <Row key={c.slug} title={c.title} subtitle={c.tagline} href={`/collections/${c.slug}`}>
+          <Row key={c.slug} title={c.title} subtitle={c.tagline} href={collectionHref(c.slug)}>
             {c.items.map((t) => (
               <TitleCard key={t.id} t={t} />
             ))}
             <Link
-              href={`/collections/${c.slug}`}
+              href={collectionHref(c.slug)}
               className="glass-btn flex w-[150px] shrink-0 snap-start flex-col items-center justify-center gap-2 rounded-xl text-sm font-bold text-white sm:w-[190px]"
             >
               <span className="grid h-12 w-12 place-items-center rounded-full bg-white/10">

@@ -119,7 +119,7 @@ export default function TitleModal({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 20, scale: 0.97 }}
             transition={{ type: "spring", stiffness: 300, damping: 28 }}
-            className="glass-strong relative w-full max-w-[560px] overflow-hidden rounded-[28px]"
+            className="glass-strong relative max-h-[calc(100dvh-1.5rem)] w-full max-w-[560px] overflow-y-auto overscroll-contain rounded-[28px] sheet-safe-bottom"
           >
             {/* ── media strip (always dark, like a film cell) ─────────── */}
             <div className="force-dark relative z-0 h-[150px] w-full overflow-hidden sm:h-[170px]">

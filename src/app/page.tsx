@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { watchHref, titleHref } from "@/lib/links";
 import { useEffect, useState } from "react";
 import Hero from "@/components/Hero";
 import Row from "@/components/Row";
@@ -92,7 +93,7 @@ export default function HomePage() {
             {continueItems.map((c) => (
               <Link
                 key={c.title.id}
-                href={`/watch/${c.title.slug}${c.episodeId ? `?ep=${c.episodeId}` : ""}`}
+                href={watchHref(c.title.slug, c.episodeId)}
                 className="group relative w-[260px] shrink-0 snap-start sm:w-[320px]"
               >
                 <div className="relative aspect-video overflow-hidden rounded-xl ring-1 ring-white/5 transition group-hover:ring-white/20">
@@ -170,10 +171,10 @@ export default function HomePage() {
                 <TitleName t={featured[1]} as="h3" primaryClass="text-3xl font-black text-white sm:text-4xl" secondaryClass="text-base text-zinc-300" />
                 <p className="line-clamp-2 text-sm leading-7 text-zinc-300">{featured[1].description}</p>
                 <div className="flex gap-3">
-                  <Link href={`/watch/${featured[1].slug}`} className="flex h-11 items-center gap-2 rounded-full bg-white px-6 text-sm font-extrabold text-black hover:bg-zinc-200">
+                  <Link href={watchHref(featured[1].slug)} className="flex h-11 items-center gap-2 rounded-full bg-white px-6 text-sm font-extrabold text-black hover:bg-zinc-200">
                     <PlayIcon width={18} height={18} /> {tr("common.play")}
                   </Link>
-                  <Link href={`/title/${featured[1].slug}`} className="flex h-11 items-center rounded-full border border-white/20 bg-white/10 px-6 text-sm font-bold text-white backdrop-blur hover:bg-white/20">
+                  <Link href={titleHref(featured[1].slug)} className="flex h-11 items-center rounded-full border border-white/20 bg-white/10 px-6 text-sm font-bold text-white backdrop-blur hover:bg-white/20">
                     {tr("common.details")}
                   </Link>
                 </div>

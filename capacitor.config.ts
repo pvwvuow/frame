@@ -9,6 +9,17 @@ const config: CapacitorConfig = {
     webContentsDebuggingEnabled: true,
     backgroundColor: "#070709",
   },
+  plugins: {
+    /* v0.11.0: Capacitor 8's SystemBars plugin injects --safe-area-inset-*
+     * CSS vars and (WebView ≥ 140 + viewport-fit=cover) passes env() insets
+     * through natively, so edge-to-edge (Android 15+, targetSdk 36) never
+     * draws the status bar over our header. Keep "css" handling (default)
+     * and make sure the bars stay visible above our dark UI. */
+    SystemBars: {
+      insetsHandling: "css",
+      style: "DARK",
+    },
+  },
   server: {
     androidScheme: "https",
     hostname: "localhost",

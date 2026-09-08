@@ -440,3 +440,42 @@ html[data-electron="1"][data-platform="darwin"][dir="ltr"] .nav-inner { padding-
 /* desktop floating player (v0.10.5): native window drag regions */
 .pip-drag { -webkit-app-region: drag; }
 .pip-no-drag { -webkit-app-region: no-drag; }
+
+/* =====================================================================
+   TOUCH / MOBILE-NATIVE (v0.11.0 Android UX round)
+   ===================================================================== */
+
+/* Android 15+ forces edge-to-edge (targetSdk 36): the status bar and the
+ * gesture bar draw OVER the app. Capacitor 8's SystemBars plugin injects
+ * --safe-area-inset-* custom properties (older WebViews) and passes env()
+ * through natively (WebView ≥ 140); plain mobile browsers only have env().
+ * Consume BOTH so the header and floating sheets clear the system bars in
+ * every runtime (both fall back to 0 where unavailable). */
+.site-header {
+  padding-top: max(env(safe-area-inset-top, 0px), var(--safe-area-inset-top, 0px));
+}
+.sheet-safe-bottom {
+  padding-bottom: max(0.75rem, env(safe-area-inset-bottom, 0px), var(--safe-area-inset-bottom, 0px));
+}
+
+/* No hover on a phone: the card quick-actions (favorite / watchlist / play)
+ * and the play FAB must be permanently visible instead of hover-gated.
+ * On touch we show ONLY the heart + play (38px, comfortable thumb targets);
+ * the watchlist mini stays in the quick-view modal to avoid covering the
+ * whole poster with buttons. */
+@media (hover: none) and (pointer: coarse) {
+  .card-quick-actions, .card-play-fab { opacity: 1 !important; transform: none !important; }
+  .card-quick-actions > *:not(:first-child) { display: none; }
+  .card-quick-actions button, .card-play-fab { height: 2.375rem !important; width: 2.375rem !important; }
+}
+
+/* kill the gray tap flash on cards and links in the WebView */
+@media (hover: none) {
+  body { -webkit-tap-highlight-color: transparent; }
+}
+
+/* floating mobile tab bar: give page ends enough clearance so the last rows
+ * never hide behind it (footer owns the space; nav is ~76px + insets) */
+@media (max-width: 1023px) {
+  .site-footer { padding-bottom: calc(7rem + env(safe-area-inset-bottom)); }
+}

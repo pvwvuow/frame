@@ -125,8 +125,10 @@ export default function TitleCard({
         </div>
       </button>
 
-      {/* quick actions: favorite + list (outside the modal trigger) */}
-      <div className="absolute bottom-[76px] start-2 flex translate-y-2 items-center gap-1.5 opacity-0 transition-all duration-300 group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:translate-y-0 group-focus-within:opacity-100">
+      {/* quick actions: favorite + list (outside the modal trigger).
+          v0.11.0: on touch there is no hover — the .card-quick-actions CSS
+          keeps these permanently visible on phones. */}
+      <div className="card-quick-actions absolute bottom-[76px] start-2 flex translate-y-2 items-center gap-1.5 opacity-0 transition-all duration-300 group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:translate-y-0 group-focus-within:opacity-100">
         <FavoriteButton titleId={t.id} name={names.primary} variant="mini" />
         <WatchlistButton titleId={t.id} name={names.primary} variant="mini" />
       </div>
@@ -136,7 +138,7 @@ export default function TitleCard({
         href={watchHref(t.slug)}
         aria-label={tr("card.play", { name: names.label })}
         onClick={(e) => e.stopPropagation()}
-        className="absolute bottom-[76px] end-2 grid h-9 w-9 translate-y-2 place-items-center rounded-full bg-white text-black opacity-0 shadow-lg transition-all duration-300 hover:scale-110 hover:bg-brand hover:text-white group-hover:translate-y-0 group-hover:opacity-100"
+        className="card-play-fab absolute bottom-[76px] end-2 grid h-9 w-9 translate-y-2 place-items-center rounded-full bg-white text-black opacity-0 shadow-lg transition-all duration-300 hover:scale-110 hover:bg-brand hover:text-white group-hover:translate-y-0 group-hover:opacity-100"
       >
         <PlayIcon width={16} height={16} className="ms-0.5" />
       </Link>

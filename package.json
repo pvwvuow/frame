@@ -1,6 +1,6 @@
 {
   "name": "frame",
-  "version": "0.10.36",
+  "version": "0.11.0",
   "private": true,
   "scripts": {
     "dev": "next dev -p 3000",
@@ -121,7 +121,7 @@
     "tw-animate-css": "^1.3.5",
     "typescript": "^5"
   },
-  "description": "نما – سینمای آنلاین (وب + دسکتاپ)",
+  "description": "فریم (Frame) — سینمای خانگی | ویندوز، مک، لینوکس و اندروید",
   "author": "Nama",
   "main": "electron/dist/main.cjs",
   "homepage": "https://github.com/pvwvuow/frame",

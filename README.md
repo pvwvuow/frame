@@ -1,108 +1,167 @@
-# نما · سینمای آنلاین (Next.js 16 + Prisma/SQLite + Electron)
+<div dir="rtl">
 
-پلتفرم استریم فارسی با رابط RTL، پخش‌کننده اختصاصی، کاتالوگ، جستجو، مرکز اعلان‌ها و فضای شخصی کامل کاربر — به‌صورت **وب** و **برنامه‌ی دسکتاپ** (ویندوز / مک / لینوکس).
+<p align="center">
+  <img src="public/app-icon.png" width="88" alt="فریم" />
+</p>
 
-[![Desktop release](https://github.com/pvwvuow/frame/actions/workflows/desktop.yml/badge.svg)](https://github.com/pvwvuow/frame/actions/workflows/desktop.yml)
-[![CI](https://github.com/pvwvuow/frame/actions/workflows/ci.yml/badge.svg)](https://github.com/pvwvuow/frame/actions/workflows/ci.yml)
+<h1 align="center">فریم — سینمای خانگی</h1>
 
+<p align="center">
+  <b>هزاران فیلم و سریال با کیفیت تا 4K، دوبله و زیرنویس فارسی — روی ویندوز، مک، لینوکس و اندروید.</b><br/>
+  آرشیو شخصی، لیست تماشا، کلکسیون‌سازی، کارت‌های اشتراک‌گذاری و همگام‌سازی ابری؛ همه در یک برنامه‌ی زیبا و کاملاً فارسی.
+</p>
 
-## v0.5.0 – English UI, bilingual titles, header & quick-view fixes
+<p align="center">
+  <a href="https://github.com/pvwvuow/frame/actions/workflows/desktop.yml"><img src="https://github.com/pvwvuow/frame/actions/workflows/desktop.yml/badge.svg" alt="Release" /></a>
+  <a href="https://github.com/pvwvuow/frame/actions/workflows/ci.yml"><img src="https://github.com/pvwvuow/frame/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  <img src="https://img.shields.io/badge/پلتفرم-Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20Android-blue" alt="پلتفرم‌ها" />
+  <img src="https://img.shields.io/badge/کیفیت-تا%204K%20HDR-orange" alt="کیفیت" />
+  <img src="https://img.shields.io/badge/زبان-فارسی%20%2B%20English-green" alt="زبان" />
+</p>
 
-- **English language** – full UI language switcher (navbar globe, user drawer, Settings → ظاهر و زبان). Layout flips to LTR, digits/durations follow the language, choice is persisted (cookie + localStorage) and applied on the server render (no flash).
-- **Bilingual title names** – English-language productions show their English title first with the Persian name small beside it; Persian productions do the opposite (and flip in the English UI). Applied to cards, hero, quick-view, title page, search, command palette, history, my-list and continue-watching.
-- **Header fix** – the top bar no longer flashes a phantom border when scrolling back to the top (web + Electron). The header now keeps a permanent transparent border and only animates colour/blur, with scroll hysteresis.
-- **Quick-view fix** – the poster no longer overlaps the type/quality/age badges of the media strip.
-- **Standalone/`npm start` fix** – the SQLite database is now resolved to an absolute path and shipped next to the standalone server; foreign `DATABASE_URL`s injected by hosts are ignored.
-- User drawer is direction-aware (slides from the avatar side in both languages), PWA manifest added, row arrows mirror in LTR.
+---
 
-## اجرا (وب)
+## 📸 نگاهی به فریم
+
+| خانه (دسکتاپ) | صفحه‌ی فیلم |
+|:---:|:---:|
+| ![خانه](docs/screenshots/home-desktop.png) | ![صفحه فیلم](docs/screenshots/title-desktop.png) |
+
+| رنک‌بندی‌ها | تاریک‌خانه (ساخت کارت اشتراک‌گذاری) |
+|:---:|:---:|
+| ![رنک‌بندی](docs/screenshots/rankings-desktop.png) | ![تاریک‌خانه](docs/screenshots/darkroom-desktop.png) |
+
+| موبایل — خانه | موبایل — لیست من |
+|:---:|:---:|
+| ![موبایل خانه](docs/screenshots/home-mobile.png) | ![موبایل لیست من](docs/screenshots/mylist-mobile.png) |
+
+---
+
+## ✨ امکانات
+
+### 🎬 تماشا
+- **کتابخانه‌ی بزرگ** با هزاران فیلم و سریال؛ جستجوی زنده، فیلتر ژانر/سال/امتیاز و رنک‌بندی‌های به‌روز.
+- **پخش‌کننده‌ی اختصاصی** با ادامه‌ی تماشای خودکار، پرش ±۱۰ ثانیه، زیرنویس فارسی قابل تنظیم، انتخاب کیفیت و بخش بعدی خودکار برای سریال‌ها.
+- **دوبله و زیرنویس چسبیده** — نسخه‌های موجود هر عنوان با نشان مشخص می‌شود.
+- **ادامه‌ی تماشا** در همان ثانیه‌ای که رها کردید، روی همه‌ی دستگاه‌ها.
+
+### 📚 شخصی‌سازی
+- **لیست من** — علاقه‌مندی‌ها، لیست تماشا، وضعیت تماشا و امتیازدهی شخصی.
+- **کلکسیون‌های کاربری** — هر چند عنوان که دوست دارید را در یک مجموعه جمع کنید؛ با **قالب‌های آماده** (ترسناک برای شب، شاهکارهای سینما و…) در چند ثانیه بسازید.
+- **همگام‌سازی ابری** — با ورود به حساب، همه‌ی علاقه‌مندی‌ها، پیشرفت تماشا و کلکسیون‌ها بین دسکتاپ و اندروید جابه‌جا می‌شوند.
+- **جداسازی کامل حساب‌ها** — هر حساب روی یک دستگاه، فضای مخصوص خودش را دارد؛ با جابه‌جایی حساب، داده‌های حساب قبلی جایی نمی‌روند.
+
+### 📷 تاریک‌خانه
+- **کارت‌های فیلم** — برای فیلم موردعلاقه‌تان نظر بنویسید و از آن یک **پوستر حرفه‌ای اشتراک‌گذاری** (استوری/پست) بسازید.
+- **کارت کلکسیون** — از هر کلکسیون خودتان، با **۶ قالب آماده**، تصویر خروجی بگیرید و در شبکه‌های اجتماعی به اشتراک بگذارید.
+- **دیوار کلکسیون‌ها** — کلکسیون‌های عمومی کاربران دیگر را ببینید و با یک لمس به کلکسیون‌های خودتان اضافه کنید.
+
+### 👑 اشتراک VIP
+- فعال‌سازی با کد؛ پخش نامحدود همه‌ی عناوین در همه‌ی پلتفرم‌ها.
+
+### 📱 تجربه‌ی اندروید بومی‌شده (تازه در `0.11.0`)
+- **دکمه‌ی بازگشت سخت‌افزاری** درست کار می‌کند: اول پنجره‌ی باز بسته می‌شود، بعد به صفحه‌ی قبل برمی‌گردد.
+- نوار پیمایش پایین شناور، دکمه‌های لمسی روی پوسترها (قلب ❤️ و پخش ▶️)، و پنجره‌های تمام‌صفحه‌ی موبایل‌محور.
+- صفحه‌ی **هنرمندان** با جستجوی زنده و بارگذاری تدریجی — سبک و روان روی گوشی.
+- پشتیبانی کامل از **ناحیه‌ی امن** (نوار وضعیت و ژست‌های صفحه) در گوشی‌های مدرن.
+- آیکون‌های پوشش برای همه‌ی عناوین — دیگر هیچ کاشی «تصویر شکسته» وجود ندارد.
+
+---
+
+## ⬇️ دانلود
+
+آخرین نسخه همیشه در [**Releases**](https://github.com/pvwvuow/frame/releases/latest) موجود است:
+
+| پلتفرم | فایل |
+|---|---|
+| 🪟 ویندوز 10/11 | `Frame-<نسخه>-setup.exe` (نصبی) یا `...-portable.exe` (بدون نصب) |
+| 🍎 مک (Apple Silicon) | `Frame-<نسخه>-arm64.dmg` |
+| 🍎 مک (اینتل) | `Frame-<نسخه>-x64.dmg` |
+| 🐧 لینوکس | `Frame-<نسخه>.AppImage` یا `...-.deb` |
+| 🤖 اندروید 7+ | `Frame-<نسخه>-android.apk` |
+
+> به‌روزرسانی خودکار: نسخه‌ی دسکتاپ خودش نسخه‌ی جدید را (دلتای کم‌حجم) دانلود و نصب می‌کند. در اندروید، کارت «به‌روزرسانی برنامه» در تنظیمات نسخه‌ی جدید را پیدا و APK را مستقیم می‌دهد.
+
+## 🚀 شروع سریع
+
+1. **نصب** — فایل مخصوص پلتفرمتان را از Releases بگیرید و نصب کنید.
+2. **حساب بسازید** — با ایمیل ثبت‌نام کنید تا لیست، کلکسیون‌ها و پیشرفت تماشای شما **روی حساب** بماند و بین دستگاه‌ها همگام شود. (بدون حساب هم می‌توانید تماشا کنید؛ فقط داده‌ها روی همان دستگاه می‌مانند.)
+3. **تماشا کنید** — از خانه شروع کنید، یا با جستجو/ژانرها دنبال فیلم بگردید؛ دکمه‌ی ❤️ روی هر پوستر آن را به علاقه‌مندی‌ها می‌گذارد.
+4. **VIP** — برای پخش نامحدود، کد اشتراک را در بخش [VIP](https://github.com/pvwvuow/frame/releases/latest) فعال کنید.
+
+### راهنمای استفاده در یک نگاه
+
+| می‌خواهم… | کجا؟ |
+|---|---|
+| فیلم بگردم | ذره‌بین بالای صفحه (یا `Ctrl+K` در دسکتاپ) |
+| چیزی را برای بعد ذخیره کنم | دکمه‌ی ➕ روی هر فیلم → «لیست تماشا» |
+| مجموعه‌ی خودم بسازم | **لیست من → مجموعه‌ی جدید** (یا قالب آماده در صفحه‌ی کلکسیون‌ها) |
+| برای یک فیلم کارت اشتراک بسازم | **تاریک‌خانه → کارت‌های من** |
+| از کلکسیونم عکس بسازم | **تاریک‌خانه → کارت کلکسیون** |
+| زیرنویس/کیفیت عوض کنم | داخل پخش‌کننده، دکمه‌ی تنظیمات |
+| حساب را عوض کنم | آواتار بالا → خروج، سپس ورود با حساب جدید (داده‌ها قاطی نمی‌شوند) |
+
+## 🔢 نسخه‌گذاری
+
+عدد نسخه‌ها معنادار است و از روی محتوای تغییرات تعیین می‌شود (**semver**):
+
+- `PATCH` (0.0.**x**) — فقط رفع اشکال
+- `MINOR` (0.**x**.0) — قابلیت یا تجربه‌ی جدید
+- `MAJOR` (**x**.0.0) — تغییرات بزرگ و ناسازگار
+
+جزئیات و تاریخچه: [VERSIONING.md](VERSIONING.md)
+
+## ❓ پرسش‌های پرتکرار
+
+**اولین به‌روزرسانی، کل برنامه را از اول دانلود کرد؛ اشکال دارد؟**
+خیر. به‌روزرسانی‌های دلتایی از نسخه‌ی دوم به بعد فعال می‌شوند (نیاز به کشِ نسخه‌ی قبلی دارند). بعد از همین نسخه، آپدیت‌ها سبک و جزئی هستند.
+
+**چرا بعضی پوسترها یک کاشی تیره با نشان فریم دارند؟**
+پوستر آن عنوان در نسخه‌ی اندروید (به‌خاطر حجم APK) دانلود نشده؛ با باز کردن صفحه‌ی عنوان، تصویر بارگذاری می‌شود.
+
+**داده‌هایم با عوض کردن حساب می‌پرد؟**
+نه. هر حساب فضای جداگانه دارد و با ورود دوباره، دقیقاً همان داده‌های قبلی برمی‌گردد.
+
+**اندروید می‌گوید «نسخه نصب‌شده» و آپدیت نمی‌دهد؟**
+کارت به‌روزرسانی در **تنظیمات** آخرین نسخه را چک می‌کند؛ اگر نسخه‌ی جدید باشد دکمه‌ی دانلود مستقیم APK را می‌دهد.
+
+## 🛠 ساخته شده با چه چیزی؟
+
+Next.js 16 (React 19) · TypeScript · TailwindCSS 4 · Prisma + SQLite · Electron · Capacitor 8 (اندروید) · Dexie (حالت آفلاین اندروید) · Supabase (سینک ابری)
+
+برای توسعه‌دهنده‌ها: راه‌اندازی از سورس —
 
 ```bash
-npm install          # prisma generate به‌صورت خودکار اجرا می‌شود
-npx prisma db push   # ساخت/به‌روزرسانی db/custom.db
+npm install          # prisma generate خودکار اجرا می‌شود
+npx prisma db push   # ساخت db/custom.db
 npm run dev          # http://localhost:3000
 ```
 
-## برنامه‌ی دسکتاپ (Electron)
-
 | دستور | کار |
-| --- | --- |
-| `npm run electron:dev` | اجرای پوسته‌ی Electron روی `npm run dev` (هات‌ریلود) |
-| `npm run build && npm run electron:start` | اجرای Electron با سرور standalone تولیدی |
-| `npm run desktop` | بیلد کامل وب + ساخت نصب‌کننده‌ها در `release/` |
-| `npm run electron:build:win` / `:mac` / `:linux` | فقط یک پلتفرم |
+|---|---|
+| `npm run build` | بیلد دسکتاپ (standalone) |
+| `npm run electron:dev` | اجرای پوسته‌ی الکترون روی سرور توسعه |
+| `npm run android:apk` | خروجی استاتیک + سینک کاپسیتور + بیلد APK |
+| `npm run verify` | تست‌های preflight و پخش |
 
-- خروجی‌ها: **Windows** (NSIS installer + portable)، **macOS** (dmg/zip، x64 و arm64)، **Linux** (AppImage + deb).
-- معماری: پوسته‌ی Electron (`electron/main.cjs`) سرور standalone نکست را با `ELECTRON_RUN_AS_NODE` روی یک پورت آزاد لوکال بالا می‌آورد؛ دیتابیس SQLite در اولین اجرا به `userData/nama.db` کپی می‌شود تا با به‌روزرسانی از بین نرود.
-- پل امن `window.nama` (preload با contextIsolation) برای: اطلاعات نسخه، بررسی به‌روزرسانی، باز کردن پوشه‌ی داده، لینک خارجی، نشان اعلان.
-- **به‌روزرسانی خودکار** با `electron-updater` از GitHub Releases.
-- در حالت دسکتاپ، فوتر بازاریابی/حقوقی حذف و بخش «درباره برنامه» در تنظیمات فعال می‌شود (`html[data-electron]`, کلاس `.web-only`).
-- صفحات مخصوص وب (`/about` `/contact` `/terms` `/privacy` `/download`) در دسکتاپ به‌صورت خودکار به معادل داخل برنامه (`/settings#about` …) هدایت می‌شوند (`WEB_ONLY_ROUTES` در `ElectronBridge`).
-- روی macOS (title bar از نوع hiddenInset) فضای چراغ‌های پنجره در نوار بالا رزرو می‌شود تا با آواتار/جستجو هم‌پوشانی نداشته باشد.
-- نصب فوری به‌روزرسانی از داخل توست («همین حالا») با `installUpdate` در پل `window.nama`.
+## 📄 مجوز
 
-### انتشار نسخه‌ی جدید
+تمام حقوق برای تیم فریم محفوظ است. توزیع برنامه از طریق Releases رسمی این مخزن انجام می‌شود.
 
-```bash
-npm version minor        # یا patch/major → نسخه در package.json + تگ vX.Y.Z
-git push --follow-tags   # (اگر تگ را push نکنید هم مشکلی نیست؛ پایین را ببینید)
-```
+<p align="center"><sub>فریم — سینمای خانگی · ساخته‌شده با ❤️ برای سینمادوست‌های فارسی‌زبان</sub></p>
 
-اکشن `Desktop (Electron) release` با هر push روی `main` اجرا می‌شود: اگر برای نسخه‌ی فعلی `package.json` تگی وجود نداشته باشد، خودش تگ `vX.Y.Z` را می‌سازد، روی هر سه سیستم‌عامل بیلد می‌گیرد و فایل‌ها را در **GitHub Releases** منتشر می‌کند. اگر تگ از قبل وجود داشته باشد، کاری نمی‌کند (برای بیلد مجدد اجباری از **Run workflow → force** استفاده کنید).
+</div>
 
-فایل `.env` شامل `DATABASE_URL="file:./db/custom.db"` است (در صورت نبود، مقدار پیش‌فرض به‌صورت خودکار استفاده می‌شود). دیتابیس در اولین درخواست به‌صورت خودکار seed می‌شود.
+---
 
-## صفحات
+<div dir="ltr">
 
-| مسیر | توضیح |
-| --- | --- |
-| `/` | خانه (هیرو، ادامه تماشا، از لیست شما، علاقه‌مندی‌ها، ردیف‌ها) |
-| `/movies` `/series` `/genres` `/search` | کاتالوگ و جستجو با فیلتر |
-| `/title/[slug]` `/watch/[slug]` | صفحه اثر و پخش‌کننده |
-| `/my-list` | **مدیریت حرفه‌ای لیست**: تب‌ها، جستجو، فیلتر ژانر، مرتب‌سازی، نمای شبکه/فهرست، وضعیت تماشا، یادداشت، سنجاق، امتیاز شخصی، انتخاب گروهی، خروجی CSV/JSON، اشتراک‌گذاری، «امشب چی ببینم؟» |
-| `/favorites` | علاقه‌مندی‌ها (♥) |
-| `/history` | تاریخچه تماشا (گروه‌بندی روزانه، حذف تکی/کلی) |
-| `/profile` | داشبورد کاربر و آمار |
-| `/settings` | تنظیمات کامل با ناوبری کناری: پروفایل، پخش (کیفیت/زیرنویس/سرعت/صدا/رد تیتراژ/صرفه‌جویی داده)، ظاهر و زبان، اعلان‌ها، کنترل والدین (حالت کودک + پین)، داده و حریم خصوصی (پشتیبان JSON، پاک‌سازی)، میان‌برها، درباره برنامه |
-| `/notifications` | **مرکز اعلان‌ها**: قسمت‌های جدید سریال‌های لیست، یادآوری ادامه تماشا، پیشنهاد بر اساس ژانر محبوب، تازه‌های کاتالوگ؛ فیلتر، خوانده‌شده/حذف، نشان روی آیکون برنامه |
-| `/collections` `/collections/[slug]` | **مجموعه‌ها**: قفسه‌های موضوعی خودکار (شاهکارها، شب‌های نوآر، کمتر از دو ساعت، مناسب خانواده و …) |
-| `/people` `/person/[name]` | **هنرمندان**: فهرست کارگردان‌ها/بازیگران و صفحه‌ی اختصاصی هر نفر با همه‌ی آثار و همکاران مکرر |
-| `/random` | **امشب چی ببینم؟** انتخاب شانسی با فیلتر نوع/ژانر و «یکی دیگه!» بدون تکرار |
-| `/download` | **دانلود برنامه‌ی دسکتاپ** (وب): فهرست زنده‌ی آخرین بیلدهای ویندوز/مک/لینوکس از GitHub Releases + نکات نصب |
-| `/about` `/faq` `/contact` `/terms` `/privacy` | صفحات اطلاعاتی (فقط وب – در دسکتاپ به تنظیمات هدایت می‌شوند) |
+### Frame — home cinema (English summary)
 
-## تم روشن / تیره و Liquid Glass
+**Frame** is a Persian streaming app for Windows, macOS, Linux and Android: thousands of movies & series up to 4K with Persian subtitles/dubs, a custom player with resume, personal library (favorites, watchlist, ratings), user collections with cloud sync, and a "Darkroom" that turns your reviews and collections into beautiful shareable images.
 
-- سه حالت **تیره / روشن / خودکار (سیستم)** با `next-themes` (کلاس `.dark` / `.light` روی `<html>`، بدون فلش تم اشتباه).
-- سوییچ تم در نوار بالا، منوی پروفایل، تنظیمات > ظاهر و Command Palette.
-- توکن‌های تم در `src/app/globals.css` تعریف شده‌اند؛ چون Tailwind v4 هر رنگ را با `var(--color-*)` خروجی می‌دهد، تم روشن با بازنگاشت پالت خنثی (`white ↔ black`, `zinc-100 ↔ zinc-900`) روی همه‌ی کامپوننت‌ها بدون تغییر مارک‌آپ اعمال می‌شود. بخش‌هایی که باید همیشه تیره بمانند (پخش‌کننده، نوار مدیا) کلاس `force-dark` می‌گیرند.
-- کلاس‌های **`glass` / `glass-strong` / `glass-btn`** یک نسخه‌ی CSS از افکت Liquid Glass (الهام‌گرفته از [ybouane/liquidglass](https://github.com/ybouane/liquidglass)) هستند: بلور + اشباع بالا، لبه‌ی شکست نور (rim) با ماسک گرادیانی، براقیت مورب، تینت سرد و سایه‌ی نرم؛ برای مودال‌ها، منوها، نوار ناوبری، Command Palette و توست‌ها استفاده شده‌اند.
+- **Downloads:** see [Releases](https://github.com/pvwvuow/frame/releases/latest) — Windows setup/portable, macOS dmg (x64/arm64), Linux AppImage/deb, signed Android APK.
+- **Accounts:** your library syncs across devices; each account on a shared device gets a fully isolated data space.
+- **Versioning:** semantic versioning — see [VERSIONING.md](VERSIONING.md). UI is Persian-first with a full English mode.
 
-## میان‌برها
-
-- `Ctrl+K` / `⌘K` یا `/` → **Command Palette** (جستجوی عنوان، ناوبری، تغییر تم)
-- پخش‌کننده: `Space` پخش/توقف · `← →` ۱۰ ثانیه · `↑ ↓` صدا · `M` بی‌صدا · `F` تمام‌صفحه
-
-## مودال پیش‌نمایش (Quick View)
-
-با کلیک روی هر کارت، یک کارت جمع‌وجور شیشه‌ای باز می‌شود: پیش‌نمایش ویدیویی کوتاه، پوستر، امتیاز/سال/مدت، سه خط خلاصه، برای سریال‌ها دو قسمت (قسمت در حال تماشا + بعدی)، دکمه‌های پخش/لیست/علاقه‌مندی و «ادامه در جزئیات» برای رفتن به صفحه کامل.
-
-## API
-
-`/api/library` · `/api/notifications` · `/api/watchlist` (POST/PATCH/PUT/DELETE) · `/api/favorites` (POST/PUT/DELETE) · `/api/rating` · `/api/profile` (GET/PATCH/DELETE) · `/api/progress` (POST/DELETE) · `/api/title/[slug]` · `/api/search` · `/api/reviews`
-
-## فونت
-
-- **Vazirmatn** برای متن بدنه
-- **Estedad (FD)** برای تیترها — هر دو به‌صورت لوکال در `public/fonts` (بدون وابستگی به اینترنت)
-
-
-## تغییرات نسخه‌ها
-
-### v0.4.0
-- **رفع باگ:** کاور (پوستر) داخل مودال نمای سریع زیر تصویر بالایی می‌رفت → لایه‌بندی صریح (`z-0` نوار مدیا / `z-10` بدنه / `z-20` پوستر).
-- **رفع باگ:** منوی کشویی پروفایل (drawer) بازنویسی شد: موقعیت `fixed` با `inset-inline-end`، ارتفاع امن با `100dvh`، انیمیشن ورود از سمت درست در RTL، پشتیبانی از reduce-motion، فوکوس صحیح و بدون ری‌مونت آیتم‌ها؛ به‌علاوه نشان تعداد اعلان خوانده‌نشده روی آواتار و در خود منو.
-- **رفع باگ نوار بالا:** روی مک در Electron چراغ‌های پنجره روی آواتار می‌افتادند؛ فلش‌های ردیف‌ها (Row) جهت/گرادیان اشتباه داشتند و در ابتدا/انتهای ردیف هم نمایش داده می‌شدند.
-- **دسکتاپ:** صفحات مخصوص وب در برنامه حذف/هدایت می‌شوند؛ منوی راست‌کلیک مرورگر غیرفعال؛ لینک‌های `mailto:`/`tel:` در برنامه‌ی پیش‌فرض سیستم باز می‌شوند؛ نصب فوری به‌روزرسانی.
-- **جدید:** صفحه‌ی `/download` با فهرست زنده‌ی آخرین انتشار.
-- **بیلد ویندوز:** نصب‌کننده و نسخه‌ی پرتابل هر دو با یک نام (`Nama-x.y.z-win-x64.exe`) ساخته می‌شدند و روی هم نوشته می‌شدند؛ همین باعث timeout در آپلود و نبودن `latest.yml` (به‌روزرسانی خودکار ویندوز) می‌شد. حالا `-setup.exe` و `-portable.exe` جدا هستند و مرحله‌ی انتشار در CI با retry اجرا می‌شود.
+</div>
