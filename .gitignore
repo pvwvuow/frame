@@ -67,6 +67,8 @@ server.log
 !/scripts/fix-variant-labels.cjs
 !/scripts/fix-quality-labels.cjs
 !/scripts/test-source-fix.mjs
+!/scripts/test-cinema-engine.mjs
+!/scripts/test-cinema-e2e.mjs
 !/scripts/preflight.mjs
 /scripts/mock-od/tree/
 /electron/dist/

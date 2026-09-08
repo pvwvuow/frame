@@ -15,6 +15,7 @@ import { CrownIcon } from "./Icons";
 import { useI18n } from "./i18n/LocaleProvider";
 import type { TKey } from "@/lib/i18n";
 import { titleHref } from "@/lib/mobile-links";
+import CinemaButton from "./cinema/CinemaButton";
 
 type Result = {
   id: number;
@@ -266,6 +267,9 @@ export default function Navbar() {
           <div className="app-no-drag ms-auto flex items-center gap-1.5">
             <LanguageToggle className={`hidden sm:flex ${hideWhileSearch}`} />
             <ThemeToggle className={`hidden sm:grid ${hideWhileSearch}`} />
+            {/* v0.14.1 — cinema moved to the top bar (user request) — join by
+                code / live room status, darkroom-styled popover */}
+            <CinemaButton />
             {/* Fixed-width slot: the expanded search renders as an absolute
                 overlay anchored to the magnifier's edge, so opening it never
                 reflows the other navbar controls (language/theme used to jump
