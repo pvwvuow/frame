@@ -16,9 +16,11 @@ type Body = {
   watchlist?: { titleId: number; status: string }[];
   ratings?: { titleId: number; score: number }[];
   collections?: { name: string; items: number[] }[];
+  progress?: { titleId: number; episodeId: number | null; position: number; duration: number; updatedAt: string }[];
 };
 
 const VALID_STATUSES = new Set(["planned", "watching", "watched"]);
+const toTs = (v: unknown): number => (typeof v === "number" ? v : Date.parse(String(v)) || 0);
 
 export async function POST(req: Request) {
   await ensureRuntimeSchema();
@@ -91,5 +93,28 @@ export async function POST(req: Request) {
     }
   }
 
-  return Response.json({ ok: true, favoritesAdded, listAdded, ratingsAdded, collectionsAdded, collectionItemsAdded });
+  // watch progress (v0.12.0) — NEWER WINS per title (unlike the fill-gaps
+  // sections above: the most recent play position is the correct one)
+  let progressApplied = 0;
+  for (const row of body.progress ?? []) {
+    const titleId = Number(row?.titleId);
+    const position = Number(row?.position ?? 0);
+    const duration = Number(row?.duration ?? 0);
+    if (!titleId || Number.isNaN(titleId) || !Number.isFinite(position)) continue;
+    const episodeId = row?.episodeId ? Number(row.episodeId) : null;
+    const incomingTs = toTs(row?.updatedAt) || 0;
+    const ex = await db.watchProgress.findUnique({ where: { userKey_titleId: { userKey, titleId } } });
+    if (!ex) {
+      await db.watchProgress.create({ data: { userKey, titleId, episodeId, position, duration } });
+      progressApplied++;
+    } else if (incomingTs > new Date(ex.updatedAt).getTime() + 500) {
+      await db.watchProgress.update({
+        where: { userKey_titleId: { userKey, titleId } },
+        data: { position, duration, episodeId },
+      });
+      progressApplied++;
+    }
+  }
+
+  return Response.json({ ok: true, favoritesAdded, listAdded, ratingsAdded, collectionsAdded, collectionItemsAdded, progressApplied });
 }

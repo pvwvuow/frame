@@ -203,6 +203,12 @@ export async function patchProfile(b: Record<string, unknown>, userKey = getUser
   if (typeof b.volume === "number") next.volume = Math.max(0, Math.min(100, Math.round(b.volume)));
   if (typeof b.parentalPin === "string" && (b.parentalPin === "" || /^\d{4}$/.test(b.parentalPin))) next.parentalPin = b.parentalPin;
   await db.profiles.put({ ...next } as Record<string, unknown>);
+  try {
+    // v0.12.0 — local profile touch timestamp drives the newer-wins cloud sync
+    localStorage.setItem("frame.profile.touched", new Date().toISOString());
+  } catch {
+    /* ignore */
+  }
   return next;
 }
 
@@ -230,22 +236,27 @@ export type LibrarySnapshot = {
   ratings: { titleId: number; score: number }[];
   collections: { name: string; items: number[] }[];
   profile: { displayName: string; avatar: number; avatarImage: string | null; reduceMotion: boolean; kidsMode: boolean; hasPin: boolean };
+  /* v0.12.0 — history + full profile ride along for the cloud push */
+  progress: { titleId: number; episodeId: number | null; position: number; duration: number; updatedAt: string }[];
+  profileFull: Record<string, unknown>;
 };
 
 export async function getLibrarySnapshot(userKey = getUserKey()): Promise<LibrarySnapshot> {
   if (isDesktopRuntime()) return srv<LibrarySnapshot>("/api/library");
   const user = userKey || "guest";
-  const [wl, fav, rt, cols, profile] = await Promise.all([
+  const [wl, fav, rt, cols, profile, progress] = await Promise.all([
     db.watchlist.where("userKey").equals(user).toArray(),
     db.favorites.where("userKey").equals(user).toArray(),
     db.ratings.where("userKey").equals(user).toArray(),
     listUserCollections(user),
     getProfile(user),
+    db.progress.where("userKey").equals(user).toArray(),
   ]);
   const itemsOf = async (id: number) =>
     (await db.ucitems.where("collectionId").equals(id).toArray()).map((i) => Number((i as { titleId: number }).titleId));
   const collections = [] as { name: string; items: number[] }[];
   for (const c of cols) collections.push({ name: c.name, items: await itemsOf(c.id) });
+  const { userKey: _uk, ...profileFull } = profile as Record<string, unknown>;
   return {
     watchlist: wl.map((w) => ({ titleId: Number(w.titleId), status: String(w.status) as ListStatus })),
     favorites: fav.map((f) => Number(f.titleId)),
@@ -259,6 +270,10 @@ export async function getLibrarySnapshot(userKey = getUserKey()): Promise<Librar
       kidsMode: profile.kidsMode,
       hasPin: !!profile.parentalPin,
     },
+    progress: (progress as unknown as { titleId: number; episodeId: number | null; position: number; duration: number; updatedAt: string }[])
+      .slice(0, 500)
+      .map((p) => ({ titleId: Number(p.titleId), episodeId: p.episodeId ?? null, position: Number(p.position), duration: Number(p.duration), updatedAt: String(p.updatedAt) })),
+    profileFull,
   };
 }
 
@@ -930,12 +945,13 @@ export type CloudMergeBody = {
   watchlist?: { titleId: number; status: string }[];
   ratings?: { titleId: number; score: number }[];
   collections?: { name: string; items: number[] }[];
+  progress?: { titleId: number; episodeId: number | null; position: number; duration: number; updatedAt: string }[];
 };
 
 export async function mergeCloudSnapshot(
   body: CloudMergeBody,
   userKey = getUserKey()
-): Promise<{ favoritesAdded: number; listAdded: number; ratingsAdded: number; collectionsAdded: number; collectionItemsAdded: number }> {
+): Promise<{ favoritesAdded: number; listAdded: number; ratingsAdded: number; collectionsAdded: number; collectionItemsAdded: number; progressApplied: number }> {
   const user = userKey || "guest";
   let favoritesAdded = 0;
   let listAdded = 0;
@@ -997,5 +1013,27 @@ export async function mergeCloudSnapshot(
     }
   }
 
-  return { favoritesAdded, listAdded, ratingsAdded, collectionsAdded, collectionItemsAdded };
+  // watch progress (v0.12.0) — NEWER WINS per title
+  const toTs = (v: unknown): number => (typeof v === "number" ? v : Date.parse(String(v)) || 0);
+  let progressApplied = 0;
+  for (const row of body.progress ?? []) {
+    const titleId = Number(row?.titleId);
+    const position = Number(row?.position ?? 0);
+    const duration = Number(row?.duration ?? 0);
+    if (!titleId || Number.isNaN(titleId) || !Number.isFinite(position)) continue;
+    const incomingTs = toTs(row?.updatedAt) || 0;
+    const ex = await db.progress.where("[userKey+titleId]").equals([user, titleId]).first();
+    if (!ex) {
+      await db.progress.add({ userKey: user, titleId, episodeId: row?.episodeId ? Number(row.episodeId) : null, position, duration, updatedAt: new Date(incomingTs || Date.now()).toISOString() });
+      progressApplied++;
+    } else {
+      const exRow = ex as unknown as { id: number; updatedAt: string; episodeId: number | null };
+      if (incomingTs > toTs(exRow.updatedAt) + 500) {
+        await db.progress.put({ ...exRow, episodeId: row?.episodeId ? Number(row.episodeId) : exRow.episodeId, position, duration, updatedAt: new Date(incomingTs || Date.now()).toISOString() });
+        progressApplied++;
+      }
+    }
+  }
+
+  return { favoritesAdded, listAdded, ratingsAdded, collectionsAdded, collectionItemsAdded, progressApplied };
 }

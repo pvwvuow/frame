@@ -64,12 +64,12 @@ export default function CatalogGate({ children }: { children: React.ReactNode })
   if (error) {
     return (
       <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center gap-4 bg-[#070709] px-8 text-center" dir="rtl">
-        <div className="text-4xl">🎞️</div>
-        <p className="text-lg font-bold text-white">خطا در آماده‌سازی آرشیو</p>
-        <p className="max-w-sm text-sm text-white/60">{error}</p>
+        <img src="/app-icon.png" alt="فریم" className="h-14 w-14 select-none rounded-2xl opacity-80" draggable={false} />
+        <p className="text-base font-bold text-white">خطا در آماده‌سازی آرشیو</p>
+        <p className="max-w-sm text-sm leading-7 text-white/50">{error}</p>
         <button
           onClick={() => window.location.reload()}
-          className="rounded-full bg-white/10 px-6 py-2 text-sm font-bold text-white hover:bg-white/20"
+          className="mt-2 rounded-full border border-white/15 px-6 py-2 text-sm font-bold text-white/90 transition hover:bg-white/10"
         >
           تلاش دوباره
         </button>
@@ -78,26 +78,26 @@ export default function CatalogGate({ children }: { children: React.ReactNode })
   }
 
   if (!ready) {
+    /* v0.12.0 — minimal splash (user request: «طراحیش زیبا نیس، مینیمالش کن»):
+       breathing icon + hairline progress + whisper-quiet phase text */
     const pct = progress && progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : null;
     return (
-      <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center gap-6 bg-[#070709] px-10" dir="rtl">
-        <div className="flex flex-col items-center gap-2">
-          { }
-          <img src="/app-icon.png" alt="فریم" className="h-20 w-20 rounded-2xl select-none" draggable={false} />
-          <p className="mt-2 text-sm font-bold tracking-wide text-white/80">فریم — سینمای خانگی</p>
+      <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-[#070709] px-10" dir="rtl">
+        <img
+          src="/app-icon.png"
+          alt="فریم"
+          draggable={false}
+          className="h-16 w-16 select-none rounded-2xl opacity-95 nama-splash-breathe"
+        />
+        <div className="mt-9 h-px w-44 overflow-hidden rounded-full bg-white/10">
+          <div
+            className="h-full rounded-full bg-white/60 transition-all duration-300"
+            style={{ width: `${pct ?? 6}%` }}
+          />
         </div>
-        <div className="w-full max-w-xs">
-          <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/10">
-            <div
-              className="h-full rounded-full bg-gradient-to-l from-amber-300 via-yellow-400 to-amber-500 transition-all duration-300"
-              style={{ width: `${pct ?? 8}%` }}
-            />
-          </div>
-          <div className="mt-3 flex items-center justify-between text-xs text-white/50">
-            <span>{progress ? PHASE_TEXT[progress.phase] : "بررسی آرشیو…"}</span>
-            {pct !== null && <span className="tabular-nums">{pct.toLocaleString("fa-IR")}٪</span>}
-          </div>
-        </div>
+        <p className="mt-4 text-[11px] tracking-wide text-white/35">
+          {progress ? PHASE_TEXT[progress.phase] : "بررسی آرشیو…"}
+        </p>
       </div>
     );
   }

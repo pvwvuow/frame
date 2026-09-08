@@ -47,6 +47,9 @@ const KNOWN_VIDEO_EXT = /\.(mp4|m4v|mkv|mk3d|webm|avi|mov|wmv|mpg|mpeg|ts|flv)(\
  *  whose container the proxy must sniff), direct for plain video files. */
 export function mediaSrc(rawUrl: string, proxyBase: string | null | undefined): string {
   if (!rawUrl) return rawUrl;
+  // v0.12.0 — offline downloads carry a "local:" marker; the native player
+  // consumes the path directly, the web player must never touch it
+  if (rawUrl.startsWith("local:")) return rawUrl;
   if (!proxyBase) return rawUrl;
   if (isMkvUrl(rawUrl)) return `${proxyBase}/stream?u=${encodeURIComponent(rawUrl)}`;
   // extension-less / token URLs: let the proxy sniff the real container so

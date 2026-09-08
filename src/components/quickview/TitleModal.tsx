@@ -11,6 +11,7 @@ import { CloseIcon, PlayIcon, StarIcon, ClockIcon, MuteIcon, VolumeIcon, Chevron
 import TitleName from "../TitleName";
 import { useI18n } from "../i18n/LocaleProvider";
 import { stopMediaEl } from "@/lib/media";
+import { MobileDownloadButton } from "../download/MobileDownloads";
 import { titleHref, watchHref } from "@/lib/mobile-links";
 
 type Episode = {
@@ -119,7 +120,7 @@ export default function TitleModal({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 20, scale: 0.97 }}
             transition={{ type: "spring", stiffness: 300, damping: 28 }}
-            className="glass-strong relative max-h-[calc(100dvh-1.5rem)] w-full max-w-[560px] overflow-y-auto overscroll-contain rounded-[28px] sheet-safe-bottom"
+            className="glass-strong no-scrollbar relative max-h-[calc(100dvh-1.5rem)] w-full max-w-[560px] overflow-y-auto overscroll-contain rounded-[28px] sheet-safe-bottom"
           >
             {/* ── media strip (always dark, like a film cell) ─────────── */}
             <div className="force-dark relative z-0 h-[150px] w-full overflow-hidden sm:h-[170px]">
@@ -181,6 +182,7 @@ export default function TitleModal({
                 <img
                   src={t.poster}
                   alt={t.title}
+                  data-ph-title={t.title}
                   className="relative z-20 -mt-14 h-[120px] w-[82px] shrink-0 rounded-xl bg-ink-700 object-cover shadow-[0_12px_30px_rgb(var(--shadow-color)/0.45)] ring-1 ring-white/20"
                 />
                 <div className="min-w-0 flex-1 pt-1">
@@ -245,6 +247,18 @@ export default function TitleModal({
                                 <p className="truncate text-[11px] text-zinc-500">{e.synopsis}</p>
                               </div>
                               <span className="shrink-0 text-[10px] text-zinc-500">{fa(e.duration)}′</span>
+                              <span className="shrink-0">
+                                <MobileDownloadButton
+                                  titleId={t.id}
+                                  slug={t.slug}
+                                  title={t.title}
+                                  poster={t.poster}
+                                  type="series"
+                                  episodeId={e.id}
+                                  episodeLabel={`فصل ${fa(e.season)} · قسمت ${fa(e.number)}`}
+                                  size={34}
+                                />
+                              </span>
                             </Link>
                           </li>
                         );
@@ -272,6 +286,15 @@ export default function TitleModal({
                 </Link>
                 <WatchlistButton titleId={t.id} name={t.title} initial={detail?.inList ?? false} variant="icon" className="!h-11 !w-11" />
                 <FavoriteButton titleId={t.id} name={t.title} variant="icon" className="!h-11 !w-11" />
+                {t.type !== "series" && (
+                  <MobileDownloadButton
+                    titleId={t.id}
+                    slug={t.slug}
+                    title={t.title}
+                    poster={t.poster}
+                    type="movie"
+                  />
+                )}
               </div>
 
               <Link

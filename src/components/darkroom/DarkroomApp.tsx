@@ -27,7 +27,7 @@ import { fileToAvatarDataUrl } from "@/lib/avatar";
 import { j2g, g2j } from "@/lib/jalali";
 import { useI18n } from "@/components/i18n/LocaleProvider";
 import { useLibrary } from "@/components/library/LibraryProvider";
-import { useCloudSession } from "@/lib/cloud";
+import { useCloudSession, markProfileTouched } from "@/lib/cloud";
 import { CloseIcon, DownloadIcon, SearchIcon } from "@/components/Icons";
 
 const GRADS = [
@@ -195,6 +195,7 @@ export default function DarkroomApp({
         body: JSON.stringify({ avatarImage: dataUrl }),
       });
       if (!r.ok) throw new Error();
+      markProfileTouched();
       setProfile({ avatarImage: dataUrl });
       toast.success(t(dataUrl ? "darkroom.avatarSaved" : "darkroom.avatarRemoved"));
     } catch {

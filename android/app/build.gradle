@@ -16,6 +16,10 @@ if (versionPropsFile.exists()) {
 }
 def appVersionCode = (versionProps['versionCode'] ?: '1').toInteger()
 def appVersionName = versionProps['versionName'] ?: '1.0.0'
+// v0.12.0 — native surface revision: bumped by scripts/mobile-build.cjs when
+// native code/config changes. The in-app updater uses it to decide between a
+// web-bundle OTA and a full APK download.
+def appNativeRev = (versionProps['nativeRev'] ?: '1').toInteger()
 
 android {
     namespace = "ir.frame.nama"
@@ -26,6 +30,8 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode appVersionCode
         versionName appVersionName
+        // v0.12.0 — native player (Media3), download engine, OTA self-update
+        buildConfigField "int", "NATIVE_REV", "${appNativeRev}"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -52,6 +58,9 @@ android {
             }
         }
     }
+    buildFeatures {
+        buildConfig true
+    }
 }
 
 repositories {
@@ -65,6 +74,9 @@ dependencies {
     implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
     implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
+    // v0.12.0 — native playback for MKV/HEVC (WebView cannot demux Matroska)
+    implementation "androidx.media3:media3-exoplayer:1.4.1"
+    implementation "androidx.media3:media3-ui:1.4.1"
     implementation project(':capacitor-android')
     testImplementation "junit:junit:$junitVersion"
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"

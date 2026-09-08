@@ -256,7 +256,7 @@ export default function UserMenu() {
             </div>
 
             {/* body */}
-            <div className="max-h-[calc(100dvh-300px)] min-h-0 overflow-y-auto overscroll-contain p-2.5" role="menu">
+            <div className="no-scrollbar max-h-[calc(100dvh-300px)] min-h-0 overflow-y-auto overscroll-contain p-2.5" role="menu">
               <p className="px-2 pb-1.5 pt-1 text-[10px] font-bold text-zinc-500">{tr("user.personal")}</p>
               <ul className="space-y-1">
                 {/* VIP — gold, always on top (v0.10.11) */}

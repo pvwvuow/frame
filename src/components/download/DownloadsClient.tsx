@@ -20,6 +20,8 @@ import {
   TrashIcon,
 } from "../Icons";
 import { useI18n } from "../i18n/LocaleProvider";
+import { MobileDownloadsList } from "./MobileDownloads";
+import { dlSupported } from "@/lib/mobile-downloads";
 import { useIsElectron } from "@/lib/platform";
 import type { DownloadItem } from "@/lib/platform";
 import {
@@ -38,6 +40,8 @@ import {
 export default function DownloadsClient() {
   const { t } = useI18n();
   const electron = useIsElectron();
+  // v0.12.0 — on Android the native download engine + its own page body
+  if (!electron && dlSupported()) return <MobileDownloadsList />;
   const [state, setState] = useState<{ dir: string | null; items: DownloadItem[] }>({ dir: null, items: [] });
 
   useDownloadState((s) => setState({ dir: s.dir, items: s.items ?? [] }));

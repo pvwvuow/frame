@@ -10,6 +10,9 @@ const path = require("path");
 const { execSync } = require("child_process");
 
 const ROOT = path.join(__dirname, "..");
+// v0.12.0 — native surface revision (bump ONLY when android/ java/config
+// changes ship): 2 = initial player + downloads + self-update bridge
+const NATIVE_REV = 2;
 const API_DIR = path.join(ROOT, "src", "app", "api");
 const TMP_DIR = path.join(ROOT, ".mobile-tmp-api");
 
@@ -75,6 +78,10 @@ function main() {
   const versionProps = [
     `versionName=${version}`,
     `versionCode=${code}`,
+    // v0.12.0 — read by gradle → BuildConfig.NATIVE_REV; the in-app updater
+    // compares it against the release's nativeRev to decide OTA web-bundle
+    // vs full-APK download.
+    `nativeRev=${NATIVE_REV}`,
     "",
   ].join("\n");
   fs.writeFileSync(path.join(ROOT, "android", "version.properties"), versionProps);

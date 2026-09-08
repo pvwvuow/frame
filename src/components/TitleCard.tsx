@@ -61,6 +61,7 @@ export default function TitleCard({
             src={t.poster}
             alt={names.label}
             loading="lazy"
+            data-ph-title={names.label}
             className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
           />
           <div className="card-gradient absolute inset-0 opacity-90 transition-opacity duration-300 group-hover:opacity-100" />

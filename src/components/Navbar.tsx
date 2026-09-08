@@ -62,6 +62,11 @@ export default function Navbar() {
   const { t, locale } = useI18n();
   const { ready: authReady, session: authSession } = useCloudSession();
   const [scrolled, setScrolled] = useState(false);
+  /* v0.12.0 — the mobile bottom nav hides on scroll DOWN and returns on
+     scroll UP (user request). Hysteresis: >6px down hides, >4px up (or near
+     the top) shows — jitter never flip-flops it. */
+  const [navHidden, setNavHidden] = useState(false);
+  const navYRef = useRef(0);
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
@@ -102,6 +107,31 @@ export default function Navbar() {
     setMoreOpen(false);
     setQ("");
   }, [pathname]);
+
+  /* v0.12.0 — bottom nav auto-hide: down → away, up → back */
+  useEffect(() => {
+    let raf = 0;
+    const measure = () => {
+      raf = 0;
+      const y = window.scrollY || document.documentElement.scrollTop || 0;
+      const prev = navYRef.current;
+      const dy = y - prev;
+      navYRef.current = y;
+      if (y < 140 || dy < -4) {
+        if (navHidden) setNavHidden(false);
+      } else if (dy > 6) {
+        if (!navHidden) setNavHidden(true);
+      }
+    };
+    const onScroll = () => {
+      if (!raf) raf = requestAnimationFrame(measure);
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, [navHidden]);
 
   // v0.10.22: the results fetch + panel render are driven by a DEFERRED copy
   // of the query — every keystroke updates the input at full priority (no
@@ -328,7 +358,7 @@ export default function Navbar() {
                             onMouseEnter={() => setActive(i)}
                             className={`flex items-center gap-3 px-3 py-2 transition-colors ${i === active ? "bg-white/10" : "hover:bg-white/5"}`}
                           >
-                            <img src={r.poster} alt="" className="h-16 w-11 shrink-0 rounded-md bg-ink-700 object-cover" />
+                            <img src={r.poster} alt="" data-ph-title={r.title} className="h-16 w-11 shrink-0 rounded-md bg-ink-700 object-cover" />
                             <div className="min-w-0 flex-1">
                               <TitleName t={r} primaryClass="text-sm font-semibold text-white" secondaryClass="text-xs text-zinc-400" />
                               <p className="mt-0.5 text-[11px] text-zinc-500">
@@ -385,7 +415,10 @@ export default function Navbar() {
           backdrop-filter never becomes its containing block */}
       <nav
         aria-label={t("nav.mobileNav")}
-        className="glass-strong fixed inset-x-3 bottom-3 z-50 flex items-center justify-around rounded-2xl py-2 lg:hidden"
+        className={`glass-strong fixed inset-x-3 bottom-3 z-50 flex items-center justify-around rounded-2xl py-2 transition-all duration-300 lg:hidden ${
+          navHidden ? "pointer-events-none translate-y-[140%] opacity-0" : "translate-y-0 opacity-100"
+        }`}
+        data-nav-hidden={navHidden ? "1" : "0"}
         style={{ paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))" }}
       >
         {mobileLinks.map((l) => {

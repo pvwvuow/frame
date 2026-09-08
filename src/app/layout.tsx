@@ -9,6 +9,7 @@ import LocaleProvider from "@/components/i18n/LocaleProvider";
 import CommandPalette from "@/components/CommandPalette";
 import WelcomeAuth from "@/components/auth/WelcomeAuth";
 import CloudAutoSync from "@/components/auth/CloudAutoSync";
+import MobileUpdater from "@/components/mobile/MobileUpdater";
 import ElectronBridge from "@/components/electron/ElectronBridge";
 import HideOnPip from "@/components/HideOnPip";
 import GlobalPlayer from "@/components/GlobalPlayer";
@@ -41,10 +42,37 @@ export const viewport: Viewport = {
 
 /* Global cover fallback (ANDROID variant): posters/backdrops ship as compact
    WebP files next to the originals. When an <img> fails, first retry the
-   same path with .webp (bundled), then fall back to the static SVG generator
-   copy (/covers/_fallback.svg) so cards never show broken images. */
+   same path with .webp (bundled), then fall back — v0.12.0: to a PER-TITLE
+   branded placeholder (data-ph-title → inline SVG with the movie's name on
+   a cinematic gradient) so the ~7.8k titles without a bundled cover read as
+   intentional key-art instead of "missing poster". */
 const IMG_FALLBACK_SCRIPT = String.raw`(function(){
   if (window.__namaImgFb) return; window.__namaImgFb = 1;
+  function esc(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  function lines(t){
+    if (t.length <= 20) return [t];
+    var mid = Math.floor(t.length / 2), best = -1;
+    for (var i = 0; i < t.length; i++) { if (t[i] === ' ') { if (best < 0 || Math.abs(i - mid) < Math.abs(best - mid)) best = i; } }
+    if (best < 0) return [t];
+    return [t.slice(0, best), t.slice(best + 1)];
+  }
+  function phSvg(t, wide){
+    var w = wide ? 640 : 300, h = wide ? 360 : 450;
+    var ls = lines(t), fs = ls.length > 1 ? 17 : (t.length > 14 ? 15 : 19);
+    var ty = h * 0.60 - (ls.length - 1) * fs * 0.65;
+    var txt = '';
+    for (var i = 0; i < ls.length; i++) {
+      txt += '<text x="' + (w/2) + '" y="' + (ty + i * fs * 1.3) + '" text-anchor="middle" font-family="Vazirmatn,Tahoma,sans-serif" font-size="' + fs + '" font-weight="700" fill="#cfc9bd" direction="rtl">' + esc(ls[i]) + '</text>';
+    }
+    var cy = h * 0.36, r = w * (wide ? 0.075 : 0.10);
+    return '<svg xmlns="http://www.w3.org/2000/svg" width="' + w + '" height="' + h + '">' +
+      '<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">' +
+      '<stop offset="0" stop-color="#191320"/><stop offset="0.55" stop-color="#0d0b12"/><stop offset="1" stop-color="#231a10"/></linearGradient></defs>' +
+      '<rect width="' + w + '" height="' + h + '" fill="url(#g)"/>' +
+      '<circle cx="' + (w/2) + '" cy="' + cy + '" r="' + r + '" fill="none" stroke="#e5b84b" stroke-opacity="0.45" stroke-width="2"/>' +
+      '<path d="M ' + (w/2 - r*0.55) + ' ' + (cy - r*0.8) + ' L ' + (w/2 + r*0.9) + ' ' + cy + ' L ' + (w/2 - r*0.55) + ' ' + (cy + r*0.8) + ' Z" fill="#e5b84b" fill-opacity="0.5"/>' +
+      txt + '</svg>';
+  }
   document.addEventListener('error', function(e){
     var el = e.target;
     if (!el || el.tagName !== 'IMG' || !el.dataset || el.dataset.fb) return;
@@ -55,6 +83,8 @@ const IMG_FALLBACK_SCRIPT = String.raw`(function(){
       return;
     }
     el.dataset.fb = '1';
+    var t = el.getAttribute('data-ph-title') || '';
+    if (t) { el.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(phSvg(t, /backdrop|-wide/.test(src))); return; }
     el.src = '/covers/_fallback' + (/backdrop|-wide/.test(src) ? '-wide' : '') + '.svg';
   }, true);
 })();`;
@@ -93,6 +123,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           <LocaleProvider initial={locale}>
             <LibraryProvider>
               <CloudAutoSync />
+              <MobileUpdater />
               <QuickViewProvider>
                 <HideOnPip>
                   <Navbar />

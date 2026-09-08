@@ -321,6 +321,119 @@ async function currentUserId(): Promise<string | null> {
 }
 
 /* ------------------------------------------------------------------ */
+/* v0.12.0 — FULL user sync: profile (name/avatar/settings) + history   */
+/* ------------------------------------------------------------------ */
+
+const PROFILE_TOUCH_KEY = "frame.profile.touched";
+
+export function markProfileTouched(ts?: string) {
+  try {
+    localStorage.setItem(PROFILE_TOUCH_KEY, ts || new Date().toISOString());
+  } catch {
+    /* ignore */
+  }
+}
+
+function readProfileTouched(): string {
+  try {
+    return localStorage.getItem(PROFILE_TOUCH_KEY) || "1970-01-01T00:00:00.000Z";
+  } catch {
+    return "1970-01-01T00:00:00.000Z";
+  }
+}
+
+const toTs = (v: unknown): number => (typeof v === "number" ? v : Date.parse(String(v)) || 0);
+
+/** The whole local profile (both platforms serve GET /api/profile). */
+async function fetchLocalProfile(): Promise<Record<string, unknown> | null> {
+  try {
+    const r = await fetch("/api/profile", { cache: "no-store" });
+    if (!r.ok) return null;
+    const p = (await r.json()) as Record<string, unknown>;
+    delete p.userKey;
+    delete p.id;
+    return p;
+  } catch {
+    return null;
+  }
+}
+
+/** Push the local profile to Supabase (whole row as JSON, LWW by touched).
+ *  Pass the snapshot's profileFull when available to skip the extra fetch. */
+export async function pushProfile(profileData?: Record<string, unknown>): Promise<void> {
+  try {
+    const uid = await currentUserId();
+    const sb = getSupabase();
+    if (!uid || !sb) return;
+    const data = profileData ?? (await fetchLocalProfile());
+    if (!data) return;
+    await sb.from("profiles").upsert({ user_id: uid, data, updated_at: readProfileTouched() });
+  } catch {
+    /* offline / table not created yet → next sync retries */
+  }
+}
+
+/** If the cloud profile is NEWER than the local one, apply it locally. */
+export async function pullProfileIfNewer(): Promise<boolean> {
+  try {
+    const uid = await currentUserId();
+    const sb = getSupabase();
+    if (!uid || !sb) return false;
+    const { data } = await sb.from("profiles").select("data,updated_at").eq("user_id", uid).maybeSingle();
+    const row = data as { data: Record<string, unknown>; updated_at: string } | null;
+    if (!row?.data) return false;
+    if (toTs(row.updated_at) <= toTs(readProfileTouched())) return false;
+    const r = await fetch("/api/profile", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(row.data),
+    });
+    if (!r.ok) return false;
+    markProfileTouched(row.updated_at);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export type ProgressPush = { titleId: number; episodeId: number | null; position: number; duration: number; updatedAt: string };
+
+/** Upsert watch-progress rows into Supabase (history/continue sync). */
+export async function pushProgressRows(rows: ProgressPush[]): Promise<void> {
+  try {
+    const uid = await currentUserId();
+    const sb = getSupabase();
+    if (!uid || !sb || !rows.length) return;
+    const clean = rows
+      .filter((r) => Number.isFinite(r.titleId) && r.titleId > 0 && Number.isFinite(r.position))
+      .slice(0, 500)
+      .map((r) => ({
+        user_id: uid,
+        title_id: Math.round(r.titleId),
+        episode_id: r.episodeId ? Math.round(r.episodeId) : null,
+        position: r.position,
+        duration: r.duration,
+        updated_at: new Date(toTs(r.updatedAt) || Date.now()).toISOString(),
+      }));
+    for (let i = 0; i < clean.length; i += 100) {
+      await sb.from("watch_progress").upsert(clean.slice(i, i + 100));
+    }
+  } catch {
+    /* offline / table not created yet */
+  }
+}
+
+/** Throttled single-title push (called from the player's save()). */
+const lastProgressPush = new Map<number, number>();
+export async function pushProgressOne(row: Omit<ProgressPush, "updatedAt">): Promise<void> {
+  const now = Date.now();
+  const last = lastProgressPush.get(row.titleId) ?? 0;
+  if (now - last < 20_000) return;
+  lastProgressPush.set(row.titleId, now);
+  await pushProgressRows([{ ...row, updatedAt: new Date().toISOString() }]);
+}
+
+/* ------------------------------------------------------------------ */
 /* Activity log (fire & forget)                                        */
 /* ------------------------------------------------------------------ */
 
@@ -384,23 +497,28 @@ export type CloudSnapshot = {
   watchlist: { titleId: number; status: string }[];
   ratings: { titleId: number; score: number }[];
   collections: { name: string; items: number[] }[];
+  progress: ProgressPush[];
 };
 
 export async function pullCloudSnapshot(): Promise<CloudSnapshot | null> {
   const sb = getSupabase();
   const uid = await currentUserId();
   if (!sb || !uid) return null;
-  const [fav, wl, rt, cols] = await Promise.all([
+  const [fav, wl, rt, cols, prog] = await Promise.all([
     sb.from("favorites").select("title_id").eq("user_id", uid),
     sb.from("watchlist").select("title_id,status").eq("user_id", uid),
     sb.from("ratings").select("title_id,score").eq("user_id", uid),
     sb.from("user_collections").select("id,name,user_collection_items(title_id)").eq("user_id", uid),
+    // v0.12.0 — watch history follows the account (table may not exist yet on
+    // the user's project → the error is contained and the rest still syncs)
+    sb.from("watch_progress").select("title_id,episode_id,position,duration,updated_at").eq("user_id", uid).limit(500),
   ]);
   const favRows = (fav.data ?? []) as Array<{ title_id: number }>;
   const wlRows = (wl.data ?? []) as Array<{ title_id: number; status: string }>;
   const rtRows = (rt.data ?? []) as Array<{ title_id: number; score: number }>;
   type CloudCol = { id: string; name: string; user_collection_items: { title_id: number }[] | null };
   const colRows = (cols.data ?? []) as unknown as CloudCol[];
+  const progRows = (prog.data ?? []) as unknown as Array<{ title_id: number; episode_id: number | null; position: number; duration: number; updated_at: string }>;
   return {
     favorites: favRows.map((r) => Number(r.title_id)).filter((n) => Number.isFinite(n) && n > 0),
     watchlist: wlRows.map((r) => ({ titleId: Number(r.title_id), status: String(r.status) })),
@@ -409,10 +527,19 @@ export async function pullCloudSnapshot(): Promise<CloudSnapshot | null> {
       name: String(c.name),
       items: (c.user_collection_items ?? []).map((i) => Number(i.title_id)).filter((n) => Number.isFinite(n) && n > 0),
     })),
+    progress: progRows
+      .filter((r) => Number.isFinite(Number(r.title_id)) && Number(r.title_id) > 0)
+      .map((r) => ({
+        titleId: Number(r.title_id),
+        episodeId: r.episode_id ? Number(r.episode_id) : null,
+        position: Number(r.position) || 0,
+        duration: Number(r.duration) || 0,
+        updatedAt: String(r.updated_at ?? ""),
+      })),
   };
 }
 
-export type MergeResult = { ok: boolean; favoritesAdded?: number; listAdded?: number; listUpdated?: number; ratingsAdded?: number; reason?: string };
+export type MergeResult = { ok: boolean; favoritesAdded?: number; listAdded?: number; listUpdated?: number; ratingsAdded?: number; progressApplied?: number; reason?: string };
 
 /** Pull the cloud snapshot and merge it into the local database (cloud fills gaps, local wins on conflicts). */
 export async function syncCloudToLocal(): Promise<MergeResult> {
@@ -425,9 +552,9 @@ export async function syncCloudToLocal(): Promise<MergeResult> {
       body: JSON.stringify(snap),
     });
     if (!r.ok) return { ok: false, reason: `merge-${r.status}` };
-    const d = (await r.json()) as { ok?: boolean; favoritesAdded: number; listAdded: number; listUpdated?: number; ratingsAdded: number };
+    const d = (await r.json()) as { ok?: boolean; favoritesAdded: number; listAdded: number; listUpdated?: number; ratingsAdded: number; progressApplied?: number };
     if (d && d.ok === false) return { ok: false, reason: "merge-unsupported" };
-    return { ok: true, favoritesAdded: d.favoritesAdded, listAdded: d.listAdded, ratingsAdded: d.ratingsAdded };
+    return { ok: true, favoritesAdded: d.favoritesAdded, listAdded: d.listAdded, ratingsAdded: d.ratingsAdded, progressApplied: d.progressApplied ?? 0 };
   } catch (e) {
     return { ok: false, reason: e instanceof Error ? e.message : "network" };
   }
@@ -438,12 +565,34 @@ export async function syncCloudToLocal(): Promise<MergeResult> {
  *  belongs to THIS account (per-account spaces). Without this, the cloud
  *  snapshot of account B would be merged into the space of the previously
  *  signed-in account — the «new account sees the old account's profile /
- *  history / collections» leak. */
-export async function fullSync(): Promise<MergeResult> {
+ *  history / collections» leak.
+ *  v0.12.0: the snapshot now also carries watch history + the full profile —
+ *  avatar, display name and settings follow the account across devices. */
+let syncInFlight: Promise<MergeResult> | null = null;
+
+export function fullSync(): Promise<MergeResult> {
+  if (syncInFlight) return syncInFlight;
+  syncInFlight = (async () => {
+    try {
+      return await runFullSync();
+    } finally {
+      syncInFlight = null;
+    }
+  })();
+  return syncInFlight;
+}
+
+async function runFullSync(): Promise<MergeResult> {
   const uid = await currentUserId();
   if (uid) await attachIdentity(uid);
   const merged = await syncCloudToLocal();
   if (merged.ok) {
+    // profile: cloud → local (if newer), then local → cloud
+    try {
+      await pullProfileIfNewer();
+    } catch {
+      /* never blocks the rest */
+    }
     // push local-only rows up as well (cheap, idempotent upserts)
     try {
       const d = await fetch("/api/library", { cache: "no-store" });
@@ -453,16 +602,24 @@ export async function fullSync(): Promise<MergeResult> {
           favorites: number[];
           ratings: { titleId: number; score: number }[];
           collections?: { name: string; items: number[] }[];
+          progress?: ProgressPush[];
         };
         await Promise.all([
           ...lib.favorites.map((id) => pushFavorite(id, true)),
           ...lib.watchlist.map((w) => pushWatchlist(w.titleId, w.status)),
           ...lib.ratings.map((r) => pushRating(r.titleId, r.score)),
           pushCollectionsUp(lib.collections ?? []),
+          pushProgressRows(lib.progress ?? []),
+          pushProfile((lib as { profileFull?: Record<string, unknown> }).profileFull),
         ]);
       }
     } catch {
       /* offline push is fine — pulls still worked */
+    }
+    try {
+      localStorage.setItem("frame.lastSync", new Date().toISOString());
+    } catch {
+      /* ignore */
     }
   }
   return merged;

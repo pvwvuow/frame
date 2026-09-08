@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { markProfileTouched } from "@/lib/cloud";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { useLibrary } from "./LibraryProvider";
@@ -161,6 +162,7 @@ export default function SettingsForm({ initial }: { initial: ProfileData }) {
     start(async () => {
       try {
         const r = await fetch("/api/profile", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(p) });
+        if (r.ok) markProfileTouched();
         if (!r.ok) throw new Error();
         lib.setProfile({ displayName: p.displayName, avatar: p.avatar, avatarImage: p.avatarImage || null, reduceMotion: p.reduceMotion, kidsMode: p.kidsMode, hasPin: !!p.parentalPin });
         toast.success("تنظیمات ذخیره شد");

@@ -8,6 +8,8 @@ import { getFullTitle, getEpisodes, bumpViews, getTitleLiteBySlug } from "@/lib/
 import { getProgressFor } from "@/lib/mobile/userdata";
 import { fa } from "@/lib/format";
 import { normalizeSources } from "@/lib/source-fix";
+import { getDownloadFor } from "@/lib/mobile-downloads";
+import { nativeBridge } from "@/lib/native-bridge";
 import { useRouteSlug } from "@/lib/mobile-links";
 
 function parseSources(json: string) {
@@ -33,6 +35,9 @@ export default function WatchPage() {
     startAt: number;
   } | null>(null);
   const [missing, setMissing] = useState(false);
+  /* v0.12.0 — a completed offline download replaces the stream URL
+     (hooks hoisted BEFORE any early return — rules-of-hooks) */
+  const [offlineSrc, setOfflineSrc] = useState<string | null>(null);
 
   useEffect(() => {
     if (!slug) return;
@@ -70,6 +75,26 @@ export default function WatchPage() {
     };
   }, [slug, ep]);
 
+  /* v0.12.0 — offline first: a completed download plays from the device with
+     zero network; the native player receives the absolute file path */
+  useEffect(() => {
+    let alive = true;
+    if (!st) {
+      setOfflineSrc(null);
+      return;
+    }
+    const wanted = st.episode?.videoUrl ?? st.t.videoUrl;
+    if (!nativeBridge() || !wanted) return;
+    void getDownloadFor(st.t.id, st.episode ? st.episode.id : null).then(async (dl) => {
+      if (!alive || !dl || dl.status !== "completed") return;
+      const stat = await nativeBridge()?.fileStat({ path: dl.dest }).catch(() => null);
+      if (alive && stat?.exists) setOfflineSrc(`local:${stat.absPath}`);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [st]);
+
   if (missing) notFound();
   if (!st) {
     return (
@@ -86,7 +111,7 @@ export default function WatchPage() {
   }
 
   const { t, eps, episode, nextEpisode, startAt } = st;
-  const src = episode?.videoUrl ?? t.videoUrl;
+  const src = offlineSrc ?? episode?.videoUrl ?? t.videoUrl;
   const sources = episode ? parseSources(episode.sources) : parseSources(t.sources);
   const subtitle = episode ? `فصل ${fa(episode.season)} · قسمت ${fa(episode.number)} · ${episode.name}` : `${t.titleEn} · ${fa(t.year)}`;
 

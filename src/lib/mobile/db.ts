@@ -77,6 +77,8 @@ export const db = new Dexie("frame-mobile") as Dexie & {
   profiles: Dexie.Table<Record<string, unknown>, string>;
   ucollections: Dexie.Table<Record<string, unknown>, number>;
   ucitems: Dexie.Table<Record<string, unknown>, number>;
+  /* v0.12.0 — offline downloads index */
+  dlitems: Dexie.Table<Record<string, unknown>, string>;
 };
 
 db.version(1).stores({
@@ -95,6 +97,12 @@ db.version(1).stores({
 db.version(2).stores({
   ucollections: "++id, [userKey+name], userKey, name",
   ucitems: "++id, [collectionId+titleId], collectionId, titleId",
+});
+
+/* v3 (v0.12.0): offline downloads — the video files live in the app's
+ * private storage (native download engine); this table is the index */
+db.version(3).stores({
+  dlitems: "id, [titleId+episodeId], titleId, status",
 });
 
 /* stable episode ids derived from (title, season, number) */

@@ -28,10 +28,14 @@ export type LibrarySnapshot = {
   ratings: { titleId: number; score: number }[];
   collections: { name: string; items: number[] }[];
   profile: { displayName: string; avatar: number; avatarImage: string | null; reduceMotion: boolean; kidsMode: boolean; hasPin: boolean };
+  /* v0.12.0 — watch history + full profile ride along so fullSync can push
+     them to Supabase (history + avatar + settings follow the account) */
+  progress: { titleId: number; episodeId: number | null; position: number; duration: number; updatedAt: string }[];
+  profileFull: Record<string, unknown>;
 };
 
 export async function getLibrarySnapshot(userKey: string): Promise<LibrarySnapshot> {
-  const [wl, fav, rt, cols, profile] = await Promise.all([
+  const [wl, fav, rt, cols, profile, progress] = await Promise.all([
     db.watchlist.findMany({ where: { userKey }, select: { titleId: true, status: true } }),
     db.favorite.findMany({ where: { userKey }, select: { titleId: true } }),
     db.userRating.findMany({ where: { userKey }, select: { titleId: true, score: true } }),
@@ -41,13 +45,22 @@ export async function getLibrarySnapshot(userKey: string): Promise<LibrarySnapsh
       select: { name: true, items: { orderBy: { addedAt: "asc" }, select: { titleId: true } } },
     }),
     getProfile(userKey),
+    db.watchProgress.findMany({
+      where: { userKey },
+      orderBy: { updatedAt: "desc" },
+      take: 500,
+      select: { titleId: true, episodeId: true, position: true, duration: true, updatedAt: true },
+    }),
   ]);
+  const { userKey: _uk, id: _id, ...profileFull } = profile as Record<string, unknown>;
   return {
     watchlist: wl.map((w) => ({ titleId: w.titleId, status: w.status as ListStatus })),
     favorites: fav.map((f) => f.titleId),
     ratings: rt,
     collections: cols.map((c) => ({ name: c.name, items: c.items.map((i) => i.titleId) })),
     profile: { displayName: profile.displayName, avatar: profile.avatar, avatarImage: profile.avatarImage ?? null, reduceMotion: profile.reduceMotion, kidsMode: profile.kidsMode, hasPin: !!profile.parentalPin },
+    progress: progress.map((p) => ({ titleId: p.titleId, episodeId: p.episodeId, position: p.position, duration: p.duration, updatedAt: new Date(p.updatedAt).toISOString() })),
+    profileFull,
   };
 }
 

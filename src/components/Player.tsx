@@ -14,6 +14,7 @@
  * Matroska container live and feeds it back as a WebVTT track.
  */
 import Link from "next/link";
+import { pushProgressOne } from "@/lib/cloud";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { formatClock, fa } from "@/lib/format";
@@ -43,6 +44,7 @@ import { ensurePlayableAudio } from "@/lib/audio-guard";
 import { preferredSourceIdx, qualityPrefIdx, rememberedVariantIdx, rememberVariantPref, variantShort } from "@/lib/variant";
 import { setQualityPref } from "@/lib/quality-pref";
 import { titleHref, watchHref } from "@/lib/mobile-links";
+import { isLocalFile, localFilePath, nativeBridge, needsNativePlayer } from "@/lib/native-bridge";
 
 const SUB_SIZE_KEY = "nama-sub-size";
 const SUB_ON_KEY = "nama-sub-on";
@@ -121,6 +123,9 @@ export default function Player() {
   // v0.10.12 — dead-link handling: try the next variant, then a fatal overlay
   const [fatal, setFatal] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
+  // v0.12.0 — the native Android player owns the screen while an MKV plays
+  const [nativeActive, setNativeActive] = useState(false);
+  const nativeKeyRef = useRef<string | null>(null);
   const errCountRef = useRef(0);
   // when switching quality we need to resume at the same second
   const resumeAt = useRef<number | null>(null);
@@ -253,6 +258,8 @@ export default function Player() {
         body: JSON.stringify({ titleId, episodeId: episode?.id ?? null, position: pos, duration: dur }),
         keepalive: true,
       }).catch(() => {});
+      // v0.12.0 — history follows the account (throttled to 1/20s per title)
+      void pushProgressOne({ titleId, episodeId: episode?.id ?? null, position: pos, duration: dur });
     },
     [titleId, episode?.id]
   );
@@ -302,6 +309,67 @@ export default function Player() {
     store.close();
     router.push(titleHref(slug));
   }, [save, store, router, slug]);
+  /* ---- v0.12.0 · native Android playback --------------------------------
+   * The WebView cannot demux Matroska — every SoftSub MKV release simply
+   * never played («فیلم‌ها پلی نمی‌شوند»). Hand those URLs to the Media3
+   * player: full hardware codecs + the muxed Persian SRT rendered natively.
+   * Same failure ladder as the web player: next variant, then fatal. */
+  useEffect(() => {
+    const b = nativeBridge();
+    if (!b) return;
+    if (proxyBase === undefined) return;
+    if (!open || fatal) return;
+    if (!activeSrc || !needsNativePlayer(activeSrc)) return;
+    const key = `${contentKey}#${srcIdx}#${reloadKey}`;
+    if (nativeKeyRef.current === key) return;
+    nativeKeyRef.current = key;
+    setNativeActive(true);
+    setLoading(true);
+    const startMs = Math.round((resumeAt.current ?? startAt ?? 0) * 1000);
+    resumeAt.current = null;
+    const relKey = contentKey;
+    b.playVideo({
+      url: isLocalFile(activeSrc) ? localFilePath(activeSrc) : activeSrc,
+      title: title ?? "Frame",
+      subtitle: subtitle ?? "",
+      positionMs: startMs,
+    })
+      .then((r) => {
+        setNativeActive(false);
+        if (usePlayerStore.getState().contentKey !== relKey) return;
+        const pos = (r.positionMs || 0) / 1000;
+        const dur = (r.durationMs || 0) / 1000;
+        if (dur > 0) save(Math.min(pos, dur), dur);
+        if (r.error) {
+          const next = srcIdx + 1;
+          if (next < srcList.length && errCountRef.current < srcList.length) {
+            errCountRef.current += 1;
+            resumeAt.current = pos > 0.5 ? pos : null;
+            setSrcIdx(next);
+            showNotice("پخش این نسخه ناموفق بود — نسخه‌ی بعدی امتحان می‌شود");
+          } else {
+            setFatal(true);
+            setLoading(false);
+          }
+          return;
+        }
+        setPlaying(false);
+        setLoading(false);
+        setCurrent(pos);
+        if (dur > 0) setDuration(dur);
+        if (r.ended) {
+          setEnded(true);
+          if (nextEpisode) setCountdown(8);
+        }
+        goBackToTitle();
+      })
+      .catch(() => {
+        setNativeActive(false);
+        setFatal(true);
+        setLoading(false);
+      });
+  }, [open, activeSrc, proxyBase, fatal, contentKey, srcIdx, reloadKey]);
+
 
   /** Leave the bare /watch route (black backdrop only) for the title page. */
   const leftWatchRef = useRef<string | null>(null);
@@ -705,7 +773,7 @@ export default function Player() {
       onDoubleClick={toggleFs}
       dir="rtl"
     >
-      {proxyBase !== undefined && (
+      {proxyBase !== undefined && !nativeActive && (
         <video
           ref={(el) => {
             videoRef.current = el;
