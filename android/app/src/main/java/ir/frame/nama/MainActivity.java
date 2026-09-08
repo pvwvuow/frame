@@ -9,6 +9,6 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         // v0.12.0 — native player / downloads / in-app self-update bridge
-        registerPlugin(new NamaNativePlugin());
+        registerPlugin(NamaNativePlugin.class);
     }
 }
