@@ -146,6 +146,27 @@ void chG.unsubscribe();
 await host.from("cinema_rooms").delete().eq("host_id", hostUid);
 await host.from("cinema_rooms").delete().eq("code", "FAKE01");
 
+/* ---------- 6. cinema_profiles (v0.14.2) — the public identity table.
+   If the SQL has not been run yet, SKIP (never fail on migration lag). */
+const profIns = await host.from("cinema_profiles").upsert({
+  user_id: hostUid, display_name: "میزبانِ تست", avatar_image: "data:image/png;base64,iVBORw0KGgo=", updated_at: new Date().toISOString(),
+}).select("user_id").single();
+if (profIns.error && /does not exist|relation|schema cache/i.test(profIns.error.message ?? "")) {
+  console.log(`SKIP  cinema_profiles (table missing — run supabase-cinema.sql)  — ${profIns.error.message}`);
+} else {
+  ok("profile: host upserts own row (RLS insert own)", !profIns.error, profIns.error?.message ?? "");
+  const profRead = await guest.from("cinema_profiles").select("user_id,display_name,avatar_image").eq("user_id", hostUid).maybeSingle();
+  ok("profile: guest READS host name+avatar (public to signed-in)",
+     !profRead.error && profRead.data?.display_name === "میزبانِ تست" && profRead.data?.avatar_image?.startsWith("data:image/"),
+     profRead.error?.message ?? JSON.stringify(profRead.data?.display_name));
+  const profFake = await guest.from("cinema_profiles").upsert({ user_id: hostUid, display_name: " hacked", updated_at: new Date().toISOString() }).select("user_id").single();
+  const profOk = await host.from("cinema_profiles").select("display_name").eq("user_id", hostUid).single();
+  ok("profile: guest CANNOT rewrite another user's row",
+     (!!profFake.error || profOk.data?.display_name === "میزبانِ تست") && profOk.data?.display_name === "میزبانِ تست",
+     profOk.data?.display_name);
+  await host.from("cinema_profiles").delete().eq("user_id", hostUid);
+}
+
 const fails = results.filter((r) => !r.ok);
 console.log(`\n${results.length - fails.length}/${results.length} checks passed`);
 process.exit(fails.length ? 1 : 0);

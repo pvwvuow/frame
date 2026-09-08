@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
-import { markProfileTouched, useCloudSession, wipeCloudAccountData } from "@/lib/cloud";
+import { markProfileTouched, useCloudSession, wipeCloudAccountData, pushCinemaProfile } from "@/lib/cloud";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { useLibrary } from "./LibraryProvider";
@@ -164,6 +164,9 @@ export default function SettingsForm({ initial }: { initial: ProfileData }) {
       try {
         const r = await fetch("/api/profile", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(p) });
         if (r.ok) markProfileTouched();
+        // v0.14.2 — the avatar/name used to ride the cloud only on the NEXT app
+        // start; push the cinema-visible fields right away so friends see them
+        void pushCinemaProfile(p as unknown as Record<string, unknown>);
         if (!r.ok) throw new Error();
         lib.setProfile({ displayName: p.displayName, avatar: p.avatar, avatarImage: p.avatarImage || null, reduceMotion: p.reduceMotion, kidsMode: p.kidsMode, hasPin: !!p.parentalPin });
         toast.success("تنظیمات ذخیره شد");

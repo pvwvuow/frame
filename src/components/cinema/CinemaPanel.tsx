@@ -214,12 +214,17 @@ function MemberList({ hostUid }: { hostUid: string }) {
       <ul className="space-y-1.5">
         {members.map((m) => (
           <li key={m.uid} className="flex items-center gap-2.5 rounded-xl bg-white/[0.04] px-3 py-2">
-            <span
-              className="grid h-7 w-7 shrink-0 place-items-center rounded-full text-[11px] font-black text-white"
-              style={{ background: avatarColor(m.uid) }}
-            >
-              {(m.name || "ن").trim().charAt(0)}
-            </span>
+            {m.avatar ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={m.avatar} alt="" className="h-7 w-7 shrink-0 rounded-full object-cover ring-1 ring-white/15" />
+            ) : (
+              <span
+                className="grid h-7 w-7 shrink-0 place-items-center rounded-full text-[11px] font-black text-white"
+                style={{ background: avatarColor(m.uid) }}
+              >
+                {(m.name || "ن").trim().charAt(0)}
+              </span>
+            )}
             <span className="truncate text-xs font-semibold text-zinc-200">{m.name}</span>
             {m.uid === hostUid && <CrownIcon width={13} height={13} className="ms-auto shrink-0 text-amber-400" />}
           </li>

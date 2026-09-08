@@ -17,6 +17,7 @@ import { useRouter } from "next/navigation";
 import { useCinema, cinemaWatchHref, normalizeCode } from "@/lib/cinema";
 import { useLibrary } from "@/components/library/LibraryProvider";
 import { useCloudSession } from "@/lib/cloud";
+import { useCinemaIdentity } from "@/lib/shown-name";
 import { useI18n } from "../i18n/LocaleProvider";
 import { CheckIcon, CrownIcon } from "../Icons";
 
@@ -59,6 +60,9 @@ export default function CinemaButton() {
   const cin = useCinema();
   const router = useRouter();
   const { profile } = useLibrary();
+  // v0.14.2 — real account name replaces the «کاربر نما» placeholder; avatar
+  // is seeded into the engine so the member list can render it
+  const selfId = useCinemaIdentity();
   const { ready: authReady, session } = useCloudSession();
   const { locale } = useI18n();
   const en = locale === "en";
@@ -77,7 +81,8 @@ export default function CinemaButton() {
    * the top-bar entry is the single source of truth for «am I in a cinema?». */
   useEffect(() => {
     const st = useCinema.getState();
-    if (st.status === "idle") void st.resume(profile.displayName || "کاربر");
+    if (st.status === "idle") void st.resume(selfId.name || profile.displayName || "کاربر");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -103,7 +108,7 @@ export default function CinemaButton() {
     }
     setBusy(true);
     setErr(null);
-    const r = await cin.guestJoin(c, profile.displayName || "مهمان");
+    const r = await cin.guestJoin(c, selfId.name || profile.displayName || "مهمان");
     setBusy(false);
     if (!r.ok) {
       const m = REASONS[r.reason ?? "network"];
@@ -228,12 +233,17 @@ export default function CinemaButton() {
                   <ul className="space-y-1">
                     {cin.members.map((m) => (
                       <li key={m.uid} className="flex items-center gap-2.5 rounded-lg bg-white/[0.04] px-2.5 py-1.5">
-                        <span
-                          className="grid h-6 w-6 shrink-0 place-items-center rounded-full text-[10px] font-black text-white"
-                          style={{ background: avatarColor(m.uid) }}
-                        >
-                          {(m.name || "ن").trim().charAt(0)}
-                        </span>
+                        {m.avatar ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={m.avatar} alt="" className="h-6 w-6 shrink-0 rounded-full object-cover ring-1 ring-white/15" />
+                        ) : (
+                          <span
+                            className="grid h-6 w-6 shrink-0 place-items-center rounded-full text-[10px] font-black text-white"
+                            style={{ background: avatarColor(m.uid) }}
+                          >
+                            {(m.name || "ن").trim().charAt(0)}
+                          </span>
+                        )}
                         <span className="truncate text-xs font-semibold text-zinc-200">{m.name}</span>
                         {m.uid === cin.room!.hostId && <CrownIcon width={12} height={12} className="ms-auto shrink-0 text-amber-400" />}
                       </li>

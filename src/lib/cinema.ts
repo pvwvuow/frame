@@ -24,7 +24,7 @@
  *   late joiner → reads the room row once, then rides the broadcasts.
  */
 import { create } from "zustand";
-import { getSupabase } from "./cloud";
+import { getSupabase, fetchCinemaProfiles } from "./cloud";
 import { watchHref } from "./links";
 
 /* ------------------------------------------------------------------ */
@@ -48,7 +48,7 @@ export type CinemaRoom = {
   isClosed: boolean;
 };
 
-export type CinemaMember = { uid: string; name: string };
+export type CinemaMember = { uid: string; name: string; avatar: string };
 
 export type CinemaFeedItem = { id: number; name: string; kind: "join" | "leave" | "close"; at: number };
 
@@ -181,6 +181,67 @@ let channel: ReturnType<NonNullable<ReturnType<typeof getSupabase>>["channel"]> 
 let followHandler: ((slug: string, season: number, epnum: number) => void) | null = null;
 let feedId = 1;
 let lastPersistAt = 0;
+
+/* v0.14.2 — member identity enrichment.
+ * Presence carries only {uid, name} (tiny payloads). Avatars — and the name
+ * of users who never resolve one — come from the cinema_profiles table and
+ * are cached per session. OWN avatar is seeded locally so it shows before
+ * (and even without) any cloud round-trip. */
+const PLACEHOLDER_NAMES = new Set(["کاربر نما", "کاربر فریم"]);
+const profileCache = new Map<string, { name?: string; avatar?: string }>();
+let selfUid = "";
+let selfName = "";
+let selfAvatar = "";
+let enrichBusy = false;
+
+/** Called by useCinemaIdentity() on every session/profile change. */
+export function setCinemaSelf(info: { uid?: string | null; name?: string; avatar?: string | null }) {
+  if (typeof info.avatar === "string") selfAvatar = info.avatar;
+  if (info.name) selfName = info.name;
+  if (info.uid) selfUid = info.uid;
+  if (selfUid) profileCache.set(selfUid, { name: selfName, avatar: selfAvatar });
+  // Identity often arrives LATE (session hydration after a reload): the
+  // resume() track may already have published a placeholder name. Re-publish
+  // the moment the real one lands so the member list self-corrects.
+  if (channel && selfUid && selfName && !PLACEHOLDER_NAMES.has(selfName.trim())) {
+    try {
+      void channel.track({ uid: selfUid, name: selfName });
+    } catch {
+      /* not subscribed yet → connect() tracks with the resolved name */
+    }
+  }
+}
+
+/** Missing identities → one batched read from cinema_profiles, then merge
+ *  back into the live member list. Silent no-op when the table is not
+ *  migrated yet (initial-letter circles remain). */
+async function enrichMembers(uids: string[]) {
+  const missing = [...new Set(uids.filter((u) => u && !profileCache.has(u)))];
+  if (!missing.length || enrichBusy) return;
+  enrichBusy = true;
+  try {
+    for (const r of await fetchCinemaProfiles(missing)) {
+      profileCache.set(r.uid, { name: r.name || undefined, avatar: r.avatar });
+    }
+    // cache misses too, so one offline room never spams the read
+    for (const u of missing) if (!profileCache.has(u)) profileCache.set(u, {});
+    useCinema.setState((s) => ({
+      members: s.members.map((m) => {
+        const c = profileCache.get(m.uid);
+        if (!c) return m;
+        return {
+          uid: m.uid,
+          name: m.name && m.name !== "کاربر" ? m.name : c.name || m.name,
+          avatar: m.uid === selfUid ? selfAvatar : c.avatar || m.avatar,
+        };
+      }),
+    }));
+  } catch {
+    /* offline → initials stay */
+  } finally {
+    enrichBusy = false;
+  }
+}
 
 /** The player registers this so a guest can FOLLOW the host when the host
  *  switches movie/episode (module scope → survives every navigation). */
@@ -402,7 +463,15 @@ export const useCinema = create<CinemaState & CinemaActions>((set, get) => ({
       const members: CinemaMember[] = Object.values(state)
         .flat()
         .filter((p) => p && p.uid)
-        .map((p) => ({ uid: p.uid, name: p.name || "کاربر" }));
+        .map((p) => {
+          const c = profileCache.get(p.uid);
+          return {
+            uid: p.uid,
+            name: p.name || c?.name || "کاربر",
+            avatar: p.uid === selfUid ? selfAvatar : c?.avatar || "",
+          };
+        });
+      void enrichMembers(members.map((m) => m.uid));
       const prev = useCinema.getState().members;
       // join/leave feed (diff by uid)
       for (const m of members) if (!prev.some((x) => x.uid === m.uid) && m.uid !== uid) pushFeed("join", m.name);
@@ -440,7 +509,8 @@ export const useCinema = create<CinemaState & CinemaActions>((set, get) => ({
     ch.subscribe(async (ev) => {
       if (ev === "SUBSCRIBED") {
         try {
-          void ch.track({ uid, name });
+          const tName = name && !PLACEHOLDER_NAMES.has(name.trim()) ? name : selfName || name || "کاربر";
+          void ch.track({ uid, name: tName });
         } catch {
           /* ignore */
         }

@@ -409,6 +409,60 @@ export async function pullProfileIfNewer(): Promise<boolean> {
 }
 
 /* ------------------------------------------------------------------ */
+/* v0.14.2 — CINEMA identity (name + avatar, visible to other users)    */
+/* ------------------------------------------------------------------ */
+
+/** The private profile JSON (profiles.data: settings, PIN, …) stays locked
+ *  behind RLS — nobody else can read it. The member list of a cinema needs
+ *  exactly TWO public fields, so they live in their own table:
+ *  cinema_profiles (user_id, display_name, avatar_image). Pushed on every
+ *  profile save + sync; read by every member of a room. */
+export async function pushCinemaProfile(profileData?: Record<string, unknown>): Promise<void> {
+  try {
+    const uid = await currentUserId();
+    const sb = getSupabase();
+    if (!uid || !sb) return;
+    const p = profileData ?? (await fetchLocalProfile());
+    if (!p) return;
+    const name = typeof p.displayName === "string" ? p.displayName.trim().slice(0, 40) : "";
+    const avatar = typeof p.avatarImage === "string" && p.avatarImage ? p.avatarImage : "";
+    if (!name && !avatar) return;
+    await sb.from("cinema_profiles").upsert({
+      user_id: uid,
+      display_name: name,
+      avatar_image: avatar.slice(0, 400_000),
+      updated_at: new Date().toISOString(),
+    });
+  } catch {
+    /* table not migrated yet / offline → retried on the next save or sync */
+  }
+}
+
+export type CinemaProfileRow = { uid: string; name: string; avatar: string };
+
+/** Name + avatar of OTHER users (for the cinema member list). RLS exposes
+ *  ONLY these two fields — everything else in a profile stays private. */
+export async function fetchCinemaProfiles(uids: string[]): Promise<CinemaProfileRow[]> {
+  const sb = getSupabase();
+  const clean = [...new Set(uids.filter(Boolean))];
+  if (!sb || !clean.length) return [];
+  try {
+    const { data, error } = await sb
+      .from("cinema_profiles")
+      .select("user_id,display_name,avatar_image")
+      .in("user_id", clean);
+    if (error || !data) return [];
+    return (data as { user_id: string; display_name: string | null; avatar_image: string | null }[]).map((r) => ({
+      uid: r.user_id,
+      name: (r.display_name || "").trim(),
+      avatar: r.avatar_image || "",
+    }));
+  } catch {
+    return [];
+  }
+}
+
+/* ------------------------------------------------------------------ */
 /* v0.13.0 — the STABLE identity: slug                                 */
 /* ------------------------------------------------------------------ */
 
@@ -778,6 +832,7 @@ async function runFullSync(): Promise<MergeResult> {
           pushCollectionsUp(lib.collections ?? []),
           pushProgressRows(lib.progress ?? []),
           pushProfile((lib as { profileFull?: Record<string, unknown> }).profileFull),
+          pushCinemaProfile((lib as { profileFull?: Record<string, unknown> }).profileFull),
         ]);
       }
     } catch {

@@ -49,6 +49,7 @@ import { isLocalFile, localFilePath, nativeBridge, needsNativePlayer } from "@/l
 import { useCinema, cinemaTargetPosition, setCinemaFollowHandler, type CinemaBeat } from "@/lib/cinema";
 import CinemaPanel from "./cinema/CinemaPanel";
 import { useLibrary } from "./library/LibraryProvider";
+import { useCinemaIdentity } from "@/lib/shown-name";
 
 const SUB_SIZE_KEY = "nama-sub-size";
 const SUB_ON_KEY = "nama-sub-on";
@@ -62,6 +63,9 @@ export default function Player() {
   // v0.14.0 — cinema (watch-party): host drives, guests follow
   const cin = useCinema();
   const { profile } = useLibrary();
+  // v0.14.2 — the REAL name/avatar in cinema (account identity replaces the
+  // «کاربر نما» placeholder; avatar is seeded into the engine for the member list)
+  const selfId = useCinemaIdentity();
   const {
     open,
     titleId,
@@ -864,7 +868,7 @@ export default function Player() {
     if (cinResumeRef.current === contentKey) return;
     cinResumeRef.current = contentKey;
     const st = useCinema.getState();
-    if (st.status === "idle") void st.resume(profile.displayName || "کاربر");
+    if (st.status === "idle") void st.resume(selfId.name || profile.displayName || "کاربر");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, activeSrc, contentKey]);
 
@@ -1159,7 +1163,7 @@ export default function Player() {
                   isPlaying: !!v && !v.paused && !v.ended,
                 };
               }}
-              hostName={profile.displayName || "میزبان"}
+              hostName={selfId.name || profile.displayName || "میزبان"}
               onClose={() => setShowCinema(false)}
             />
           )}

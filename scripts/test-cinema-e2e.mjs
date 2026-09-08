@@ -2,8 +2,14 @@
  * Flow: host logs in → plays the local test title → starts cinema from the
  * player panel → gets a code. Guest logs in → joins from the NEW navbar
  * popover by code → follows automatically. Then sync checks: pause, seek,
- * play, member list, and finally host closes → guest is told.
- * Run: node scripts/test-cinema-e2e.mjs  (server on :3222 must be up) */
+ * play, member list + REAL names (v0.14.2), and finally host closes → guest
+ * is told.
+ * Run: node scripts/test-cinema-e2e.mjs  (server on :3222 must be up)
+ *
+ * v0.14.2: the watch page sits behind the VIP paywall, so each account needs
+ * an active subscription. FIXED accounts are reused (their 31-day activation
+ * survives many runs); a fresh code is burned ONLY when the old one expired.
+ */
 import { chromium } from "playwright";
 import { createClient } from "@supabase/supabase-js";
 
@@ -11,9 +17,16 @@ const BASE = "http://localhost:3222";
 const URL = "https://emqsegjeiyimoyncbhfn.supabase.co";
 const KEY = "sb_publishable_m23eUV8cC-xqhqD-3P6Wsg_U5WsiM3E";
 const PASS = "Frame#test-2026";
-const stamp = Date.now().toString(36).slice(-6);
-const HOST_EMAIL = `e2e-host-${stamp}@frame-test.ir`;
-const GUEST_EMAIL = `e2e-guest-${stamp}@frame-test.ir`;
+const HOST_EMAIL = "frame-e2e-host@frame-test.ir";
+const GUEST_EMAIL = "frame-e2e-guest@frame-test.ir";
+
+/* fallback pool — burned/expired codes are skipped automatically (try next) */
+const VIP_POOL = [
+  "FRAME-7WX3F-GNCD6", "FRAME-2YRJF-RMF3N", "FRAME-7RG4Y-HQVXK", "FRAME-5MKJP-6GY5S",
+  "FRAME-YBKJY-EM7VV", "FRAME-6NAB3-WZVG5", "FRAME-3YJRS-HHHZR", "FRAME-7GA72-NDZUC",
+  "FRAME-MFT7Y-36F6E", "FRAME-3UNGK-983DU", "FRAME-MAKQB-TNRAQ", "FRAME-WV5SX-PDB3C",
+  "FRAME-AJNPK-PYTN6", "FRAME-CVD9F-BK3XQ", "FRAME-HSBCF-PFG5J", "FRAME-F58W7-DC33S",
+];
 
 const shots = "/home/z/my-project/download/cinema-e2e";
 import { mkdirSync } from "node:fs";
@@ -35,7 +48,7 @@ const ok = (name, cond, extra = "") => {
   console.log(`${cond ? "PASS" : "FAIL"}  ${name}${extra ? "  — " + extra : ""}`);
 };
 
-/* ---------- create the two accounts via REST ---------- */
+/* ---------- create the two accounts via REST + keep their VIP alive ---------- */
 async function ensureUser(email) {
   const sb = createClient(URL, KEY);
   let r = await sb.auth.signUp({ email, password: PASS });
@@ -43,10 +56,32 @@ async function ensureUser(email) {
     r = await sb.auth.signInWithPassword({ email, password: PASS });
   }
   if (r.error) throw new Error(`signup ${email}: ${r.error.message}`);
-  return email;
+  return sb;
 }
-await ensureUser(HOST_EMAIL);
-await ensureUser(GUEST_EMAIL);
+
+/** activate a fresh code ONLY when the account's subscription really expired */
+async function ensureVip(sb, email) {
+  const uid = (await sb.auth.getUser()).data?.user?.id;
+  const { data: sub } = await sb.from("subscriptions").select("plan,expires_at").eq("user_id", uid).maybeSingle();
+  if (sub?.plan && (!sub.expires_at || new Date(sub.expires_at).getTime() > Date.now() + 3600_000)) {
+    console.log(`vip ok for ${email} (until ${sub.expires_at})`);
+    return;
+  }
+  for (const code of VIP_POOL) {
+    const { error } = await sb.rpc("activate_code", { p_code: code });
+    if (!error) {
+      console.log(`vip activated for ${email} with ${code}`);
+      return;
+    }
+    if (!/already_used/i.test(error.message ?? "")) console.log(`  ${code}: ${error.message}`);
+  }
+  throw new Error(`no usable VIP code left in the pool for ${email}`);
+}
+
+const sbHost = await ensureUser(HOST_EMAIL);
+const sbGuest = await ensureUser(GUEST_EMAIL);
+await ensureVip(sbHost, HOST_EMAIL);
+await ensureVip(sbGuest, GUEST_EMAIL);
 console.log("accounts ready:", HOST_EMAIL, GUEST_EMAIL);
 
 /* ---------- UI login helper (real /auth flow) ---------- */
@@ -191,11 +226,16 @@ await guest.waitForTimeout(3000);
 await host.waitForTimeout(2500);
 const hostPanelTxt = await host.locator("body").textContent();
 ok("presence: host sees 2 in the room", hostPanelTxt.includes("۲") && (hostPanelTxt.includes("داخل سینما") || hostPanelTxt.includes("نفر")), "");
+/* v0.14.2 — the member list must show the ACCOUNT handle, never «کاربر نما» */
+ok("identity: host list shows the guest's account handle", hostPanelTxt.includes(GUEST_EMAIL.split("@")[0]));
+ok("identity: no «کاربر نما» placeholder anywhere in the host panel", !hostPanelTxt.includes("کاربر نما"));
 await guest.locator('button:has-text("سینما")').first().click();
 await guest.waitForTimeout(1200);
 await guest.screenshot({ path: `${shots}/06-guest-popover-live.png` });
 const guestPopTxt = await guest.locator("body").textContent();
 ok("presence: guest sees 2 members", /2/.test(guestPopTxt) && guestPopTxt.includes("داخل سینما"), "");
+ok("identity: guest list shows the HOST's account handle", guestPopTxt.includes(HOST_EMAIL.split("@")[0]));
+ok("identity: no «کاربر نما» placeholder in the guest popover", !guestPopTxt.includes("کاربر نما"));
 
 /* ---------- SYNC 1: host pauses → guest pauses ---------- */
 const hp0 = await host.evaluate(() => document.querySelector("video").paused);
