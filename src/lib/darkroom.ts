@@ -165,6 +165,52 @@ export type DrCardData = {
 };
 
 /* ------------------------------------------------------------------ */
+/* Collection cards (v0.10.36) — the same share-card workshop, but the  */
+/* subject is one of the user's own collections                         */
+/* ------------------------------------------------------------------ */
+export type DrCollectionTplId = "sheet" | "reel" | "hero" | "index" | "mosaic" | "slate";
+
+export const DR_COLLECTION_TEMPLATES: { id: DrCollectionTplId; fa: string; en: string }[] = [
+  { id: "sheet", fa: "برگه تماس", en: "Contact Sheet" },
+  { id: "reel", fa: "رول فیلم", en: "Reel" },
+  { id: "hero", fa: "ویترین", en: "Showcase" },
+  { id: "index", fa: "فهرست", en: "The Index" },
+  { id: "mosaic", fa: "موزاییک", en: "Mosaic" },
+  { id: "slate", fa: "کلاپر", en: "Slate" },
+];
+
+/** One pickable item of a collection (subset of LiteTitle). */
+export type DrCollectionItem = {
+  id: number;
+  title: string;
+  titleEn: string;
+  poster: string;
+  backdrop: string;
+  year: number;
+  type: string; // movie | series
+};
+
+/** The full collection-card payload (workshop state → renderer). */
+export type DrCollectionData = {
+  name: string;
+  /** optional one-liner shown by some structures */
+  note: string;
+  items: DrCollectionItem[];
+  /** real item count (may exceed items.length — templates show «+N») */
+  totalCount: number;
+  movies: number;
+  series: number;
+  tpl: DrCollectionTplId;
+  fmt: DrFormat;
+  lang: DrLang;
+  handle: string;
+  showLogo: boolean;
+  userInitial: string;
+  avatarGrad: string;
+  avatarImage: string | null;
+};
+
+/* ------------------------------------------------------------------ */
 /* Shared palette of the editorial card system                         */
 /* ------------------------------------------------------------------ */
 export const DR_INK = "#0a0a0c";

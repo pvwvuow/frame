@@ -4,6 +4,7 @@ import { Suspense, useEffect, useState, type ReactNode } from "react";
 import { useSearchParams } from "next/navigation";
 import DarkroomApp from "@/components/darkroom/DarkroomApp";
 import SharedWall from "@/components/darkroom/SharedWall";
+import CollectionCardApp from "@/components/darkroom/CollectionCardApp";
 import { getFullTitle, getTrending, type TitleView } from "@/lib/mobile/db";
 import { getUserScore, getHistory } from "@/lib/mobile/userdata";
 import type { DrTitle } from "@/lib/darkroom";
@@ -14,16 +15,18 @@ function toDrTitle(t: TitleView, myScore: number | null = null, when: string | n
 
 function DarkroomInner() {
   const sp = useSearchParams();
-  /* v0.10.34 — دو حالت تاریکخانه: کارت‌های تماشا (تولید کارت اشتراک‌گذاری)
-     و دیوار کالکشن‌های کاربران */
-  const [view, setView] = useState<"cards" | "collections">(
-    sp.get("view") === "collections" ? "collections" : "cards"
+  /* v0.10.36 — سه حالت تاریکخانه: کارت فیلم (تولید کارت تماشا)،
+     کارت کالکشن (ساخت عکس از کالکشن‌های خودی) و دیوار کالکشن‌های کاربران */
+  const v = sp.get("view");
+  const [view, setView] = useState<"cards" | "colcards" | "collections">(
+    v === "collections" ? "collections" : v === "colcards" ? "colcards" : "cards"
   );
 
   const modeBar = (
     <div className="flex rounded-lg border border-white/10 bg-black/30 p-0.5" role="group" aria-label="حالت تاریکخانه">
       {([
         ["cards", "کارت‌های من"],
+        ["colcards", "کارت کالکشن"],
         ["collections", "کالکشن‌های کاربران"],
       ] as const).map(([id, label]) => (
         <button
@@ -42,7 +45,13 @@ function DarkroomInner() {
 
   return (
     <>
-      {view === "cards" ? <DarkroomCards modeBar={modeBar} initialSlug={sp.get("title") ?? undefined} /> : <SharedWall />}
+      {view === "cards" ? (
+        <DarkroomCards modeBar={modeBar} initialSlug={sp.get("title") ?? undefined} />
+      ) : view === "colcards" ? (
+        <CollectionCardApp modeBar={modeBar} />
+      ) : (
+        <SharedWall modeBar={modeBar} />
+      )}
     </>
   );
 }

@@ -38,6 +38,7 @@ const GRADS = [
   "linear-gradient(135deg,#ec4899,#f43f5e)",
   "linear-gradient(135deg,#8b5cf6,#6366f1)",
 ];
+export { GRADS };
 
 type Draft = { score: number; comment: string; finalWords: string; handle: string; when: DrWhen };
 const DRAFT_KEY = "frame:darkroom:drafts";
@@ -63,6 +64,7 @@ function saveDraft(id: number, d: Draft) {
 /* quiet input — one shared voice for the whole workshop */
 const INPUT =
   "w-full rounded-lg border border-white/10 bg-black/30 text-sm text-white outline-none transition placeholder:text-zinc-600 focus:border-white/35 focus:bg-black/40";
+export { INPUT };
 
 export default function DarkroomApp({
   candidates,
@@ -591,7 +593,7 @@ export default function DarkroomApp({
 /* ------------------------------------------------------------------ */
 /* workshop atoms — flat, hairline, quiet                              */
 /* ------------------------------------------------------------------ */
-function Section({ index, title, children }: { index: string; title: string; children: ReactNode }) {
+export function Section({ index, title, children }: { index: string; title: string; children: ReactNode }) {
   return (
     <section className="border-b border-white/[0.07] py-8 first:pt-0 last:border-b-0">
       <p className="mb-5 flex items-baseline gap-3">
@@ -604,7 +606,7 @@ function Section({ index, title, children }: { index: string; title: string; chi
   );
 }
 
-function Field({ label, children }: { label: string; children: ReactNode }) {
+export function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="mb-5">
       <p className="mb-2 text-[10.5px] font-bold text-zinc-500">{label}</p>
@@ -613,7 +615,7 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-function Switch({ on, onClick, label }: { on: boolean; onClick: () => void; label: string }) {
+export function Switch({ on, onClick, label }: { on: boolean; onClick: () => void; label: string }) {
   return (
     <button
       type="button"

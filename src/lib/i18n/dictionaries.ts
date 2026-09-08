@@ -138,6 +138,20 @@ export const fa = {
     avatarRemoved: "آواتار حذف شد.",
     avatarFailed: "آپلود آواتار ناموفق بود.",
   },
+  colcard: {
+    title: "کارت کالکشن",
+    sub: "از کالکشن‌های خودت پست و استوری بساز؛ کالکشن را انتخاب کن، ساختار را بچین، خروجی بگیر.",
+    pick: "انتخاب کالکشن",
+    unit: "عنوان",
+    loading: "در حال بارگذاری آیتم‌ها…",
+    empty: "هنوز کالکشنی نساختی — اول از «لیست من» یک کالکشن بساز.",
+    createFirst: "رفتن به لیست من",
+    details: "جزئیات کارت",
+    note: "یه جمله درباره کالکشن",
+    notePh: "مثلاً: بهترین‌هایی که دیر یا زود باید دید…",
+    exported: "عکس کالکشن ساخته شد و ذخیره شد.",
+    exportFailed: "ساخت عکس ناموفق بود — دوباره تلاش کن.",
+  },
 } as const;
 
 type DeepStringify<T> = { [K in keyof T]: T[K] extends string ? string : DeepStringify<T[K]> };
@@ -274,6 +288,20 @@ export const en: Dictionary = {
     avatarSaved: "Avatar saved.",
     avatarRemoved: "Avatar removed.",
     avatarFailed: "Avatar upload failed.",
+  },
+  colcard: {
+    title: "Collection Cards",
+    sub: "Turn your own collections into shareable posts and stories — pick a collection, compose a structure, export.",
+    pick: "Pick a collection",
+    unit: "titles",
+    loading: "Loading items…",
+    empty: "No collections yet — create one from My List first.",
+    createFirst: "Go to My List",
+    details: "Card details",
+    note: "One line about this collection",
+    notePh: "e.g. The ones everyone should watch sooner or later…",
+    exported: "Collection image saved.",
+    exportFailed: "Render failed — please try again.",
   },
 };
 

@@ -9,7 +9,7 @@
  * Overlays stay under z-[90] so the TitleCard quick-view (z-[90]) stacks above.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import TitleCard from "@/components/TitleCard";
@@ -77,7 +77,7 @@ function WallCard({ sc, onOpen }: { sc: SharedCollection; onOpen: () => void }) 
 /* ------------------------------------------------------------------ */
 /* the wall                                                            */
 /* ------------------------------------------------------------------ */
-export default function SharedWall() {
+export default function SharedWall({ modeBar }: { modeBar?: ReactNode }) {
   const { session } = useCloudSession();
   const signedIn = !!session?.user;
 
@@ -191,6 +191,7 @@ export default function SharedWall() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          {modeBar}
           <button
             type="button"
             onClick={load}
