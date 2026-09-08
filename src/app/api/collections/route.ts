@@ -1,4 +1,4 @@
-import { db } from "@/lib/db";
+import { db, ensureRuntimeSchema } from "@/lib/db";
 import { getUserKey } from "@/lib/user";
 import { revalidatePath } from "next/cache";
 
@@ -13,6 +13,7 @@ const bust = () => {
 /* GET /api/collections — the user's own collections (with preview)    */
 /* ------------------------------------------------------------------ */
 export async function GET() {
+  await ensureRuntimeSchema();
   const userKey = await getUserKey();
   const rows = await db.userCollection.findMany({
     where: { userKey },
@@ -50,6 +51,7 @@ export async function GET() {
 
 /* POST /api/collections — create. Body: { name } → { id, name } */
 export async function POST(req: Request) {
+  await ensureRuntimeSchema();
   const userKey = await getUserKey();
   const body = (await req.json().catch(() => null)) as { name?: string } | null;
   const name = String(body?.name ?? "").trim().slice(0, 60);
@@ -63,6 +65,7 @@ export async function POST(req: Request) {
 
 /* PATCH /api/collections — rename. Body: { id, name } */
 export async function PATCH(req: Request) {
+  await ensureRuntimeSchema();
   const userKey = await getUserKey();
   const body = (await req.json().catch(() => null)) as { id?: number; name?: string } | null;
   const id = Number(body?.id);
@@ -79,6 +82,7 @@ export async function PATCH(req: Request) {
 
 /* DELETE /api/collections — Body/query: { id } */
 export async function DELETE(req: Request) {
+  await ensureRuntimeSchema();
   const userKey = await getUserKey();
   let id = Number(new URL(req.url).searchParams.get("id"));
   if (!id) {

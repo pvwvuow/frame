@@ -1,5 +1,5 @@
 import type { Title as DbTitle } from "@prisma/client";
-import { db } from "@/lib/db";
+import { db, ensureRuntimeSchema } from "@/lib/db";
 import { getUserKey } from "@/lib/user";
 import { revalidatePath } from "next/cache";
 
@@ -54,6 +54,7 @@ const liteOf = (t: DbTitle) => ({
 /*                      contain this title (picker checkmarks)         */
 /* ------------------------------------------------------------------ */
 export async function GET(req: Request) {
+  await ensureRuntimeSchema();
   const userKey = await getUserKey();
   const sp = new URL(req.url).searchParams;
 
@@ -89,6 +90,7 @@ export async function GET(req: Request) {
 
 /* POST /api/collections/items — add/remove. Body: { collectionId, titleId, value? } */
 export async function POST(req: Request) {
+  await ensureRuntimeSchema();
   const userKey = await getUserKey();
   const body = (await req.json().catch(() => null)) as { collectionId?: number; titleId?: number; value?: boolean } | null;
   const collectionId = Number(body?.collectionId);

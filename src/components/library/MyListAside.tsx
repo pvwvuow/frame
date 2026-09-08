@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import FavoriteButton from "../FavoriteButton";
 import { StarIcon, ChevronRight, FilmIcon, TvIcon, PlusIcon, LayersIcon, TrashIcon } from "../Icons";
@@ -42,6 +42,11 @@ export default function MyListAside({
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [cols, setCols] = useState<UCollection[]>(userCollections);
+
+  // keep local state in sync when the parent re-fetches (create/delete elsewhere)
+  useEffect(() => {
+    setCols(userCollections);
+  }, [userCollections]);
 
   async function submit() {
     const clean = name.trim();

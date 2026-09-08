@@ -41,7 +41,10 @@ function MyListInner() {
   } | null>(null);
 
   const loadCollections = useCallback(() => {
-    void fetchUserCollections().then((c) => aliveRef.current && setSt((s) => (s ? { ...s, collections: c } : s)));
+    // never let a collections hiccup break the page — empty list is a safe fallback
+    void fetchUserCollections()
+      .then((c) => aliveRef.current && setSt((s) => (s ? { ...s, collections: c } : s)))
+      .catch(() => {});
   }, []);
   const aliveRef = useRef(true);
 
@@ -56,7 +59,10 @@ function MyListInner() {
         getTrending(16),
         getHistory(),
         getFavoriteRows(),
-        fetchUserCollections(),
+        // v0.10.33: a failing collections fetch (old DB, backend hiccup) used to
+        // reject the whole Promise.all and leave this page on the loading
+        // skeleton forever — degrade to an empty list instead
+        fetchUserCollections().catch(() => [] as UCollection[]),
       ]);
       if (alive) setSt({ rows, stats, cont, trending, history, favRows, collections });
     })();

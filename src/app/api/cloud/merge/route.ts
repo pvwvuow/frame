@@ -1,4 +1,4 @@
-import { db } from "@/lib/db";
+import { db, ensureRuntimeSchema } from "@/lib/db";
 import { getUserKey } from "@/lib/user";
 
 export const dynamic = "force-dynamic";
@@ -21,6 +21,7 @@ type Body = {
 const VALID_STATUSES = new Set(["planned", "watching", "watched"]);
 
 export async function POST(req: Request) {
+  await ensureRuntimeSchema();
   const userKey = await getUserKey();
   const body = (await req.json().catch(() => null)) as Body | null;
   if (!body || typeof body !== "object") {
