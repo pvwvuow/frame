@@ -1,12 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import TitleCard from "@/components/TitleCard";
 import MyListManager from "@/components/library/MyListManager";
 import ListCalendar, { type WatchEvent } from "@/components/library/ListCalendar";
-import MyListAside, { type AsideCollection } from "@/components/library/MyListAside";
+import MyListAside from "@/components/library/MyListAside";
 import ContinueCard from "@/components/library/ContinueCard";
 import {
   BookmarkIcon,
@@ -20,8 +20,9 @@ import {
   ChevronRight,
   ClockIcon,
 } from "@/components/Icons";
-import { getTrending, getCollections } from "@/lib/mobile/db";
+import { getTrending } from "@/lib/mobile/db";
 import { getMyListRows, getUserStats, getFavoriteRows, getHistory, getContinueWatching } from "@/lib/mobile/userdata";
+import { fetchUserCollections, type UCollection } from "@/lib/collections";
 import { g2j } from "@/lib/jalali";
 import { fa } from "@/lib/format";
 
@@ -36,33 +37,32 @@ function MyListInner() {
     trending: Awaited<ReturnType<typeof getTrending>>;
     history: Awaited<ReturnType<typeof getHistory>>;
     favRows: Awaited<ReturnType<typeof getFavoriteRows>>;
-    collections: AsideCollection[];
+    collections: UCollection[];
   } | null>(null);
+
+  const loadCollections = useCallback(() => {
+    void fetchUserCollections().then((c) => aliveRef.current && setSt((s) => (s ? { ...s, collections: c } : s)));
+  }, []);
+  const aliveRef = useRef(true);
 
   useEffect(() => {
     let alive = true;
+    aliveRef.current = true;
     (async () => {
-      const [rows, stats, cont, trending, history, favRows, collectionsRaw] = await Promise.all([
+      const [rows, stats, cont, trending, history, favRows, collections] = await Promise.all([
         getMyListRows(),
         getUserStats(),
         getContinueWatching(6),
         getTrending(16),
         getHistory(),
         getFavoriteRows(),
-        getCollections(30),
+        fetchUserCollections(),
       ]);
-      const collections: AsideCollection[] = collectionsRaw.slice(0, 5).map((c) => ({
-        slug: c.slug,
-        title: c.title,
-        count: c.count,
-        movies: c.items.filter((t) => t.type === "movie").length,
-        series: c.items.filter((t) => t.type === "series").length,
-        thumb: c.items[0]?.backdrop ?? c.items[0]?.poster ?? "",
-      }));
       if (alive) setSt({ rows, stats, cont, trending, history, favRows, collections });
     })();
     return () => {
       alive = false;
+      aliveRef.current = false;
     };
   }, []);
 
@@ -282,7 +282,7 @@ function MyListInner() {
 
           {/* ================= ستون مجموعه‌ها + علاقه‌مندی‌ها ================= */}
           <aside className="min-w-0 lg:sticky lg:top-24 lg:self-start">
-            <MyListAside favs={favRows.slice(0, 6)} collections={collections} />
+            <MyListAside favs={favRows.slice(0, 6)} userCollections={collections} onCollectionsChanged={loadCollections} />
           </aside>
         </div>
       </div>

@@ -7,6 +7,7 @@ import Row from "@/components/Row";
 import TitleCard from "@/components/TitleCard";
 import WatchlistButton from "@/components/WatchlistButton";
 import FavoriteButton from "@/components/FavoriteButton";
+import CollectionPicker from "@/components/library/CollectionPicker";
 import RatingControl from "@/components/RatingControl";
 import StatusSelect from "@/components/StatusSelect";
 import ReviewForm from "@/components/ReviewForm";
@@ -27,6 +28,7 @@ import {
   SubtitleIcon,
   FlameIcon,
   CameraIcon,
+  LayersIcon,
 } from "@/components/Icons";
 import {
   getFullTitle,
@@ -70,6 +72,7 @@ const TIERS_ORD: Record<string, number> = { "4K": 5, "1080p": 4, "720p": 3, "540
 
 export default function TitlePage() {
   const slug = useRouteSlug("slug");
+  const [picker, setPicker] = useState(false);
   const [st, setSt] = useState<{
     t: NonNullable<Awaited<ReturnType<typeof getFullTitle>>>;
     eps: Awaited<ReturnType<typeof getEpisodes>>;
@@ -312,6 +315,16 @@ export default function TitlePage() {
               <TrailerButton src={t.trailerUrl ?? t.videoUrl} poster={t.backdrop} title={t.title} />
               <WatchlistButton titleId={t.id} name={t.title} initial={inList} variant="icon" />
               <FavoriteButton titleId={t.id} name={t.title} variant="icon" />
+              {/* v0.10.32: افزودن به یکی از کالکشن‌های شخصی */}
+              <button
+                type="button"
+                onClick={() => setPicker(true)}
+                aria-label="افزودن به مجموعه"
+                title="افزودن به مجموعه"
+                className="grid h-12 w-12 place-items-center rounded-full border border-white/30 bg-white/10 text-white transition hover:bg-white/20"
+              >
+                <LayersIcon width={20} height={20} />
+              </button>
               {/* v0.10.23: تاریکخانه — design a shareable card for this title */}
               <Link
                 href={`/darkroom?title=${t.slug}`}
@@ -594,6 +607,8 @@ export default function TitlePage() {
           </Row>
         </section>
       )}
+
+      {picker && <CollectionPicker titleId={t.id} titleName={t.title} onClose={() => setPicker(false)} />}
     </main>
   );
 }

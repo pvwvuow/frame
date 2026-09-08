@@ -382,30 +382,38 @@ export type CloudSnapshot = {
   favorites: number[];
   watchlist: { titleId: number; status: string }[];
   ratings: { titleId: number; score: number }[];
+  collections: { name: string; items: number[] }[];
 };
 
 export async function pullCloudSnapshot(): Promise<CloudSnapshot | null> {
   const sb = getSupabase();
   const uid = await currentUserId();
   if (!sb || !uid) return null;
-  const [fav, wl, rt] = await Promise.all([
+  const [fav, wl, rt, cols] = await Promise.all([
     sb.from("favorites").select("title_id").eq("user_id", uid),
     sb.from("watchlist").select("title_id,status").eq("user_id", uid),
     sb.from("ratings").select("title_id,score").eq("user_id", uid),
+    sb.from("user_collections").select("id,name,user_collection_items(title_id)").eq("user_id", uid),
   ]);
   const favRows = (fav.data ?? []) as Array<{ title_id: number }>;
   const wlRows = (wl.data ?? []) as Array<{ title_id: number; status: string }>;
   const rtRows = (rt.data ?? []) as Array<{ title_id: number; score: number }>;
+  type CloudCol = { id: string; name: string; user_collection_items: { title_id: number }[] | null };
+  const colRows = (cols.data ?? []) as unknown as CloudCol[];
   return {
     favorites: favRows.map((r) => Number(r.title_id)).filter((n) => Number.isFinite(n) && n > 0),
     watchlist: wlRows.map((r) => ({ titleId: Number(r.title_id), status: String(r.status) })),
     ratings: rtRows.map((r) => ({ titleId: Number(r.title_id), score: Number(r.score) })),
+    collections: colRows.map((c) => ({
+      name: String(c.name),
+      items: (c.user_collection_items ?? []).map((i) => Number(i.title_id)).filter((n) => Number.isFinite(n) && n > 0),
+    })),
   };
 }
 
 export type MergeResult = { ok: boolean; favoritesAdded?: number; listAdded?: number; listUpdated?: number; ratingsAdded?: number; reason?: string };
 
-/** Pull the cloud snapshot and merge it into the local SQLite (cloud fills gaps, local wins on conflicts). */
+/** Pull the cloud snapshot and merge it into the local database (cloud fills gaps, local wins on conflicts). */
 export async function syncCloudToLocal(): Promise<MergeResult> {
   try {
     const snap = await pullCloudSnapshot();
@@ -416,8 +424,9 @@ export async function syncCloudToLocal(): Promise<MergeResult> {
       body: JSON.stringify(snap),
     });
     if (!r.ok) return { ok: false, reason: `merge-${r.status}` };
-    const d = (await r.json()) as { favoritesAdded: number; listAdded: number; listUpdated: number; ratingsAdded: number };
-    return { ok: true, ...d };
+    const d = (await r.json()) as { ok?: boolean; favoritesAdded: number; listAdded: number; listUpdated?: number; ratingsAdded: number };
+    if (d && d.ok === false) return { ok: false, reason: "merge-unsupported" };
+    return { ok: true, favoritesAdded: d.favoritesAdded, listAdded: d.listAdded, ratingsAdded: d.ratingsAdded };
   } catch (e) {
     return { ok: false, reason: e instanceof Error ? e.message : "network" };
   }
@@ -435,11 +444,13 @@ export async function fullSync(): Promise<MergeResult> {
           watchlist: { titleId: number; status: string }[];
           favorites: number[];
           ratings: { titleId: number; score: number }[];
+          collections?: { name: string; items: number[] }[];
         };
         await Promise.all([
           ...lib.favorites.map((id) => pushFavorite(id, true)),
           ...lib.watchlist.map((w) => pushWatchlist(w.titleId, w.status)),
           ...lib.ratings.map((r) => pushRating(r.titleId, r.score)),
+          pushCollectionsUp(lib.collections ?? []),
         ]);
       }
     } catch {
@@ -447,4 +458,89 @@ export async function fullSync(): Promise<MergeResult> {
     }
   }
   return merged;
+}
+
+/** Immediate: one item was REMOVED from a local collection → mirror in the
+ *  cloud. Without this the next pull would re-add the removed title
+ *  ("cloud fills gaps" only ever adds). */
+export async function pushCollectionItemRemove(name: string, titleId: number): Promise<void> {
+  try {
+    const uid = await currentUserId();
+    const sb = getSupabase();
+    const clean = String(name ?? "").trim();
+    if (!uid || !sb || !clean || !titleId) return;
+    const { data: existing } = await sb
+      .from("user_collections")
+      .select("id")
+      .eq("user_id", uid)
+      .eq("name", clean)
+      .maybeSingle();
+    const colId = (existing as { id: string } | null)?.id;
+    if (!colId) return;
+    await sb.from("user_collection_items").delete().eq("collection_id", colId).eq("title_id", titleId);
+  } catch {
+    /* offline → next fullSync push will restore the remaining set */
+  }
+}
+
+/** Immediate: a collection was DELETED locally → mirror the delete in the cloud. */
+export async function pushCollectionDelete(name: string): Promise<void> {
+  try {
+    const uid = await currentUserId();
+    const sb = getSupabase();
+    const clean = String(name ?? "").trim();
+    if (!uid || !sb || !clean) return;
+    await sb.from("user_collections").delete().eq("user_id", uid).eq("name", clean);
+  } catch {
+    /* offline → will converge on the next fullSync */
+  }
+}
+
+/** Immediate: a collection was RENAMED locally → mirror the rename in the cloud. */
+export async function pushCollectionRename(oldName: string, newName: string): Promise<void> {
+  try {
+    const uid = await currentUserId();
+    const sb = getSupabase();
+    const from = String(oldName ?? "").trim();
+    const to = String(newName ?? "").trim().slice(0, 60);
+    if (!uid || !sb || !from || !to) return;
+    await sb.from("user_collections").update({ name: to }).eq("user_id", uid).eq("name", from);
+  } catch {
+    /* offline → will converge on the next fullSync */
+  }
+}
+
+/** Push the LOCAL collections up to the cloud (matched by name, idempotent).
+ *  v0.10.32 — collections sync like favorites: local-first, cloud mirror. */
+export async function pushCollectionsUp(collections: { name: string; items: number[] }[]): Promise<void> {
+  try {
+    const uid = await currentUserId();
+    const sb = getSupabase();
+    if (!uid || !sb || !collections.length) return;
+    for (const col of collections) {
+      const name = String(col.name ?? "").trim().slice(0, 60);
+      if (!name) continue;
+      const { data: existing } = await sb
+        .from("user_collections")
+        .select("id")
+        .eq("user_id", uid)
+        .eq("name", name)
+        .maybeSingle();
+      let colId = (existing as { id: string } | null)?.id as string | undefined;
+      if (!colId) {
+        const ins = await sb.from("user_collections").insert({ user_id: uid, name }).select("id").single();
+        colId = (ins.data as { id: string } | null)?.id;
+      }
+      if (!colId) continue;
+      const ids = (col.items ?? []).map(Number).filter((n) => Number.isFinite(n) && n > 0);
+      if (ids.length) {
+        await sb.from("user_collection_items").upsert(
+          ids.map((titleId) => ({ collection_id: colId, title_id: titleId })),
+          { onConflict: "collection_id,title_id" }
+        );
+      }
+    }
+  } catch {
+    /* offline → local remains the source of truth */
+  }
 }

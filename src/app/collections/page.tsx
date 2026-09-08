@@ -1,12 +1,155 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { toast } from "sonner";
 import Row from "@/components/Row";
 import TitleCard from "@/components/TitleCard";
 import { getCollections } from "@/lib/mobile/db";
 import { fa } from "@/lib/format";
-import { LayersIcon, ChevronLeft } from "@/components/Icons";
+import { LayersIcon, ChevronLeft, PlusIcon, TrashIcon } from "@/components/Icons";
+import { createCollection, deleteCollection, fetchUserCollections, type UCollection } from "@/lib/collections";
+
+/* ================================================================== */
+/* مجموعه‌های من (شخصی + سینک با اکانت) — v0.10.32                     */
+/* ================================================================== */
+function MyCollectionsSection() {
+  const [cols, setCols] = useState<UCollection[] | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [name, setName] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(() => {
+    void fetchUserCollections().then((c) => setCols(c));
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  async function submit() {
+    const clean = name.trim();
+    if (!clean || busy) return;
+    setBusy(true);
+    try {
+      const r = await createCollection(clean);
+      setName("");
+      setCreating(false);
+      toast.success(`مجموعه «${r.name}» ساخته شد`);
+      load();
+    } catch {
+      toast.error("ساخت مجموعه ناموفق بود");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function remove(c: UCollection) {
+    if (!confirm(`مجموعه «${c.name}» حذف شود؟`)) return;
+    try {
+      await deleteCollection(c.id, c.name);
+      toast.success(`مجموعه «${c.name}» حذف شد`);
+      load();
+    } catch {
+      toast.error("حذف ناموفق بود");
+    }
+  }
+
+  return (
+    <div className="mx-auto max-w-[1600px] px-4 pt-28 sm:px-8 lg:px-12 lg:pt-32">
+      <section className="mt-4">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="flex items-center gap-2 text-xl font-extrabold text-white">
+              <LayersIcon width={18} height={18} className="text-brand" /> مجموعه‌های من
+            </h2>
+            <p className="mt-1 text-xs text-zinc-500">کالکشن‌های شخصی خودت — با حسابت ذخیره می‌شوند و روی همه دستگاه‌ها می‌آیند</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setCreating((v) => !v)}
+            className="flex items-center gap-1.5 rounded-xl bg-brand px-4 py-2.5 text-xs font-black text-white transition hover:bg-brand-600"
+          >
+            <PlusIcon width={14} height={14} /> ایجاد مجموعه
+          </button>
+        </div>
+
+        {creating && (
+          <div className="mb-4 flex max-w-md items-center gap-2">
+            <input
+              autoFocus
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && void submit()}
+              placeholder="نام مجموعه جدید… مثلاً: فیلم‌های موردعلاقه بابا"
+              maxLength={60}
+              className="h-11 min-w-0 flex-1 rounded-xl border border-white/10 bg-white/5 px-3.5 text-[13px] font-bold text-white outline-none placeholder:text-zinc-600 focus:border-brand/60"
+            />
+            <button
+              type="button"
+              onClick={() => void submit()}
+              disabled={busy || !name.trim()}
+              className="h-11 shrink-0 rounded-xl bg-brand px-4 text-xs font-black text-white transition hover:bg-brand-600 disabled:opacity-40"
+            >
+              ساخت
+            </button>
+          </div>
+        )}
+
+        {cols === null ? (
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+            {[0, 1, 2, 3].map((i) => (
+              <div key={i} className="h-28 animate-pulse rounded-2xl bg-white/5" />
+            ))}
+          </div>
+        ) : cols.length === 0 ? (
+          <div className="rounded-3xl border border-dashed border-white/10 bg-white/[0.02] p-8 text-center">
+            <p className="text-sm font-black text-zinc-300">هنوز مجموعه‌ی شخصی نساخته‌ای</p>
+            <p className="mx-auto mt-2 max-w-md text-xs leading-6 text-zinc-500">
+              با دکمه‌ی «ایجاد مجموعه» اولین کالکشن‌ات را بساز؛ بعد از صفحه‌ی هر فیلم با دکمه‌ی افزودن به مجموعه هر عنوانی را خواستی داخلش بگذار.
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {cols.map((c) => (
+              <div key={c.id} className="group relative">
+                <Link
+                  href={`/collections/u?c=${c.id}`}
+                  className="flex items-center gap-4 overflow-hidden rounded-2xl border border-white/5 bg-white/[0.03] p-3 transition hover:border-white/15 hover:bg-white/[0.06]"
+                >
+                  {c.posters.length > 0 ? (
+                    <span className="flex shrink-0 -space-x-3">
+                      {c.posters.slice(0, 3).map((p, i) => (
+                        <img key={i} src={p} alt="" className="h-16 w-11 rounded-md object-cover ring-2 ring-zinc-950" loading="lazy" />
+                      ))}
+                    </span>
+                  ) : (
+                    <span className="grid h-16 w-20 shrink-0 place-items-center rounded-xl bg-white/5 text-zinc-600">
+                      <LayersIcon width={20} height={20} />
+                    </span>
+                  )}
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-extrabold text-white">{c.name}</span>
+                    <span className="num mt-1 block text-[11px] font-bold text-zinc-500">{fa(c.count)} عنوان</span>
+                  </span>
+                  <ChevronLeft width={16} height={16} className="shrink-0 text-zinc-600 transition group-hover:text-brand" />
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => void remove(c)}
+                  aria-label={`حذف ${c.name}`}
+                  className="absolute end-3 top-3 hidden h-7 w-7 place-items-center rounded-full bg-zinc-900/90 text-zinc-400 ring-1 ring-white/10 transition hover:bg-rose-600 hover:text-white group-hover:grid"
+                >
+                  <TrashIcon width={13} height={13} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}
 
 export default function CollectionsPage() {
   const [collections, setCollections] = useState<Awaited<ReturnType<typeof getCollections>> | null>(null);
@@ -33,9 +176,12 @@ export default function CollectionsPage() {
 
   return (
     <main className="pb-16">
-      <section className="relative overflow-hidden">
+      {/* مجموعه‌های شخصی کاربر — بالای دست‌چین تحریریه */}
+      <MyCollectionsSection />
+
+      <section className="relative mt-14 overflow-hidden">
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,rgba(229,9,20,0.18),transparent_55%),radial-gradient(ellipse_at_bottom_left,rgba(56,189,248,0.14),transparent_55%)]" />
-        <div className="relative mx-auto max-w-[1600px] px-4 pb-10 pt-28 sm:px-8 lg:px-12 lg:pt-36">
+        <div className="relative mx-auto max-w-[1600px] px-4 pb-10 pt-10 sm:px-8 lg:px-12 lg:pt-14">
           <p className="mb-3 flex items-center gap-2 text-xs font-bold text-brand">
             <LayersIcon width={16} height={16} /> دست‌چین تحریریه
           </p>

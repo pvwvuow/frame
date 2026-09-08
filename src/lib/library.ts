@@ -26,20 +26,27 @@ export type LibrarySnapshot = {
   watchlist: { titleId: number; status: ListStatus }[];
   favorites: number[];
   ratings: { titleId: number; score: number }[];
+  collections: { name: string; items: number[] }[];
   profile: { displayName: string; avatar: number; avatarImage: string | null; reduceMotion: boolean; kidsMode: boolean; hasPin: boolean };
 };
 
 export async function getLibrarySnapshot(userKey: string): Promise<LibrarySnapshot> {
-  const [wl, fav, rt, profile] = await Promise.all([
+  const [wl, fav, rt, cols, profile] = await Promise.all([
     db.watchlist.findMany({ where: { userKey }, select: { titleId: true, status: true } }),
     db.favorite.findMany({ where: { userKey }, select: { titleId: true } }),
     db.userRating.findMany({ where: { userKey }, select: { titleId: true, score: true } }),
+    db.userCollection.findMany({
+      where: { userKey },
+      orderBy: { createdAt: "asc" },
+      select: { name: true, items: { orderBy: { addedAt: "asc" }, select: { titleId: true } } },
+    }),
     getProfile(userKey),
   ]);
   return {
     watchlist: wl.map((w) => ({ titleId: w.titleId, status: w.status as ListStatus })),
     favorites: fav.map((f) => f.titleId),
     ratings: rt,
+    collections: cols.map((c) => ({ name: c.name, items: c.items.map((i) => i.titleId) })),
     profile: { displayName: profile.displayName, avatar: profile.avatar, avatarImage: profile.avatarImage ?? null, reduceMotion: profile.reduceMotion, kidsMode: profile.kidsMode, hasPin: !!profile.parentalPin },
   };
 }

@@ -154,22 +154,29 @@ export type LibrarySnapshot = {
   watchlist: { titleId: number; status: ListStatus }[];
   favorites: number[];
   ratings: { titleId: number; score: number }[];
+  collections: { name: string; items: number[] }[];
   profile: { displayName: string; avatar: number; avatarImage: string | null; reduceMotion: boolean; kidsMode: boolean; hasPin: boolean };
 };
 
 export async function getLibrarySnapshot(userKey = getUserKey()): Promise<LibrarySnapshot> {
   if (isDesktopRuntime()) return srv<LibrarySnapshot>("/api/library");
   const user = userKey || "guest";
-  const [wl, fav, rt, profile] = await Promise.all([
+  const [wl, fav, rt, cols, profile] = await Promise.all([
     db.watchlist.where("userKey").equals(user).toArray(),
     db.favorites.where("userKey").equals(user).toArray(),
     db.ratings.where("userKey").equals(user).toArray(),
+    listUserCollections(user),
     getProfile(user),
   ]);
+  const itemsOf = async (id: number) =>
+    (await db.ucitems.where("collectionId").equals(id).toArray()).map((i) => Number((i as { titleId: number }).titleId));
+  const collections = [] as { name: string; items: number[] }[];
+  for (const c of cols) collections.push({ name: c.name, items: await itemsOf(c.id) });
   return {
     watchlist: wl.map((w) => ({ titleId: Number(w.titleId), status: String(w.status) as ListStatus })),
     favorites: fav.map((f) => Number(f.titleId)),
     ratings: rt.map((r) => ({ titleId: Number(r.titleId), score: Number(r.score) })),
+    collections,
     profile: {
       displayName: profile.displayName,
       avatar: profile.avatar,
@@ -709,3 +716,212 @@ export async function markAllNotificationsRead(userKey = getUserKey()): Promise<
 
 /* episode id helper re-export for the watch page */
 export { episodeId, getFullTitle, getTitleLiteBySlug, json };
+
+/* ------------------------------------------------------------------ */
+/* User collections (v0.10.32) — کالکشن‌های شخصی، سینک با اکانت        */
+/* Desktop → real /api/collections* routes (Prisma).                   */
+/* Mobile  → Dexie (the fetch shim serves the same endpoints).         */
+/* ------------------------------------------------------------------ */
+
+export type UCollection = {
+  id: number;
+  name: string;
+  count: number;
+  posters: string[];
+  movies: number;
+  series: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export async function listUserCollections(userKey = getUserKey()): Promise<UCollection[]> {
+  if (isDesktopRuntime()) return srv<UCollection[]>("/api/collections");
+  const user = userKey || "guest";
+  const cols = await db.ucollections.where("userKey").equals(user).toArray();
+  const out: UCollection[] = [];
+  for (const c of cols) {
+    const id = Number((c as { id: number }).id);
+    const items = await db.ucitems.where("collectionId").equals(id).toArray();
+    const ids = items.map((i) => Number((i as { titleId: number }).titleId));
+    const posters: string[] = [];
+    let movies = 0;
+    let series = 0;
+    for (const tid of ids.slice(0, 30)) {
+      const t = (await db.titles.get(tid)) as Record<string, unknown> | undefined;
+      if (t?.poster) posters.push(String(t.poster));
+      if (t?.type === "series") series++;
+      else movies++;
+    }
+    out.push({
+      id,
+      name: String((c as { name: string }).name),
+      count: ids.length,
+      posters: posters.slice(0, 6),
+      movies,
+      series,
+      createdAt: String((c as { createdAt: string }).createdAt ?? now()),
+      updatedAt: String((c as { updatedAt: string }).updatedAt ?? now()),
+    });
+  }
+  return out.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+}
+
+export async function createUserCollection(name: string, userKey = getUserKey()): Promise<{ id: number; name: string }> {
+  const clean = String(name ?? "").trim().slice(0, 60);
+  if (!clean) throw new Error("name required");
+  if (isDesktopRuntime()) return srvPost<{ id: number; name: string }>("/api/collections", { name: clean });
+  const user = userKey || "guest";
+  const dupe = await db.ucollections.where("[userKey+name]").equals([user, clean]).first();
+  if (dupe) return { id: Number((dupe as { id: number }).id), name: clean };
+  const id = await db.ucollections.add({ userKey: user, name: clean, createdAt: now(), updatedAt: now() });
+  return { id: Number(id), name: clean };
+}
+
+export async function renameUserCollection(id: number, name: string, userKey = getUserKey()): Promise<void> {
+  const clean = String(name ?? "").trim().slice(0, 60);
+  if (!id || !clean) throw new Error("id + name required");
+  if (isDesktopRuntime()) {
+    await srvPost("/api/collections", { id, name: clean }, "PATCH");
+    return;
+  }
+  await db.ucollections.update(id, { name: clean, updatedAt: now() });
+}
+
+export async function deleteUserCollection(id: number, userKey = getUserKey()): Promise<void> {
+  if (!id) return;
+  if (isDesktopRuntime()) {
+    await srv("/api/collections", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) });
+    return;
+  }
+  await db.ucitems.where("collectionId").equals(id).delete();
+  await db.ucollections.delete(id);
+}
+
+/** Full item rows of one user collection (grid-ready). */
+export async function getCollectionItems(collectionId: number, userKey = getUserKey()): Promise<TitleView[]> {
+  if (!collectionId) return [];
+  if (isDesktopRuntime()) return srv<TitleView[]>(`/api/collections/items?collectionId=${collectionId}`);
+  const rows = await db.ucitems.where("collectionId").equals(collectionId).toArray();
+  const ids = rows.map((r) => Number((r as { titleId: number }).titleId));
+  const out: TitleView[] = [];
+  for (const id of ids) {
+    const t = (await db.titles.get(id)) as unknown as TitleView | undefined;
+    if (t) out.push(t);
+  }
+  return out.reverse(); // newest first (ucitems were added ascending)
+}
+
+/** Which of MY collections contain this title → ids (for the picker checkmarks). */
+export async function collectionsContaining(titleId: number, userKey = getUserKey()): Promise<number[]> {
+  if (!titleId) return [];
+  if (isDesktopRuntime()) return srv<{ collectionIds: number[] }>(`/api/collections/items?titleId=${titleId}`).then((d) => d.collectionIds);
+  const user = userKey || "guest";
+  const mine = await db.ucollections.where("userKey").equals(user).toArray();
+  const out: number[] = [];
+  for (const c of mine) {
+    const id = Number((c as { id: number }).id);
+    const hit = await db.ucitems.where("[collectionId+titleId]").equals([id, titleId]).count();
+    if (hit > 0) out.push(id);
+  }
+  return out;
+}
+
+/** Add/remove a title in a collection → { inCollection, items } (items = current ids, for the cloud push). */
+export async function setCollectionItem(
+  collectionId: number,
+  titleId: number,
+  value?: boolean,
+  userKey = getUserKey()
+): Promise<{ inCollection: boolean; items: number[] }> {
+  if (!collectionId || !titleId) throw new Error("collectionId + titleId required");
+  if (isDesktopRuntime()) return srvPost<{ inCollection: boolean; items: number[] }>("/api/collections/items", { collectionId, titleId, value });
+  const existing = await db.ucitems.where("[collectionId+titleId]").equals([collectionId, titleId]).first();
+  const wanted = typeof value === "boolean" ? value : !existing;
+  if (wanted && !existing) await db.ucitems.add({ collectionId, titleId, addedAt: now() });
+  if (!wanted && existing) await db.ucitems.delete((existing as { id: number }).id);
+  await db.ucollections.update(collectionId, { updatedAt: now() });
+  const rows = await db.ucitems.where("collectionId").equals(collectionId).toArray();
+  return { inCollection: wanted, items: rows.map((r) => Number((r as { titleId: number }).titleId)) };
+}
+
+/* ------------------------------------------------------------------ */
+/* Cloud → Dexie merge (v0.10.32)                                      */
+/* The mobile shim serves POST /api/cloud/merge with this — Supabase    */
+/* snapshot rows land in IndexedDB, so an account's library shows up    */
+/* on Android too (cloud fills gaps, local wins, nothing is deleted).   */
+/* ------------------------------------------------------------------ */
+
+export type CloudMergeBody = {
+  favorites?: number[];
+  watchlist?: { titleId: number; status: string }[];
+  ratings?: { titleId: number; score: number }[];
+  collections?: { name: string; items: number[] }[];
+};
+
+export async function mergeCloudSnapshot(
+  body: CloudMergeBody,
+  userKey = getUserKey()
+): Promise<{ favoritesAdded: number; listAdded: number; ratingsAdded: number; collectionsAdded: number; collectionItemsAdded: number }> {
+  const user = userKey || "guest";
+  let favoritesAdded = 0;
+  let listAdded = 0;
+  let ratingsAdded = 0;
+  let collectionsAdded = 0;
+  let collectionItemsAdded = 0;
+
+  // favorites
+  for (const id of (body.favorites ?? []).map(Number).filter((n) => Number.isFinite(n) && n > 0)) {
+    const ex = await db.favorites.where("[userKey+titleId]").equals([user, id]).count();
+    if (!ex) {
+      await db.favorites.add({ userKey: user, titleId: id, createdAt: now() });
+      favoritesAdded++;
+    }
+  }
+
+  // watchlist
+  for (const row of body.watchlist ?? []) {
+    const titleId = Number(row?.titleId);
+    const status = String(row?.status ?? "");
+    if (!titleId || Number.isNaN(titleId) || !STATUSES.has(status)) continue;
+    const ex = await db.watchlist.where("[userKey+titleId]").equals([user, titleId]).first();
+    if (!ex) {
+      await db.watchlist.add({ userKey: user, titleId, status, note: "", pinned: false, createdAt: now(), updatedAt: now() });
+      listAdded++;
+    }
+  }
+
+  // ratings (fill gaps only)
+  for (const row of body.ratings ?? []) {
+    const titleId = Number(row?.titleId);
+    const score = Number(row?.score);
+    if (!titleId || Number.isNaN(titleId) || !Number.isFinite(score) || score < 1 || score > 10) continue;
+    const ex = await db.ratings.where("[userKey+titleId]").equals([user, titleId]).first();
+    if (!ex) {
+      await db.ratings.add({ userKey: user, titleId, score: Math.round(score), updatedAt: now() });
+      ratingsAdded++;
+    }
+  }
+
+  // collections (matched by name)
+  for (const col of body.collections ?? []) {
+    const name = String(col?.name ?? "").trim().slice(0, 60);
+    const items = (col?.items ?? []).map(Number).filter((n) => Number.isFinite(n) && n > 0);
+    if (!name) continue;
+    let row = await db.ucollections.where("[userKey+name]").equals([user, name]).first();
+    if (!row) {
+      const id = await db.ucollections.add({ userKey: user, name, createdAt: now(), updatedAt: now() });
+      row = { id } as Record<string, unknown>;
+      collectionsAdded++;
+    }
+    const colId = Number((row as { id: number }).id);
+    for (const titleId of items) {
+      const ex = await db.ucitems.where("[collectionId+titleId]").equals([colId, titleId]).count();
+      if (!ex) {
+        await db.ucitems.add({ collectionId: colId, titleId, addedAt: now() });
+        collectionItemsAdded++;
+      }
+    }
+  }
+
+  return { favoritesAdded, listAdded, ratingsAdded, collectionsAdded, collectionItemsAdded };
+}

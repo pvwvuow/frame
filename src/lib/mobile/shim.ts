@@ -17,6 +17,8 @@ import {
   upsertProgress, getProgressFor, removeProgress, setRating,
   addReview, getReviews, getProfile, patchProfile, wipeProfile,
   getUserStats, getNotifications, markNotificationRead, markAllNotificationsRead,
+  listUserCollections, createUserCollection, renameUserCollection, deleteUserCollection,
+  getCollectionItems, collectionsContaining, setCollectionItem, mergeCloudSnapshot,
 } from "./userdata";
 
 type Handler = (ctx: { url: URL; method: string; body: Record<string, unknown>; seg: string[] }) => Promise<unknown> | unknown;
@@ -61,11 +63,28 @@ const routes: { method: string; pattern: string; handler: Handler }[] = [
 
   { method: "POST", pattern: "/api/reviews", handler: ({ body }) => addReview({ titleId: Number(body.titleId), author: String(body.author ?? ""), rating: Number(body.rating ?? 0), body: String(body.body ?? "") }) },
 
+  /* user collections (v0.10.32) — same contract as the desktop routes */
+  { method: "GET", pattern: "/api/collections", handler: () => listUserCollections() },
+  { method: "POST", pattern: "/api/collections", handler: ({ body }) => createUserCollection(String(body.name ?? "")).then((r) => ({ ...r, duplicate: false })) },
+  { method: "PATCH", pattern: "/api/collections", handler: ({ body }) => renameUserCollection(Number(body.id), String(body.name ?? "")).then(() => ({ ok: true })) },
+  { method: "DELETE", pattern: "/api/collections", handler: ({ body }) => deleteUserCollection(Number(body.id)).then(() => ({ ok: true })) },
+
+  { method: "GET", pattern: "/api/collections/items", handler: ({ url, body }) => {
+      const sp = url.searchParams;
+      if (sp.get("titleId")) return collectionsContaining(Number(sp.get("titleId"))).then((collectionIds) => ({ collectionIds }));
+      return getCollectionItems(Number(body.collectionId ?? sp.get("collectionId")));
+    } },
+  { method: "POST", pattern: "/api/collections/items", handler: ({ body }) => setCollectionItem(Number(body.collectionId), Number(body.titleId), typeof body.value === "boolean" ? body.value : undefined) },
+
   /* settings cards that need the Node server — graceful "disabled" states */
   { method: "GET", pattern: "/api/source/sync", handler: () => ({ ok: true, running: false, configured: false, mobile: true, lastSync: null, items: [] }) },
   { method: "POST", pattern: "/api/source/sync", handler: () => ({ ok: false, error: "mobile-unsupported", message: "به‌روزرسانی از منبع در نسخه اندروید فعلاً غیرفعال است" }) },
   { method: "POST", pattern: "/api/catalog/sync", handler: () => ({ ok: false, skipped: false, error: "remote-catalog-disabled" }) },
-  { method: "POST", pattern: "/api/cloud/merge", handler: () => ({ ok: false, error: "mobile-unsupported" }) },
+
+  /* v0.10.32 FIX: the cloud→device merge now REALLY runs on Android —
+   * the snapshot from Supabase lands in Dexie, so an account's
+   * favorites/watchlist/ratings/collections show up on mobile too. */
+  { method: "POST", pattern: "/api/cloud/merge", handler: ({ body }) => mergeCloudSnapshot(body as unknown as Parameters<typeof mergeCloudSnapshot>[0]).then((r) => ({ ok: true, ...r })) },
 
   { method: "GET", pattern: "/api/stats", handler: () => getUserStats() },
 ];

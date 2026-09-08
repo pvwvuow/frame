@@ -8,6 +8,7 @@ import ThemeProvider from "@/components/theme/ThemeProvider";
 import LocaleProvider from "@/components/i18n/LocaleProvider";
 import CommandPalette from "@/components/CommandPalette";
 import WelcomeAuth from "@/components/auth/WelcomeAuth";
+import CloudAutoSync from "@/components/auth/CloudAutoSync";
 import ElectronBridge from "@/components/electron/ElectronBridge";
 import HideOnPip from "@/components/HideOnPip";
 import GlobalPlayer from "@/components/GlobalPlayer";
@@ -91,6 +92,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <ThemeProvider>
           <LocaleProvider initial={locale}>
             <LibraryProvider>
+              <CloudAutoSync />
               <QuickViewProvider>
                 <HideOnPip>
                   <Navbar />

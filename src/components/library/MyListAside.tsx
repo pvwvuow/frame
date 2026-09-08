@@ -1,9 +1,14 @@
+"use client";
+
 import Link from "next/link";
+import { useState } from "react";
+import { toast } from "sonner";
 import FavoriteButton from "../FavoriteButton";
-import { StarIcon, ChevronRight, FilmIcon, TvIcon } from "../Icons";
+import { StarIcon, ChevronRight, FilmIcon, TvIcon, PlusIcon, LayersIcon, TrashIcon } from "../Icons";
 import { fa } from "@/lib/format";
 import type { FavoriteRow } from "@/lib/mobile/userdata";
-import { titleHref, collectionHref } from "@/lib/mobile-links";
+import { titleHref } from "@/lib/mobile-links";
+import { createCollection, deleteCollection, type UCollection } from "@/lib/collections";
 
 export type AsideCollection = {
   slug: string;
@@ -14,36 +19,126 @@ export type AsideCollection = {
   thumb: string;
 };
 
+/**ICollection card thumb (first poster of the collection). */
+function thumbOf(c: UCollection): string {
+  return c.posters[0] ?? "";
+}
+
 /**
- * ستون کنار «لیست من» — مجموعه‌ها + علاقه‌مندی‌ها (مطابق طرح جدید).
+ * ستون کنار «لیست من» — کالکشن‌های شخصی کاربر (+ ساخت مجموعه) و علاقه‌مندی‌ها.
+ * v0.10.32: مجموعه‌های پیش‌فرض تحریریه از این‌جا حذف شدند؛ فقط کالکشن‌هایی که
+ * خود کاربر ساخته و با حسابش سینک می‌شوند این‌جا دیده می‌شوند.
  */
-export default function MyListAside({ favs, collections }: { favs: FavoriteRow[]; collections: AsideCollection[] }) {
+export default function MyListAside({
+  favs,
+  userCollections,
+  onCollectionsChanged,
+}: {
+  favs: FavoriteRow[];
+  userCollections: UCollection[];
+  onCollectionsChanged?: () => void;
+}) {
+  const [creating, setCreating] = useState(false);
+  const [name, setName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [cols, setCols] = useState<UCollection[]>(userCollections);
+
+  async function submit() {
+    const clean = name.trim();
+    if (!clean || busy) return;
+    setBusy(true);
+    try {
+      const r = await createCollection(clean);
+      setCols((l) => [
+        ...l,
+        { id: r.id, name: r.name, count: 0, posters: [], movies: 0, series: 0, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+      ]);
+      setName("");
+      setCreating(false);
+      toast.success(`مجموعه «${r.name}» ساخته شد`);
+      onCollectionsChanged?.();
+    } catch {
+      toast.error("ساخت مجموعه ناموفق بود");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function remove(c: UCollection) {
+    if (!confirm(`مجموعه «${c.name}» حذف شود؟`)) return;
+    try {
+      await deleteCollection(c.id, c.name);
+      setCols((l) => l.filter((x) => x.id !== c.id));
+      toast.success(`مجموعه «${c.name}» حذف شد`);
+      onCollectionsChanged?.();
+    } catch {
+      toast.error("حذف ناموفق بود");
+    }
+  }
+
   return (
     <div className="space-y-8">
-      {/* ---- مجموعه‌های من ---- */}
+      {/* ---- مجموعه‌های من (شخصی) ---- */}
       <section>
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-base font-black text-white">مجموعه‌های من</h2>
-          <Link href="/collections" className="text-[11px] font-bold text-zinc-400 transition hover:text-brand">
-            مشاهده همه
-          </Link>
+          <button
+            type="button"
+            onClick={() => setCreating((v) => !v)}
+            className="flex items-center gap-1 rounded-lg bg-brand/15 px-2 py-1 text-[11px] font-black text-brand transition hover:bg-brand/25"
+          >
+            <PlusIcon width={12} height={12} /> مجموعه جدید
+          </button>
         </div>
-        {collections.length === 0 ? (
-          <p className="rounded-2xl border border-white/5 bg-white/[0.03] p-4 text-xs leading-6 text-zinc-500">
-            هنوز مجموعه‌ای ساخته نشده است.
-          </p>
+
+        {creating && (
+          <div className="mb-3 flex items-center gap-2">
+            <input
+              autoFocus
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && void submit()}
+              placeholder="نام مجموعه…"
+              maxLength={60}
+              className="h-10 min-w-0 flex-1 rounded-xl border border-white/10 bg-white/5 px-3 text-[13px] font-bold text-white outline-none placeholder:text-zinc-600 focus:border-brand/60"
+            />
+            <button
+              type="button"
+              onClick={() => void submit()}
+              disabled={busy || !name.trim()}
+              className="h-10 shrink-0 rounded-xl bg-brand px-3 text-xs font-black text-white transition hover:bg-brand-600 disabled:opacity-40"
+            >
+              ساخت
+            </button>
+          </div>
+        )}
+
+        {cols.length === 0 ? (
+          <div className="rounded-2xl border border-white/5 bg-white/[0.03] p-4 text-xs leading-6 text-zinc-500">
+            <p className="flex items-center gap-1.5 font-black text-zinc-400">
+              <LayersIcon width={13} height={13} /> هنوز مجموعه‌ای نساخته‌ای
+            </p>
+            <p className="mt-1.5">
+              با «مجموعه جدید» اولین کالکشن شخصی‌ات را بساز و هر فیلم یا سریالی که خواستی داخلش بگذار. مجموعه‌ها با حسابت ذخیره می‌شوند.
+            </p>
+          </div>
         ) : (
           <ul className="space-y-2.5">
-            {collections.map((c) => (
-              <li key={c.slug}>
+            {cols.map((c) => (
+              <li key={c.id} className="group relative">
                 <Link
-                  href={collectionHref(c.slug)}
-                  className="group flex items-center gap-3 rounded-2xl border border-white/5 bg-white/[0.03] p-2.5 transition hover:border-white/15 hover:bg-white/[0.07]"
+                  href={`/collections/u?c=${c.id}`}
+                  className="flex items-center gap-3 rounded-2xl border border-white/5 bg-white/[0.03] p-2.5 transition hover:border-white/15 hover:bg-white/[0.07]"
                 >
-                  { }
-                  <img src={c.thumb} alt="" className="h-14 w-20 shrink-0 rounded-xl object-cover" loading="lazy" />
+                  {thumbOf(c) ? (
+                    <img src={thumbOf(c)} alt="" className="h-14 w-20 shrink-0 rounded-xl object-cover" loading="lazy" />
+                  ) : (
+                    <span className="grid h-14 w-20 shrink-0 place-items-center rounded-xl bg-white/5 text-zinc-600">
+                      <LayersIcon width={18} height={18} />
+                    </span>
+                  )}
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[13px] font-extrabold text-white">{c.title}</span>
+                    <span className="block truncate text-[13px] font-extrabold text-white">{c.name}</span>
                     <span className="mt-0.5 flex items-center gap-2 text-[10px] font-medium text-zinc-500">
                       <span className="flex items-center gap-1">
                         <FilmIcon width={10} height={10} /> {fa(c.movies)} فیلم
@@ -56,6 +151,14 @@ export default function MyListAside({ favs, collections }: { favs: FavoriteRow[]
                   </span>
                   <ChevronRight width={14} height={14} className="shrink-0 rotate-180 text-zinc-600 transition group-hover:text-brand" />
                 </Link>
+                <button
+                  type="button"
+                  onClick={() => void remove(c)}
+                  aria-label={`حذف ${c.name}`}
+                  className="absolute -top-1.5 -left-1.5 hidden h-6 w-6 place-items-center rounded-full bg-zinc-900 text-zinc-400 ring-1 ring-white/10 transition hover:bg-rose-600 hover:text-white group-hover:grid"
+                >
+                  <TrashIcon width={12} height={12} />
+                </button>
               </li>
             ))}
           </ul>
@@ -82,7 +185,6 @@ export default function MyListAside({ favs, collections }: { favs: FavoriteRow[]
                 className="group flex items-center gap-3 rounded-2xl border border-transparent p-2 transition hover:border-white/5 hover:bg-white/[0.04]"
               >
                 <Link href={titleHref(f.title.slug)} className="flex min-w-0 flex-1 items-center gap-3">
-                  { }
                   <img src={f.title.poster} alt="" className="h-14 w-10 shrink-0 rounded-lg object-cover" loading="lazy" />
                   <span className="min-w-0">
                     <span className="block truncate text-[13px] font-bold text-white">{f.title.title}</span>

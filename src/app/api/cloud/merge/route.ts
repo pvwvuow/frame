@@ -15,6 +15,7 @@ type Body = {
   favorites?: number[];
   watchlist?: { titleId: number; status: string }[];
   ratings?: { titleId: number; score: number }[];
+  collections?: { name: string; items: number[] }[];
 };
 
 const VALID_STATUSES = new Set(["planned", "watching", "watched"]);
@@ -66,5 +67,28 @@ export async function POST(req: Request) {
     }
   }
 
-  return Response.json({ ok: true, favoritesAdded, listAdded, ratingsAdded });
+  // collections (v0.10.32) — matched by NAME (cloud fills gaps, local wins)
+  let collectionsAdded = 0;
+  let collectionItemsAdded = 0;
+  for (const col of body.collections ?? []) {
+    const name = String(col?.name ?? "").trim().slice(0, 60);
+    const items = (col?.items ?? []).map(Number).filter((n) => Number.isFinite(n) && n > 0);
+    if (!name) continue;
+    let row = await db.userCollection.findUnique({ where: { userKey_name: { userKey, name } } });
+    if (!row) {
+      row = await db.userCollection.create({ data: { userKey, name } });
+      collectionsAdded++;
+    }
+    if (items.length) {
+      const have = await db.userCollectionItem.findMany({ where: { collectionId: row.id, titleId: { in: items } }, select: { titleId: true } });
+      const haveSet = new Set(have.map((h) => h.titleId));
+      const missing = [...new Set(items)].filter((id) => !haveSet.has(id));
+      if (missing.length) {
+        const r = await db.userCollectionItem.createMany({ data: missing.map((titleId) => ({ collectionId: row.id, titleId })) });
+        collectionItemsAdded += r.count;
+      }
+    }
+  }
+
+  return Response.json({ ok: true, favoritesAdded, listAdded, ratingsAdded, collectionsAdded, collectionItemsAdded });
 }

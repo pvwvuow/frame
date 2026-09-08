@@ -75,6 +75,8 @@ export const db = new Dexie("frame-mobile") as Dexie & {
   reviews: Dexie.Table<Record<string, unknown>, number>;
   notificationsRead: Dexie.Table<{ id: string; userKey: string; at: string }, string>;
   profiles: Dexie.Table<Record<string, unknown>, string>;
+  ucollections: Dexie.Table<Record<string, unknown>, number>;
+  ucitems: Dexie.Table<Record<string, unknown>, number>;
 };
 
 db.version(1).stores({
@@ -87,6 +89,12 @@ db.version(1).stores({
   reviews: "++id, titleId",
   notificationsRead: "id, userKey",
   profiles: "userKey",
+});
+
+/* v2 (v0.10.32): user collections — synced with the account like favorites */
+db.version(2).stores({
+  ucollections: "++id, [userKey+name], userKey, name",
+  ucitems: "++id, [collectionId+titleId], collectionId, titleId",
 });
 
 /* stable episode ids derived from (title, season, number) */

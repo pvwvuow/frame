@@ -101,6 +101,32 @@ model Favorite {
   @@index([userKey])
 }
 
+/// کالکشن شخصی کاربر (v0.10.32) — با اکانت سینک می‌شود
+model UserCollection {
+  id        Int      @id @default(autoincrement())
+  userKey   String
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+  items     UserCollectionItem[]
+
+  @@unique([userKey, name])
+  @@index([userKey])
+}
+
+model UserCollectionItem {
+  id           Int      @id @default(autoincrement())
+  collectionId Int
+  collection   UserCollection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  // no FK to Title on purpose: a synced item may reference a title the local
+  // catalog doesn't know yet (older/newer device) — it must never break sync
+  titleId      Int
+  addedAt      DateTime @default(now())
+
+  @@unique([collectionId, titleId])
+  @@index([collectionId])
+}
+
 /// امتیاز شخصی کاربر به هر عنوان (۱ تا ۱۰)
 model UserRating {
   id        Int      @id @default(autoincrement())
