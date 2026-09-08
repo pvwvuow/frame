@@ -224,6 +224,15 @@ export async function wipeProfile(scope: string, userKey = getUserKey()): Promis
   if (scope === "all" || scope === "ratings") ops.push(db.ratings.where("userKey").equals(userKey).delete());
   if (scope === "all") ops.push(db.profiles.delete(userKey));
   await Promise.all(ops);
+  // v0.13.1 — user collections ride along with the full wipe (items first,
+  // then the parents — mirrors the desktop route's ordering).
+  if (scope === "all") {
+    const cols = await db.ucollections.where("userKey").equals(userKey).toArray();
+    for (const c of cols) {
+      await db.ucitems.where("collectionId").equals((c as { id: number }).id).delete();
+    }
+    await db.ucollections.where("userKey").equals(userKey).delete();
+  }
 }
 
 /* ------------------------------------------------------------------ */

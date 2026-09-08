@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
-import { markProfileTouched } from "@/lib/cloud";
+import { markProfileTouched, useCloudSession, wipeCloudAccountData } from "@/lib/cloud";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { useLibrary } from "./LibraryProvider";
@@ -130,6 +130,7 @@ export default function SettingsForm({ initial }: { initial: ProfileData }) {
   const router = useRouter();
   const lib = useLibrary();
   const electron = useIsElectron();
+  const { session } = useCloudSession();
   const dirty = useMemo(() => JSON.stringify(p) !== JSON.stringify(initial), [p, initial]);
 
   // deep-link: /settings#shortcuts
@@ -176,7 +177,14 @@ export default function SettingsForm({ initial }: { initial: ProfileData }) {
     start(async () => {
       try {
         await fetch("/api/profile", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scope }) });
-        toast.success("داده‌ها پاک شد");
+        // v0.13.1 — a FULL wipe also clears the CLOUD copy (favorites, watchlist,
+        // ratings, history, collections, activity, shared walls). Without this,
+        // another device would push its old rows straight back and resurrect
+        // them here on the next sync. Username + VIP stay untouched.
+        let cloudOk = true;
+        if (scope === "all" && session) cloudOk = await wipeCloudAccountData();
+        if (cloudOk) toast.success("داده‌ها پاک شد");
+        else toast.error("این دستگاه پاک شد؛ پاک‌سازی ابری ناموفق بود — با اینترنت وصل دوباره تلاش کنید");
         setDanger(null);
         await lib.refresh();
         router.refresh();
@@ -579,7 +587,11 @@ export default function SettingsForm({ initial }: { initial: ProfileData }) {
           <div role="alertdialog" aria-modal="true" className="glass-strong glass-in w-full max-w-sm rounded-3xl p-6">
             <h3 className="text-lg font-extrabold text-white">مطمئن هستید؟</h3>
             <p className="mt-2 text-sm leading-6 text-zinc-300">
-              {danger === "all" ? "تمام داده‌های شما شامل لیست، علاقه‌مندی‌ها، تاریخچه، امتیازها و پروفایل حذف می‌شود." : "این داده‌ها برای همیشه حذف می‌شوند و قابل بازیابی نیستند."}
+              {danger === "all"
+                ? session
+                  ? "تمام داده‌های حساب — لیست، علاقه‌مندی‌ها، تاریخچه، امتیازها، مجموعه‌ها و نسخه‌ی ابری روی همه‌ی دستگاه‌ها — حذف می‌شود. نام کاربری و اشتراک VIP باقی می‌ماند."
+                  : "تمام داده‌های شما شامل لیست، علاقه‌مندی‌ها، تاریخچه، امتیازها، مجموعه‌ها و پروفایل حذف می‌شود."
+                : "این داده‌ها برای همیشه حذف می‌شوند و قابل بازیابی نیستند."}
             </p>
             <div className="mt-6 flex justify-end gap-2">
               <button type="button" onClick={() => setDanger(null)} className="h-10 rounded-full px-4 text-sm font-bold text-zinc-300 hover:bg-white/10">انصراف</button>

@@ -891,3 +891,35 @@ export async function pushCollectionsUp(
     /* offline → local remains the source of truth */
   }
 }
+
+/* ------------------------------------------------------------------ */
+/* v0.13.1 — full account reset (cloud side)                           */
+/* ------------------------------------------------------------------ */
+
+/** Delete EVERY cloud row of the signed-in account: favorites, watchlist,
+ *  ratings, watch progress, activity events, collections (items cascade)
+ *  and shared Dark-Room walls.
+ *
+ *  The username (profiles) and the VIP subscription are NOT touched.
+ *  Used by Settings → «منطقه خطر» → «حذف تمام داده‌های من»: without it the
+ *  old (numeric-id era) rows on OTHER devices would be pushed straight back
+ *  and resurrect the wrong favorites. */
+export async function wipeCloudAccountData(): Promise<boolean> {
+  try {
+    const uid = await currentUserId();
+    const sb = getSupabase();
+    if (!uid || !sb) return false;
+    const results = await Promise.all([
+      sb.from("favorites").delete().eq("user_id", uid),
+      sb.from("watchlist").delete().eq("user_id", uid),
+      sb.from("ratings").delete().eq("user_id", uid),
+      sb.from("watch_progress").delete().eq("user_id", uid),
+      sb.from("user_events").delete().eq("user_id", uid),
+      sb.from("user_collections").delete().eq("user_id", uid),
+      sb.from("shared_collections").delete().eq("owner_id", uid),
+    ]);
+    return results.every((r) => !r.error);
+  } catch {
+    return false;
+  }
+}

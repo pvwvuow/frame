@@ -56,6 +56,10 @@ export async function DELETE(req: Request) {
   if (scope === "all" || scope === "ratings") ops.push(db.userRating.deleteMany({ where: { userKey } }));
   if (scope === "all") ops.push(db.userProfile.deleteMany({ where: { userKey } }));
   await Promise.all(ops);
+  // v0.13.1 — user collections ride along with the full wipe. Their items
+  // cascade in the DB; kept OUT of the Promise.all so item deletion always
+  // finishes before/with the parents (no FK race).
+  if (scope === "all") await db.userCollection.deleteMany({ where: { userKey } });
   ["/my-list", "/favorites", "/history", "/profile", "/settings"].forEach((p) => revalidatePath(p));
   return Response.json({ ok: true });
 }
