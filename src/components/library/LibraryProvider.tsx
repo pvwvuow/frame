@@ -4,7 +4,8 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import type { ListStatus } from "@/lib/library-shared";
-import { logEvent, pushFavorite, pushRating, pushWatchlist } from "@/lib/cloud";
+import { logEvent, pushFavorite, pushRating, pushWatchlist, useCloudSession } from "@/lib/cloud";
+import { attachIdentity } from "@/lib/identity";
 
 type Profile = { displayName: string; avatar: number; avatarImage?: string | null; reduceMotion: boolean; kidsMode?: boolean; hasPin?: boolean };
 
@@ -47,6 +48,7 @@ async function call<T>(url: string, method: string, body?: unknown): Promise<T> 
 
 export default function LibraryProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
+  const { ready: sessReady, session } = useCloudSession();
   const [ready, setReady] = useState(false);
   const [list, setList] = useState<Map<number, ListStatus>>(new Map());
   const [favorites, setFavorites] = useState<Set<number>>(new Set());
@@ -86,6 +88,37 @@ export default function LibraryProvider({ children }: { children: ReactNode }) {
     if (refreshTimer.current) clearTimeout(refreshTimer.current);
     refreshTimer.current = setTimeout(() => router.refresh(), 350);
   }, [router]);
+
+  /* v0.10.35 — per-account data spaces (جداسازی داده‌ی حساب‌ها).
+   * Personal data is keyed by the `nama_uid` cookie; previously that cookie
+   * never changed, so a new cloud account inherited the previous account's
+   * profile, watch history and collections. Now every session transition
+   * (login / account switch / sign-out) moves the local data space to that
+   * account's own userKey FIRST and reloads personal data after.
+   *  - known account           → its recorded space (data returns on re-login)
+   *  - first account on device → adopts the current space (upgrade is seamless)
+   *  - any further account     → a fresh empty space (the leak is gone)
+   *  - sign-out                → fresh guest space (account data stays stored) */
+  const acctId = session?.user?.id ?? null;
+  const appliedAcct = useRef<string | null | undefined>(undefined);
+  useEffect(() => {
+    if (!sessReady) return;
+    const target = acctId ?? null;
+    const prev = appliedAcct.current;
+    if (prev === target) return;
+    appliedAcct.current = target;
+    // Booting WITHOUT a session must never touch the cookie: an offline boot
+    // that fails to restore the session would otherwise rotate away and hide
+    // the user's data. Only an explicit in-run sign-out (prev was an account)
+    // rotates to a fresh guest space.
+    if (prev === undefined && target === null) return;
+    void attachIdentity(target).then((r) => {
+      if (r.switched || prev !== undefined) {
+        void refresh();
+        softRefresh();
+      }
+    });
+  }, [sessReady, acctId, refresh, softRefresh]);
 
   const toggleList = useCallback(
     async (id: number, name?: string) => {

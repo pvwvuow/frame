@@ -19,6 +19,7 @@ import {
   getUserStats, getNotifications, markNotificationRead, markAllNotificationsRead,
   listUserCollections, createUserCollection, renameUserCollection, deleteUserCollection,
   getCollectionItems, collectionsContaining, setCollectionItem, mergeCloudSnapshot,
+  switchIdentity, getUserKey,
 } from "./userdata";
 
 type Handler = (ctx: { url: URL; method: string; body: Record<string, unknown>; seg: string[] }) => Promise<unknown> | unknown;
@@ -57,6 +58,11 @@ const routes: { method: string; pattern: string; handler: Handler }[] = [
   { method: "GET", pattern: "/api/profile", handler: () => getProfile() },
   { method: "PATCH", pattern: "/api/profile", handler: ({ body }) => patchProfile(body) },
   { method: "DELETE", pattern: "/api/profile", handler: ({ body }) => wipeProfile(String(body.scope ?? "all")).then(() => ({ ok: true })) },
+
+  /* v0.10.35 — per-account data spaces (same contract as the desktop route) */
+  { method: "POST", pattern: "/api/identity", handler: ({ body }) =>
+      switchIdentity(typeof body.accountId === "string" && body.accountId ? String(body.accountId) : null, Boolean(body.reset)) },
+  { method: "GET", pattern: "/api/identity", handler: () => ({ uid: getUserKey(), mobile: true }) },
 
   { method: "GET", pattern: "/api/notifications", handler: async () => getNotifications() },
   { method: "POST", pattern: "/api/notifications", handler: ({ body }) => (body.all ? markAllNotificationsRead() : markNotificationRead(String(body.id ?? ""))).then(() => ({ ok: true })) },

@@ -92,6 +92,13 @@ const RUNTIME_DDL: string[] = [
 )`,
   `CREATE UNIQUE INDEX IF NOT EXISTS "UserCollectionItem_collectionId_titleId_key" ON "UserCollectionItem"("collectionId" ASC, "titleId" ASC)`,
   `CREATE INDEX IF NOT EXISTS "UserCollectionItem_collectionId_idx" ON "UserCollectionItem"("collectionId" ASC)`,
+  /* v0.10.35 — per-account data spaces (نگاشت حساب ابری ← فضای داده‌ی محلی) */
+  `CREATE TABLE IF NOT EXISTS "AccountSpace" (
+  "accountId" TEXT NOT NULL PRIMARY KEY,
+  "uid" TEXT NOT NULL,
+  "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+)`,
+  `CREATE INDEX IF NOT EXISTS "AccountSpace_uid_idx" ON "AccountSpace"("uid" ASC)`,
 ];
 
 export function ensureRuntimeSchema(): Promise<void> {

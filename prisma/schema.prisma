@@ -204,3 +204,15 @@ model SyncState {
   value     String
   updatedAt DateTime @updatedAt
 }
+
+/// v0.10.35 — نگاشت «حساب ابری ← فضای داده‌ی محلی».
+/// هر حساب یک userKey (فضای داده) مخصوص خودش روی این دستگاه دارد؛ پیش‌تر همه‌ی
+/// حساب‌ها روی یک userKey مشترک می‌افتادند و پروفایل/تاریخچه/کالکشن‌های حساب
+/// قبلی در حساب جدید هم دیده می‌شد. uid همان مقدار کوکی nama_uid است.
+model AccountSpace {
+  accountId String   @id
+  uid       String
+  createdAt DateTime @default(now())
+
+  @@index([uid])
+}

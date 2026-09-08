@@ -2,7 +2,7 @@ import { db } from "@/lib/db";
 import { ensureSeeded } from "@/db/seed";
 import { getProfile, getMyListRows } from "@/lib/library";
 import { getContinueWatching, getNewest, getByGenre } from "@/lib/queries";
-import { titleHref, watchHref } from "@/lib/mobile-links";
+import { titleHref, watchHref } from "@/lib/links";
 
 export type Notification = {
   id: string;

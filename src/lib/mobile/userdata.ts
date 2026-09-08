@@ -6,7 +6,7 @@
 import { db, episodeId, getEpisodes, getFullTitle, getTitleLiteBySlug, isDesktopRuntime, type LiteTitle } from "./db";
 import { LIST_STATUSES, type ListStatus } from "@/lib/library-shared";
 import type { TitleView } from "./db";
-import { titleHref, watchHref } from "@/lib/mobile-links";
+import { titleHref, watchHref } from "@/lib/links";
 
 export { LIST_STATUSES };
 export type { ListStatus };
@@ -28,11 +28,85 @@ const srv = async <T>(url: string, init?: RequestInit): Promise<T> => {
 const srvPost = <T,>(url: string, body: unknown, method = "POST"): Promise<T> =>
   srv<T>(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
 
-/** userKey from the same cookie the desktop server reads (nama_uid). */
+/** userKey from the same cookie the desktop server reads (nama_uid).
+ *  v0.10.35: per-account data spaces — when an identity attach happened, the
+ *  ACTIVE space (per cloud account) wins over the raw device cookie, mirroring
+ *  the desktop /api/identity route so switching accounts gives each account
+ *  its own profile / history / collections on Android too. */
 export function getUserKey(): string {
+  const active = lsGet(ACCT_ACTIVE);
+  if (active) return active;
   if (typeof document === "undefined") return "guest";
   const m = document.cookie.match(/(?:^|;\s*)nama_uid=([^;]*)/);
   return m ? decodeURIComponent(m[1]) : "guest";
+}
+
+/* ---- v0.10.35 — per-account data spaces (mobile side of /api/identity) ---- */
+
+const ACCT_ACTIVE = "frame.acct.active";
+const ACCT_MAP = "frame.acct.map";
+
+function lsGet(k: string): string | null {
+  try { return localStorage.getItem(k); } catch { return null; }
+}
+function lsSet(k: string, v: string): void {
+  try { localStorage.setItem(k, v); } catch { /* ignore */ }
+}
+function readAcctMap(): Record<string, string> {
+  try { return JSON.parse(lsGet(ACCT_MAP) ?? "{}") as Record<string, string>; } catch { return {}; }
+}
+
+/** deterministic empty space for a brand-new account on this device */
+function accountSpaceUid(accountId: string): string {
+  let h = 5381;
+  for (let i = 0; i < accountId.length; i++) h = ((h << 5) + h + accountId.charCodeAt(i)) >>> 0;
+  return "a" + h.toString(36) + "x" + accountId.length.toString(36);
+}
+
+async function spaceHasData(uid: string): Promise<boolean> {
+  const [p, prog, wl, fav, rt, cols] = await Promise.all([
+    db.profiles.get(uid),
+    db.progress.where("userKey").equals(uid).first(),
+    db.watchlist.where("userKey").equals(uid).first(),
+    db.favorites.where("userKey").equals(uid).first(),
+    db.ratings.where("userKey").equals(uid).first(),
+    db.ucollections.where("userKey").equals(uid).first(),
+  ]);
+  return Boolean(p || prog || wl || fav || rt || cols);
+}
+
+/** Same contract as the desktop POST /api/identity route:
+ *  - attach(accountId): known account → its recorded space (data returns on
+ *    re-login); first attach + current space unclaimed + has data → ADOPT the
+ *    current space (seamless upgrade / guest continuity); otherwise a fresh
+ *    empty space so a second account never sees the first account's data.
+ *  - reset (sign-out): a fresh guest space, but only when the current space
+ *    belongs to a mapped account — signed-out data survives restarts. */
+export async function switchIdentity(accountId: string | null, reset = false): Promise<{ switched: boolean }> {
+  const current = getUserKey();
+  const map = readAcctMap();
+  const claimed = Object.values(map).includes(current);
+
+  if (reset || !accountId) {
+    if (!claimed) return { switched: false };
+    const fresh = "guest-" + Math.random().toString(36).slice(2, 10);
+    lsSet(ACCT_ACTIVE, fresh);
+    return { switched: true };
+  }
+
+  const known = map[accountId];
+  if (known) {
+    if (known === current) return { switched: false };
+    lsSet(ACCT_ACTIVE, known);
+    return { switched: true };
+  }
+
+  const hasData = await spaceHasData(current);
+  const target = !claimed && hasData ? current : accountSpaceUid(accountId);
+  map[accountId] = target;
+  lsSet(ACCT_MAP, JSON.stringify(map));
+  lsSet(ACCT_ACTIVE, target);
+  return { switched: target !== current };
 }
 
 const now = () => new Date().toISOString();

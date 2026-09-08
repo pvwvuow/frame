@@ -31,6 +31,7 @@ import {
   saveAuthSnapshot,
   writeSignOutTombstone,
 } from "./auth-offline";
+import { attachIdentity } from "./identity";
 
 /** e.g. "https://xxxxxxxxxxxx.supabase.co" — fill to hard-code the project. */
 export const SUPABASE_URL_DEFAULT = "https://emqsegjeiyimoyncbhfn.supabase.co";
@@ -432,8 +433,15 @@ export async function syncCloudToLocal(): Promise<MergeResult> {
   }
 }
 
-/** On login / app start: pull cloud → local, then push local → cloud so both sides converge. */
+/** On login / app start: pull cloud → local, then push local → cloud so both sides converge.
+ *  v0.10.35: BEFORE touching any data, make sure the active local data space
+ *  belongs to THIS account (per-account spaces). Without this, the cloud
+ *  snapshot of account B would be merged into the space of the previously
+ *  signed-in account — the «new account sees the old account's profile /
+ *  history / collections» leak. */
 export async function fullSync(): Promise<MergeResult> {
+  const uid = await currentUserId();
+  if (uid) await attachIdentity(uid);
   const merged = await syncCloudToLocal();
   if (merged.ok) {
     // push local-only rows up as well (cheap, idempotent upserts)
