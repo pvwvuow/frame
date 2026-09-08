@@ -23,7 +23,7 @@ import {
   TrashIcon,
   UsersIcon,
 } from "@/components/Icons";
-import { useCloudSession } from "@/lib/cloud";
+import { localIdsForSlugs, useCloudSession } from "@/lib/cloud";
 import { fetchCollectionItems, fetchUserCollections, type UCollection } from "@/lib/collections";
 import {
   listMySharedNames,
@@ -110,7 +110,16 @@ export default function SharedWall({ modeBar }: { modeBar?: ReactNode }) {
     let alive = true;
     setOpenItems(null);
     (async () => {
-      const full = await Promise.all(open.items.map((it) => getFullTitle(it.id).catch(() => null)));
+      // v0.13.0 — resolve slugs against THIS device's catalog first; the
+      // numeric ids stored by the publishing device can point at completely
+      // different titles here (id drift).
+      const resolved = await localIdsForSlugs(open.items.map((it) => it.slug ?? "").filter(Boolean));
+      const full = await Promise.all(
+        open.items.map((it) => {
+          const id = (it.slug ? resolved.get(it.slug)?.id : undefined) ?? it.id ?? 0;
+          return id ? getFullTitle(id).catch(() => null) : Promise.resolve(null);
+        })
+      );
       if (alive) setOpenItems(full);
     })();
     return () => {

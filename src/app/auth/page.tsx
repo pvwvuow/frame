@@ -87,6 +87,23 @@ export default function AuthPage() {
     setError("");
     try {
       if (mode === "signup") {
+        // v0.13.0 — DUPLICATE-ACCOUNT GUARD: registering while a session is
+        // alive silently creates ANOTHER account (that is how this user's
+        // data ended up split across five uids). Block it and point to ورود.
+        try {
+          const { data } = await sb.auth.getSession();
+          if (data.session) {
+            setError(
+              en
+                ? "You are already signed in on this device. If you want a different account, sign out first — otherwise use the Sign in tab."
+                : "شما همین حالا با یک حساب وارد شده‌اید. اگر حساب جدید می‌خواهید اول از حساب فعلی خارج شوید؛ وگرنه از تب «ورود» استفاده کنید."
+            );
+            setBusy(false);
+            return;
+          }
+        } catch {
+          /* session check failed → let supabase decide */
+        }
         const { error } = await sb.auth.signUp({
           email: email.trim(),
           password,
@@ -153,7 +170,7 @@ export default function AuthPage() {
             <div className="rounded-2xl border border-sky-500/25 bg-sky-500/10 px-3 py-2.5 text-white">
               <BookmarkIcon width={14} height={14} className="mx-auto mb-1 text-sky-400" />
               {en ? "Watch progress" : "پیشرفت پخش"}
-              <span className="block text-[9px] font-medium text-zinc-400">{en ? "local only" : "فقط روی همین دستگاه"}</span>
+              <span className="block text-[9px] font-medium text-zinc-400">{en ? "synced to cloud" : "در فضای ابری"}</span>
             </div>
           </div>
 
@@ -194,8 +211,8 @@ export default function AuthPage() {
           <h1 className="mt-3 text-xl font-black text-white">{en ? "Sign in to Frame" : "ورود به فریم"}</h1>
           <p className="mt-1 text-xs leading-5 text-zinc-400">
             {en
-              ? "Favorites, your list and ratings live in your cloud account. Watch progress always stays on this device."
-              : "علاقه‌مندی‌ها، لیست شما و امتیازها داخل حساب ابری‌ات ذخیره می‌شوند؛ پیشرفت پخش فیلم همیشه فقط روی همین دستگاه می‌ماند."}
+              ? "Favorites, your list, ratings and watch progress live in your cloud account and follow it across devices."
+              : "علاقه‌مندی‌ها، لیست شما، امتیازها و پیشرفت پخش داخل حساب ابری‌ات ذخیره می‌شوند و همراه حساب بین دستگاه‌ها جابه‌جا می‌شوند."}
           </p>
         </div>
 
@@ -315,8 +332,8 @@ export default function AuthPage() {
 
             <p className="mt-4 text-center text-[11px] leading-5 text-zinc-500">
               {en
-                ? "By continuing you agree that your library data (favorites, list, ratings) is stored on our cloud server."
-                : "با ورود، داده‌های کتابخانه‌ات (علاقه‌مندی‌ها، لیست و امتیازها) روی سرور ابری ذخیره می‌شود. پیشرفت تماشا فقط روی دستگاه خودت می‌ماند."}
+                ? "By continuing you agree that your library data (favorites, list, ratings, watch progress) is stored on our cloud server."
+                : "با ورود، داده‌های کتابخانه‌ات (علاقه‌مندی‌ها، لیست، امتیازها و پیشرفت تماشا) روی سرور ابری ذخیره می‌شود."}
             </p>
 
             {configured && (

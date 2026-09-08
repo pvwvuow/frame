@@ -8,7 +8,7 @@
 
 import {
   whenReady, getCatalogPage, search, getFullTitle, getEpisodes, getSimilar,
-  getTitleLiteBySlug, isReady, bumpViews,
+  getTitleLiteBySlug, liteById, liteBySlug, isReady, bumpViews,
   type LiteTitle,
 } from "./db";
 import {
@@ -89,11 +89,48 @@ const routes: { method: string; pattern: string; handler: Handler }[] = [
 
   /* v0.10.32 FIX: the cloud→device merge now REALLY runs on Android —
    * the snapshot from Supabase lands in Dexie, so an account's
-   * favorites/watchlist/ratings/collections show up on mobile too. */
+   * favorites/watchlist/ratings/collections show up on mobile too.
+   * v0.13.0: the snapshot carries STABLE slugs (see mergeCloudSnapshot). */
   { method: "POST", pattern: "/api/cloud/merge", handler: ({ body }) => mergeCloudSnapshot(body as unknown as Parameters<typeof mergeCloudSnapshot>[0]).then((r) => ({ ok: true, ...r })) },
+
+  /* v0.13.0 — id ↔ slug translation over the lite index (same contract as
+   * the desktop /api/title/cloud-key route; the cloud layer calls this on
+   * every push/pull and must exist on Android too). */
+  { method: "POST", pattern: "/api/title/cloud-key", handler: ({ body }) => cloudKeyLookup(body) },
+  { method: "GET", pattern: "/api/title/cloud-key", handler: ({ url }) =>
+      cloudKeyLookup({
+        ids: (url.searchParams.get("ids") ?? "").split(",").map(Number).filter(Boolean),
+        slugs: (url.searchParams.get("slugs") ?? "").split(",").map(decodeURIComponent).filter(Boolean),
+      }) },
 
   { method: "GET", pattern: "/api/stats", handler: () => getUserStats() },
 ];
+
+/** v0.13.0 — id ↔ slug translation over the lite index (mirrors the desktop
+ *  /api/title/cloud-key route). Episode ids follow the stable
+ *  (title, season, number) formula, so they decode arithmetically. */
+async function cloudKeyLookup(body: { ids?: unknown; episodeIds?: unknown; slugs?: unknown }) {
+  const ids = Array.isArray(body.ids) ? body.ids.map(Number).filter((n) => Number.isFinite(n) && n > 0) : [];
+  const episodeIds = Array.isArray(body.episodeIds) ? body.episodeIds.map(Number).filter((n) => Number.isFinite(n) && n > 0) : [];
+  const slugs = Array.isArray(body.slugs) ? body.slugs.map((s) => String(s).trim()).filter(Boolean) : [];
+  const seen = new Set<number>();
+  const titles: { id: number; slug: string; title: string }[] = [];
+  const push = (t: LiteTitle | null) => {
+    if (t && !seen.has(t.id)) {
+      seen.add(t.id);
+      titles.push({ id: t.id, slug: t.slug, title: t.title });
+    }
+  };
+  for (const id of ids) push(liteById(id));
+  for (const s of slugs) push(liteBySlug(s));
+  const episodes = episodeIds.map((id) => ({
+    id,
+    /* inverse of episodeId(): titleId * 100_000 + season * 1000 + number */
+    season: Math.floor((id % 100_000) / 1000),
+    number: id % 1000,
+  }));
+  return { titles, episodes };
+}
 
 async function handleTitleSlug(seg: string[]): Promise<unknown> {
   const slug = decodeURIComponent(seg[2] ?? "");

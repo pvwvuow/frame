@@ -934,45 +934,80 @@ export async function setCollectionItem(
 }
 
 /* ------------------------------------------------------------------ */
-/* Cloud → Dexie merge (v0.10.32)                                      */
+/* Cloud → Dexie merge (v0.10.32, slug-based since v0.13.0)             */
 /* The mobile shim serves POST /api/cloud/merge with this — Supabase    */
 /* snapshot rows land in IndexedDB, so an account's library shows up    */
 /* on Android too (cloud fills gaps, local wins, nothing is deleted).   */
+/* v0.13.0: snapshot rows carry STABLE slugs; they are resolved against */
+/* THIS device's lite index (slug → local id) before merging, so rows   */
+/* from a device with a different catalog generation can never land on  */
+/* the wrong title again. Unknown slugs are skipped.                    */
 /* ------------------------------------------------------------------ */
 
 export type CloudMergeBody = {
-  favorites?: number[];
-  watchlist?: { titleId: number; status: string }[];
-  ratings?: { titleId: number; score: number }[];
-  collections?: { name: string; items: number[] }[];
-  progress?: { titleId: number; episodeId: number | null; position: number; duration: number; updatedAt: string }[];
+  favorites?: { slug?: unknown; title?: unknown }[];
+  watchlist?: { slug?: unknown; title?: unknown; status?: unknown }[];
+  ratings?: { slug?: unknown; title?: unknown; score?: unknown }[];
+  collections?: { name?: unknown; items?: { slug?: unknown; title?: unknown }[] }[];
+  progress?: { slug?: unknown; season?: unknown; episode?: unknown; position?: unknown; duration?: unknown; updatedAt?: unknown }[];
 };
+
+const slugOf = (r: unknown): string => String((r as { slug?: unknown })?.slug ?? "").trim().slice(0, 140);
 
 export async function mergeCloudSnapshot(
   body: CloudMergeBody,
   userKey = getUserKey()
-): Promise<{ favoritesAdded: number; listAdded: number; ratingsAdded: number; collectionsAdded: number; collectionItemsAdded: number; progressApplied: number }> {
+): Promise<{ favoritesAdded: number; listAdded: number; ratingsAdded: number; collectionsAdded: number; collectionItemsAdded: number; progressApplied: number; skipped: number }> {
   const user = userKey || "guest";
   let favoritesAdded = 0;
   let listAdded = 0;
   let ratingsAdded = 0;
   let collectionsAdded = 0;
   let collectionItemsAdded = 0;
+  let skipped = 0;
+
+  // one slug → local id pass for the whole payload
+  const allSlugs = [
+    ...(body.favorites ?? []),
+    ...(body.watchlist ?? []),
+    ...(body.ratings ?? []),
+    ...(body.collections ?? []).flatMap((c) => (c?.items ?? []) as { slug?: unknown }[]),
+    ...(body.progress ?? []),
+  ]
+    .map(slugOf)
+    .filter(Boolean);
+  const idBySlug = new Map<string, number>();
+  for (const s of [...new Set(allSlugs)]) {
+    const t = await getTitleLiteBySlug(s);
+    if (t) idBySlug.set(s, t.id);
+  }
 
   // favorites
-  for (const id of (body.favorites ?? []).map(Number).filter((n) => Number.isFinite(n) && n > 0)) {
-    const ex = await db.favorites.where("[userKey+titleId]").equals([user, id]).count();
+  for (const r of body.favorites ?? []) {
+    const slug = slugOf(r);
+    if (!slug) continue;
+    const titleId = idBySlug.get(slug);
+    if (!titleId) {
+      skipped++;
+      continue;
+    }
+    const ex = await db.favorites.where("[userKey+titleId]").equals([user, titleId]).count();
     if (!ex) {
-      await db.favorites.add({ userKey: user, titleId: id, createdAt: now() });
+      await db.favorites.add({ userKey: user, titleId, createdAt: now() });
       favoritesAdded++;
     }
   }
 
   // watchlist
   for (const row of body.watchlist ?? []) {
-    const titleId = Number(row?.titleId);
+    const slug = slugOf(row);
     const status = String(row?.status ?? "");
-    if (!titleId || Number.isNaN(titleId) || !STATUSES.has(status)) continue;
+    if (!slug || !STATUSES.has(status)) continue;
+    const titleId = idBySlug.get(slug);
+    if (!titleId) {
+      skipped++;
+      continue;
+    }
     const ex = await db.watchlist.where("[userKey+titleId]").equals([user, titleId]).first();
     if (!ex) {
       await db.watchlist.add({ userKey: user, titleId, status, note: "", pinned: false, createdAt: now(), updatedAt: now() });
@@ -982,9 +1017,14 @@ export async function mergeCloudSnapshot(
 
   // ratings (fill gaps only)
   for (const row of body.ratings ?? []) {
-    const titleId = Number(row?.titleId);
+    const slug = slugOf(row);
     const score = Number(row?.score);
-    if (!titleId || Number.isNaN(titleId) || !Number.isFinite(score) || score < 1 || score > 10) continue;
+    if (!slug || !Number.isFinite(score) || score < 1 || score > 10) continue;
+    const titleId = idBySlug.get(slug);
+    if (!titleId) {
+      skipped++;
+      continue;
+    }
     const ex = await db.ratings.where("[userKey+titleId]").equals([user, titleId]).first();
     if (!ex) {
       await db.ratings.add({ userKey: user, titleId, score: Math.round(score), updatedAt: now() });
@@ -995,7 +1035,6 @@ export async function mergeCloudSnapshot(
   // collections (matched by name)
   for (const col of body.collections ?? []) {
     const name = String(col?.name ?? "").trim().slice(0, 60);
-    const items = (col?.items ?? []).map(Number).filter((n) => Number.isFinite(n) && n > 0);
     if (!name) continue;
     let row = await db.ucollections.where("[userKey+name]").equals([user, name]).first();
     if (!row) {
@@ -1004,7 +1043,14 @@ export async function mergeCloudSnapshot(
       collectionsAdded++;
     }
     const colId = Number((row as { id: number }).id);
-    for (const titleId of items) {
+    for (const item of col?.items ?? []) {
+      const slug = slugOf(item);
+      if (!slug) continue;
+      const titleId = idBySlug.get(slug);
+      if (!titleId) {
+        skipped++;
+        continue;
+      }
       const ex = await db.ucitems.where("[collectionId+titleId]").equals([colId, titleId]).count();
       if (!ex) {
         await db.ucitems.add({ collectionId: colId, titleId, addedAt: now() });
@@ -1013,27 +1059,36 @@ export async function mergeCloudSnapshot(
     }
   }
 
-  // watch progress (v0.12.0) — NEWER WINS per title
+  // watch progress — NEWER WINS per title; episodes resolved the stable way
+  // via the (titleId, season, number) formula instead of the drifting id
   const toTs = (v: unknown): number => (typeof v === "number" ? v : Date.parse(String(v)) || 0);
   let progressApplied = 0;
   for (const row of body.progress ?? []) {
-    const titleId = Number(row?.titleId);
+    const slug = slugOf(row);
     const position = Number(row?.position ?? 0);
     const duration = Number(row?.duration ?? 0);
-    if (!titleId || Number.isNaN(titleId) || !Number.isFinite(position)) continue;
+    if (!slug || !Number.isFinite(position)) continue;
+    const titleId = idBySlug.get(slug);
+    if (!titleId) {
+      skipped++;
+      continue;
+    }
+    const season = Math.max(0, Math.round(Number(row?.season ?? 0)) || 0);
+    const number = Math.max(0, Math.round(Number(row?.episode ?? 0)) || 0);
+    const epId = season > 0 && number > 0 ? episodeId(titleId, season, number) : null;
     const incomingTs = toTs(row?.updatedAt) || 0;
     const ex = await db.progress.where("[userKey+titleId]").equals([user, titleId]).first();
     if (!ex) {
-      await db.progress.add({ userKey: user, titleId, episodeId: row?.episodeId ? Number(row.episodeId) : null, position, duration, updatedAt: new Date(incomingTs || Date.now()).toISOString() });
+      await db.progress.add({ userKey: user, titleId, episodeId: epId, position, duration, updatedAt: new Date(incomingTs || Date.now()).toISOString() });
       progressApplied++;
     } else {
       const exRow = ex as unknown as { id: number; updatedAt: string; episodeId: number | null };
       if (incomingTs > toTs(exRow.updatedAt) + 500) {
-        await db.progress.put({ ...exRow, episodeId: row?.episodeId ? Number(row.episodeId) : exRow.episodeId, position, duration, updatedAt: new Date(incomingTs || Date.now()).toISOString() });
+        await db.progress.put({ ...exRow, episodeId: epId ?? exRow.episodeId, position, duration, updatedAt: new Date(incomingTs || Date.now()).toISOString() });
         progressApplied++;
       }
     }
   }
 
-  return { favoritesAdded, listAdded, ratingsAdded, collectionsAdded, collectionItemsAdded, progressApplied };
+  return { favoritesAdded, listAdded, ratingsAdded, collectionsAdded, collectionItemsAdded, progressApplied, skipped };
 }

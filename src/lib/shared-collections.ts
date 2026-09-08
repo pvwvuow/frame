@@ -17,7 +17,7 @@
  * been applied yet — the UI must never break because of the wall.
  */
 
-import { getSupabase } from "./cloud";
+import { getSupabase, localIdsForSlugs } from "./cloud";
 import { createCollection, setCollectionItem } from "./collections";
 import type { LiteTitle } from "./mobile/db";
 
@@ -25,7 +25,12 @@ const TABLE = "shared_collections";
 const MAX_ITEMS = 60;
 
 export type SharedCollectionItem = {
-  id: number;
+  /** v0.13.0 — the STABLE identity. Numeric ids drift between devices
+   *  (a film can be id 663 on one device and 1665 on another), so shares
+   *  must always carry the slug. */
+  slug?: string;
+  /** legacy numeric id (pre-v2 shares) — only a fallback */
+  id?: number;
   title: string;
   poster: string;
   year: number;
@@ -123,6 +128,7 @@ export async function shareCollectionToWall(
       .filter((t) => t && t.id)
       .slice(0, MAX_ITEMS)
       .map((t) => ({
+        slug: t.slug,
         id: t.id,
         title: t.title,
         poster: t.poster,
@@ -180,15 +186,21 @@ export async function unshareCollectionFromWall(name: string): Promise<ShareResu
 
 /** Save (clone) a shared collection into MY collections — local first, the
  *  regular collections layer mirrors it to the private cloud sync. Works
- *  signed-out too (then it simply stays local). */
+ *  signed-out too (then it simply stays local).
+ *  v0.13.0 — slugs are resolved against THIS device's catalog; items the
+ *  device does not know are skipped instead of landing on wrong titles. */
 export async function saveSharedCollectionToLocal(
   sc: SharedCollection
 ): Promise<{ id: number; name: string; added: number }> {
   const r = await createCollection(sc.name);
+  const resolved = await localIdsForSlugs(sc.items.map((i) => i.slug ?? "").filter(Boolean));
   let added = 0;
   for (const item of sc.items.slice(0, MAX_ITEMS)) {
+    const local = item.slug ? resolved.get(item.slug) : undefined;
+    const id = local?.id ?? (item.id && item.id > 0 ? item.id : 0);
+    if (!id) continue; // unknown to this device's catalog — skip
     try {
-      await setCollectionItem(r.id, r.name, item.id, true);
+      await setCollectionItem(r.id, r.name, id, true);
       added++;
     } catch {
       /* unknown/deleted catalog id — skip */

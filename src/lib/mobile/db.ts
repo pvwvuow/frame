@@ -399,6 +399,15 @@ export async function getTitleLiteBySlug(slug: string): Promise<LiteTitle | null
   return bySlug.get(slug) ?? null;
 }
 
+/** v0.13.0 — synchronous lite-index lookups for the fetch shim's
+ *  /api/title/cloud-key handler (whenReady() is already awaited there). */
+export function liteById(id: number): LiteTitle | null {
+  return byId.get(id) ?? null;
+}
+export function liteBySlug(slug: string): LiteTitle | null {
+  return bySlug.get(slug) ?? null;
+}
+
 export async function getSimilar(t: Pick<LiteTitle, "id" | "genres">, limit = 10): Promise<LiteTitle[]> {
   await ensureReady();
   return lite

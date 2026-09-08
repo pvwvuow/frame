@@ -2,12 +2,18 @@
 
 /* Frame × Supabase cloud sync (client-side only).
  *
- * What syncs to the cloud (per user request):
- *   - favorites / watchlist / ratings  → cloud tables (RLS: each user sees only their own rows)
- *   - activity log (user_events)       → every meaningful action is recorded
+ * v0.13.0 — SLUG-BASED SYNC (cloud schema v2):
+ *   Cloud rows are keyed by the catalog SLUG (e.g. `breaking-bad-2008-s7upg5`),
+ *   NEVER by the numeric local id. Numeric ids drift between devices and catalog
+ *   rebuilds — the same film was id 663 on one device and id 1665 on another,
+ *   so favoriting «Breaking Bad» on the phone showed «I Am Nobody» on the
+ *   desktop. Every push resolves id → slug via /api/title/cloud-key; every pull
+ *   resolves slug → id against THIS device's catalog before merging.
  *
- * What stays LOCAL on purpose (per user request):
- *   - watch progress ("کجای فیلم تا دقیقه چند دیده") → local SQLite only, never uploaded.
+ * What syncs to the cloud:
+ *   - favorites / watchlist / ratings / collections / watch progress
+ *     (RLS: each user sees only their own rows)
+ *   - activity log (user_events)       → every meaningful action is recorded
  *
  * SECURITY:
  *   - Only the PUBLISHABLE key lives here — it is designed to be public and is
@@ -367,7 +373,13 @@ export async function pushProfile(profileData?: Record<string, unknown>): Promis
     if (!uid || !sb) return;
     const data = profileData ?? (await fetchLocalProfile());
     if (!data) return;
-    await sb.from("profiles").upsert({ user_id: uid, data, updated_at: readProfileTouched() });
+    // v0.13.0 FIX — when the touch mark was missing we used to write
+    // 1970-01-01, so every OTHER device considered the profile forever
+    // out-of-date (the two 1970 rows in Supabase). Default to now instead.
+    const touched = readProfileTouched();
+    await sb
+      .from("profiles")
+      .upsert({ user_id: uid, data, updated_at: touched.startsWith("1970") ? new Date().toISOString() : touched });
   } catch {
     /* offline / table not created yet → next sync retries */
   }
@@ -396,9 +408,97 @@ export async function pullProfileIfNewer(): Promise<boolean> {
   }
 }
 
+/* ------------------------------------------------------------------ */
+/* v0.13.0 — the STABLE identity: slug                                 */
+/* ------------------------------------------------------------------ */
+
+/** A title's cloud identity: the catalog slug + a display title. */
+export type CloudItemRef = { slug: string; title?: string };
+
+type CloudKey = { id: number; slug: string; title: string };
+type EpisodeKey = { id: number; season: number; number: number };
+
+const keyById = new Map<number, CloudKey | null>();
+const keyBySlug = new Map<string, CloudKey | null>();
+const episodeKeyById = new Map<number, EpisodeKey | null>();
+
+/** Ask the local catalog for slug/title of titles (+ season/number of
+ *  episodes) in ONE batch. Results are cached for the session. */
+async function fetchCloudKeys(ids: number[], episodeIds: number[], slugs: string[]): Promise<void> {
+  const body = {
+    ids: [...new Set(ids)].filter((n) => Number.isFinite(n) && n > 0),
+    episodeIds: [...new Set(episodeIds)].filter((n) => Number.isFinite(n) && n > 0),
+    slugs: [...new Set(slugs)].filter(Boolean),
+  };
+  if (!body.ids.length && !body.episodeIds.length && !body.slugs.length) return;
+  try {
+    const r = await fetch("/api/title/cloud-key", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      cache: "no-store",
+    });
+    if (!r.ok) return;
+    const d = (await r.json()) as { titles?: CloudKey[]; episodes?: EpisodeKey[] };
+    for (const t of d.titles ?? []) {
+      keyById.set(t.id, t);
+      keyBySlug.set(t.slug, t);
+    }
+    for (const e of d.episodes ?? []) episodeKeyById.set(e.id, e);
+  } catch {
+    /* offline → resolution fails for this round, pushes are skipped */
+  }
+}
+
+/** The stable cloud key of ONE local title (cached). */
+async function cloudKeyFor(titleId: number): Promise<CloudKey | null> {
+  const id = Math.round(titleId);
+  if (keyById.has(id)) return keyById.get(id) ?? null;
+  await fetchCloudKeys([id], [], []);
+  return keyById.get(id) ?? null;
+}
+
+/** Resolve many local ids at once (one request). Unknown ids stay absent. */
+export async function cloudKeysFor(titleIds: number[]): Promise<Map<number, CloudKey>> {
+  const missing = titleIds.map(Number).filter((id) => Number.isFinite(id) && id > 0 && !keyById.has(id));
+  if (missing.length) await fetchCloudKeys(missing, [], []);
+  const out = new Map<number, CloudKey>();
+  for (const id of titleIds) {
+    const k = keyById.get(Number(id));
+    if (k) out.set(Number(id), k);
+  }
+  return out;
+}
+
+/** slug → local title (used when applying cloud rows / shared items). */
+export async function localIdsForSlugs(slugs: string[]): Promise<Map<string, CloudKey>> {
+  const missing = slugs.filter((s) => s && !keyBySlug.has(s));
+  if (missing.length) await fetchCloudKeys([], [], missing);
+  const out = new Map<string, CloudKey>();
+  for (const s of slugs) {
+    const k = keyBySlug.get(s);
+    if (k) out.set(s, k);
+  }
+  return out;
+}
+
+/** episodeId → {season, number} (the stable episode identity). */
+async function episodeKeysFor(ids: number[]): Promise<Map<number, EpisodeKey>> {
+  const clean = ids.map(Number).filter((id) => Number.isFinite(id) && id > 0);
+  const missing = clean.filter((id) => !episodeKeyById.has(id));
+  if (missing.length) await fetchCloudKeys([], missing, []);
+  const out = new Map<number, EpisodeKey>();
+  for (const id of clean) {
+    const k = episodeKeyById.get(id);
+    if (k) out.set(id, k);
+  }
+  return out;
+}
+
 export type ProgressPush = { titleId: number; episodeId: number | null; position: number; duration: number; updatedAt: string };
 
-/** Upsert watch-progress rows into Supabase (history/continue sync). */
+/** Upsert watch-progress rows into Supabase (history/continue sync).
+ *  v0.13.0 — rows carry {slug, season, episode}, not drifting local ids. */
 export async function pushProgressRows(rows: ProgressPush[]): Promise<void> {
   try {
     const uid = await currentUserId();
@@ -406,17 +506,37 @@ export async function pushProgressRows(rows: ProgressPush[]): Promise<void> {
     if (!uid || !sb || !rows.length) return;
     const clean = rows
       .filter((r) => Number.isFinite(r.titleId) && r.titleId > 0 && Number.isFinite(r.position))
-      .slice(0, 500)
-      .map((r) => ({
+      .slice(0, 500);
+    if (!clean.length) return;
+    const keys = await cloudKeysFor(clean.map((r) => r.titleId));
+    const epKeys = await episodeKeysFor(clean.map((r) => r.episodeId ?? 0));
+    const out: {
+      user_id: string;
+      slug: string;
+      title: string;
+      season: number;
+      episode: number;
+      position: number;
+      duration: number;
+      updated_at: string;
+    }[] = [];
+    for (const r of clean) {
+      const k = keys.get(Math.round(r.titleId));
+      if (!k) continue; // not in the local catalog → nothing stable to sync
+      const ep = r.episodeId ? epKeys.get(Math.round(r.episodeId)) : undefined;
+      out.push({
         user_id: uid,
-        title_id: Math.round(r.titleId),
-        episode_id: r.episodeId ? Math.round(r.episodeId) : null,
+        slug: k.slug,
+        title: k.title,
+        season: ep?.season ?? 0,
+        episode: ep?.number ?? 0,
         position: r.position,
         duration: r.duration,
         updated_at: new Date(toTs(r.updatedAt) || Date.now()).toISOString(),
-      }));
-    for (let i = 0; i < clean.length; i += 100) {
-      await sb.from("watch_progress").upsert(clean.slice(i, i + 100));
+      });
+    }
+    for (let i = 0; i < out.length; i += 100) {
+      await sb.from("watch_progress").upsert(out.slice(i, i + 100));
     }
   } catch {
     /* offline / table not created yet */
@@ -452,40 +572,61 @@ export async function logEvent(type: string, payload?: Record<string, unknown>) 
 /* Push helpers (fire & forget) — cloud mirrors the local library      */
 /* ------------------------------------------------------------------ */
 
-export async function pushFavorite(titleId: number, value: boolean) {
+/* slug-level primitives (used by the id wrappers AND by the batch push) */
+
+async function pushFavoriteRef(r: CloudItemRef, value: boolean): Promise<void> {
   try {
     const uid = await currentUserId();
     const sb = getSupabase();
-    if (!uid || !sb) return;
-    if (value) await sb.from("favorites").upsert({ user_id: uid, title_id: titleId });
-    else await sb.from("favorites").delete().eq("user_id", uid).eq("title_id", titleId);
+    if (!uid || !sb || !r.slug) return;
+    if (value) await sb.from("favorites").upsert({ user_id: uid, slug: r.slug, title: r.title ?? "" });
+    else await sb.from("favorites").delete().eq("user_id", uid).eq("slug", r.slug);
   } catch {
     /* offline → local remains the source of truth */
   }
 }
 
-export async function pushWatchlist(titleId: number, status: string | null) {
+async function pushWatchlistRef(r: CloudItemRef, status: string | null): Promise<void> {
   try {
     const uid = await currentUserId();
     const sb = getSupabase();
-    if (!uid || !sb) return;
-    if (status) await sb.from("watchlist").upsert({ user_id: uid, title_id: titleId, status, updated_at: new Date().toISOString() });
-    else await sb.from("watchlist").delete().eq("user_id", uid).eq("title_id", titleId);
+    if (!uid || !sb || !r.slug) return;
+    if (status)
+      await sb.from("watchlist").upsert({ user_id: uid, slug: r.slug, title: r.title ?? "", status, updated_at: new Date().toISOString() });
+    else await sb.from("watchlist").delete().eq("user_id", uid).eq("slug", r.slug);
   } catch {
     /* offline */
   }
 }
 
-export async function pushRating(titleId: number, score: number | null) {
+async function pushRatingRef(r: CloudItemRef, score: number | null): Promise<void> {
   try {
     const uid = await currentUserId();
     const sb = getSupabase();
-    if (!uid || !sb) return;
-    if (score && score > 0) await sb.from("ratings").upsert({ user_id: uid, title_id: titleId, score, updated_at: new Date().toISOString() });
-    else await sb.from("ratings").delete().eq("user_id", uid).eq("title_id", titleId);
+    if (!uid || !sb || !r.slug) return;
+    if (score && score > 0)
+      await sb.from("ratings").upsert({ user_id: uid, slug: r.slug, title: r.title ?? "", score, updated_at: new Date().toISOString() });
+    else await sb.from("ratings").delete().eq("user_id", uid).eq("slug", r.slug);
   } catch {
     /* offline */
   }
+}
+
+/** Public wrappers: resolve the local id → slug, then push. Titles that the
+ *  local catalog does not know are skipped (nothing stable to sync). */
+export async function pushFavorite(titleId: number, value: boolean) {
+  const k = await cloudKeyFor(titleId);
+  if (k) await pushFavoriteRef({ slug: k.slug, title: k.title }, value);
+}
+
+export async function pushWatchlist(titleId: number, status: string | null) {
+  const k = await cloudKeyFor(titleId);
+  if (k) await pushWatchlistRef({ slug: k.slug, title: k.title }, status);
+}
+
+export async function pushRating(titleId: number, score: number | null) {
+  const k = await cloudKeyFor(titleId);
+  if (k) await pushRatingRef({ slug: k.slug, title: k.title }, score);
 }
 
 /* ------------------------------------------------------------------ */
@@ -493,11 +634,11 @@ export async function pushRating(titleId: number, score: number | null) {
 /* ------------------------------------------------------------------ */
 
 export type CloudSnapshot = {
-  favorites: number[];
-  watchlist: { titleId: number; status: string }[];
-  ratings: { titleId: number; score: number }[];
-  collections: { name: string; items: number[] }[];
-  progress: ProgressPush[];
+  favorites: CloudItemRef[];
+  watchlist: (CloudItemRef & { status: string })[];
+  ratings: (CloudItemRef & { score: number })[];
+  collections: { name: string; items: CloudItemRef[] }[];
+  progress: { slug: string; season: number; episode: number; position: number; duration: number; updatedAt: string }[];
 };
 
 export async function pullCloudSnapshot(): Promise<CloudSnapshot | null> {
@@ -505,33 +646,36 @@ export async function pullCloudSnapshot(): Promise<CloudSnapshot | null> {
   const uid = await currentUserId();
   if (!sb || !uid) return null;
   const [fav, wl, rt, cols, prog] = await Promise.all([
-    sb.from("favorites").select("title_id").eq("user_id", uid),
-    sb.from("watchlist").select("title_id,status").eq("user_id", uid),
-    sb.from("ratings").select("title_id,score").eq("user_id", uid),
-    sb.from("user_collections").select("id,name,user_collection_items(title_id)").eq("user_id", uid),
-    // v0.12.0 — watch history follows the account (table may not exist yet on
+    sb.from("favorites").select("slug,title").eq("user_id", uid),
+    sb.from("watchlist").select("slug,title,status").eq("user_id", uid),
+    sb.from("ratings").select("slug,title,score").eq("user_id", uid),
+    sb.from("user_collections").select("id,name,user_collection_items(slug,title)").eq("user_id", uid),
+    // watch history follows the account (table may not exist yet on
     // the user's project → the error is contained and the rest still syncs)
-    sb.from("watch_progress").select("title_id,episode_id,position,duration,updated_at").eq("user_id", uid).limit(500),
+    sb.from("watch_progress").select("slug,season,episode,position,duration,updated_at").eq("user_id", uid).limit(500),
   ]);
-  const favRows = (fav.data ?? []) as Array<{ title_id: number }>;
-  const wlRows = (wl.data ?? []) as Array<{ title_id: number; status: string }>;
-  const rtRows = (rt.data ?? []) as Array<{ title_id: number; score: number }>;
-  type CloudCol = { id: string; name: string; user_collection_items: { title_id: number }[] | null };
+  const favRows = (fav.data ?? []) as Array<{ slug: string; title: string | null }>;
+  const wlRows = (wl.data ?? []) as Array<{ slug: string; title: string | null; status: string }>;
+  const rtRows = (rt.data ?? []) as Array<{ slug: string; title: string | null; score: number }>;
+  type CloudCol = { id: string; name: string; user_collection_items: { slug: string; title: string | null }[] | null };
   const colRows = (cols.data ?? []) as unknown as CloudCol[];
-  const progRows = (prog.data ?? []) as unknown as Array<{ title_id: number; episode_id: number | null; position: number; duration: number; updated_at: string }>;
+  const progRows = (prog.data ?? []) as unknown as Array<{ slug: string; season: number; episode: number; position: number; duration: number; updated_at: string }>;
   return {
-    favorites: favRows.map((r) => Number(r.title_id)).filter((n) => Number.isFinite(n) && n > 0),
-    watchlist: wlRows.map((r) => ({ titleId: Number(r.title_id), status: String(r.status) })),
-    ratings: rtRows.map((r) => ({ titleId: Number(r.title_id), score: Number(r.score) })),
+    favorites: favRows.filter((r) => r.slug).map((r) => ({ slug: r.slug, title: r.title ?? "" })),
+    watchlist: wlRows
+      .filter((r) => r.slug)
+      .map((r) => ({ slug: r.slug, title: r.title ?? "", status: String(r.status) })),
+    ratings: rtRows.filter((r) => r.slug).map((r) => ({ slug: r.slug, title: r.title ?? "", score: Number(r.score) })),
     collections: colRows.map((c) => ({
       name: String(c.name),
-      items: (c.user_collection_items ?? []).map((i) => Number(i.title_id)).filter((n) => Number.isFinite(n) && n > 0),
+      items: (c.user_collection_items ?? []).filter((i) => i.slug).map((i) => ({ slug: i.slug, title: i.title ?? "" })),
     })),
     progress: progRows
-      .filter((r) => Number.isFinite(Number(r.title_id)) && Number(r.title_id) > 0)
+      .filter((r) => r.slug)
       .map((r) => ({
-        titleId: Number(r.title_id),
-        episodeId: r.episode_id ? Number(r.episode_id) : null,
+        slug: r.slug,
+        season: Number(r.season) || 0,
+        episode: Number(r.episode) || 0,
         position: Number(r.position) || 0,
         duration: Number(r.duration) || 0,
         updatedAt: String(r.updated_at ?? ""),
@@ -539,7 +683,7 @@ export async function pullCloudSnapshot(): Promise<CloudSnapshot | null> {
   };
 }
 
-export type MergeResult = { ok: boolean; favoritesAdded?: number; listAdded?: number; listUpdated?: number; ratingsAdded?: number; progressApplied?: number; reason?: string };
+export type MergeResult = { ok: boolean; favoritesAdded?: number; listAdded?: number; listUpdated?: number; ratingsAdded?: number; progressApplied?: number; skipped?: number; reason?: string };
 
 /** Pull the cloud snapshot and merge it into the local database (cloud fills gaps, local wins on conflicts). */
 export async function syncCloudToLocal(): Promise<MergeResult> {
@@ -552,9 +696,9 @@ export async function syncCloudToLocal(): Promise<MergeResult> {
       body: JSON.stringify(snap),
     });
     if (!r.ok) return { ok: false, reason: `merge-${r.status}` };
-    const d = (await r.json()) as { ok?: boolean; favoritesAdded: number; listAdded: number; listUpdated?: number; ratingsAdded: number; progressApplied?: number };
+    const d = (await r.json()) as { ok?: boolean; favoritesAdded: number; listAdded: number; listUpdated?: number; ratingsAdded: number; progressApplied?: number; skipped?: number };
     if (d && d.ok === false) return { ok: false, reason: "merge-unsupported" };
-    return { ok: true, favoritesAdded: d.favoritesAdded, listAdded: d.listAdded, ratingsAdded: d.ratingsAdded, progressApplied: d.progressApplied ?? 0 };
+    return { ok: true, favoritesAdded: d.favoritesAdded, listAdded: d.listAdded, ratingsAdded: d.ratingsAdded, progressApplied: d.progressApplied ?? 0, skipped: d.skipped ?? 0 };
   } catch (e) {
     return { ok: false, reason: e instanceof Error ? e.message : "network" };
   }
@@ -594,6 +738,8 @@ async function runFullSync(): Promise<MergeResult> {
       /* never blocks the rest */
     }
     // push local-only rows up as well (cheap, idempotent upserts)
+    // v0.13.0 — every numeric id is resolved to its STABLE slug first (one
+    // batch), because ids drift between devices but slugs do not.
     try {
       const d = await fetch("/api/library", { cache: "no-store" });
       if (d.ok) {
@@ -604,10 +750,31 @@ async function runFullSync(): Promise<MergeResult> {
           collections?: { name: string; items: number[] }[];
           progress?: ProgressPush[];
         };
+        const allIds = [
+          ...lib.favorites,
+          ...lib.watchlist.map((w) => w.titleId),
+          ...lib.ratings.map((r) => r.titleId),
+          ...(lib.collections ?? []).flatMap((c) => c.items),
+        ].map(Number).filter((n) => Number.isFinite(n) && n > 0);
+        const keys = await cloudKeysFor(allIds);
+        const ref = (id: number): CloudItemRef | null => {
+          const k = keys.get(Number(id));
+          return k ? { slug: k.slug, title: k.title } : null;
+        };
         await Promise.all([
-          ...lib.favorites.map((id) => pushFavorite(id, true)),
-          ...lib.watchlist.map((w) => pushWatchlist(w.titleId, w.status)),
-          ...lib.ratings.map((r) => pushRating(r.titleId, r.score)),
+          ...lib.favorites
+            .map(Number)
+            .map(ref)
+            .filter((r): r is CloudItemRef => !!r)
+            .map((r) => pushFavoriteRef(r, true)),
+          ...lib.watchlist
+            .map((w) => ({ w, r: ref(w.titleId) }))
+            .filter((x): x is { w: { titleId: number; status: string }; r: CloudItemRef } => !!x.r)
+            .map(({ w, r }) => pushWatchlistRef(r, w.status)),
+          ...lib.ratings
+            .map((x) => ({ score: x.score, r: ref(x.titleId) }))
+            .filter((x): x is { score: number; r: CloudItemRef } => !!x.r)
+            .map(({ score, r }) => pushRatingRef(r, score)),
           pushCollectionsUp(lib.collections ?? []),
           pushProgressRows(lib.progress ?? []),
           pushProfile((lib as { profileFull?: Record<string, unknown> }).profileFull),
@@ -642,7 +809,9 @@ export async function pushCollectionItemRemove(name: string, titleId: number): P
       .maybeSingle();
     const colId = (existing as { id: string } | null)?.id;
     if (!colId) return;
-    await sb.from("user_collection_items").delete().eq("collection_id", colId).eq("title_id", titleId);
+    const k = await cloudKeyFor(titleId);
+    if (!k) return;
+    await sb.from("user_collection_items").delete().eq("collection_id", colId).eq("slug", k.slug);
   } catch {
     /* offline → next fullSync push will restore the remaining set */
   }
@@ -676,8 +845,12 @@ export async function pushCollectionRename(oldName: string, newName: string): Pr
 }
 
 /** Push the LOCAL collections up to the cloud (matched by name, idempotent).
- *  v0.10.32 — collections sync like favorites: local-first, cloud mirror. */
-export async function pushCollectionsUp(collections: { name: string; items: number[] }[]): Promise<void> {
+ *  v0.10.32 — collections sync like favorites: local-first, cloud mirror.
+ *  v0.13.0 — items accept either numeric ids (resolved to slugs here) or
+ *  ready {slug,title} refs; the cloud stores slugs only. */
+export async function pushCollectionsUp(
+  collections: { name: string; items: (number | CloudItemRef)[] }[]
+): Promise<void> {
   try {
     const uid = await currentUserId();
     const sb = getSupabase();
@@ -697,12 +870,21 @@ export async function pushCollectionsUp(collections: { name: string; items: numb
         colId = (ins.data as { id: string } | null)?.id;
       }
       if (!colId) continue;
-      const ids = (col.items ?? []).map(Number).filter((n) => Number.isFinite(n) && n > 0);
-      if (ids.length) {
-        await sb.from("user_collection_items").upsert(
-          ids.map((titleId) => ({ collection_id: colId, title_id: titleId })),
-          { onConflict: "collection_id,title_id" }
-        );
+      const numeric = (col.items ?? []).filter((i): i is number => typeof i === "number").map(Number).filter((n) => Number.isFinite(n) && n > 0);
+      const refs = (col.items ?? []).filter((i): i is CloudItemRef => typeof i === "object" && !!i?.slug);
+      if (numeric.length) {
+        const keys = await cloudKeysFor(numeric);
+        for (const n of numeric) {
+          const k = keys.get(n);
+          if (k) refs.push({ slug: k.slug, title: k.title });
+        }
+      }
+      const seen = new Set<string>();
+      const rows = refs
+        .filter((r) => r.slug && !seen.has(r.slug) && seen.add(r.slug))
+        .map((r) => ({ collection_id: colId, user_id: uid, slug: r.slug, title: r.title ?? "" }));
+      if (rows.length) {
+        await sb.from("user_collection_items").upsert(rows, { onConflict: "collection_id,slug" });
       }
     }
   } catch {
