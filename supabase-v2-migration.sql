@@ -21,6 +21,12 @@
 
 -- ------------------------------------------------------------
 -- 1) WIPE all activity data (usernames + VIP survive)
+--    CASCADE is required: user_collection_items has an FK to
+--    user_collections, and PostgreSQL refuses to truncate a referenced
+--    table unless the referencing tables go in the SAME statement.
+--    Nothing outside the activity tables references them, so the cascade
+--    cannot touch anything else (profiles / subscriptions are FK-targets,
+--    never FK-sources).
 -- ------------------------------------------------------------
 do $$
 declare t text;
@@ -31,7 +37,7 @@ begin
   ] loop
     if exists (select 1 from information_schema.tables
                where table_schema = 'public' and table_name = t) then
-      execute format('truncate table public.%I', t);
+      execute format('truncate table public.%I cascade', t);
     end if;
   end loop;
 end $$;
