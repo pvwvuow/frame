@@ -9,6 +9,7 @@ import { fa } from "@/lib/format";
 import type { FavoriteRow } from "@/lib/mobile/userdata";
 import { titleHref } from "@/lib/mobile-links";
 import { createCollection, deleteCollection, type UCollection } from "@/lib/collections";
+import { COLLECTION_TEMPLATES, createCollectionFromTemplate, type CollectionTemplate } from "@/lib/collection-templates";
 
 export type AsideCollection = {
   slug: string;
@@ -41,6 +42,7 @@ export default function MyListAside({
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
+  const [busyTpl, setBusyTpl] = useState<string | null>(null);
   const [cols, setCols] = useState<UCollection[]>(userCollections);
 
   // keep local state in sync when the parent re-fetches (create/delete elsewhere)
@@ -81,6 +83,22 @@ export default function MyListAside({
     }
   }
 
+  /* v0.10.34 — ساخت یک‌کلیکی از روی قالب آماده (پیش‌پرشده با آثار برتر موضوع) */
+  async function createFromTpl(tpl: CollectionTemplate) {
+    if (busyTpl) return;
+    setBusyTpl(tpl.id);
+    try {
+      const r = await createCollectionFromTemplate(tpl);
+      toast.success(`مجموعه «${r.name}» با ${fa(r.added)} عنوان ساخته شد`);
+      setCreating(false);
+      onCollectionsChanged?.();
+    } catch {
+      toast.error("ساخت از قالب ناموفق بود");
+    } finally {
+      setBusyTpl(null);
+    }
+  }
+
   return (
     <div className="space-y-8">
       {/* ---- مجموعه‌های من (شخصی) ---- */}
@@ -115,6 +133,26 @@ export default function MyListAside({
             >
               ساخت
             </button>
+          </div>
+        )}
+
+        {creating && (
+          <div className="mb-3">
+            <p className="mb-1.5 text-[10px] font-bold text-zinc-500">یا با یک قالب آماده بساز:</p>
+            <div className="flex flex-wrap gap-1.5">
+              {COLLECTION_TEMPLATES.map((tpl) => (
+                <button
+                  key={tpl.id}
+                  type="button"
+                  title={tpl.desc}
+                  onClick={() => void createFromTpl(tpl)}
+                  disabled={busyTpl !== null}
+                  className="rounded-lg border border-white/10 bg-white/[0.04] px-2 py-1 text-[10px] font-bold text-zinc-300 transition hover:border-brand/50 hover:text-white disabled:opacity-40"
+                >
+                  {busyTpl === tpl.id ? "در حال ساخت…" : tpl.name}
+                </button>
+              ))}
+            </div>
           </div>
         )}
 

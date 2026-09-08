@@ -64,7 +64,17 @@ function saveDraft(id: number, d: Draft) {
 const INPUT =
   "w-full rounded-lg border border-white/10 bg-black/30 text-sm text-white outline-none transition placeholder:text-zinc-600 focus:border-white/35 focus:bg-black/40";
 
-export default function DarkroomApp({ candidates, initialSlug }: { candidates: DrTitle[]; initialSlug?: string }) {
+export default function DarkroomApp({
+  candidates,
+  initialSlug,
+  modeBar,
+}: {
+  candidates: DrTitle[];
+  initialSlug?: string;
+  /** v0.10.34 — extra control(s) rendered at the start of the toolband
+   *  (used by the Darkroom page for the کارت‌ها/کالکشن‌ها mode switch). */
+  modeBar?: ReactNode;
+}) {
   const { t, locale } = useI18n();
   const { profile, setProfile } = useLibrary();
   const { session } = useCloudSession();
@@ -264,6 +274,7 @@ export default function DarkroomApp({ candidates, initialSlug }: { candidates: D
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          {modeBar}
           {/* format — quiet segmented */}
           <div className="flex rounded-lg border border-white/10 bg-black/30 p-0.5" role="group" aria-label={t("darkroom.post")}>
             {DR_FORMATS.map((x) => (

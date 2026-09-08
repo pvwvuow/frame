@@ -7,8 +7,9 @@ import Row from "@/components/Row";
 import TitleCard from "@/components/TitleCard";
 import { getCollections } from "@/lib/mobile/db";
 import { fa } from "@/lib/format";
-import { LayersIcon, ChevronLeft, PlusIcon, TrashIcon } from "@/components/Icons";
+import { LayersIcon, ChevronLeft, PlusIcon, TrashIcon, SparkIcon, ShareIcon } from "@/components/Icons";
 import { createCollection, deleteCollection, fetchUserCollections, type UCollection } from "@/lib/collections";
+import { COLLECTION_TEMPLATES, createCollectionFromTemplate, type CollectionTemplate } from "@/lib/collection-templates";
 
 /* ================================================================== */
 /* مجموعه‌های من (شخصی + سینک با اکانت) — v0.10.32                     */
@@ -18,6 +19,7 @@ function MyCollectionsSection() {
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
+  const [busyTpl, setBusyTpl] = useState<string | null>(null);
 
   const load = useCallback(() => {
     void fetchUserCollections().then((c) => setCols(c));
@@ -52,6 +54,21 @@ function MyCollectionsSection() {
       load();
     } catch {
       toast.error("حذف ناموفق بود");
+    }
+  }
+
+  /* v0.10.34 — ساخت یک‌کلیکی از روی قالب آماده */
+  async function createFromTpl(tpl: CollectionTemplate) {
+    if (busyTpl) return;
+    setBusyTpl(tpl.id);
+    try {
+      const r = await createCollectionFromTemplate(tpl);
+      toast.success(`مجموعه «${r.name}» با ${fa(r.added)} عنوان ساخته شد`);
+      load();
+    } catch {
+      toast.error("ساخت از قالب ناموفق بود");
+    } finally {
+      setBusyTpl(null);
     }
   }
 
@@ -95,6 +112,47 @@ function MyCollectionsSection() {
             </button>
           </div>
         )}
+
+        {/* قالب‌های آماده — ساخت یک‌کلیکی با پیش‌پرشدن از آثار برتر موضوع (v0.10.34) */}
+        <div className="mb-5">
+          <p className="mb-2 flex items-center gap-1.5 text-[11px] font-black text-zinc-400">
+            <SparkIcon width={12} height={12} className="text-brand" /> قالب‌های آماده — یک کلیک، یک کالکشنِ پر
+          </p>
+          <div className="flex snap-x gap-2.5 overflow-x-auto pb-2">
+            {COLLECTION_TEMPLATES.map((tpl) => (
+              <button
+                key={tpl.id}
+                type="button"
+                onClick={() => void createFromTpl(tpl)}
+                disabled={busyTpl !== null}
+                className="w-[190px] shrink-0 snap-start rounded-2xl border border-white/5 bg-white/[0.03] p-3 text-start transition hover:border-brand/40 hover:bg-white/[0.06] disabled:opacity-50"
+              >
+                <span className="block text-[13px] font-extrabold text-white">{tpl.name}</span>
+                <span className="mt-1 block text-[11px] leading-5 text-zinc-500">{tpl.desc}</span>
+                <span className="mt-2 block text-[10px] font-black text-brand">
+                  {busyTpl === tpl.id ? "در حال ساخت…" : `ساخت از این قالب →`}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* بنر تاریک‌روم — انتشار کالکشن روی دیوار عمومی */}
+        <Link
+          href="/darkroom?view=collections"
+          className="mb-6 flex items-center gap-3 rounded-2xl border border-white/5 bg-gradient-to-l from-brand/[0.08] to-transparent p-4 transition hover:border-brand/30"
+        >
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-brand/15 text-brand">
+            <ShareIcon width={16} height={16} />
+          </span>
+          <span className="min-w-0">
+            <span className="block text-[13px] font-extrabold text-white">کالکشن‌هایت را در تاریک‌روم به اشتراک بگذار</span>
+            <span className="block text-[11px] leading-5 text-zinc-500">
+              روی دیوار عمومی تاریک‌روم منتشر کن تا بقیه کاربران هم ببینند و ذخیره کنند
+            </span>
+          </span>
+          <ChevronLeft width={16} height={16} className="shrink-0 text-zinc-600" />
+        </Link>
 
         {cols === null ? (
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">

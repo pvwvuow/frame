@@ -1,8 +1,9 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useState, type ReactNode } from "react";
 import { useSearchParams } from "next/navigation";
 import DarkroomApp from "@/components/darkroom/DarkroomApp";
+import SharedWall from "@/components/darkroom/SharedWall";
 import { getFullTitle, getTrending, type TitleView } from "@/lib/mobile/db";
 import { getUserScore, getHistory } from "@/lib/mobile/userdata";
 import type { DrTitle } from "@/lib/darkroom";
@@ -13,6 +14,41 @@ function toDrTitle(t: TitleView, myScore: number | null = null, when: string | n
 
 function DarkroomInner() {
   const sp = useSearchParams();
+  /* v0.10.34 — دو حالت تاریکخانه: کارت‌های تماشا (تولید کارت اشتراک‌گذاری)
+     و دیوار کالکشن‌های کاربران */
+  const [view, setView] = useState<"cards" | "collections">(
+    sp.get("view") === "collections" ? "collections" : "cards"
+  );
+
+  const modeBar = (
+    <div className="flex rounded-lg border border-white/10 bg-black/30 p-0.5" role="group" aria-label="حالت تاریکخانه">
+      {([
+        ["cards", "کارت‌های من"],
+        ["collections", "کالکشن‌های کاربران"],
+      ] as const).map(([id, label]) => (
+        <button
+          key={id}
+          type="button"
+          onClick={() => setView(id)}
+          className={`rounded-md px-3 py-1.5 text-[11px] font-black transition ${
+            view === id ? "bg-white/10 text-white" : "text-zinc-500 hover:text-zinc-300"
+          }`}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+
+  return (
+    <>
+      {view === "cards" ? <DarkroomCards modeBar={modeBar} initialSlug={sp.get("title") ?? undefined} /> : <SharedWall />}
+    </>
+  );
+}
+
+/* کارت‌های تماشا — همان حالت اصلی (تولید کارت) با نوار حالت در تولبار */
+function DarkroomCards({ modeBar, initialSlug }: { modeBar: ReactNode; initialSlug?: string }) {
   const [candidates, setCandidates] = useState<DrTitle[] | null>(null);
 
   useEffect(() => {
@@ -65,7 +101,7 @@ function DarkroomInner() {
     );
   }
 
-  return <DarkroomApp candidates={candidates} initialSlug={sp.get("title") ?? undefined} />;
+  return <DarkroomApp candidates={candidates} initialSlug={initialSlug} modeBar={modeBar} />;
 }
 
 export default function DarkroomPage() {
