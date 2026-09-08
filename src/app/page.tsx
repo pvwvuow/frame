@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import Hero from "@/components/Hero";
 import Row from "@/components/Row";
 import TitleCard from "@/components/TitleCard";
+import CinemaCard from "@/components/cinema/CinemaCard";
 import { PlayIcon } from "@/components/Icons";
 import { useI18n } from "@/components/i18n/LocaleProvider";
 import {
@@ -87,7 +88,13 @@ export default function HomePage() {
     <main className="pb-10">
       <Hero items={featured} watchlistIds={watchlistIds} />
 
-      <div className="relative z-10 -mt-16 space-y-2">
+      {/* v0.14.0 — cinema: watch together with a room code (takes the Hero
+          bottom overlap the rows used to own, so nothing collides) */}
+      <div className="relative z-20 -mt-14">
+        <CinemaCard />
+      </div>
+
+      <div className="relative z-10 mt-6 space-y-2">
         {continueItems.length > 0 && (
           <Row title={tr("home.continueTitle")} subtitle={tr("home.continueSub")}>
             {continueItems.map((c) => (

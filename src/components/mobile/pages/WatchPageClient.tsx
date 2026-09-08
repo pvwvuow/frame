@@ -27,6 +27,10 @@ export default function WatchPage() {
   const slug = useRouteSlug("slug");
   const sp = useSearchParams();
   const ep = sp.get("ep") ?? undefined;
+  // v0.14.0 — cinema guests land with season/epnum NUMBERS (episode ids drift
+  // between devices — the whole reason slugs exist)
+  const seasonP = sp.get("season");
+  const epnumP = sp.get("epnum");
   const [st, setSt] = useState<{
     t: NonNullable<Awaited<ReturnType<typeof getFullTitle>>>;
     eps: Awaited<ReturnType<typeof getEpisodes>>;
@@ -58,8 +62,13 @@ export default function WatchPage() {
       let episode: (typeof eps)[number] | null = null;
       if (t.type === "series" && eps.length) {
         const wanted = ep ? Number(ep) : progress?.episodeId ?? null;
+        const byId = (wanted ? eps.find((e) => e.id === wanted) : null) ?? null;
+        const byNum =
+          seasonP && epnumP
+            ? eps.find((e) => e.season === Number(seasonP) && e.number === Number(epnumP)) ?? null
+            : null;
         // prefer the requested/progress episode; otherwise the first PLAYABLE one
-        episode = (wanted ? eps.find((e) => e.id === wanted) : null) ?? eps.find((e) => e.videoUrl) ?? eps[0];
+        episode = byId ?? byNum ?? eps.find((e) => e.videoUrl) ?? eps[0];
       }
 
       const idx = episode ? eps.findIndex((e) => e.id === episode.id) : -1;
@@ -73,7 +82,7 @@ export default function WatchPage() {
     return () => {
       alive = false;
     };
-  }, [slug, ep]);
+  }, [slug, ep, seasonP, epnumP]);
 
   /* v0.12.0 — offline first: a completed download plays from the device with
      zero network; the native player receives the absolute file path */

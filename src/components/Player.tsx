@@ -33,6 +33,7 @@ import {
   CheckIcon,
   SubtitleIcon,
   MinimizeIcon,
+  UsersIcon,
 } from "./Icons";
 import FavoriteButton from "./FavoriteButton";
 import WatchlistButton from "./WatchlistButton";
@@ -45,6 +46,9 @@ import { preferredSourceIdx, qualityPrefIdx, rememberedVariantIdx, rememberVaria
 import { setQualityPref } from "@/lib/quality-pref";
 import { titleHref, watchHref } from "@/lib/mobile-links";
 import { isLocalFile, localFilePath, nativeBridge, needsNativePlayer } from "@/lib/native-bridge";
+import { useCinema, cinemaTargetPosition, setCinemaFollowHandler, type CinemaBeat } from "@/lib/cinema";
+import CinemaPanel from "./cinema/CinemaPanel";
+import { useLibrary } from "./library/LibraryProvider";
 
 const SUB_SIZE_KEY = "nama-sub-size";
 const SUB_ON_KEY = "nama-sub-on";
@@ -55,6 +59,9 @@ export default function Player() {
   const router = useRouter();
   const pathname = usePathname();
   const store = usePlayerStore();
+  // v0.14.0 — cinema (watch-party): host drives, guests follow
+  const cin = useCinema();
+  const { profile } = useLibrary();
   const {
     open,
     titleId,
@@ -136,6 +143,11 @@ export default function Player() {
     if (noticeTimer.current) clearTimeout(noticeTimer.current);
     noticeTimer.current = setTimeout(() => setNotice(null), 9000);
   }, []);
+
+  // v0.14.0 — cinema state → while a host drives, the guest's transport locks
+  const cinActive = cin.status !== "idle";
+  const guestLock = cin.status === "joined";
+  const [showCinema, setShowCinema] = useState(false);
 
   // restore volume preference. NOTE: the muted flag is deliberately NOT
   // restored — a stale muted=1 from an old session was one cause of the
@@ -275,15 +287,23 @@ export default function Player() {
   const togglePlay = useCallback(() => {
     const v = videoRef.current;
     if (!v) return;
+    if (useCinema.getState().status === "joined") {
+      showNotice("کنترل پخش دست میزبان سینماست");
+      return;
+    }
     if (v.paused) void v.play().catch(() => {});
     else v.pause();
-  }, []);
+  }, [showNotice]);
 
   const seek = useCallback((delta: number) => {
     const v = videoRef.current;
     if (!v) return;
+    if (useCinema.getState().status === "joined") {
+      showNotice("جلو و عقب دست میزبان سینماست");
+      return;
+    }
     v.currentTime = Math.max(0, Math.min(v.duration || 0, v.currentTime + delta));
-  }, []);
+  }, [showNotice]);
 
   const toggleFs = useCallback(() => {
     const el = wrapRef.current;
@@ -317,6 +337,8 @@ export default function Player() {
   useEffect(() => {
     const b = nativeBridge();
     if (!b) return;
+    // v0.14.0 — cinema sync rides the web <video>; the native player can't be driven
+    if (useCinema.getState().status !== "idle") return;
     if (proxyBase === undefined) return;
     if (!open || fatal) return;
     if (!activeSrc || !needsNativePlayer(activeSrc)) return;
@@ -389,6 +411,8 @@ export default function Player() {
   const floatingRef = useRef(false);
   const floatToPip = useCallback(() => {
     if (floatingRef.current) return;
+    // v0.14.0 — floating breaks cinema sync → not available while a room is live
+    if (useCinema.getState().status !== "idle") return;
     const v = videoRef.current;
     const pip = window.nama?.pip;
     if (!pip) return;
@@ -587,7 +611,8 @@ export default function Player() {
     const onEnded = () => {
       setEnded(true);
       save(v.duration, v.duration);
-      if (nextEpisode) setCountdown(8);
+      // v0.14.0 — in a cinema the HOST decides when the next episode starts
+      if (nextEpisode && useCinema.getState().status !== "joined") setCountdown(8);
     };
     // v0.10.12: a dead/undecodable source used to spin the loader forever —
     // try the next variant (keeping the position), then show the fatal panel
@@ -753,6 +778,95 @@ export default function Player() {
   const active = srcList[Math.min(srcIdx, srcList.length - 1)];
   const qualityLabel = active?.q || "";
   const currentVariant = active?.v || "";
+
+  // ---- v0.14.0 · CINEMA --------------------------------------------------
+  // HOST: publish playback state on every action + a 5s heartbeat.
+  const cinBeatRef = useRef(0);
+  useEffect(() => {
+    if (!open || cin.status !== "hosting" || !activeSrc) return;
+    const beat = () => {
+      const v = videoRef.current;
+      if (!v) return;
+      const st = usePlayerStore.getState();
+      const p: CinemaBeat = {
+        slug: st.slug,
+        title: st.title,
+        poster: st.poster,
+        kind: st.episodes.length ? "series" : "movie",
+        season: st.episode?.season ?? 0,
+        epnum: st.episode?.number ?? 0,
+        position: v.currentTime || 0,
+        duration: v.duration || 0,
+        isPlaying: !v.paused && !v.ended,
+      };
+      cinBeatRef.current = Date.now();
+      useCinema.getState().hostBeat(p);
+    };
+    const v = videoEl;
+    if (!v) return;
+    const onPlayB = () => beat();
+    const onPauseB = () => beat();
+    const onSeekedB = () => beat();
+    v.addEventListener("play", onPlayB);
+    v.addEventListener("pause", onPauseB);
+    v.addEventListener("seeked", onSeekedB);
+    const iv = setInterval(beat, 5000);
+    beat();
+    return () => {
+      clearInterval(iv);
+      v.removeEventListener("play", onPlayB);
+      v.removeEventListener("pause", onPauseB);
+      v.removeEventListener("seeked", onSeekedB);
+    };
+  }, [open, cin.status, activeSrc, videoEl, contentKey]);
+
+  // GUEST: mirror the host — seek on drift > 2.2s, follow play/pause.
+  useEffect(() => {
+    if (!open || cin.status !== "joined") return;
+    const cst = useCinema.getState();
+    const room = cst.room;
+    const pst = usePlayerStore.getState();
+    if (!room || pst.slug !== room.slug) return;
+    if (
+      pst.episodes.length &&
+      room.kind === "series" &&
+      pst.episode &&
+      (pst.episode.season !== room.season || pst.episode.number !== room.epnum)
+    ) {
+      return;
+    }
+    const target = cinemaTargetPosition();
+    if (target == null) return;
+    const v = videoRef.current;
+    if (!v || !v.duration || v.ended) return;
+    if (Math.abs(v.currentTime - target) > 2.2) {
+      v.currentTime = Math.max(0, Math.min(v.duration || Infinity, target));
+    }
+    if (cst.hostPlaying && v.paused) void v.play().catch(() => {});
+    else if (!cst.hostPlaying && !v.paused) v.pause();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, cin.status, cin.hostAt, contentKey]);
+
+  // GUEST: content the host switches to is followed automatically
+  useEffect(() => {
+    setCinemaFollowHandler((fslug, fseason, fepnum) => {
+      const base = watchHref(fslug);
+      const q = fseason > 0 && fepnum > 0 ? `season=${fseason}&epnum=${fepnum}` : "";
+      router.push(q ? `${base}${base.includes("?") ? "&" : "?"}${q}` : base);
+    });
+    return () => setCinemaFollowHandler(null);
+  }, [router]);
+
+  // app reloaded mid-session → silently rejoin the stored room
+  const cinResumeRef = useRef(0);
+  useEffect(() => {
+    if (!open || !activeSrc) return;
+    if (cinResumeRef.current === contentKey) return;
+    cinResumeRef.current = contentKey;
+    const st = useCinema.getState();
+    if (st.status === "idle") void st.resume(profile.displayName || "کاربر");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, activeSrc, contentKey]);
 
   if (!open) return null;
 
@@ -944,17 +1058,39 @@ export default function Player() {
               {subtitle && <p className="truncate text-xs text-zinc-300">{subtitle}</p>}
             </div>
             <div className="ms-auto flex items-center gap-2">
-              {/* float: a real always-on-top desktop window — keep watching
-                  while browsing the app or working in ANY other program */}
+              {/* v0.14.0 — cinema: watch together, host drives */}
               <button
                 type="button"
-                onClick={floatToPip}
-                title="پخش شناور روی صفحه‌نمایش — قابل جابه‌جایی و تغییر اندازه"
-                className="flex h-10 items-center gap-2 rounded-full border border-white/20 bg-white/10 px-4 text-sm font-semibold text-white backdrop-blur transition hover:bg-white/20"
+                onClick={() => setShowCinema((s) => !s)}
+                title="سینما — تماشای گروهی با دوست‌ها"
+                className={`flex h-10 items-center gap-2 rounded-full border px-4 text-sm font-semibold backdrop-blur transition ${
+                  cinActive
+                    ? "border-brand/60 bg-brand/20 text-white"
+                    : "border-white/20 bg-white/10 text-white hover:bg-white/20"
+                }`}
               >
-                <MinimizeIcon width={15} height={15} />
-                <span className="hidden sm:inline">شناور</span>
+                <UsersIcon width={15} height={15} />
+                <span className="hidden sm:inline">سینما</span>
+                {cinActive && cin.members.length > 1 && (
+                  <span className="rounded-full bg-brand px-1.5 text-[10px] font-black">
+                    {cin.members.length.toLocaleString("fa-IR")}
+                  </span>
+                )}
               </button>
+              {/* float: a real always-on-top desktop window — keep watching
+                  while browsing the app or working in ANY other program
+                  (hidden while a cinema is live — floating breaks the sync) */}
+              {!cinActive && (
+                <button
+                  type="button"
+                  onClick={floatToPip}
+                  title="پخش شناور روی صفحه‌نمایش — قابل جابه‌جایی و تغییر اندازه"
+                  className="flex h-10 items-center gap-2 rounded-full border border-white/20 bg-white/10 px-4 text-sm font-semibold text-white backdrop-blur transition hover:bg-white/20"
+                >
+                  <MinimizeIcon width={15} height={15} />
+                  <span className="hidden sm:inline">شناور</span>
+                </button>
+              )}
               <span className="hidden items-center gap-1.5 sm:flex" data-ctrl>
                 <FavoriteButton titleId={titleId} name={title} variant="mini" className="!h-10 !w-10 !bg-white/10 !ring-0 hover:!bg-rose-600" />
                 <WatchlistButton titleId={titleId} name={title} variant="mini" className="!h-10 !w-10 !bg-white/10 !ring-0" />
@@ -1005,6 +1141,29 @@ export default function Player() {
             </div>
           )}
 
+          {/* v0.14.0 — cinema drawer (host controls / members / code) */}
+          {showCinema && (
+            <CinemaPanel
+              getBeat={() => {
+                const st = usePlayerStore.getState();
+                const v = videoRef.current;
+                return {
+                  slug: st.slug,
+                  title: st.title,
+                  poster: st.poster,
+                  kind: st.episodes.length ? "series" : "movie",
+                  season: st.episode?.season ?? 0,
+                  epnum: st.episode?.number ?? 0,
+                  position: v?.currentTime ?? 0,
+                  duration: v?.duration ?? 0,
+                  isPlaying: !!v && !v.paused && !v.ended,
+                };
+              }}
+              hostName={profile.displayName || "میزبان"}
+              onClose={() => setShowCinema(false)}
+            />
+          )}
+
           {/* bottom controls */}
           <div
             className={`absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 via-black/50 to-transparent px-4 pb-4 pt-16 transition-opacity duration-300 sm:px-6 ${showUi ? "opacity-100" : "opacity-0"}`}
@@ -1025,6 +1184,7 @@ export default function Player() {
                 step={0.1}
                 value={current}
                 onChange={(e) => {
+                  if (guestLock) return;
                   const v = videoRef.current;
                   if (v) v.currentTime = Number(e.target.value);
                 }}
@@ -1078,8 +1238,9 @@ export default function Player() {
                 <div className="relative">
                   <select
                     value={rate}
+                    disabled={guestLock}
                     onChange={(e) => setRate(Number(e.target.value))}
-                    className="h-9 appearance-none rounded-full border border-white/20 bg-white/10 px-3 text-xs font-bold text-white hover:bg-white/20 focus:outline-none"
+                    className="h-9 appearance-none rounded-full border border-white/20 bg-white/10 px-3 text-xs font-bold text-white hover:bg-white/20 focus:outline-none disabled:opacity-40"
                     aria-label="سرعت پخش"
                   >
                     {[0.5, 0.75, 1, 1.25, 1.5, 2].map((r) => (
