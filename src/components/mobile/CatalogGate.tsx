@@ -12,7 +12,7 @@
 
 import { useEffect, useState } from "react";
 import { installMobileShim } from "@/lib/mobile/shim";
-import { initCatalog, type ImportProgress } from "@/lib/mobile/db";
+import { initCatalog, isDesktopRuntime, type ImportProgress } from "@/lib/mobile/db";
 
 installMobileShim();
 
@@ -27,8 +27,20 @@ export default function CatalogGate({ children }: { children: React.ReactNode })
   const [progress, setProgress] = useState<ImportProgress | null>(null);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /* v0.10.31: the desktop (Electron) build ships NO shard catalog — the gate
+   * must NOT block there (initCatalog used to fetch /catalog/mobile/*.json,
+   * got the 404 HTML page back and bricked the app with "Unexpected token '<'").
+   * On desktop we pass through immediately and let initCatalog warm the lite
+   * index from the local API in the background; queries await it transparently
+   * (see ensureReady in lib/mobile/db). */
+  const [desktop, setDesktop] = useState(false);
 
   useEffect(() => {
+    if (isDesktopRuntime()) {
+      setDesktop(true);
+      void initCatalog().catch(() => {});
+      return;
+    }
     let alive = true;
     const first = initCatalog((p) => {
       if (alive) setProgress(p);
@@ -46,6 +58,8 @@ export default function CatalogGate({ children }: { children: React.ReactNode })
       alive = false;
     };
   }, []);
+
+  if (desktop) return <>{children}</>;
 
   if (error) {
     return (

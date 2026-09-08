@@ -59,6 +59,7 @@ export type CatalogManifest = {
 };
 
 import Dexie from "dexie";
+import { isElectron } from "@/lib/platform";
 
 /* ------------------------------------------------------------------ */
 /* Dexie database                                                      */
@@ -110,14 +111,40 @@ export const whenReady = () => initPromise ?? Promise.resolve();
 
 export type ImportProgress = { done: number; total: number; phase: "check" | "download" | "index" | "done" };
 
+/** True inside Electron (desktop build). The desktop installer ships no shard
+ * catalog (public/catalog is ~69MB, excluded from the package), so there the
+ * data layer is fed from the local API instead: /api/x/lite + rich endpoints
+ * (see src/app/api/x/[...path]/route.ts). Android/browser keep Dexie+shards. */
+export function isDesktopRuntime(): boolean {
+  return isElectron();
+}
+
 /** Import (or fast-load) the catalog. Safe to call multiple times. */
 export function initCatalog(onProgress?: (p: ImportProgress) => void): Promise<void> {
   if (!initPromise) initPromise = doInit(onProgress).catch((e) => { initPromise = null; throw e; });
   return initPromise;
 }
 
+/** Make sure the lite index is loaded before an in-memory query runs.
+ * Normally a no-op (CatalogGate imports before mounting the app); on the
+ * desktop the gate passes through immediately and warms up in parallel, so
+ * early queries await the same init promise here instead of reading empty. */
+async function ensureReady(): Promise<void> {
+  if (lite.length) return;
+  await initCatalog();
+}
+
 async function doInit(onProgress?: (p: ImportProgress) => void): Promise<void> {
   const p = onProgress ?? (() => {});
+  if (isDesktopRuntime()) {
+    p({ done: 0, total: 1, phase: "check" });
+    const r = await fetch("/api/x/lite", { cache: "no-cache" }).then((res) => res.json()) as { manifest: CatalogManifest; titles: LiteTitle[] };
+    lite = r.titles ?? [];
+    reindex();
+    manifest = r.manifest ?? null;
+    p({ done: 1, total: 1, phase: "done" });
+    return;
+  }
   const remote = await fetch("/catalog/mobile/manifest.json", { cache: "no-cache" }).then((r) => r.json()) as CatalogManifest;
 
   const stored = await db.kv.get(MANIFEST_KEY);
@@ -241,6 +268,12 @@ function reindex() {
 /* ------------------------------------------------------------------ */
 
 export async function getFullTitle(id: number): Promise<TitleView | null> {
+  if (isDesktopRuntime()) {
+    const r = await fetch(`/api/x/full/${id}`, { cache: "no-store" });
+    if (!r.ok) return null;
+    const j = (await r.json()) as { title: TitleView | null; episodes?: EpisodeRec[] };
+    return j.title ?? null;
+  }
   const l = byId.get(id);
   if (!l) return null;
   const full = (await db.titles.get(id)) as unknown as CatalogTitle | undefined;
@@ -256,6 +289,11 @@ export async function getFullTitle(id: number): Promise<TitleView | null> {
 }
 
 export async function getEpisodes(titleId: number): Promise<EpisodeRec[]> {
+  if (isDesktopRuntime()) {
+    const r = await fetch(`/api/x/episodes/${titleId}`, { cache: "no-store" });
+    if (!r.ok) return [];
+    return (await r.json()) as EpisodeRec[];
+  }
   const full = (await db.titles.get(titleId)) as unknown as CatalogTitle | undefined;
   return (full?.episodes as unknown as EpisodeRec[]) ?? [];
 }
@@ -288,20 +326,24 @@ const matches = (t: LiteTitle, opts: CatalogQuery) =>
   (!opts.minRating || t.rating >= opts.minRating);
 
 export async function getFeatured(): Promise<TitleView[]> {
+  await ensureReady();
   const rows = lite.filter((t) => t.featured).sort(bySort("trending")).slice(0, 5);
   const full = await Promise.all(rows.map((r) => getFullTitle(r.id)));
   return full.filter((t): t is TitleView => t !== null);
 }
 
 export async function getTrending(limit = 12): Promise<LiteTitle[]> {
+  await ensureReady();
   return [...lite].sort(bySort("trending")).slice(0, limit);
 }
 
 export async function getNewest(limit = 12): Promise<LiteTitle[]> {
+  await ensureReady();
   return [...lite].sort(bySort("newest")).slice(0, limit);
 }
 
 export async function getTopRated(limit = 12): Promise<LiteTitle[]> {
+  await ensureReady();
   return [...lite].sort(bySort("rating")).slice(0, limit);
 }
 
@@ -309,6 +351,7 @@ export async function getByType(
   type: "movie" | "series",
   opts: { genre?: string; sort?: string; year?: number; minRating?: number; limit?: number } = {}
 ): Promise<LiteTitle[]> {
+  await ensureReady();
   const rows = lite.filter((t) => t.type === type && matches(t, opts)).sort(bySort(opts.sort));
   return opts.limit ? rows.slice(0, opts.limit) : rows;
 }
@@ -319,24 +362,29 @@ export async function getCatalogPage(
   page = 0,
   pageSize = 48
 ): Promise<{ items: TitleListItem[]; total: number }> {
+  await ensureReady();
   const rows = lite.filter((t) => t.type === type && matches(t, opts)).sort(bySort(opts.sort));
   return { items: rows.slice(page * pageSize, (page + 1) * pageSize), total: rows.length };
 }
 
 export async function getByGenre(genre: string, limit = 12): Promise<LiteTitle[]> {
+  await ensureReady();
   return lite.filter((t) => t.genres.includes(genre)).sort(bySort("rating")).slice(0, limit);
 }
 
 export async function getByDirector(director: string, excludeId: number, limit = 8): Promise<LiteTitle[]> {
+  await ensureReady();
   if (!director) return [];
   return lite.filter((t) => t.director === director && t.id !== excludeId).sort(bySort("rating")).slice(0, limit);
 }
 
 export async function getTitleLiteBySlug(slug: string): Promise<LiteTitle | null> {
+  await ensureReady();
   return bySlug.get(slug) ?? null;
 }
 
 export async function getSimilar(t: Pick<LiteTitle, "id" | "genres">, limit = 10): Promise<LiteTitle[]> {
+  await ensureReady();
   return lite
     .filter((x) => x.id !== t.id && x.genres.some((g) => t.genres.includes(g)))
     .sort(bySort("rating"))
@@ -371,6 +419,7 @@ function buildSearchEntries() {
 }
 
 export async function search(q: string, limit = 30): Promise<LiteTitle[]> {
+  await ensureReady();
   const words = normFa(q).split(/\s+/).filter(Boolean).map(compactKey);
   if (!words.length) return [];
   const entries = buildSearchEntries();
@@ -398,6 +447,7 @@ export async function search(q: string, limit = 30): Promise<LiteTitle[]> {
 export type GenreSummary = { genre: string; count: number; movies: number; series: number; covers: string[]; avgRating: number };
 
 export async function getGenreSummaries(): Promise<GenreSummary[]> {
+  await ensureReady();
   return GENRES.map((genre) => {
     const items = lite.filter((t) => t.genres.includes(genre));
     const avg = items.length ? items.reduce((a, t) => a + t.rating, 0) / items.length : 0;
@@ -413,6 +463,7 @@ export async function getGenreSummaries(): Promise<GenreSummary[]> {
 }
 
 export async function getCatalogStats(type: "movie" | "series") {
+  await ensureReady();
   const rows = lite.filter((t) => t.type === type);
   const avg = rows.length ? rows.reduce((a, t) => a + t.rating, 0) / rows.length : 0;
   const top = [...rows].sort(bySort("trending"))[0] ?? null;
@@ -425,6 +476,7 @@ export async function getCatalogStats(type: "movie" | "series") {
 }
 
 export async function getYears(type: "movie" | "series"): Promise<number[]> {
+  await ensureReady();
   const set = new Set<number>();
   for (const t of lite) if (t.type === type && t.year) set.add(t.year);
   return [...set].sort((a, b) => b - a);
@@ -451,6 +503,7 @@ export const COLLECTIONS: Collection[] = [
 ];
 
 export async function getCollections(limitPer = 12) {
+  await ensureReady();
   return COLLECTIONS.map((c) => {
     const all = lite.filter(c.rule);
     const items = [...all].sort(c.sort ?? (() => 0)).slice(0, limitPer);
@@ -459,6 +512,7 @@ export async function getCollections(limitPer = 12) {
 }
 
 export async function getCollection(slug: string) {
+  await ensureReady();
   const c = COLLECTIONS.find((x) => x.slug === slug);
   if (!c) return null;
   const items = lite.filter(c.rule).sort(c.sort ?? (() => 0));
@@ -467,6 +521,7 @@ export async function getCollection(slug: string) {
 
 /* people */
 export async function getByPerson(name: string) {
+  await ensureReady();
   const rows = lite.filter((t) => t.director === name || t.cast.includes(name)).sort(bySort("rating"));
   return {
     name,
@@ -476,6 +531,7 @@ export async function getByPerson(name: string) {
 }
 
 export async function getPeopleIndex() {
+  await ensureReady();
   const map = new Map<string, { name: string; roles: Set<"director" | "actor">; count: number; cover: string; score: number }>();
   for (const r of lite) {
     const bump = (name: string, role: "director" | "actor") => {
@@ -495,6 +551,7 @@ export async function getPeopleIndex() {
 }
 
 export async function getRankings(type?: "movie" | "series", limit = 100): Promise<LiteTitle[]> {
+  await ensureReady();
   return lite
     .filter((t) => (!type || t.type === type) && t.views >= 5_000)
     .sort((a, b) => b.rating - a.rating || b.views - a.views)
@@ -502,6 +559,7 @@ export async function getRankings(type?: "movie" | "series", limit = 100): Promi
 }
 
 export async function getRandomTitle(opts: { type?: "movie" | "series"; genre?: string; excludeIds?: number[] } = {}): Promise<LiteTitle | null> {
+  await ensureReady();
   const ex = new Set(opts.excludeIds ?? []);
   const rows = lite.filter(
     (t) => (!opts.type || t.type === opts.type) && (!opts.genre || t.genres.includes(opts.genre)) && !ex.has(t.id)

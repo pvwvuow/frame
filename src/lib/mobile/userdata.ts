@@ -3,7 +3,7 @@
  * existing client components (LibraryProvider, SettingsForm, HistoryList…)
  * keep working through the fetch shim unchanged. */
 
-import { db, episodeId, getEpisodes, getFullTitle, getTitleLiteBySlug, type LiteTitle } from "./db";
+import { db, episodeId, getEpisodes, getFullTitle, getTitleLiteBySlug, isDesktopRuntime, type LiteTitle } from "./db";
 import { LIST_STATUSES, type ListStatus } from "@/lib/library-shared";
 import type { TitleView } from "./db";
 import { titleHref, watchHref } from "@/lib/mobile-links";
@@ -14,6 +14,19 @@ export type { ListStatus };
 const json = (v: unknown, fb: string) => {
   try { const p = JSON.parse(v as string); return Array.isArray(p) ? p : fb ? JSON.parse(fb) : []; } catch { return []; }
 };
+
+/* Desktop runtime: the shared pages call these functions directly, but on
+ * Electron the data lives in the local Prisma DB (NOT in Dexie — the desktop
+ * installer ships no shard catalog). Each function therefore has a thin
+ * branch that talks to the real API / the /api/x bridge, keeping desktop and
+ * Android on one code path with platform-correct storage underneath. */
+const srv = async <T>(url: string, init?: RequestInit): Promise<T> => {
+  const r = await fetch(url, { cache: "no-store", ...init });
+  if (!r.ok) throw new Error(`API ${url} → ${r.status}`);
+  return (await r.json()) as T;
+};
+const srvPost = <T,>(url: string, body: unknown, method = "POST"): Promise<T> =>
+  srv<T>(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
 
 /** userKey from the same cookie the desktop server reads (nama_uid). */
 export function getUserKey(): string {
@@ -79,6 +92,10 @@ const DEFAULT_PROFILE = (userKey: string): ProfileRow => ({
 });
 
 export async function getProfile(userKey = getUserKey()): Promise<ProfileRow> {
+  if (isDesktopRuntime()) {
+    const row = await srv<Partial<ProfileRow>>("/api/profile");
+    return { ...DEFAULT_PROFILE(userKey), ...row } as ProfileRow;
+  }
   const row = await db.profiles.get(userKey);
   if (row) return { ...DEFAULT_PROFILE(userKey), ...(row as object) } as ProfileRow;
   const fresh = DEFAULT_PROFILE(userKey);
@@ -92,6 +109,10 @@ const LANGS = new Set(["fa", "en"]);
 const SPEEDS = new Set([0.5, 0.75, 1, 1.25, 1.5, 1.75, 2]);
 
 export async function patchProfile(b: Record<string, unknown>, userKey = getUserKey()): Promise<ProfileRow> {
+  if (isDesktopRuntime()) {
+    const row = await srvPost<Partial<ProfileRow>>("/api/profile", b, "PATCH");
+    return { ...DEFAULT_PROFILE(userKey), ...row } as ProfileRow;
+  }
   const cur = await getProfile(userKey);
   const next: ProfileRow = { ...cur, updatedAt: now() };
   if (typeof b.displayName === "string") next.displayName = b.displayName.trim().slice(0, 40) || "کاربر نما";
@@ -112,6 +133,10 @@ export async function patchProfile(b: Record<string, unknown>, userKey = getUser
 }
 
 export async function wipeProfile(scope: string, userKey = getUserKey()): Promise<void> {
+  if (isDesktopRuntime()) {
+    await srvPost("/api/profile", { scope }, "DELETE");
+    return;
+  }
   const ops: Promise<unknown>[] = [];
   if (scope === "all" || scope === "history") ops.push(db.progress.where("userKey").equals(userKey).delete());
   if (scope === "all" || scope === "list") ops.push(db.watchlist.where("userKey").equals(userKey).delete());
@@ -133,6 +158,7 @@ export type LibrarySnapshot = {
 };
 
 export async function getLibrarySnapshot(userKey = getUserKey()): Promise<LibrarySnapshot> {
+  if (isDesktopRuntime()) return srv<LibrarySnapshot>("/api/library");
   const user = userKey || "guest";
   const [wl, fav, rt, profile] = await Promise.all([
     db.watchlist.where("userKey").equals(user).toArray(),
@@ -160,6 +186,10 @@ export async function getLibrarySnapshot(userKey = getUserKey()): Promise<Librar
 /* ------------------------------------------------------------------ */
 
 export async function toggleFavorite(titleId: number, value?: boolean, userKey = getUserKey()): Promise<boolean> {
+  if (isDesktopRuntime()) {
+    const d = await srvPost<{ isFavorite: boolean }>("/api/favorites", { titleId, value });
+    return d.isFavorite;
+  }
   const user = userKey || "guest";
   const existing = await db.favorites.where("[userKey+titleId]").equals([user, titleId]).first();
   const wanted = typeof value === "boolean" ? value : !existing;
@@ -169,6 +199,10 @@ export async function toggleFavorite(titleId: number, value?: boolean, userKey =
 }
 
 export async function addFavorites(titleIds: number[], userKey = getUserKey()): Promise<void> {
+  if (isDesktopRuntime()) {
+    await srvPost("/api/favorites", { titleIds }, "PUT");
+    return;
+  }
   const user = userKey || "guest";
   const have = new Set((await db.favorites.where("userKey").equals(user).toArray()).map((f) => Number(f.titleId)));
   const rows = titleIds.filter((id) => !have.has(id)).map((titleId) => ({ userKey: user, titleId, createdAt: now() }));
@@ -176,6 +210,11 @@ export async function addFavorites(titleIds: number[], userKey = getUserKey()): 
 }
 
 export async function removeFavorites(titleIds?: number[], userKey = getUserKey()): Promise<void> {
+  if (isDesktopRuntime()) {
+    if (!titleIds?.length) await srvPost("/api/profile", { scope: "favorites" }, "DELETE");
+    else await srvPost("/api/favorites", { titleIds }, "DELETE");
+    return;
+  }
   const user = userKey || "guest";
   if (!titleIds?.length) {
     await db.favorites.where("userKey").equals(user).delete();
@@ -188,6 +227,7 @@ export async function removeFavorites(titleIds?: number[], userKey = getUserKey(
 }
 
 export async function isFavorite(titleId: number, userKey = getUserKey()): Promise<boolean> {
+  if (isDesktopRuntime()) return srv<boolean>(`/api/x/is-favorite?titleId=${titleId}`);
   const user = userKey || "guest";
   return (await db.favorites.where("[userKey+titleId]").equals([user, titleId]).count()) > 0;
 }
@@ -199,6 +239,10 @@ export async function isFavorite(titleId: number, userKey = getUserKey()): Promi
 const STATUSES = new Set(["planned", "watching", "watched"]);
 
 export async function toggleWatchlist(titleId: number, value?: boolean, userKey = getUserKey()): Promise<boolean> {
+  if (isDesktopRuntime()) {
+    const d = await srvPost<{ inList: boolean }>("/api/watchlist", { titleId, value });
+    return d.inList;
+  }
   const user = userKey || "guest";
   const existing = await db.watchlist.where("[userKey+titleId]").equals([user, titleId]).first();
   const wanted = typeof value === "boolean" ? value : !existing;
@@ -211,6 +255,10 @@ export async function patchWatchlist(
   b: { titleId: number; status?: string; note?: string; pinned?: boolean; plannedDate?: string | null },
   userKey = getUserKey()
 ): Promise<void> {
+  if (isDesktopRuntime()) {
+    await srvPost("/api/watchlist", b, "PATCH");
+    return;
+  }
   const user = userKey || "guest";
   const existing = await db.watchlist.where("[userKey+titleId]").equals([user, b.titleId]).first();
   const base = (existing as Record<string, unknown> | undefined) ?? { userKey: user, titleId: b.titleId, status: "planned", note: "", pinned: false, createdAt: now() };
@@ -224,6 +272,10 @@ export async function patchWatchlist(
 }
 
 export async function removeWatchlist(titleId?: number, userKey = getUserKey()): Promise<void> {
+  if (isDesktopRuntime()) {
+    await srvPost("/api/watchlist", titleId ? { titleIds: [titleId] } : {}, "DELETE");
+    return;
+  }
   const user = userKey || "guest";
   if (!titleId) return;
   const row = await db.watchlist.where("[userKey+titleId]").equals([user, titleId]).first();
@@ -231,11 +283,13 @@ export async function removeWatchlist(titleId?: number, userKey = getUserKey()):
 }
 
 export async function isInWatchlist(titleId: number, userKey = getUserKey()): Promise<boolean> {
+  if (isDesktopRuntime()) return srv<boolean>(`/api/x/in-watchlist?titleId=${titleId}`);
   const user = userKey || "guest";
   return (await db.watchlist.where("[userKey+titleId]").equals([user, titleId]).count()) > 0;
 }
 
 export async function getWatchlistIds(userKey = getUserKey()): Promise<number[]> {
+  if (isDesktopRuntime()) return srv<number[]>("/api/x/watchlist-ids");
   const user = userKey || "guest";
   const rows = await db.watchlist.where("userKey").equals(user).toArray();
   return rows.map((r) => Number(r.titleId));
@@ -251,6 +305,10 @@ export async function upsertProgress(
   b: { titleId: number; episodeId?: number | null; position: number; duration: number },
   userKey = getUserKey()
 ): Promise<void> {
+  if (isDesktopRuntime()) {
+    await srvPost("/api/progress", { titleId: b.titleId, episodeId: b.episodeId ?? null, position: b.position, duration: b.duration });
+    return;
+  }
   const user = userKey || "guest";
   const existing = await db.progress.where("[userKey+titleId]").equals([user, b.titleId]).first();
   const row = { userKey: user, titleId: b.titleId, episodeId: b.episodeId ? Number(b.episodeId) : null, position: b.position, duration: b.duration, updatedAt: now() };
@@ -259,6 +317,7 @@ export async function upsertProgress(
 }
 
 export async function getProgressFor(titleId: number, userKey = getUserKey()): Promise<ProgressRow | null> {
+  if (isDesktopRuntime()) return srv<ProgressRow | null>(`/api/x/progress?titleId=${titleId}`);
   const user = userKey || "guest";
   const row = await db.progress.where("[userKey+titleId]").equals([user, titleId]).first();
   if (!row) return null;
@@ -267,6 +326,11 @@ export async function getProgressFor(titleId: number, userKey = getUserKey()): P
 }
 
 export async function getProgressMap(titleIds: number[], userKey = getUserKey()): Promise<Map<number, { position: number; duration: number }>> {
+  if (isDesktopRuntime()) {
+    if (!titleIds.length) return new Map();
+    const obj = await srv<Record<string, { position: number; duration: number }>>(`/api/x/progress-map?ids=${titleIds.join(",")}`);
+    return new Map(Object.entries(obj).map(([k, v]) => [Number(k), v]));
+  }
   const user = userKey || "guest";
   const out = new Map<number, { position: number; duration: number }>();
   for (const id of titleIds) {
@@ -277,6 +341,11 @@ export async function getProgressMap(titleIds: number[], userKey = getUserKey())
 }
 
 export async function removeProgress(titleId?: number | number[], userKey = getUserKey()): Promise<number> {
+  if (isDesktopRuntime()) {
+    const body = Array.isArray(titleId) ? { titleIds: titleId } : titleId ? { titleId } : {};
+    const d = await srvPost<{ removed: number }>("/api/progress", body, "DELETE");
+    return d.removed;
+  }
   const user = userKey || "guest";
   const ids = Array.isArray(titleId) ? titleId : titleId ? [titleId] : [];
   if (!ids.length) {
@@ -297,6 +366,10 @@ export async function removeProgress(titleId?: number | number[], userKey = getU
 /* ------------------------------------------------------------------ */
 
 export async function setRating(titleId: number, score: number, userKey = getUserKey()): Promise<number | null> {
+  if (isDesktopRuntime()) {
+    const d = await srvPost<{ score: number | null }>("/api/rating", { titleId, score });
+    return d.score;
+  }
   const user = userKey || "guest";
   if (score === 0) {
     await db.ratings.where("[userKey+titleId]").equals([user, titleId]).delete();
@@ -310,6 +383,7 @@ export async function setRating(titleId: number, score: number, userKey = getUse
 }
 
 export async function getUserScore(titleId: number, userKey = getUserKey()): Promise<number | null> {
+  if (isDesktopRuntime()) return srv<number | null>(`/api/x/score?titleId=${titleId}`);
   const user = userKey || "guest";
   const row = await db.ratings.where("[userKey+titleId]").equals([user, titleId]).first();
   return row ? Number((row as { score: number }).score) : null;
@@ -333,6 +407,7 @@ export type ListRow = {
 };
 
 export async function getMyListRows(userKey = getUserKey()): Promise<ListRow[]> {
+  if (isDesktopRuntime()) return srv<ListRow[]>("/api/x/list");
   const user = userKey || "guest";
   const rows = await db.watchlist.where("userKey").equals(user).toArray();
   const ids = rows.map((r) => Number(r.titleId));
@@ -373,6 +448,7 @@ export async function getMyListRows(userKey = getUserKey()): Promise<ListRow[]> 
 export type FavoriteRow = { title: LiteTitle & Partial<TitleView>; addedAt: string; inList: boolean; myScore: number | null };
 
 export async function getFavoriteRows(userKey = getUserKey()): Promise<FavoriteRow[]> {
+  if (isDesktopRuntime()) return srv<FavoriteRow[]>("/api/x/favorites");
   const user = userKey || "guest";
   const rows = await db.favorites.where("userKey").equals(user).toArray();
   rows.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
@@ -400,6 +476,7 @@ export type HistoryRow = {
 };
 
 export async function getHistory(userKey = getUserKey()): Promise<HistoryRow[]> {
+  if (isDesktopRuntime()) return srv<HistoryRow[]>("/api/x/history");
   const user = userKey || "guest";
   const rows = await db.progress.where("userKey").equals(user).toArray();
   rows.sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
@@ -440,6 +517,7 @@ export type ContinueItem = {
 };
 
 export async function getContinueWatching(limit = 12, userKey = getUserKey()): Promise<ContinueItem[]> {
+  if (isDesktopRuntime()) return srv<ContinueItem[]>(`/api/x/continue?limit=${limit}`);
   const rows = await getHistory(userKey);
   return rows
     .filter((r) => r.duration > 0 && r.position / r.duration < 0.97)
@@ -456,12 +534,14 @@ export async function getContinueWatching(limit = 12, userKey = getUserKey()): P
 export type ReviewRow = { id: number; titleId: number; author: string; rating: number; body: string; createdAt: string };
 
 export async function addReview(b: { titleId: number; author: string; rating: number; body: string }): Promise<ReviewRow> {
+  if (isDesktopRuntime()) return srvPost<ReviewRow>("/api/reviews", b);
   const row = { titleId: b.titleId, author: b.author.slice(0, 80), rating: Math.min(10, Math.max(1, Math.round(b.rating))), body: b.body.slice(0, 2000), createdAt: now() };
   const id = await db.reviews.add({ ...row } as Record<string, unknown>);
   return { ...row, id: Number(id) };
 }
 
 export async function getReviews(titleId: number): Promise<ReviewRow[]> {
+  if (isDesktopRuntime()) return srv<ReviewRow[]>(`/api/x/reviews?titleId=${titleId}`);
   const rows = await db.reviews.where("titleId").equals(titleId).toArray();
   return (rows as unknown as ReviewRow[]).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
@@ -482,6 +562,7 @@ export type UserStats = {
 };
 
 export async function getUserStats(userKey = getUserKey()): Promise<UserStats> {
+  if (isDesktopRuntime()) return srv<UserStats>("/api/x/stats");
   const user = userKey || "guest";
   const [wl, favs, hist, ratingCount, profile] = await Promise.all([
     db.watchlist.where("userKey").equals(user).toArray(),
@@ -519,6 +600,7 @@ export async function getUserStats(userKey = getUserKey()): Promise<UserStats> {
 export type Notification = { id: string; kind: "episode" | "continue" | "recommend" | "new" | "system"; title: string; body: string; href: string; image?: string; at: string; read?: boolean };
 
 export async function getNotifications(userKey = getUserKey()): Promise<Notification[]> {
+  if (isDesktopRuntime()) return srv<Notification[]>("/api/notifications");
   const user = userKey || "guest";
   const [profile, list, cont] = await Promise.all([getProfile(user), getMyListRows(user), getContinueWatching(6, user)]);
   const out: Notification[] = [];
@@ -606,12 +688,20 @@ export async function getNotifications(userKey = getUserKey()): Promise<Notifica
 }
 
 export async function markNotificationRead(id: string, userKey = getUserKey()): Promise<void> {
+  if (isDesktopRuntime()) {
+    await srvPost("/api/notifications", { id });
+    return;
+  }
   const user = userKey || "guest";
   if (await db.notificationsRead.get(id)) return;
   await db.notificationsRead.put({ id, userKey: user, at: now() });
 }
 
 export async function markAllNotificationsRead(userKey = getUserKey()): Promise<void> {
+  if (isDesktopRuntime()) {
+    await srvPost("/api/notifications", { all: true });
+    return;
+  }
   const items = await getNotifications(userKey);
   const user = userKey || "guest";
   await db.notificationsRead.bulkPut(items.filter((n) => !n.read).map((n) => ({ id: n.id, userKey: user, at: now() })));
