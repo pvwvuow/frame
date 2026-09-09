@@ -218,9 +218,9 @@ public class PlayerActivity extends Activity {
             public void onPlayerError(PlaybackException error) {
                 // v0.16.3 — surface the precise code name to JS (was: only
                 // getMessage(), which made every failure look the same)
-                String codeName = error.errorCodeName == null
+                String codeName = error.getErrorCodeName() == null
                     ? ("code " + error.errorCode)
-                    : error.errorCodeName;
+                    : error.getErrorCodeName();
                 sError = codeName + ": "
                     + (error.getMessage() == null ? "playback-error" : error.getMessage());
 
