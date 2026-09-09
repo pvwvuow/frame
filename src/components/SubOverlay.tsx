@@ -23,6 +23,8 @@ export default function SubOverlay({
   on,
   size = "m",
   pip = false,
+  delaySec = 0,
+  vPos,
 }: {
   cues: ParsedCue[];
   videoRef: RefObject<HTMLVideoElement | null>;
@@ -30,6 +32,11 @@ export default function SubOverlay({
   size?: "s" | "m" | "l" | "xl";
   /** smaller paddings/baseline for the floating PiP window */
   pip?: boolean;
+  /** v0.18.0 — seconds to shift the subtitle track (+ = later, − = earlier) */
+  delaySec?: number;
+  /** v0.18.0 — vertical position, % of the video height (top of the text
+   *  block). Undefined keeps the stylesheet default. */
+  vPos?: number;
 }) {
   const [text, setText] = useState<string | null>(null);
   const keyRef = useRef<string | null>("");
@@ -46,7 +53,8 @@ export default function SubOverlay({
     const loop = () => {
       const v = videoRef.current;
       if (v) {
-        const t = v.currentTime;
+        // +delay → the cue becomes visible LATER (subtitle lags the voice)
+        const t = v.currentTime - delaySec;
         // binary search: the last cue that starts at or before t
         let lo = 0;
         let hi = cues.length - 1;
@@ -79,11 +87,16 @@ export default function SubOverlay({
     };
     raf = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf);
-  }, [cues, on, videoRef]);
+  }, [cues, on, videoRef, delaySec]);
 
   if (!on || !text) return null;
   return (
-    <div className={`sub-overlay${pip ? " sub-overlay--pip" : ""}`} data-subsize={size} aria-live="polite">
+    <div
+      className={`sub-overlay${pip ? " sub-overlay--pip" : ""}`}
+      data-subsize={size}
+      aria-live="polite"
+      style={vPos != null ? { bottom: `${100 - vPos}%` } : undefined}
+    >
       <div className="sub-overlay__text" dir="rtl">
         {text}
       </div>

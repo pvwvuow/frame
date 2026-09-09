@@ -25,10 +25,12 @@
  * Mobile layer: fullscreen-first (Netflix-style) with a portrait strip
  * fallback, touch gestures (single tap = controls, double-tap sides =
  * ±seek with ripple + haptic, double-tap center = play/pause, horizontal
- * drag = scrub with time preview), screen lock (hold 1s to unlock), bottom
- * sheets (quality / speed / subtitles / episodes), cinema drawer, network
- * drop retry with backoff, wake lock, safe-area padding and an Android
- * back-button contract:
+ * drag = scrub with time preview, vertical drag = brightness/volume,
+ * hold = 2×, pinch = zoom), screen lock (hold 1s to unlock), bottom
+ * sheets (quality / speed / subtitles / episodes / sleep timer / player
+ * settings), cinema drawer, network drop retry with backoff, wake lock,
+ * MediaSession, background pause, data-saver + slow-net badge, mini
+ * player, safe-area padding and an Android back-button contract:
  *   fullscreen → hardware back exits to portrait; portrait → back closes
  *   the player (progress saved). All system helpers degrade to no-ops on
  *   desktop/Electron (src/lib/mobile-ui.ts).
@@ -64,7 +66,7 @@ import { ensurePlayableAudio } from "@/lib/audio-guard";
 import { preferredSourceIdx, qualityPrefIdx, rememberedVariantIdx, rememberVariantPref, variantShort } from "@/lib/variant";
 import { setQualityPref } from "@/lib/quality-pref";
 import { titleHref, watchHref } from "@/lib/mobile-links";
-import { isLocalFile, localFilePath, nativeBridge, probeNativeBridge } from "@/lib/native-bridge";
+import { isLocalFile, localFilePath, nativeBridge, needsNativePlayer, probeNativeBridge } from "@/lib/native-bridge";
 import { resolveOwner, shouldLadderAdvance, isLadderExhausted, isDuplicateNotice, type PlaybackOwner } from "@/lib/mobile-playback";
 import { useCinema, cinemaTargetPosition, setCinemaFollowHandler, type CinemaBeat } from "@/lib/cinema";
 import CinemaPanel from "../cinema/CinemaPanel";
@@ -79,14 +81,43 @@ import {
   exitFullscreen,
   haptic,
   getSeekStep,
+  lockPortrait,
+  isCellular,
+  netInfo,
 } from "@/lib/mobile-ui";
+import {
+  getAutoLock,
+  getDataSaver,
+  getKeepAwake,
+  getOrientLock,
+  getRatePref,
+  getSubDelay,
+  getSubPos,
+  getZoomMode,
+  nextZoomMode,
+  pickDataSaverIdx,
+  qNum,
+  setAutoLock,
+  setDataSaver,
+  setKeepAwake,
+  setOrientLock,
+  setRatePref,
+  setSeekStepPref,
+  setSubDelay,
+  setSubPos,
+  setZoomMode,
+  buildEpisodesManifest,
+  type OrientLock,
+  type ZoomMode,
+} from "@/lib/player-prefs";
+import { MobileDownloadButton } from "../download/MobileDownloads";
 
 const SUB_SIZE_KEY = "nama-sub-size";
 const SUB_ON_KEY = "nama-sub-on";
 const VOL_KEY = "nama-volume";
 const MUTED_KEY = "nama-muted";
 
-type SheetKind = null | "quality" | "speed" | "subs" | "episodes";
+type SheetKind = null | "quality" | "speed" | "subs" | "episodes" | "sleep" | "settings";
 type Ripple = { id: number; x: number; dir: -1 | 1 };
 
 export default function PlayerMobile() {
@@ -193,6 +224,81 @@ export default function PlayerMobile() {
   const wasOpenRef = useRef(false);
   const onWatch = pathname?.startsWith("/watch") ?? false;
 
+  // ---- v0.18.0 feature state ------------------------------------------------
+  const [zoomMode, setZoomModeState] = useState<ZoomMode>("contain");
+  const [pinchScale, setPinchScale] = useState(1);
+  const [pinchOrigin, setPinchOrigin] = useState<{ x: number; y: number } | null>(null);
+  const [dim, setDim] = useState(0); // gesture brightness — CSS dim 0..0.8
+  const [hud, setHud] = useState<{ kind: "bright" | "vol"; pct: number } | null>(null);
+  const [tapHolding, setTapHolding] = useState(false); // hold = 2× active
+  const prevRateRef = useRef(1);
+  const [subDelay, setSubDelayState] = useState(0);
+  const [subPos, setSubPosState] = useState(85);
+  const [orientLock, setOrientLockState] = useState<OrientLock>("auto");
+  const [autoLock, setAutoLockState] = useState(false);
+  const [keepAwake, setKeepAwakeState] = useState(true);
+  const [dataSaver, setDataSaverState] = useState(false);
+  const [sleepLeft, setSleepLeft] = useState<number | null>(null); // seconds
+  const [sleepMin, setSleepMin] = useState<number | null>(null);
+  const [sleepEop, setSleepEop] = useState(false); // end-of-episode mode
+  const sleepEopRef = useRef(false); // mirror for the <video> listener closure
+  useEffect(() => {
+    sleepEopRef.current = sleepEop;
+  }, [sleepEop]);
+  const [slowNet, setSlowNet] = useState(false);
+  const slowRef = useRef({ since: 0, shownAt: 0 });
+  const [epProgress, setEpProgress] = useState<Map<number, { position: number; duration: number }>>(new Map());
+  const [seasonTab, setSeasonTab] = useState<number | null>(null);
+  const [confirmHighQ, setConfirmHighQ] = useState<number | null>(null);
+  const [synopsis, setSynopsis] = useState("");
+  const autoLockRef = useRef<number | null>(null);
+
+  // restore prefs once — every one degrades gracefully to its default
+  useEffect(() => {
+    setSubDelayState(getSubDelay());
+    setSubPosState(getSubPos());
+    setOrientLockState(getOrientLock());
+    setAutoLockState(getAutoLock());
+    setKeepAwakeState(getKeepAwake());
+    setDataSaverState(getDataSaver());
+    const r = getRatePref();
+    if (r !== 1) setRate(r);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // persist the playback rate (was reset to 1× on every open before v0.18.0)
+  useEffect(() => {
+    setRatePref(rate);
+  }, [rate]);
+
+  // zoom mode is remembered per TITLE (nama-zoom-<titleId>) — NOT per open:
+  // contentKey is a bump counter that changes on every play() call, so it
+  // would silently forget the user's fit/fill/stretch choice between runs.
+  // A new title still resets the pinch + sheet state.
+  const zoomTitleKey = String(titleId || slug);
+  useEffect(() => {
+    setZoomModeState(getZoomMode(zoomTitleKey));
+    setPinchScale(1);
+    setPinchOrigin(null);
+    setSeasonTab(null);
+    setConfirmHighQ(null);
+  }, [zoomTitleKey]);
+
+  // short synopsis for the portrait info section (one request per open)
+  useEffect(() => {
+    if (!open || !slug) return;
+    let alive = true;
+    fetch(`/api/title/${slug}`, { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d: { title?: { synopsis?: string } }) => {
+        if (alive && d.title?.synopsis) setSynopsis(d.title.synopsis);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [open, slug]);
+
   // restore volume preference — muted is deliberately NOT restored (desktop
   // parity: a stale muted flag was the «the movie has no sound» bug)
   useEffect(() => {
@@ -223,7 +329,7 @@ export default function PlayerMobile() {
     const hint = usePlayerStore.getState().srcHint;
     const qp = qualityPrefIdx(srcList);
     const remembered = rememberedVariantIdx(srcList);
-    const initial =
+    let initial =
       hint >= 0 && hint < srcList.length
         ? hint
         : qp >= 0
@@ -231,6 +337,15 @@ export default function PlayerMobile() {
           : remembered >= 0
             ? remembered
             : preferredSourceIdx(srcList);
+    // v0.18.0 — data saver: on cellular with no explicit user taste, start
+    // with the sharpest variant ≤720p instead of the catalog default
+    if (hint < 0 && qp < 0 && getDataSaver() && isCellular()) {
+      const ds = pickDataSaverIdx(srcList);
+      if (ds >= 0 && ds !== initial) {
+        initial = ds;
+        setTimeout(() => showNotice("ذخیره داده فعال است — کیفیت متوسط انتخاب شد"), 0);
+      }
+    }
     setSrcIdx(initial);
     manualPickRef.current = false;
     setSheet(null);
@@ -398,11 +513,23 @@ export default function PlayerMobile() {
     const startMs = Math.round((resumeAt.current ?? startAt ?? 0) * 1000);
     resumeAt.current = null;
     const relKey = contentKey;
+    // v0.18.0 — the native player renders its OWN episodes sheet: ship a
+    // lightweight manifest (seasons/numbers/watched/progress) along with the
+    // zoom-neutral extras. Results (switchTo / switchToWeb) come back below.
+    const manifest = episodes.length
+      ? buildEpisodesManifest(episodes, episode?.id ?? null, epProgress)
+      : null;
+    const webSafeIdx = srcList.findIndex((s) => !needsNativePlayer(mediaSrc(s.url, proxyBase ?? null)));
     b.playVideo({
       url: isLocalFile(activeSrc) ? localFilePath(activeSrc) : activeSrc,
       title: title ?? "Frame",
       subtitle: subtitle ?? "",
       positionMs: startMs,
+      episodes: manifest ? manifest.episodes : undefined,
+      episodeIndex: manifest ? manifest.episodeIndex : undefined,
+      poster: poster || undefined,
+      seekStepSec: getSeekStep(),
+      hasWebVariant: webSafeIdx >= 0,
     })
       .then((r) => {
         // v0.16.2 — a STALE activity result (source already superseded) must
@@ -414,6 +541,36 @@ export default function PlayerMobile() {
         const pos = (r.positionMs || 0) / 1000;
         const dur = (r.durationMs || 0) / 1000;
         if (dur > 0) save(Math.min(pos, dur), dur);
+        // v0.18.0 — the native episodes sheet picked another episode → the
+        // normal JS engine opens it (handoff re-runs there if it is MKV)
+        if (r.switchToEpisodeId) {
+          setNativeActive(false);
+          setPlaying(false);
+          setLoading(false);
+          router.push(watchHref(slug, r.switchToEpisodeId));
+          return;
+        }
+        // v0.18.0 — «سوییچ به نسخه وب‌سازگار»: re-open the SAME position on
+        // the first WebView-safe variant and light the cinema drawer up
+        if (r.switchToWeb) {
+          setNativeActive(false);
+          setPlaying(false);
+          const wIdx = srcList.findIndex((s) => !needsNativePlayer(mediaSrc(s.url, proxyBase ?? null)));
+          if (wIdx >= 0) {
+            resumeAt.current = pos > 0.5 ? pos : startMs / 1000;
+            manualPickRef.current = true;
+            errCountRef.current = 0;
+            ladderAtRef.current = null;
+            setFatal(false);
+            setSrcIdx(wIdx);
+            setLoading(true);
+            setShowCinema(true);
+            showNotice("به پخش وب سوئیچ شد — سینما آماده است");
+          } else {
+            showNotice("این فایل نسخه وب‌سازگار ندارد — سینما برای آن ممکن نیست");
+          }
+          return;
+        }
         if (r.error) {
           advanceLadder(pos);
           return;
@@ -425,7 +582,8 @@ export default function PlayerMobile() {
         if (dur > 0) setDuration(dur);
         if (r.ended) {
           setEnded(true);
-          if (nextEpisode) setCountdown(8);
+          // v0.18.0 — native sleep «پایان همین قسمت» suppresses auto-next
+          if (nextEpisode && !r.suppressNext) setCountdown(8);
         }
         goBackToTitle();
       })
@@ -448,7 +606,7 @@ export default function PlayerMobile() {
         // like any other source failure
         advanceLadder();
       });
-  }, [open, wantsNative, activeSrc, proxyBase, fatal, contentKey, srcIdx, reloadKey, advanceLadder, save, startAt, title, subtitle, nextEpisode, goBackToTitle]);
+  }, [open, wantsNative, activeSrc, proxyBase, fatal, contentKey, srcIdx, reloadKey, advanceLadder, save, startAt, title, subtitle, nextEpisode, goBackToTitle, episodes, episode?.id, epProgress, poster, slug, router, showNotice]);
 
   // lifecycle guard: a detached <video> must never keep playing in the void
   useEffect(() => {
@@ -520,11 +678,31 @@ export default function PlayerMobile() {
         lastSaved.current = Date.now();
         save(v.currentTime, v.duration);
       }
+      // v0.18.0 — sustained low buffer health while playing → «اینترنت کند»
+      const now = Date.now();
+      const behind = v.buffered.length ? v.buffered.end(v.buffered.length - 1) - v.currentTime : 99;
+      if (!v.paused && behind < 6) {
+        if (!slowRef.current.since) slowRef.current.since = now;
+        if (now - slowRef.current.since > 8000 && now - slowRef.current.shownAt > 25000) {
+          slowRef.current.shownAt = now;
+          setSlowNet(true);
+          setTimeout(() => setSlowNet(false), 8000);
+        }
+      } else {
+        slowRef.current.since = 0;
+      }
     };
     const onPlay = () => {
       setPlaying(true);
       setEnded(false);
       bumpUi();
+      // v0.18.0 — «قفل خودکار هنگام شروع»: once per title, on first play
+      if (autoLock && autoLockRef.current !== contentKey) {
+        autoLockRef.current = contentKey;
+        haptic(16);
+        setLocked(true);
+        setShowUi(true);
+      }
     };
     const onPlaying = () => {
       setLoading(false);
@@ -539,6 +717,12 @@ export default function PlayerMobile() {
     const onEnded = () => {
       setEnded(true);
       save(v.duration, v.duration);
+      if (sleepEopRef.current) {
+        // v0.18.0 — sleep timer «پایان همین قسمت»: stop here, no auto-next
+        sleepEopRef.current = false;
+        setSleepEop(false);
+        return;
+      }
       if (nextEpisode && useCinema.getState().status !== "joined") setCountdown(8);
     };
     const onWaiting = () => setLoading(true);
@@ -574,7 +758,7 @@ export default function PlayerMobile() {
       v.removeEventListener("waiting", onWaiting);
       v.removeEventListener("error", onError);
     };
-  }, [videoEl, startAt, save, bumpUi, nextEpisode, volume, muted, advanceLadder, showNotice]);
+  }, [videoEl, startAt, save, bumpUi, nextEpisode, volume, muted, advanceLadder, showNotice, tapHolding, rate, autoLock, contentKey]);
 
   const pickSource = (i: number, manual = true) => {
     const v = videoRef.current;
@@ -632,8 +816,8 @@ export default function PlayerMobile() {
     if (!v) return;
     v.volume = volume;
     v.muted = muted;
-    v.playbackRate = rate;
-  }, [volume, muted, rate]);
+    v.playbackRate = tapHolding ? 2 : rate; // hold = 2× overrides the saved rate
+  }, [volume, muted, rate, tapHolding]);
 
   // flush progress when the page unloads
   useEffect(() => {
@@ -739,8 +923,11 @@ export default function PlayerMobile() {
     haptic();
     bumpUi();
     const ok = await enterFullscreen(wrapRef.current);
-    if (ok) void lockLandscape();
-  }, [bumpUi]);
+    if (!ok) return;
+    // v0.18.0 — the «قفل جهت» setting governs the fullscreen orientation
+    if (orientLock === "portrait") void lockPortrait();
+    else void lockLandscape(); // auto (sensor landscape) + forced landscape
+  }, [bumpUi, orientLock]);
 
   const exitToPortrait = useCallback(async () => {
     haptic();
@@ -817,7 +1004,7 @@ export default function PlayerMobile() {
 
   // ---- wake lock: the screen stays on while playing -------------------------
   useEffect(() => {
-    if (!open || !playing) {
+    if (!open || !playing || !keepAwake) {
       void releaseWakeLock();
       return;
     }
@@ -830,7 +1017,148 @@ export default function PlayerMobile() {
       document.removeEventListener("visibilitychange", onVis);
       void releaseWakeLock();
     };
-  }, [open, playing]);
+  }, [open, playing, keepAwake]);
+
+  // ---- v0.18.0 — sleep timer (web player) -----------------------------------
+  const fireSleep = useCallback(() => {
+    setSleepLeft(null);
+    setSleepMin(null);
+    setSleepEop(false);
+    sleepEopRef.current = false;
+    const v = videoRef.current;
+    if (!v) return;
+    const startVol = v.volume;
+    let step = 0;
+    const iv = setInterval(() => {
+      const cur = videoRef.current;
+      if (!cur) {
+        clearInterval(iv);
+        return;
+      }
+      step += 1;
+      cur.volume = Math.max(0, startVol * (1 - step / 10));
+      if (step >= 10) {
+        clearInterval(iv);
+        try {
+          cur.pause();
+        } catch {
+          /* ignore */
+        }
+        cur.volume = startVol; // restore for the next session
+        setShowUi(true);
+      }
+    }, 500);
+  }, []);
+
+  const cancelSleep = useCallback(() => {
+    haptic(10);
+    setSleepLeft(null);
+    setSleepMin(null);
+    setSleepEop(false);
+    sleepEopRef.current = false;
+  }, []);
+
+  useEffect(() => {
+    if (sleepLeft === null) return;
+    if (sleepLeft <= 0) {
+      fireSleep();
+      return;
+    }
+    const t = setTimeout(() => setSleepLeft((s) => (s === null ? null : s - 1)), 1000);
+    return () => clearTimeout(t);
+  }, [sleepLeft, fireSleep]);
+
+  // ---- v0.18.0 — MediaSession: metadata + hardware/lockscreen buttons -------
+  useEffect(() => {
+    if (!open || !("mediaSession" in navigator)) return;
+    const ms = navigator.mediaSession;
+    try {
+      ms.metadata = new MediaMetadata({
+        title: title ?? "نما",
+        artist: subtitle || (episode ? `فصل ${fa(episode.season)} · قسمت ${fa(episode.number)}` : ""),
+        album: "نما — Frame",
+        artwork: poster ? [{ src: poster, sizes: "512x512", type: "image/jpeg" }] : [],
+      });
+    } catch {
+      /* older WebView without MediaMetadata */
+    }
+    ms.playbackState = playing ? "playing" : "paused";
+  }, [open, title, subtitle, poster, episode, playing]);
+
+  useEffect(() => {
+    if (!open || !("mediaSession" in navigator)) return;
+    const ms = navigator.mediaSession;
+    const step = getSeekStep();
+    const epIdx = episodes.findIndex((e) => e.id === episode?.id);
+    const goEp = (e?: (typeof episodes)[number]) => {
+      if (!e) return;
+      setCountdown(null);
+      router.push(watchHref(slug, e.id));
+    };
+    try {
+      ms.setActionHandler("play", () => void videoRef.current?.play().catch(() => {}));
+      ms.setActionHandler("pause", () => videoRef.current?.pause());
+      ms.setActionHandler("seekbackward", () => seek(-step));
+      ms.setActionHandler("seekforward", () => seek(step));
+      ms.setActionHandler("previoustrack", () => goEp(episodes[epIdx - 1]));
+      ms.setActionHandler("nexttrack", () => goEp(episodes[epIdx + 1]));
+    } catch {
+      /* unsupported action */
+    }
+    return () => {
+      try {
+        ("play\u0000pause\u0000seekbackward\u0000seekforward\u0000previoustrack\u0000nexttrack".split("\u0000") as MediaSessionAction[]).forEach((a) =>
+          ms.setActionHandler(a, null)
+        );
+      } catch {
+        /* ignore */
+      }
+    };
+  }, [open, episodes, episode?.id, slug, router, seek]);
+
+  // ---- v0.18.0 — backgrounding pauses; coming back stays paused -------------
+  useEffect(() => {
+    if (!open) return;
+    const onVis = () => {
+      if (document.visibilityState === "hidden") {
+        const v = videoRef.current;
+        if (v && !v.paused && !v.ended) {
+          try {
+            v.pause();
+          } catch {
+            /* ignore */
+          }
+        }
+      }
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+  }, [open]);
+
+  // ---- v0.18.0 — episode progress map (watched ticks + native manifest) -----
+  useEffect(() => {
+    if (!open || !titleId || !episodes.length) return;
+    let alive = true;
+    fetch(`/api/progress?titleId=${titleId}`, { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d: { progress?: { episodeId: number | null; position: number; duration: number }[] }) => {
+        if (!alive || !d.progress) return;
+        const m = new Map<number, { position: number; duration: number }>();
+        for (const p of d.progress) if (p.episodeId) m.set(p.episodeId, { position: p.position, duration: p.duration });
+        setEpProgress(m);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [open, titleId, episodes.length, contentKey]);
+
+  // season tabs default to the episode being played
+  const seasons = useMemo(() => [...new Set(episodes.map((e) => e.season))].sort((a, b) => a - b), [episodes]);
+  useEffect(() => {
+    if (sheet !== "episodes" || seasonTab !== null) return;
+    setSeasonTab(episode?.season ?? seasons[0] ?? null);
+  }, [sheet, seasonTab, episode?.season, seasons]);
 
   // ---- network drop → auto-resume when connectivity returns -----------------
   useEffect(() => {
@@ -858,13 +1186,26 @@ export default function PlayerMobile() {
     };
   }, [showNotice, fatal]);
 
-  // ---- touch gestures --------------------------------------------------------
+  // ---- touch gestures (v0.18.0 — + vertical brightness/volume, hold 2x,
+  // pinch zoom, zoom cycle on the top corners) --------------------------------
   const [ripples, setRipples] = useState<Ripple[]>([]);
   const [scrubPreview, setScrubPreview] = useState<{ t: number; d: number } | null>(null);
   const lastTapAt = useRef(0);
   const singleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const scrub = useRef<{ active: boolean; startX: number; startY: number; base: number; width: number } | null>(null);
+  const scrub = useRef<{
+    mode: "none" | "h" | "v";
+    side: "l" | "r";
+    startX: number;
+    startY: number;
+    base: number;
+    width: number;
+    height: number;
+    startVal: number;
+  } | null>(null);
   const scrubTargetRef = useRef(0);
+  const movedRef = useRef(false);
+  const tapHoldTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pinch = useRef<{ startDist: number; startScale: number; midX: number; midY: number } | null>(null);
   const holdTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const [holdPct, setHoldPct] = useState(0);
 
@@ -888,14 +1229,24 @@ export default function PlayerMobile() {
     [showNotice]
   );
 
+  const cycleZoom = useCallback(() => {
+    haptic(14);
+    setPinchScale(1);
+    setPinchOrigin(null);
+    setZoomModeState((m) => {
+      const nm = nextZoomMode(m);
+      setZoomMode(zoomTitleKey, nm); // per-title memory
+      return nm;
+    });
+  }, [zoomTitleKey]);
+
   const handleTap = useCallback(
-    (clientX: number) => {
+    (clientX: number, clientY: number) => {
       if (locked) {
         bumpUi();
         return;
       }
       const now = Date.now();
-      const w = surfaceRef.current?.clientWidth ?? 1;
       if (now - lastTapAt.current < 280) {
         lastTapAt.current = 0;
         if (singleTimer.current) {
@@ -905,6 +1256,14 @@ export default function PlayerMobile() {
         const rect = surfaceRef.current?.getBoundingClientRect();
         const xPct = rect ? Math.max(4, Math.min(96, ((clientX - rect.left) / rect.width) * 100)) : 50;
         const rel = rect ? (clientX - rect.left) / rect.width : 0.5;
+        const yRel = rect ? (clientY - rect.top) / rect.height : 0.5;
+        // v0.18.0 — double-tap the UPPER far corners = zoom cycle
+        // (fit → fill → stretch); the seek zones stay untouched
+        if (yRel < 0.22 && (rel < 0.18 || rel > 0.82)) {
+          cycleZoom();
+          bumpUi();
+          return;
+        }
         if (rel < 0.35) {
           addRipple(xPct, -1);
           seek(-getSeekStep());
@@ -925,51 +1284,153 @@ export default function PlayerMobile() {
         }, 290);
       }
     },
-    [locked, addRipple, seek, togglePlay, bumpUi]
+    [locked, addRipple, seek, togglePlay, bumpUi, cycleZoom]
   );
 
+  // hold-2x cleanup — fires on movement, second finger or finger lift
+  const clearTapHold = useCallback(() => {
+    if (tapHoldTimer.current) {
+      clearTimeout(tapHoldTimer.current);
+      tapHoldTimer.current = null;
+    }
+    setTapHolding((h) => {
+      if (h) setRate(prevRateRef.current); // restore the saved rate
+      return false;
+    });
+  }, []);
+
   const onSurfaceTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length >= 2) {
+      // pinch begins immediately with the second finger
+      const a = e.touches[0];
+      const b = e.touches[1];
+      pinch.current = {
+        startDist: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY) || 1,
+        startScale: pinchScale,
+        midX: (a.clientX + b.clientX) / 2,
+        midY: (a.clientY + b.clientY) / 2,
+      };
+      clearTapHold();
+      scrub.current = null;
+      setScrubPreview(null);
+      setHud(null);
+      return;
+    }
     const t = e.touches[0];
+    const v = videoRef.current;
+    movedRef.current = false;
+    // hold = 2× — armed only while playing, unlocked, not a cinema guest
+    if (v && !v.paused && !locked && !guestLock && !ended) {
+      clearTapHold();
+      const rateNow = rate;
+      tapHoldTimer.current = setTimeout(() => {
+        if (!movedRef.current && videoRef.current && !videoRef.current.paused) {
+          prevRateRef.current = rateNow;
+          setTapHolding(true);
+          setRate(2);
+          haptic(20);
+        }
+      }, 500);
+    }
     scrub.current = {
-      active: false,
+      mode: "none",
+      side: "l",
       startX: t.clientX,
       startY: t.clientY,
-      base: videoRef.current?.currentTime ?? current,
+      base: v?.currentTime ?? current,
       width: surfaceRef.current?.clientWidth ?? 1,
+      height: surfaceRef.current?.clientHeight ?? 1,
+      startVal: 0,
     };
   };
 
   const onSurfaceTouchMove = (e: React.TouchEvent) => {
+    if (e.touches.length >= 2 && pinch.current) {
+      const a = e.touches[0];
+      const b = e.touches[1];
+      const d = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY) || 1;
+      const rect = surfaceRef.current?.getBoundingClientRect();
+      if (rect) {
+        setPinchOrigin({
+          x: ((pinch.current.midX - rect.left) / rect.width) * 100,
+          y: ((pinch.current.midY - rect.top) / rect.height) * 100,
+        });
+      }
+      // v0.18.0 — continuous 0.5×–3× zoom, centered on the touch midpoint
+      setPinchScale(Math.max(0.5, Math.min(3, pinch.current.startScale * (d / pinch.current.startDist))));
+      return;
+    }
     const s = scrub.current;
     if (!s) return;
     const t = e.touches[0];
     const dx = t.clientX - s.startX;
     const dy = t.clientY - s.startY;
-    if (!s.active && Math.abs(dx) > 14 && Math.abs(dx) > Math.abs(dy) * 1.4) s.active = true;
-    if (!s.active) return;
+    if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
+      movedRef.current = true;
+      clearTapHold(); // any movement kills the hold-2×
+    }
+    if (s.mode === "none") {
+      if (Math.abs(dx) > 14 && Math.abs(dx) > Math.abs(dy) * 1.4) s.mode = "h";
+      else if (Math.abs(dy) > 14 && Math.abs(dy) > Math.abs(dx) * 1.4) {
+        // vertical: LEFT half = brightness, RIGHT half = volume
+        s.mode = "v";
+        s.side = s.startX < s.width / 2 ? "l" : "r";
+        // W1/W2 — «val» is the NORMALIZED LEVEL (0..1, up = higher level):
+        // brightness starts from how NOT-dim the screen is right now
+        // (startVal 0 would clamp the very first downward drag at 0 and
+        // make the gesture feel dead from the default state), volume keeps
+        // its audio level. Up = brighter/louder (MX Player convention).
+        s.startVal = s.side === "l" ? 1 - dim / 0.8 : muted ? 0 : volume;
+        haptic(10);
+      }
+    }
+    if (s.mode === "none") return;
     if (singleTimer.current) {
       clearTimeout(singleTimer.current);
       singleTimer.current = null;
     }
-    const dur = duration || 0;
-    const target = Math.max(0, Math.min(dur, s.base + (dx / (s.width * 1.4)) * dur));
-    scrubTargetRef.current = target;
-    setScrubPreview({ t: target, d: target - s.base });
+    if (s.mode === "h") {
+      const dur = duration || 0;
+      const target = Math.max(0, Math.min(dur, s.base + (dx / (s.width * 1.4)) * dur));
+      scrubTargetRef.current = target;
+      setScrubPreview({ t: target, d: target - s.base });
+    } else {
+      const delta = -dy / (s.height * 0.9); // up = brighter / louder
+      const val = Math.max(0, Math.min(1, s.startVal + delta));
+      if (s.side === "l") {
+        setDim((1 - val) * 0.8); // brightness level → dim overlay amount
+        setHud({ kind: "bright", pct: Math.round(val * 100) });
+      } else {
+        setVolume(val);
+        setMuted(val === 0);
+        setHud({ kind: "vol", pct: Math.round(val * 100) });
+      }
+    }
   };
 
   const onSurfaceTouchEnd = (e: React.TouchEvent) => {
     const s = scrub.current;
+    const wasPinch = !!pinch.current;
+    pinch.current = null;
+    clearTapHold();
     scrub.current = null;
+    setHud(null);
+    if (wasPinch) return; // zoom level stays where the fingers left it
     if (!s) return;
-    if (s.active) {
+    if (s.mode === "h") {
       setScrubPreview(null);
       applyScrub(scrubTargetRef.current);
       haptic(14);
       bumpUi();
       return;
     }
+    if (s.mode === "v") {
+      haptic(10);
+      bumpUi();
+      return; // brightness/volume already applied live
+    }
     const t = e.changedTouches[0];
-    handleTap(t.clientX);
+    handleTap(t.clientX, t.clientY);
   };
 
   // lock/unlock — hold the padlock 1s to unlock
@@ -1010,8 +1471,24 @@ export default function PlayerMobile() {
   const qualityLabel = active?.q || "";
   const currentVariant = active?.v || "";
   const isLandscape = mode === "landscape";
-  const chromeVisible = showUi && !locked && !nativeActive && !fatal && !ended && !!activeSrc;
+  // v0.18.0 — mini player: the user browsed away from the watch page while
+  // playback is alive — collapse into a floating card, video stays mounted
+  const mini =
+    open && !onWatch && !isLandscape && !nativeActive && !fatal && !ended && !guestLock && !ownerUnsupported && !!activeSrc;
+  const chromeVisible = showUi && !locked && !nativeActive && !fatal && !ended && !!activeSrc && !mini;
   const sig = (d: number) => `${d >= 0 ? "+" : "-"}${formatClock(Math.abs(d))}`;
+
+  const closeMini = useCallback(() => {
+    const v = videoRef.current;
+    if (v && v.duration) save(v.currentTime, v.duration);
+    try {
+      v?.pause();
+    } catch {
+      /* ignore */
+    }
+    store.close();
+  }, [save, store]);
+  const miniDrag = useRef<{ y0: number } | null>(null);
 
   if (!open) return null;
 
@@ -1020,13 +1497,36 @@ export default function PlayerMobile() {
       ref={wrapRef}
       data-subsize={subSize}
       data-player="mobile"
-      className="force-dark fixed inset-0 z-[100] select-none overflow-hidden bg-black"
+      className={
+        mini
+          ? "force-dark fixed bottom-4 start-4 z-[95] w-[300px] max-w-[80vw] select-none overflow-hidden rounded-2xl bg-black shadow-2xl ring-1 ring-white/20"
+          : "force-dark fixed inset-0 z-[100] select-none overflow-hidden bg-black"
+      }
       dir="rtl"
-      style={{ paddingTop: isLandscape ? "0px" : "env(safe-area-inset-top)" }}
+      style={{ paddingTop: isLandscape || mini ? "0px" : "env(safe-area-inset-top)" }}
+      onTouchStart={
+        mini
+          ? (e) => {
+              miniDrag.current = { y0: e.touches[0].clientY };
+            }
+          : undefined
+      }
+      onTouchMove={
+        mini
+          ? (e) => {
+              if (miniDrag.current && e.touches[0].clientY - miniDrag.current.y0 > 90) {
+                miniDrag.current = null;
+                haptic(16);
+                closeMini();
+              }
+            }
+          : undefined
+      }
+      onTouchEnd={mini ? () => (miniDrag.current = null) : undefined}
     >
         {/* video surface — fullscreen layer in landscape, 16:9 strip in portrait */}
       <div
-        className={isLandscape ? "absolute inset-0" : "relative w-full bg-black"}
+        className={isLandscape ? "absolute inset-0" : mini ? "relative w-full" : "relative w-full bg-black"}
         style={isLandscape ? undefined : { aspectRatio: "16 / 9" }}
       >
         {/* v0.16.2 — the WebView element only mounts for WEB-owned sources and
@@ -1043,13 +1543,18 @@ export default function PlayerMobile() {
             key={`${activeSrc}#${reloadKey}`}
             src={activeSrc}
             poster={poster}
-            className="h-full w-full object-contain"
+            className="h-full w-full"
+            style={{
+              objectFit: zoomMode, // v0.18.0 — fit/fill/stretch, per title
+              transform: pinchScale !== 1 ? `scale(${pinchScale})` : undefined,
+              transformOrigin: pinchOrigin ? `${pinchOrigin.x}% ${pinchOrigin.y}%` : "center",
+            }}
             playsInline
             preload="metadata"
           />
         )}
 
-        <SubOverlay cues={subCues} videoRef={videoRef} on={subOn} size={subSize} />
+        <SubOverlay cues={subCues} videoRef={videoRef} on={subOn} size={subSize} delaySec={subDelay} vPos={subPos} />
 
         {/* gesture surface — under every control bar */}
         {!nativeActive && !fatal && !ended && (
@@ -1086,6 +1591,84 @@ export default function PlayerMobile() {
                 {sig(scrubPreview.d)}
               </p>
             </div>
+          </div>
+        )}
+
+        {/* v0.18.0 — brightness gesture: CSS dim over the video only */}
+        {dim > 0.01 && <div className="pointer-events-none absolute inset-0 z-[15] bg-black" style={{ opacity: dim }} />}
+
+        {/* v0.18.0 — brightness/volume gesture HUD */}
+        {hud && (
+          <div className="pointer-events-none absolute inset-0 z-30 grid place-items-center">
+            <div className="flex flex-col items-center gap-2 rounded-2xl bg-black/75 px-6 py-4 backdrop-blur">
+              <span className="text-xs font-bold text-zinc-200">{hud.kind === "bright" ? "روشنایی" : "صدا"}</span>
+              <div className="h-1.5 w-28 overflow-hidden rounded-full bg-white/20" dir="ltr">
+                <div className="h-full rounded-full bg-brand" style={{ width: `${hud.pct}%` }} />
+              </div>
+              <span className="text-[11px] font-black tabular-nums text-white">{fa(hud.pct)}٪</span>
+            </div>
+          </div>
+        )}
+
+        {/* v0.18.0 — hold-to-2× badge */}
+        {tapHolding && (
+          <div className="pointer-events-none absolute left-1/2 top-16 z-30 -translate-x-1/2 rounded-full bg-brand px-4 py-1.5 text-sm font-black text-white shadow-lg">
+            ۲x
+          </div>
+        )}
+
+        {/* v0.18.0 — slow network badge */}
+        {slowNet && !nativeActive && (
+          <div className="pointer-events-none absolute inset-x-0 top-14 z-30 flex justify-center">
+            <span className="rounded-full bg-amber-500/25 px-3 py-1 text-[11px] font-black text-amber-200 backdrop-blur">
+              اینترنت کند است — بافر می‌گیرد…
+            </span>
+          </div>
+        )}
+
+        {/* v0.18.0 — sleep timer chip (tap = cancel) */}
+        {(sleepLeft !== null || sleepEop) && !nativeActive && (
+          <button
+            type="button"
+            onClick={cancelSleep}
+            className="absolute left-1/2 top-[max(env(safe-area-inset-top),10px)] z-30 flex -translate-x-1/2 items-center gap-1.5 rounded-full bg-black/70 px-3 py-1 text-[11px] font-black text-white ring-1 ring-white/20 backdrop-blur"
+          >
+            {sleepEop
+              ? "خواب: پایان همین قسمت — لغو"
+              : `خواب: ${fa(Math.max(0, Math.floor((sleepLeft ?? 0) / 60)))}:${fa(String((sleepLeft ?? 0) % 60).padStart(2, "0"))} — لغو`}
+          </button>
+        )}
+
+        {/* v0.18.0 — mini player overlay: tap = expand, hold controls */}
+        {mini && (
+          <div
+            className="absolute inset-0 z-20 flex items-center justify-between bg-gradient-to-t from-black/85 via-transparent to-black/50 px-2 pb-1.5 pt-1.5"
+            onClick={() => void enterLandscape()}
+          >
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                togglePlay();
+              }}
+              className="grid h-9 w-9 place-items-center rounded-full text-white active:bg-white/20"
+              aria-label="پخش/توقف"
+            >
+              {playing ? <PauseIcon width={20} height={20} /> : <PlayIcon width={20} height={20} />}
+            </button>
+            <span className="min-w-0 flex-1 truncate px-1 text-[11px] font-bold text-white">{title}</span>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                haptic(14);
+                closeMini();
+              }}
+              className="grid h-9 w-9 place-items-center rounded-full text-white active:bg-white/20"
+              aria-label="بستن مینی‌پلیر"
+            >
+              <CloseIcon width={16} height={16} />
+            </button>
           </div>
         )}
 
@@ -1268,6 +1851,39 @@ export default function PlayerMobile() {
                 </button>
                 <button
                   type="button"
+                  onClick={() => {
+                    haptic();
+                    cycleZoom();
+                  }}
+                  aria-label="چرخه زوم"
+                  className="flex h-9 items-center rounded-full border border-white/20 bg-white/10 px-2.5 text-[11px] font-black text-white active:bg-white/25"
+                >
+                  {zoomMode === "contain" ? "اندازه" : zoomMode === "cover" ? "پر" : "کشیده"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    haptic();
+                    setSheet("sleep");
+                  }}
+                  aria-label="تایمر خواب"
+                  className={`flex h-9 items-center rounded-full border px-2.5 text-[11px] font-black active:bg-white/25 ${sleepLeft !== null || sleepEop ? "border-brand/60 bg-brand/20 text-white" : "border-white/20 bg-white/10 text-white"}`}
+                >
+                  خواب
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    haptic();
+                    setSheet("settings");
+                  }}
+                  aria-label="تنظیمات پلیر"
+                  className="flex h-9 items-center rounded-full border border-white/20 bg-white/10 px-2.5 text-[11px] font-black text-white active:bg-white/25"
+                >
+                  تنظیمات
+                </button>
+                <button
+                  type="button"
                   onClick={lockPlayer}
                   aria-label="قفل صفحه"
                   className="grid h-9 w-9 place-items-center rounded-full border border-white/20 bg-white/10 text-white active:bg-white/25"
@@ -1339,6 +1955,17 @@ export default function PlayerMobile() {
           <div className="mt-4 flex items-center gap-2">
             <FavoriteButton titleId={titleId} name={title} variant="mini" className="!h-10 !w-10 !bg-white/10 !ring-0" />
             <WatchlistButton titleId={titleId} name={title} variant="mini" className="!h-10 !w-10 !bg-white/10 !ring-0" />
+            {/* v0.18.0 — offline download in the action row (native engine) */}
+            <MobileDownloadButton
+              titleId={titleId}
+              slug={slug}
+              title={title ?? ""}
+              poster={poster ?? ""}
+              type={episodes.length ? "series" : "movie"}
+              episodeId={episode?.id ?? null}
+              episodeLabel={episode ? `فصل ${fa(episode.season)} · قسمت ${fa(episode.number)}` : null}
+              size={40}
+            />
             {episodes.length > 0 && (
               <button
                 type="button"
@@ -1364,6 +1991,7 @@ export default function PlayerMobile() {
               سینما
             </button>
           </div>
+          {synopsis && <p className="mt-3 line-clamp-3 text-[11px] leading-5 text-zinc-500">{synopsis}</p>}
           {currentVariant && (
             <div className="mt-4 flex items-center gap-2 text-[11px] text-zinc-500">
               <span className="rounded-md bg-white/10 px-2 py-1 font-bold text-zinc-300">{variantShort(currentVariant) || "اصلی"}</span>
@@ -1584,20 +2212,29 @@ export default function PlayerMobile() {
             {sheet === "quality" && (
               <>
                 <p className="mb-2 text-sm font-black text-white">کیفیت و نسخه</p>
+                {dataSaver && <p className="mb-2 rounded-lg bg-emerald-500/10 px-2.5 py-1.5 text-[10px] font-bold text-emerald-300">ذخیره داده روشن است — روی نسخه‌های سنگین بج «حجم بالا» می‌بینی</p>}
                 <ul className="space-y-1">
                   {srcList.map((s, i) => {
                     const on = i === srcIdx;
+                    const heavy = dataSaver && qNum(s.q) > 720;
                     return (
                       <li key={`${s.url}-${i}`}>
                         <button
                           type="button"
-                          onClick={() => pickSource(i)}
+                          onClick={() => {
+                            if (heavy && !manualPickRef.current) setConfirmHighQ(i);
+                            else {
+                              setConfirmHighQ(null);
+                              pickSource(i);
+                            }
+                          }}
                           className={`flex w-full items-center gap-2 rounded-xl px-3 py-3 text-xs transition active:bg-white/10 ${on ? "bg-brand/20 text-white" : "text-zinc-300"}`}
                         >
                           <span className="w-12 shrink-0 font-black">{s.q || "عادی"}</span>
                           <span className={`flex-1 text-start text-[11px] ${s.v?.includes("دوبله") ? "text-emerald-300" : s.v?.includes("زیرنویس") ? "text-sky-300" : "text-zinc-500"}`}>
                             {variantShort(s.v) || "اصلی"}
                           </span>
+                          {heavy && <span className="rounded-full bg-amber-500/20 px-1.5 py-0.5 text-[9px] font-black text-amber-300">حجم بالا</span>}
                           {s.mb ? <span className="text-[10px] text-zinc-500 num">{fa(s.mb)}MB</span> : null}
                           {on && <CheckIcon width={14} height={14} className="text-brand" />}
                         </button>
@@ -1605,19 +2242,39 @@ export default function PlayerMobile() {
                     );
                   })}
                 </ul>
+                {confirmHighQ !== null && (
+                  <div className="mt-2 flex items-center gap-2 rounded-xl border border-amber-400/30 bg-amber-500/10 px-3 py-2.5">
+                    <p className="flex-1 text-[11px] font-bold leading-5 text-amber-200">حجم دانلود این نسخه بالاست — با ذخیرهٔ داده ادامه می‌دهی؟</p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const i = confirmHighQ;
+                        setConfirmHighQ(null);
+                        if (i !== null) pickSource(i);
+                      }}
+                      className="h-9 rounded-full bg-amber-400 px-4 text-[11px] font-black text-black"
+                    >
+                      ادامه
+                    </button>
+                    <button type="button" onClick={() => setConfirmHighQ(null)} className="h-9 rounded-full border border-white/20 px-3 text-[11px] font-bold text-white">
+                      لغو
+                    </button>
+                  </div>
+                )}
               </>
             )}
             {sheet === "speed" && (
               <>
                 <p className="mb-3 text-sm font-black text-white">سرعت پخش</p>
-                <div className="grid grid-cols-3 gap-2">
-                  {[0.5, 0.75, 1, 1.25, 1.5, 2].map((r) => (
+                <div className="grid grid-cols-4 gap-2">
+                  {[0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 3].map((r) => (
                     <button
                       key={r}
                       type="button"
                       disabled={guestLock}
                       onClick={() => {
                         haptic();
+                        setTapHolding(false);
                         setRate(r);
                         setSheet(null);
                       }}
@@ -1627,6 +2284,7 @@ export default function PlayerMobile() {
                     </button>
                   ))}
                 </div>
+                <p className="mt-2 text-[10px] leading-4 text-zinc-500">سرعت بین تیتراژها و ری‌استارت‌ها به‌یاد می‌ماند. نگه‌داشتن انگشت روی تصویر = پخش موقت ۲x.</p>
               </>
             )}
             {sheet === "subs" && (
@@ -1698,31 +2356,248 @@ export default function PlayerMobile() {
                     </button>
                   ))}
                 </div>
+                {/* v0.18.0 — subtitle delay */}
+                <p className="mb-1 mt-3 text-[11px] font-black text-zinc-400">تأخیر زیرنویس</p>
+                <div className="flex items-center gap-1">
+                  {(
+                    [
+                      [-1, "−۱s"],
+                      [-0.5, "−۰٫۵s"],
+                      [0.5, "+۰٫۵s"],
+                      [1, "+۱s"],
+                      [0, "ریست"],
+                    ] as const
+                  ).map(([d, l]) => (
+                    <button
+                      key={l}
+                      type="button"
+                      onClick={() => {
+                        haptic(8);
+                        const nv = d === 0 ? 0 : Math.round((subDelay + d) * 10) / 10;
+                        setSubDelayState(nv);
+                        setSubDelay(nv);
+                      }}
+                      className={`flex-1 rounded-lg py-2 text-[11px] font-bold transition ${subDelay === 0 && d === 0 ? "bg-white text-black" : "bg-white/5 text-zinc-300 active:bg-white/10"}`}
+                    >
+                      {l}
+                    </button>
+                  ))}
+                </div>
+                <p className="mt-1 text-center text-[10px] tabular-nums text-zinc-500" dir="ltr">
+                  {subDelay >= 0 ? "+" : ""}{fa(subDelay)}s
+                </p>
+                {/* v0.18.0 — vertical position */}
+                <p className="mb-1 mt-3 text-[11px] font-black text-zinc-400">موقعیت عمودی</p>
+                <input
+                  type="range"
+                  min={10}
+                  max={90}
+                  step={5}
+                  value={subPos}
+                  onChange={(e) => {
+                    const nv = Number(e.target.value);
+                    setSubPosState(nv);
+                    setSubPos(nv);
+                  }}
+                  className="range-input w-full"
+                  dir="ltr"
+                  aria-label="موقعیت عمودی زیرنویس"
+                />
               </>
             )}
             {sheet === "episodes" && (
               <>
                 <p className="mb-2 text-sm font-black text-white">قسمت‌ها</p>
-                <ul className="space-y-2">
-                  {episodes.map((e) => (
-                    <li key={e.id}>
-                      <Link
-                        href={watchHref(slug, e.id)}
-                        onClick={() => setSheet(null)}
-                        className={`flex gap-3 rounded-xl p-2 transition active:bg-white/10 ${e.id === episode?.id ? "bg-brand/20 ring-1 ring-brand/60" : ""}`}
+                {/* v0.18.0 — season tabs */}
+                {seasons.length > 1 && (
+                  <div className="mb-2 flex items-center gap-1 overflow-x-auto rounded-xl bg-white/5 p-1">
+                    {seasons.map((s) => (
+                      <button
+                        key={s}
+                        type="button"
+                        onClick={() => setSeasonTab(s)}
+                        className={`shrink-0 rounded-lg px-3.5 py-2 text-[11px] font-black transition ${seasonTab === s ? "bg-white text-black" : "text-zinc-300"}`}
                       >
-                        <img src={e.thumbnail} alt="" className="h-14 w-24 rounded-lg object-cover" loading="lazy" />
-                        <div className="min-w-0">
-                          <p className="text-[11px] text-zinc-400">
-                            فصل {fa(e.season)} · قسمت {fa(e.number)}
-                          </p>
-                          <p className="truncate text-sm font-semibold text-white">{e.name}</p>
-                        </div>
-                        {e.id === episode?.id && <CheckIcon width={14} height={14} className="ms-auto self-center text-brand" />}
-                      </Link>
-                    </li>
-                  ))}
+                        فصل {fa(s)}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <ul className="space-y-2">
+                  {episodes
+                    .filter((e) => seasonTab === null || e.season === seasonTab)
+                    .map((e) => {
+                      const p = epProgress.get(e.id);
+                      const watched = !!p && p.duration > 0 && p.position / p.duration >= 0.92;
+                      const epPct = p && p.duration > 0 ? Math.min(100, Math.round((p.position / p.duration) * 100)) : 0;
+                      return (
+                        <li key={e.id}>
+                          <Link
+                            href={watchHref(slug, e.id)}
+                            onClick={() => setSheet(null)}
+                            className={`relative flex gap-3 overflow-hidden rounded-xl p-2 transition active:bg-white/10 ${e.id === episode?.id ? "bg-brand/20 ring-1 ring-brand/60" : ""}`}
+                          >
+                            <div className="relative shrink-0">
+                              <img src={e.thumbnail} alt="" className="h-14 w-24 rounded-lg object-cover" loading="lazy" />
+                              {epPct > 0 && !watched && (
+                                <span className="absolute inset-x-1 bottom-1 h-1 overflow-hidden rounded-full bg-black/60">
+                                  <span className="block h-full rounded-full bg-brand" style={{ width: `${epPct}%` }} />
+                                </span>
+                              )}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <p className="text-[11px] text-zinc-400">
+                                فصل {fa(e.season)} · قسمت {fa(e.number)}
+                              </p>
+                              <p className="truncate text-sm font-semibold text-white">{e.name}</p>
+                              {watched && <p className="mt-0.5 text-[10px] font-bold text-emerald-400">دیده‌شده</p>}
+                            </div>
+                            {watched && <CheckIcon width={14} height={14} className="ms-auto self-center text-emerald-400" />}
+                            {e.id === episode?.id && !watched && <CheckIcon width={14} height={14} className="ms-auto self-center text-brand" />}
+                            {/* v0.18.0 — per-row download (native engine) */}
+                            <MobileDownloadButton
+                              titleId={titleId}
+                              slug={slug}
+                              title={title ?? ""}
+                              poster={poster ?? ""}
+                              type="series"
+                              episodeId={e.id}
+                              episodeLabel={`فصل ${fa(e.season)} · قسمت ${fa(e.number)}`}
+                              size={36}
+                            />
+                          </Link>
+                        </li>
+                      );
+                    })}
                 </ul>
+              </>
+            )}
+            {sheet === "sleep" && (
+              <>
+                <p className="mb-3 text-sm font-black text-white">تایمر خواب</p>
+                <div className="grid grid-cols-2 gap-2">
+                  {[15, 30, 45, 60].map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => {
+                        haptic(14);
+                        setSleepMin(m);
+                        setSleepEop(false);
+                        sleepEopRef.current = false;
+                        setSleepLeft(m * 60);
+                        setSheet(null);
+                      }}
+                      className={`rounded-xl border py-3.5 text-sm font-black transition active:bg-white/10 ${sleepMin === m && !sleepEop ? "border-brand/60 bg-brand/20 text-white" : "border-white/10 bg-white/5 text-zinc-300"}`}
+                    >
+                      {fa(m)} دقیقه
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      haptic(14);
+                      setSleepMin(null);
+                      setSleepEop(true);
+                      sleepEopRef.current = true;
+                      setSleepLeft(null);
+                      setSheet(null);
+                    }}
+                    className={`col-span-2 rounded-xl border py-3.5 text-sm font-black transition active:bg-white/10 ${sleepEop ? "border-brand/60 bg-brand/20 text-white" : "border-white/10 bg-white/5 text-zinc-300"}`}
+                  >
+                    پایان همین قسمت
+                  </button>
+                </div>
+                {(sleepLeft !== null || sleepEop) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      cancelSleep();
+                      setSheet(null);
+                    }}
+                    className="mt-3 w-full rounded-xl border border-white/10 bg-white/5 py-3 text-xs font-bold text-zinc-300 active:bg-white/10"
+                  >
+                    لغو تایمر
+                  </button>
+                )}
+                <p className="mt-2 text-[10px] leading-4 text-zinc-500">پایان تایمر: صدا کم‌کم محو و پخش متوقف می‌شود. چیپ شمارش معکوس بالای صفحه نمایان است — ضربه روی آن هم لغو می‌کند.</p>
+              </>
+            )}
+            {sheet === "settings" && (
+              <>
+                <p className="mb-3 text-sm font-black text-white">تنظیمات پلیر</p>
+                {/* seek step */}
+                <p className="mb-1 text-[11px] font-black text-zinc-400">گام پرش (دابل‌تپ)</p>
+                <div className="mb-3 flex items-center gap-1 rounded-xl bg-white/5 p-1">
+                  {[5, 10, 15, 30].map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => {
+                        haptic(8);
+                        setSeekStepPref(s);
+                      }}
+                      className={`flex-1 rounded-lg py-2 text-[11px] font-bold transition ${getSeekStep() === s ? "bg-white text-black" : "text-zinc-300"}`}
+                    >
+                      {fa(s)}s
+                    </button>
+                  ))}
+                </div>
+                {/* orientation lock */}
+                <p className="mb-1 text-[11px] font-black text-zinc-400">قفل جهت</p>
+                <div className="mb-3 flex items-center gap-1 rounded-xl bg-white/5 p-1">
+                  {(
+                    [
+                      ["auto", "سنسور"],
+                      ["portrait", "پرتره"],
+                      ["landscape", "لنداسکیپ"],
+                    ] as const
+                  ).map(([v, l]) => (
+                    <button
+                      key={v}
+                      type="button"
+                      onClick={() => {
+                        haptic(8);
+                        setOrientLockState(v);
+                        setOrientLock(v);
+                      }}
+                      className={`flex-1 rounded-lg py-2 text-[11px] font-bold transition ${orientLock === v ? "bg-white text-black" : "text-zinc-300"}`}
+                    >
+                      {l}
+                    </button>
+                  ))}
+                </div>
+                {/* toggles */}
+                {(
+                  [
+                    ["قفل خودکار هنگام شروع", autoLock, (v: boolean) => { setAutoLockState(v); setAutoLock(v); }],
+                    ["روشن‌ماندن صفحه هنگام پخش", keepAwake, (v: boolean) => { setKeepAwakeState(v); setKeepAwake(v); }],
+                    ["ذخیره داده (اینترنت موبایل)", dataSaver, (v: boolean) => { setDataSaverState(v); setDataSaver(v); }],
+                  ] as const
+                ).map(([label, val, set]) => (
+                  <button
+                    key={label}
+                    type="button"
+                    onClick={() => {
+                      haptic(8);
+                      set(!val);
+                    }}
+                    className="mb-2 flex w-full items-center justify-between rounded-xl border border-white/10 bg-white/5 px-3 py-3 text-xs font-bold text-zinc-200"
+                  >
+                    <span>{label}</span>
+                    <span className={`relative h-6 w-11 shrink-0 rounded-full transition ${val ? "bg-brand" : "bg-white/15"}`}>
+                      <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-all ${val ? "start-[22px]" : "start-0.5"}`} />
+                    </span>
+                  </button>
+                ))}
+                {/* stream info */}
+                <p className="mb-1 mt-3 text-[11px] font-black text-zinc-400">اطلاعات استریم</p>
+                <div className="rounded-xl bg-white/5 p-3 text-[11px] leading-6 text-zinc-400">
+                  <p>رزولوشن: {videoEl ? `${fa(videoEl.videoWidth)}×${fa(videoEl.videoHeight)}` : "—"}</p>
+                  <p>نسخه فعال: {qualityLabel || "عادی"}{currentVariant ? ` · ${variantShort(currentVariant) || "اصلی"}` : ""}</p>
+                  <p>سلامت بافر: {fa(Math.max(0, Math.round(buffered - current)))} ثانیه</p>
+                  <p>شبکه: {netInfo().type}{fa(netInfo().downlink ?? 0) !== "۰" ? ` · ~${fa(netInfo().downlink ?? 0)}Mb/s` : ""}</p>
+                </div>
               </>
             )}
           </div>

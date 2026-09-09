@@ -3,6 +3,27 @@ import { getUserKey } from "@/lib/user";
 
 export const dynamic = "force-dynamic";
 
+/** v0.18.0 — per-title progress LIST (episodes sheet watched-ticks + progress
+ *  bars + the native handoff manifest). One row per watched episode. */
+export async function GET(req: Request) {
+  const userKey = await getUserKey();
+  const titleId = Number(new URL(req.url).searchParams.get("titleId"));
+  if (!titleId || !Number.isFinite(titleId)) {
+    return Response.json({ error: "invalid payload" }, { status: 400 });
+  }
+  const rows = await db.watchProgress.findMany({
+    where: { userKey, titleId },
+    select: { episodeId: true, position: true, duration: true },
+  });
+  return Response.json({
+    progress: rows.map((r) => ({
+      episodeId: r.episodeId,
+      position: r.position,
+      duration: r.duration,
+    })),
+  });
+}
+
 export async function POST(req: Request) {
   const userKey = await getUserKey();
   const body = (await req.json().catch(() => null)) as {

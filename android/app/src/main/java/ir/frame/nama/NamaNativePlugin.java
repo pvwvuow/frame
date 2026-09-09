@@ -95,6 +95,30 @@ public class NamaNativePlugin extends Plugin {
             } catch (Exception ignored) {
             }
         }
+        // v0.18.0 — episodes manifest (id␁season␁number␁name␁thumb␁watched␁pct),
+        // poster artwork, double-tap step and the web-variant flag: PlayerActivity
+        // renders its own episodes sheet + honest cinema switch from these.
+        JSArray eps = call.getArray("episodes");
+        if (eps != null) {
+            try {
+                ArrayList<String> list = new ArrayList<>();
+                for (int i = 0; i < eps.length(); i++) {
+                    JSONObject o = eps.getJSONObject(i);
+                    list.add(o.optInt("id") + "\u0001" + o.optInt("season")
+                        + "\u0001" + o.optInt("number") + "\u0001" + o.optString("name", "")
+                        + "\u0001" + o.optString("thumbnail", "") + "\u0001"
+                        + (o.optBoolean("watched") ? "1" : "0") + "\u0001" + o.optInt("progressPct"));
+                }
+                intent.putExtra("episodes", list.toArray(new String[0]));
+                intent.putExtra("episodeIndex", call.getInt("episodeIndex", 0));
+            } catch (Exception ignored) {
+            }
+        }
+        String poster = call.getString("poster");
+        if (poster != null && !poster.isEmpty()) intent.putExtra("poster", poster);
+        int step = call.getInt("seekStepSec", 10);
+        if (step == 5 || step == 10 || step == 15 || step == 30) intent.putExtra("seekStepSec", step);
+        intent.putExtra("hasWebVariant", call.getBoolean("hasWebVariant", false));
         startActivityForResult(call, intent, "playResult");
     }
 
@@ -107,6 +131,10 @@ public class NamaNativePlugin extends Plugin {
         ret.put("durationMs", data != null ? data.getLongExtra("durationMs", 0L) : 0L);
         ret.put("ended", data != null && data.getBooleanExtra("ended", false));
         ret.put("error", data != null ? data.getStringExtra("error") : "");
+        // v0.18.0 — episodes-sheet pick / web-variant (cinema) switch requests
+        ret.put("switchToEpisodeId", data != null ? data.getIntExtra("switchToEpisodeId", 0) : 0);
+        ret.put("switchToWeb", data != null && data.getBooleanExtra("switchToWeb", false));
+        ret.put("suppressNext", data != null && data.getBooleanExtra("suppressNext", false));
         call.resolve(ret);
     }
 

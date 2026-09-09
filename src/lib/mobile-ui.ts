@@ -7,7 +7,13 @@
  * native-rev bump: navigator.vibrate (haptics), navigator.wakeLock (screen),
  * screen.orientation.lock (fullscreen rotation), requestFullscreen (system
  * bars). Every call is guarded — on Electron/desktop browsers they no-op.
+ *
+ * v0.18.0 — seek step delegates to player-prefs (one choke point for the
+ * settings sheet + gesture engine); adds lockPortrait, isCellular and
+ * netInfo helpers for the new orientation/data-saver features.
  */
+
+import { getSeekStepPref } from "@/lib/player-prefs";
 
 type WakeSentinel = {
   release: () => Promise<void>;
@@ -103,14 +109,49 @@ export async function exitFullscreen(): Promise<void> {
   }
 }
 
-/** double-tap seek step (seconds) — default 10, changeable in a later
- *  settings sheet; kept in localStorage so it survives without a schema. */
+/** double-tap seek step (seconds) — default 10, changeable in the player
+ *  settings sheet (v0.18.0). Delegates to player-prefs so the settings sheet
+ *  and the gesture engine never drift apart. */
 export function getSeekStep(): number {
   try {
-    const v = Number(localStorage.getItem("nama-seek-step"));
-    if (v === 5 || v === 10 || v === 15 || v === 30) return v;
+    return getSeekStepPref();
   } catch {
-    /* ignore */
+    return 10;
   }
-  return 10;
+}
+
+/** Lock to portrait — the «فقط پرتره» orientation setting. Android only
+ *  honors the lock while fullscreen, same as lockLandscape. */
+export async function lockPortrait(): Promise<void> {
+  try {
+    await (screen as OrientScreen).orientation?.lock?.("portrait");
+  } catch {
+    /* refused — sensor still works */
+  }
+}
+
+/** v0.18.0 — cellular detection for the data-saver default quality pick. */
+export function isCellular(): boolean {
+  try {
+    const c = (navigator as Navigator & {
+      connection?: { type?: string; effectiveType?: string };
+    }).connection;
+    if (!c) return false;
+    if (c.type) return c.type === "cellular";
+    return /^(slow-)?2g$|^3g$/.test(c.effectiveType || "");
+  } catch {
+    return false;
+  }
+}
+
+/** v0.18.0 — coarse downlink description for the stream-info panel. */
+export function netInfo(): { type: string; downlink: number | null } {
+  try {
+    const c = (navigator as Navigator & {
+      connection?: { type?: string; effectiveType?: string; downlink?: number };
+    }).connection;
+    return { type: c?.type || c?.effectiveType || "نامشخص", downlink: c?.downlink ?? null };
+  } catch {
+    return { type: "نامشخص", downlink: null };
+  }
 }

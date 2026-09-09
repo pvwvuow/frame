@@ -40,7 +40,37 @@ type NamaNativeBridge = {
     subtitle?: string;
     positionMs?: number;
     subs?: { path: string; mime: string }[];
-  }) => Promise<{ positionMs: number; durationMs: number; ended: boolean; error?: string }>;
+    /** v0.18.0 — episodes manifest so PlayerActivity renders its own sheet
+     *  (seasons, watched ticks, progress) without catalog access */
+    episodes?: {
+      id: number;
+      season: number;
+      number: number;
+      name: string;
+      thumbnail: string;
+      watched: boolean;
+      progressPct: number;
+    }[];
+    episodeIndex?: number;
+    /** v0.18.0 — poster for the native MediaSession metadata */
+    poster?: string;
+    /** v0.18.0 — double-tap seek step (seconds) for the native surface */
+    seekStepSec?: number;
+    /** v0.18.0 — a WebView-safe (mp4/m3u8) variant exists for this title →
+     *  the native «سوییچ به نسخه وب‌سازگار» (cinema path) may offer itself */
+    hasWebVariant?: boolean;
+  }) => Promise<{
+    positionMs: number;
+    durationMs: number;
+    ended: boolean;
+    error?: string;
+    /** v0.18.0 — the native episodes sheet picked another episode */
+    switchToEpisodeId?: number;
+    /** v0.18.0 — «سوییچ به نسخه وب‌سازگار» requested */
+    switchToWeb?: boolean;
+    /** v0.18.0 — native sleep timer «پایان همین قسمت» → no auto-next */
+    suppressNext?: boolean;
+  }>;
   download: (o: { id: string; url: string; dest: string }) => Promise<{ ok: boolean }>;
   downloadAction: (o: { id: string; action: "pause" | "resume" | "cancel" }) => Promise<{ ok: boolean }>;
   downloadFile: (o: { id: string; url: string; dest: string }) => Promise<{ ok: boolean }>;

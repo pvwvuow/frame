@@ -17,7 +17,9 @@ import android.view.View;
 import android.view.WindowManager;
 import android.widget.FrameLayout;
 import android.widget.ImageButton;
+import android.widget.LinearLayout;
 import android.widget.PopupMenu;
+import android.widget.ScrollView;
 import android.widget.SeekBar;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -44,6 +46,7 @@ import androidx.media3.exoplayer.DefaultRenderersFactory;
 import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory;
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector;
+import androidx.media3.ui.AspectRatioFrameLayout;
 import androidx.media3.ui.PlayerView;
 
 import java.util.ArrayList;
@@ -67,6 +70,13 @@ import java.util.Set;
  *   - drag scrub with time preview + buffered bar
  *   - speed menu (0.5×–2×), embedded subtitle/audio track picker
  *   - screen lock (long-press the chip to unlock), Persian digits everywhere
+ *
+ * v0.18.0 — CLOSING THE GAP WITH THE WEB PLAYER:
+ *   - episodes sheet from the JS manifest (seasons, watched ticks, progress)
+ *     + prev/next episode → result extra switchToEpisodeId
+ *   - honest cinema entry: «سوییچ به نسخه وب‌سازگار» → switchToWeb
+ *   - zoom cycle (fit/fill/stretch), speed 0.25×–3×, sleep timer (with
+ *     end-of-episode mode), double-tap step from JS, MediaSession artwork
  *
  * TLS note (v0.17.0): trust-all certificate validation is now scoped to the
  * archive's dl hosts ONLY (RELAXED_TLS_HOSTS); every other host gets standard
@@ -101,10 +111,29 @@ public class PlayerActivity extends Activity {
     private FrameLayout rippleHost;
     private ImageButton btnPlayPause;
     private TextView tvTitle, tvSubtitle, tvPosition, tvDuration, tvPreview;
+    private TextView tvSleep;
     private SeekBar seek;
     private boolean controlsVisible = true;
     private boolean locked = false;
     private boolean dragging = false;
+
+    // v0.18.0 — episodes manifest, switch contract, zoom + sleep state
+    private int[] epIds, epSeasons, epNums, epPcts;
+    private String[] epNames;
+    private boolean[] epWatched;
+    private int epIndex = 0;
+    private boolean hasWebVariant = false;
+    private long seekStepMs = 10_000L;
+    private int sleepLeftSec = -1; // -1 = off
+    private boolean sleepEndOfEpisode = false;
+    private int resizeModeIdx = 0;
+    private androidx.media3.session.MediaSession mediaSession;
+    private static final int[] RESIZE_MODES = {
+        AspectRatioFrameLayout.RESIZE_MODE_FIT,
+        AspectRatioFrameLayout.RESIZE_MODE_ZOOM,
+        AspectRatioFrameLayout.RESIZE_MODE_FILL,
+    };
+    private static final String[] RESIZE_LABELS = {"اندازه", "پرکردن", "کشیده"};
     private final Runnable hideRunnable = this::hideControls;
     private final Runnable uiRunnable = new Runnable() {
         @Override
@@ -133,6 +162,7 @@ public class PlayerActivity extends Activity {
                 long d = player.getDuration();
                 if (d > 0) sDurationMs = d;
             }
+            tickSleep(); // v0.18.0 — sleep timer countdown
             tick.postDelayed(this, 1000L);
         }
     };
@@ -173,6 +203,36 @@ public class PlayerActivity extends Activity {
         String subtitle = getIntent().getStringExtra("subtitle");
         long startMs = getIntent().getLongExtra("positionMs", 0L);
         String[] subs = getIntent().getStringArrayExtra("subs");
+
+        // v0.18.0 — episodes manifest / poster / seek step / web-variant flag
+        seekStepMs = 1000L * getIntent().getIntExtra("seekStepSec", 10);
+        if (seekStepMs <= 0) seekStepMs = 10_000L;
+        hasWebVariant = getIntent().getBooleanExtra("hasWebVariant", false);
+        String poster = getIntent().getStringExtra("poster");
+        String[] eps = getIntent().getStringArrayExtra("episodes");
+        if (eps != null && eps.length > 0) {
+            int n = eps.length;
+            epIds = new int[n];
+            epSeasons = new int[n];
+            epNums = new int[n];
+            epNames = new String[n];
+            epWatched = new boolean[n];
+            epPcts = new int[n];
+            for (int i = 0; i < n; i++) {
+                String[] p = eps[i].split("\u0001", -1);
+                try {
+                    epIds[i] = Integer.parseInt(p[0]);
+                    epSeasons[i] = p.length > 1 ? Integer.parseInt(p[1]) : 0;
+                    epNums[i] = p.length > 2 ? Integer.parseInt(p[2]) : 0;
+                    epNames[i] = p.length > 3 ? p[3] : "";
+                    epWatched[i] = p.length > 5 && "1".equals(p[5]);
+                    epPcts[i] = p.length > 6 ? Integer.parseInt(p[6]) : 0;
+                } catch (NumberFormatException e) {
+                    epIds[i] = 0;
+                }
+            }
+            epIndex = Math.max(0, Math.min(n - 1, getIntent().getIntExtra("episodeIndex", 0)));
+        }
 
         sEnded = false;
         sError = "";
@@ -246,11 +306,17 @@ public class PlayerActivity extends Activity {
         playerView.setPlayer(player);
 
         MediaItem.Builder builder = new MediaItem.Builder().setUri(Uri.parse(url));
-        builder.setMediaMetadata(
-            new MediaMetadata.Builder()
-                .setTitle(title == null ? "Frame" : title)
-                .setArtist(subtitle == null ? "" : subtitle)
-                .build());
+        MediaMetadata.Builder metaBuilder = new MediaMetadata.Builder()
+            .setTitle(title == null ? "Frame" : title)
+            .setArtist(subtitle == null ? "" : subtitle);
+        // v0.18.0 — the poster rides into the lockscreen/media surfaces
+        if (poster != null && !poster.isEmpty()) {
+            try {
+                metaBuilder.setArtworkUri(Uri.parse(poster));
+            } catch (Exception ignored) {
+            }
+        }
+        builder.setMediaMetadata(metaBuilder.build());
 
         // external (user-uploaded) subtitles: entries are "path\u0001mime"
         if (subs != null && subs.length > 0) {
@@ -282,6 +348,13 @@ public class PlayerActivity extends Activity {
         if (startMs > 0) player.seekTo(startMs);
         player.setPlayWhenReady(true);
         player.prepare();
+
+        // v0.18.0 — MediaSession: hardware media buttons + lockscreen controls
+        try {
+            mediaSession = new androidx.media3.session.MediaSession.Builder(this, player).build();
+        } catch (Exception ignored) {
+            // session module unavailable — playback itself is unaffected
+        }
 
         player.addListener(new Player.Listener() {
             @Override
@@ -408,7 +481,7 @@ public class PlayerActivity extends Activity {
                     }
                     boolean forward = e.getX() > gestureSurface.getWidth() / 2f;
                     showRipple(forward);
-                    seekBy(forward ? 10_000L : -10_000L);
+                    seekBy(forward ? seekStepMs : -seekStepMs); // v0.18.0 — step from JS
                     return true;
                 }
             });
@@ -449,6 +522,28 @@ public class PlayerActivity extends Activity {
         findViewById(R.id.btn_speed).setOnClickListener(v -> showSpeedMenu());
         findViewById(R.id.btn_subs).setOnClickListener(v -> showTrackMenu(C.TRACK_TYPE_TEXT));
         findViewById(R.id.btn_audio).setOnClickListener(v -> showTrackMenu(C.TRACK_TYPE_AUDIO));
+
+        // v0.18.0 — zoom cycle, sleep timer, cinema, episodes + prev/next
+        findViewById(R.id.btn_zoom).setOnClickListener(v -> cycleZoom());
+        findViewById(R.id.btn_sleep).setOnClickListener(v -> showSleepMenu());
+        findViewById(R.id.btn_cinema).setOnClickListener(v -> showCinemaDialog());
+        ImageButton btnEpisodes = (ImageButton) findViewById(R.id.btn_episodes);
+        ImageButton btnPrev = (ImageButton) findViewById(R.id.btn_prev);
+        ImageButton btnNext = (ImageButton) findViewById(R.id.btn_next);
+        tvSleep = (TextView) findViewById(R.id.tv_sleep);
+        updateSleepChip();
+        if (epIds != null && epIds.length > 1 && epIds[0] != 0) {
+            btnEpisodes.setVisibility(View.VISIBLE);
+            btnEpisodes.setOnClickListener(v -> showEpisodesSheet());
+            if (epIndex > 0) {
+                btnPrev.setVisibility(View.VISIBLE);
+                btnPrev.setOnClickListener(v -> finishWithSwitch(epIds[epIndex - 1]));
+            }
+            if (epIndex < epIds.length - 1) {
+                btnNext.setVisibility(View.VISIBLE);
+                btnNext.setOnClickListener(v -> finishWithSwitch(epIds[epIndex + 1]));
+            }
+        }
 
         findViewById(R.id.btn_lock).setOnClickListener(v -> setLocked(true));
         lockChip.setOnLongClickListener(v -> {
@@ -536,7 +631,8 @@ public class PlayerActivity extends Activity {
 
     private void showRipple(boolean forward) {
         TextView tv = new TextView(this);
-        tv.setText(forward ? "۱۰ ثانیه به جلو" : "۱۰ ثانیه به عقب");
+        long stepSec = Math.max(1, seekStepMs / 1000);
+        tv.setText(fa(String.valueOf(stepSec)) + " ثانیه به " + (forward ? "جلو" : "عقب"));
         tv.setTextColor(Color.WHITE);
         tv.setTextSize(14);
         tv.setBackgroundResource(R.drawable.np_ripple);
@@ -553,8 +649,9 @@ public class PlayerActivity extends Activity {
 
     private void showSpeedMenu() {
         if (player == null) return;
-        float[] speeds = {0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f};
-        String[] labels = {"۰٫۵×", "۰٫۷۵×", "۱×", "۱٫۲۵×", "۱٫۵×", "۲×"};
+        // v0.18.0 — 0.25×–3× (web-parity range; was 0.5×–2×)
+        float[] speeds = {0.25f, 0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f, 3f};
+        String[] labels = {"۰٫۲۵×", "۰٫۵×", "۰٫۷۵×", "۱×", "۱٫۲۵×", "۱٫۵×", "۲×", "۳×"};
         float cur = player.getPlaybackParameters().speed;
         PopupMenu pm = new PopupMenu(this, findViewById(R.id.btn_speed));
         for (int i = 0; i < speeds.length; i++) {
@@ -634,9 +731,179 @@ public class PlayerActivity extends Activity {
             .show();
     }
 
-    /* ================= lifecycle + result contract ================= */
+    /* ================= v0.18.0 — zoom / sleep / episodes / cinema ================= */
+
+    /** fit → fill (crop) → stretch cycle, same contract as the web player */
+    private void cycleZoom() {
+        resizeModeIdx = (resizeModeIdx + 1) % RESIZE_MODES.length;
+        playerView.setResizeMode(RESIZE_MODES[resizeModeIdx]);
+        Toast.makeText(this, "نمایش: " + RESIZE_LABELS[resizeModeIdx], Toast.LENGTH_SHORT).show();
+        gestureSurface.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY);
+    }
+
+    private void showSleepMenu() {
+        CharSequence[] opts = {"۱۵ دقیقه", "۳۰ دقیقه", "۴۵ دقیقه", "۶۰ دقیقه", "پایان همین قسمت", "لغو تایمر"};
+        new AlertDialog.Builder(this)
+            .setTitle("تایمر خواب")
+            .setItems(opts, (dlg, which) -> {
+                if (which == 4) {
+                    sleepEndOfEpisode = true;
+                    sleepLeftSec = -1;
+                    Toast.makeText(this, "خواب: پایان همین قسمت", Toast.LENGTH_SHORT).show();
+                } else if (which == 5) {
+                    sleepEndOfEpisode = false;
+                    sleepLeftSec = -1;
+                } else {
+                    sleepEndOfEpisode = false;
+                    sleepLeftSec = (which + 1) * 15 * 60;
+                    Toast.makeText(this, "خواب: " + opts[which], Toast.LENGTH_SHORT).show();
+                }
+                updateSleepChip();
+            })
+            .show();
+    }
+
+    private void updateSleepChip() {
+        if (tvSleep == null) return;
+        if (sleepEndOfEpisode) {
+            tvSleep.setVisibility(View.VISIBLE);
+            tvSleep.setText("خواب: پایان قسمت");
+        } else if (sleepLeftSec >= 0) {
+            tvSleep.setVisibility(View.VISIBLE);
+            tvSleep.setText("خواب: " + clock(sleepLeftSec));
+        } else {
+            tvSleep.setVisibility(View.GONE);
+        }
+    }
+
+    private void tickSleep() {
+        if (sleepLeftSec < 0) return;
+        sleepLeftSec -= 1;
+        if (sleepLeftSec <= 0) {
+            sleepLeftSec = -1;
+            updateSleepChip();
+            fadeOutAndPause();
+        } else {
+            updateSleepChip();
+        }
+    }
+
+    /** sleep expiry: fade the volume over ~5s, then pause and restore */
+    private void fadeOutAndPause() {
+        if (player == null) return;
+        final float start = player.getVolume();
+        final int[] i = {0};
+        tick.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                if (player == null) return;
+                i[0]++;
+                player.setVolume(Math.max(0f, start * (1 - i[0] / 10f)));
+                if (i[0] < 10) {
+                    tick.postDelayed(this, 500);
+                } else {
+                    player.setVolume(start); // restore for the next session
+                    player.pause();
+                    Toast.makeText(PlayerActivity.this, "تایمر خواب تمام شد", Toast.LENGTH_SHORT).show();
+                }
+            }
+        }, 500);
+    }
+
+    /** v0.18.0 — episodes sheet from the JS manifest: seasons, watched ticks,
+     *  progress; picking an episode finishes the activity with the result
+     *  extra the JS engine understands (switchToEpisodeId). */
+    private void showEpisodesSheet() {
+        if (epIds == null || epIds.length == 0 || epIds[0] == 0) return;
+        int pad = (int) (14 * getResources().getDisplayMetrics().density);
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(pad, pad, pad, pad);
+        ScrollView scroller = new ScrollView(this);
+        scroller.addView(box);
+        for (int i = 0; i < epIds.length; i++) {
+            TextView row = new TextView(this);
+            String label = "فصل " + fa(String.valueOf(epSeasons[i])) + " · قسمت " + fa(String.valueOf(epNums[i]));
+            if (epNames[i] != null && !epNames[i].isEmpty()) label += "  —  " + epNames[i];
+            if (epWatched[i]) label += "   ✓ دیده‌شده";
+            else if (epPcts[i] > 0) label += "   (" + fa(String.valueOf(epPcts[i])) + "٪)";
+            if (i == epIndex) label = "▶ " + label;
+            row.setText(label);
+            row.setTextSize(14);
+            row.setTextColor(Color.WHITE);
+            row.setPadding(0, pad / 2, 0, pad / 2);
+            if (i == epIndex) {
+                row.setTypeface(null, android.graphics.Typeface.BOLD);
+                row.setTextColor(0xFFFFC46B);
+            }
+            box.addView(row);
+        }
+        AlertDialog dlg = new AlertDialog.Builder(this)
+            .setTitle("قسمت‌ها")
+            .setView(scroller)
+            .setNegativeButton("بستن", null)
+            .create();
+        for (int i = 0; i < box.getChildCount(); i++) {
+            final int idx = i;
+            box.getChildAt(i).setOnClickListener(v -> {
+                dlg.dismiss();
+                if (idx != epIndex && epIds[idx] != 0) finishWithSwitch(epIds[idx]);
+            });
+        }
+        dlg.show();
+    }
+
+    /** v0.18.0 — the honest cinema entry: native playback cannot join a watch
+     *  party (blocking activity, no live beats) — offer the web-variant switch
+     *  when the JS side says one exists. */
+    private void showCinemaDialog() {
+        String msg = "سینما (تماشای هم‌زمان با دوستان) فقط با پخش وب کار می‌کند و با پلیر دستگاه ممکن نیست."
+            + (hasWebVariant
+                ? "\n\nمی‌توانی به نسخه وب‌سازگار همین عنوان سوئیچ کنی و سینما را روشن کنی."
+                : "\n\nاین فایل نسخه وب‌سازگار ندارد — سینما برای آن ممکن نیست.");
+        AlertDialog.Builder b = new AlertDialog.Builder(this)
+            .setTitle("سینما")
+            .setMessage(msg)
+            .setPositiveButton(hasWebVariant ? "سوییچ به نسخه وب‌سازگار" : "فهمیدم", (d, w) -> {
+                if (hasWebVariant) finishWithWebSwitch();
+            });
+        if (hasWebVariant) b.setNegativeButton("بستن", null);
+        b.show();
+        gestureSurface.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY);
+    }
 
     private boolean audioDropped = false;
+
+    /** v0.18.0 — episodes sheet picked another episode: hand the choice back
+     *  to the JS engine (which re-runs ownership/handoff for that episode). */
+    private void finishWithSwitch(int episodeId) {
+        if (player != null) {
+            sPositionMs = Math.max(0L, player.getCurrentPosition());
+            long d = player.getDuration();
+            if (d > 0) sDurationMs = d;
+        }
+        Intent data = new Intent();
+        data.putExtra("positionMs", sPositionMs);
+        data.putExtra("durationMs", sDurationMs);
+        data.putExtra("switchToEpisodeId", episodeId);
+        setResult(RESULT_OK, data);
+        super.finish();
+    }
+
+    /** v0.18.0 — «سوییچ به نسخه وب‌سازگار»: the web player + cinema takes over */
+    private void finishWithWebSwitch() {
+        if (player != null) {
+            sPositionMs = Math.max(0L, player.getCurrentPosition());
+            long d = player.getDuration();
+            if (d > 0) sDurationMs = d;
+        }
+        Intent data = new Intent();
+        data.putExtra("positionMs", sPositionMs);
+        data.putExtra("durationMs", sDurationMs);
+        data.putExtra("switchToWeb", true);
+        setResult(RESULT_OK, data);
+        super.finish();
+    }
 
     @Override
     public void finish() {
@@ -650,6 +917,9 @@ public class PlayerActivity extends Activity {
         data.putExtra("durationMs", sDurationMs);
         data.putExtra("ended", sEnded);
         data.putExtra("error", sError);
+        // v0.18.0 — «پایان همین قسمت» sleep mode must suppress the JS
+        // next-episode countdown
+        data.putExtra("suppressNext", sleepEndOfEpisode);
         setResult(RESULT_OK, data);
         super.finish();
     }
@@ -659,6 +929,13 @@ public class PlayerActivity extends Activity {
         tick.removeCallbacks(tickRunner);
         tick.removeCallbacks(uiRunnable);
         tick.removeCallbacks(hideRunnable);
+        if (mediaSession != null) {
+            try {
+                mediaSession.release();
+            } catch (Exception ignored) {
+            }
+            mediaSession = null;
+        }
         if (playerView != null) playerView.setPlayer(null);
         if (player != null) {
             player.release();

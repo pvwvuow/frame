@@ -78,6 +78,44 @@
                 android:textColor="#B3FFFFFF"
                 android:textSize="12sp" />
         </LinearLayout>
+
+        <!-- v0.18.0 — sleep countdown chip -->
+        <TextView
+            android:id="@+id/tv_sleep"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="6dp"
+            android:background="#66000000"
+            android:paddingStart="10dp"
+            android:paddingEnd="10dp"
+            android:paddingTop="4dp"
+            android:paddingBottom="4dp"
+            android:textColor="#FFFFC46B"
+            android:textSize="12sp"
+            android:textStyle="bold"
+            android:visibility="gone" />
+
+        <!-- v0.18.0 — episodes sheet + cinema switch -->
+        <ImageButton
+            android:id="@+id/btn_episodes"
+            android:layout_width="46dp"
+            android:layout_height="46dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:contentDescription="قسمت‌ها"
+            android:scaleType="fitCenter"
+            android:padding="11dp"
+            android:src="@drawable/ic_np_list"
+            android:visibility="gone" />
+
+        <ImageButton
+            android:id="@+id/btn_cinema"
+            android:layout_width="46dp"
+            android:layout_height="46dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:contentDescription="سینما"
+            android:scaleType="fitCenter"
+            android:padding="11dp"
+            android:src="@drawable/ic_np_cinema" />
     </LinearLayout>
 
     <!-- center play/pause -->
@@ -138,6 +176,17 @@
             android:orientation="horizontal">
 
             <ImageButton
+                android:id="@+id/btn_prev"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:background="?android:attr/selectableItemBackgroundBorderless"
+                android:contentDescription="قسمت قبلی"
+                android:scaleType="fitCenter"
+                android:padding="10dp"
+                android:src="@drawable/ic_np_prev"
+                android:visibility="gone" />
+
+            <ImageButton
                 android:id="@+id/btn_rewind"
                 android:layout_width="44dp"
                 android:layout_height="44dp"
@@ -156,6 +205,17 @@
                 android:scaleType="fitCenter"
                 android:padding="10dp"
                 android:src="@drawable/ic_np_forward" />
+
+            <ImageButton
+                android:id="@+id/btn_next"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:background="?android:attr/selectableItemBackgroundBorderless"
+                android:contentDescription="قسمت بعدی"
+                android:scaleType="fitCenter"
+                android:padding="10dp"
+                android:src="@drawable/ic_np_next"
+                android:visibility="gone" />
 
             <TextView
                 android:id="@+id/tv_position"
@@ -215,6 +275,26 @@
                 android:scaleType="fitCenter"
                 android:padding="10dp"
                 android:src="@drawable/ic_np_speed" />
+
+            <ImageButton
+                android:id="@+id/btn_zoom"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:background="?android:attr/selectableItemBackgroundBorderless"
+                android:contentDescription="زوم"
+                android:scaleType="fitCenter"
+                android:padding="10dp"
+                android:src="@drawable/ic_np_zoom" />
+
+            <ImageButton
+                android:id="@+id/btn_sleep"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:background="?android:attr/selectableItemBackgroundBorderless"
+                android:contentDescription="تایمر خواب"
+                android:scaleType="fitCenter"
+                android:padding="10dp"
+                android:src="@drawable/ic_np_sleep" />
 
             <ImageButton
                 android:id="@+id/btn_lock"
