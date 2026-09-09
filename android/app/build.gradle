@@ -57,8 +57,13 @@ android {
     }
     buildTypes {
         release {
-            minifyEnabled false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            // v0.17.0 — R8 minify + resource shrink: shrinks the APK, removes
+            // the raw-Java static-analysis signal, hardens the release build.
+            // Keep rules for the Capacitor bridge + our plugin live in
+            // proguard-rules.pro (the plugin is invoked reflectively).
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
             if (keystorePropsFile.exists()) {
                 signingConfig signingConfigs.release
             }

@@ -1,21 +1,28 @@
-# Add project specific ProGuard rules here.
-# You can control the set of applied configuration files using the
-# proguardFiles setting in build.gradle.
-#
-# For more details, see
-#   http://developer.android.com/guide/developing/tools/proguard.html
+# v0.17.0 — R8 release-minify rules. The Capacitor bridge invokes plugin
+# methods REFLECTIVELY (annotation discovery) — without these keeps every
+# NamaNative call becomes "not implemented" at runtime.
 
-# If your project uses WebView with JS, uncomment the following
-# and specify the fully qualified class name to the JavaScript interface
-# class:
-#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
-#   public *;
-#}
+# Capacitor runtime + WebView bridge
+-keep class com.getcapacitor.** { *; }
+-keep @com.getcapacitor.annotation.CapacitorPlugin public class * { *; }
+-keepclassmembers class * extends com.getcapacitor.Plugin {
+    @com.getcapacitor.PluginMethod public <methods>;
+    @com.getcapacitor.annotation.ActivityCallback <methods>;
+    @com.getcapacitor.annotation.PermissionCallback <methods>;
+}
 
-# Uncomment this to preserve the line number information for
-# debugging stack traces.
-#-keepattributes SourceFile,LineNumberTable
+# Our own native surface (player activity, plugin, statics polled by JS)
+-keep class ir.frame.nama.** { *; }
 
-# If you keep the line number information, uncomment this to
-# hide the original source file name.
-#-renamesourcefileattribute SourceFile
+-keepattributes *Annotation*,Signature,InnerClasses,EnclosingMethod
+
+# Media3/ExoPlayer (ships consumer rules; these silence the rest)
+-dontwarn androidx.media3.**
+
+# OkHttp / Okio (they carry their own consumer rules; silence leftovers)
+-dontwarn okhttp3.**
+-dontwarn okio.**
+
+# Keep line numbers for readable crash traces
+-keepattributes SourceFile,LineNumberTable
+-renamesourcefileattribute SourceFile

@@ -115,6 +115,7 @@ export function MobileUpdateCard() {
         setProgress(null);
       } else if (p.phase === "done") {
         if (check.ota) toast.success("به‌روزرسانی انجام شد — فریم تازه‌سازی می‌شود");
+        if (check.apk) toast.success("لینک دانلود در مرورگر باز شد — پس از نصب، برنامه را باز کنید");
         if (check.coversOnly) toast.success("کاورها کامل شد");
         setBusy(false);
         setProgress(null);
@@ -190,7 +191,7 @@ export function MobileUpdateCard() {
       {check?.available && (
         <p className="mt-3 text-[11px] leading-5 text-zinc-500">
           {check.apk
-            ? `این نسخه شامل تغییرات سیستمی است (${fmtBytes(check.apkSize ?? 0)}) — پس از دانلود، پنجرهٔ نصب باز می‌شود.`
+            ? "این نسخه شامل تغییرات سیستمی است — صفحهٔ دانلود در مرورگر باز می‌شود؛ مثل بار اول نصب کنید (تنظیمات و سابقهٔ شما حفظ می‌شود)."
             : check.ota
               ? `این به‌روزرسانی «درجا» نصب می‌شود (${fmtBytes(check.bundleSize ?? 0)}) — نیازی به دانلود کل برنامه نیست.`
               : `کاورهای ${coversTotal} بسته‌ای (${fmtBytes(packBytes)}) در پس‌زمینه نصب می‌شوند — بسته‌های نیمه‌کاره از سر گرفته می‌شوند.`}

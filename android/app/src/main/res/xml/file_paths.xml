@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- v0.17.0 — scoped to the app's private files dir (offline downloads,
+     OTA bundles, cover packs, exported subtitle files). The unused
+     external-path/cache-path grants were removed (least privilege). -->
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
-    <external-path name="my_images" path="." />
-    <cache-path name="my_cache_images" path="." />
-    <!-- v0.12.0 — downloaded APK / subtitles / OTA bundle live in filesDir -->
     <files-path name="files" path="." />
 </paths>

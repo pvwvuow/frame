@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- v0.17.0 — replaces the global android:usesCleartextTraffic="true".
+     Default: HTTPS only, system CAs. The archive's video CDN keeps its own
+     (explicit, intentional) exception — it is the ONE host family the app
+     streams from (dls..dls9 subdomains, extracted from the catalog). The
+     native player additionally relaxes TLS certificate validation ONLY for
+     these hosts (PlayerActivity.RELAXED_TLS_HOSTS) — desktop parity with
+     rejectUnauthorized:false, scoped instead of global. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">aparatchi-dlcenter.top</domain>
+    </domain-config>
+</network-security-config>

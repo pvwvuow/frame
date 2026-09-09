@@ -207,6 +207,20 @@ jobs:
           gh release upload "$TAG" "$DEST" --clobber --repo "$GITHUB_REPOSITORY"
           echo "attached $DEST to release $TAG"
 
+      # v0.17.0 — publish the APK SHA-256 in the release notes so users can
+      # verify authenticity (the install guide in README references it).
+      - name: Attach APK sha256 to release notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          SUM=$(sha256sum "Frame-${VERSION}-android.apk" | cut -d' ' -f1)
+          BODY=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body --jq .body)
+          printf '%s\n\n**SHA-256 (`%s`):** `%s`' "$BODY" "Frame-${VERSION}-android.apk" "$SUM" > body.md
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file body.md
+          echo "APK sha256: $SUM"
+
       # v0.12.0 — the in-app updater OTA path: the static export as a zip.
       # Name encodes the required native revision (Frame-webbundle-v1.2.3-n2.zip)
       # so the app can pick bundle-OTA vs full-APK without extra metadata.

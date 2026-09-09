@@ -1,11 +1,8 @@
 package ir.frame.nama;
 
-import android.app.Activity;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.net.Uri;
-import android.os.Build;
-import android.provider.Settings;
 
 import androidx.activity.result.ActivityResult;
 import androidx.core.content.FileProvider;
@@ -39,9 +36,9 @@ import java.util.zip.ZipInputStream;
  *  - native MKV/HEVC playback with embedded Persian subtitles (Media3)
  *  - a real download engine (Range resume, pause/resume/cancel, progress
  *    events) for offline watching
- *  - in-app self-update: download the new WEB BUNDLE from a GitHub release,
- *    apply it (setServerBasePath → instant, no reinstall) or, when the
- *    native surface changed, download the APK and hand it to the installer
+ *  - in-app self-update: hot OTA web bundles (setServerBasePath, no
+ *    reinstall) + cover packs; full-APK versions open in the browser
+ *    (v0.17.0 — the in-app installer was removed for Play Protect)
  */
 @CapacitorPlugin(name = "NamaNative")
 public class NamaNativePlugin extends Plugin {
@@ -497,39 +494,28 @@ public class NamaNativePlugin extends Plugin {
         }
     }
 
-    /** Hand a downloaded APK to the system installer (REQUEST_INSTALL_PACKAGES). */
+    /** v0.17.0 — open an https URL in the system browser. Replaces the old
+     *  download-APK-and-install flow: REQUEST_INSTALL_PACKAGES +
+     *  ACTION_VIEW package-archive is the classic "dropper" pattern Google
+     *  Play Protect flags as harmful (red «Unsafe app blocked»). Full-APK
+     *  updates now land in the browser — the user installs like the first
+     *  time; the unchanged signing key makes it an in-place update. */
     @PluginMethod
-    public void installApk(PluginCall call) {
+    public void openUrl(PluginCall call) {
+        String url = call.getString("url");
+        if (url == null || !url.startsWith("https://")) {
+            call.reject("https url required");
+            return;
+        }
         try {
-            File apk = fileUnder(call.getString("path", ""));
-            if (!apk.exists()) {
-                call.reject("apk missing");
-                return;
-            }
-            Activity activity = getActivity();
-            if (activity == null) {
-                call.reject("no activity");
-                return;
-            }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
-                && !activity.getPackageManager().canRequestPackageInstalls()) {
-                Intent s = new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
-                    Uri.parse("package:" + activity.getPackageName()));
-                activity.startActivity(s);
-                call.resolve(new JSObject() {{ put("ok", false); put("needPermission", true); }});
-                return;
-            }
-            Uri uri = FileProvider.getUriForFile(getContext(),
-                getContext().getPackageName() + ".fileprovider", apk);
-            Intent i = new Intent(Intent.ACTION_VIEW);
-            i.setDataAndType(uri, "application/vnd.android.package-archive");
-            i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
+            Intent i = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             getContext().startActivity(i);
             JSObject ret = new JSObject();
             ret.put("ok", true);
             call.resolve(ret);
         } catch (Exception e) {
-            call.reject("install failed: " + e.getMessage());
+            call.reject("open failed: " + e.getMessage());
         }
     }
 

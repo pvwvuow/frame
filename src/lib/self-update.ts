@@ -274,25 +274,21 @@ async function applyCoverPacks(check: UpdateCheck): Promise<number> {
 }
 
 /** Run the update. Returns which path ran (throws on hard failure).
- *  One call performs ONE phase: APK install, code OTA (the page reloads), or
- *  the covers sync — the caller re-checks afterwards. */
+ *  One call performs ONE phase: APK hand-off to the browser, code OTA (the
+ *  page reloads), or the covers sync — the caller re-checks afterwards.
+ *
+ *  v0.17.0 — the APK path no longer downloads + installs inside the app
+ *  (REQUEST_INSTALL_PACKAGES = the dropper pattern Play Protect blocks as
+ *  harmful). It opens the release APK in the system browser instead; the
+ *  user installs like the first time — same signing key, so the update is
+ *  in-place and all data/settings survive. */
 export async function performUpdate(check: UpdateCheck): Promise<"ota" | "apk" | "covers"> {
   const b = nativeBridge();
   if (!b) throw new Error("unsupported");
   wireEvents();
   if (check.apk && check.apkUrl) {
-    const apkName = `updates/frame-${check.version}.apk`;
-    emit({ phase: "download", received: 0, total: check.apkSize });
-    await b.downloadFile({ id: "frame-update", url: check.apkUrl, dest: apkName });
-    await sleep(600);
     emit({ phase: "install" });
-    const stat = await b.fileStat({ path: apkName });
-    if (!stat.exists) throw new Error("apk missing");
-    const r = await b.installApk({ path: apkName });
-    if (!r.ok && r.needPermission) {
-      emit({ phase: "error", message: "برای نصب، اجازهٔ «نصب برنامه‌های ناشناس» را بدهید و دوباره تلاش کنید" });
-      return "apk";
-    }
+    await b.openUrl({ url: check.apkUrl });
     emit({ phase: "done" });
     return "apk";
   }

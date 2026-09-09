@@ -28,7 +28,15 @@ const ROOT = path.join(__dirname, "..");
 //     v0.12.0 — every native handoff rejected "not implemented"); plus the
 //     audio-decoder resilience in PlayerActivity → APK required for every
 //     user on ≤ rev 4
-const NATIVE_REV = 5;
+// 6 = v0.17.0 — PLAY PROTECT HARDENING + NATIVE PLAYER UI: removed
+//     REQUEST_INSTALL_PACKAGES (in-app APK install → openUrl to browser),
+//     network_security_config + scoped relaxed TLS (dl hosts only),
+//     allowBackup=false, R8 minify, WebView debug/mixed-content off in
+//     release, custom Netflix-style controller in PlayerActivity → APK
+//     required for every user on ≤ rev 5. NOTE: this is the LAST APK that
+//     users of ≤ rev 5 receive via the in-app installer; from now on the
+//     updater opens the browser.
+const NATIVE_REV = 6;
 const API_DIR = path.join(ROOT, "src", "app", "api");
 const TMP_DIR = path.join(ROOT, ".mobile-tmp-api");
 const PACK_DIR = path.join(ROOT, ".covers-pack");

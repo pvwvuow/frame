@@ -1,6 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- v0.12.0 — native fullscreen player (Media3 PlayerView) -->
+<!-- v0.17.0 — custom Netflix-style controller for the native player.
+     The previous layout was a bare PlayerView (default ExoPlayer controls):
+     none of the PlayerMobile feature set (double-tap seek, drag scrub,
+     speed, track pick, screen lock) existed natively. -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="#000000">
@@ -9,5 +13,248 @@
         android:id="@+id/player_view"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:background="#000000" />
+        android:background="#000000"
+        app:use_controller="false" />
+
+    <!-- double-tap seek ripples get added here programmatically -->
+    <FrameLayout
+        android:id="@+id/ripple_host"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <!-- gesture surface (below the control bars) -->
+    <View
+        android:id="@+id/gesture_surface"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <!-- top bar: back + titles -->
+    <LinearLayout
+        android:id="@+id/top_bar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top"
+        android:background="@drawable/np_scrim_top"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        android:paddingTop="10dp"
+        android:paddingBottom="26dp">
+
+        <ImageButton
+            android:id="@+id/btn_back"
+            android:layout_width="46dp"
+            android:layout_height="46dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:contentDescription="بازگشت"
+            android:scaleType="fitCenter"
+            android:padding="11dp"
+            android:src="@drawable/ic_np_back" />
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="6dp"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/tv_title"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:textColor="#FFFFFF"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/tv_subtitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:textColor="#B3FFFFFF"
+                android:textSize="12sp" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- center play/pause -->
+    <ImageButton
+        android:id="@+id/btn_play_pause"
+        android:layout_width="74dp"
+        android:layout_height="74dp"
+        android:layout_gravity="center"
+        android:background="@drawable/np_play_bg"
+        android:contentDescription="پخش/توقف"
+        android:padding="18dp"
+        android:scaleType="fitCenter"
+        android:src="@drawable/ic_np_play" />
+
+    <!-- scrub time preview -->
+    <TextView
+        android:id="@+id/tv_preview"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:background="#B3000000"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:paddingTop="8dp"
+        android:paddingBottom="8dp"
+        android:textColor="#FFFFFF"
+        android:textSize="18sp"
+        android:textStyle="bold"
+        android:visibility="gone" />
+
+    <!-- bottom bar: seek + actions -->
+    <LinearLayout
+        android:id="@+id/bottom_bar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:background="@drawable/np_scrim_bottom"
+        android:orientation="vertical"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:paddingBottom="10dp"
+        android:paddingTop="26dp">
+
+        <SeekBar
+            android:id="@+id/seek"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layoutDirection="ltr"
+            android:max="1000"
+            android:progressTint="#FFC46B"
+            android:secondaryProgressTint="#55FFFFFF"
+            android:thumbTint="#FFC46B" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <ImageButton
+                android:id="@+id/btn_rewind"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:background="?android:attr/selectableItemBackgroundBorderless"
+                android:contentDescription="۱۰ ثانیه عقب"
+                android:scaleType="fitCenter"
+                android:padding="10dp"
+                android:src="@drawable/ic_np_rewind" />
+
+            <ImageButton
+                android:id="@+id/btn_forward"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:background="?android:attr/selectableItemBackgroundBorderless"
+                android:contentDescription="۱۰ ثانیه جلو"
+                android:scaleType="fitCenter"
+                android:padding="10dp"
+                android:src="@drawable/ic_np_forward" />
+
+            <TextView
+                android:id="@+id/tv_position"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:textColor="#FFFFFF"
+                android:textSize="13sp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:paddingStart="3dp"
+                android:paddingEnd="3dp"
+                android:text="/"
+                android:textColor="#88FFFFFF"
+                android:textSize="13sp" />
+
+            <TextView
+                android:id="@+id/tv_duration"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textColor="#99FFFFFF"
+                android:textSize="13sp" />
+
+            <View
+                android:layout_width="0dp"
+                android:layout_height="1dp"
+                android:layout_weight="1" />
+
+            <ImageButton
+                android:id="@+id/btn_audio"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:background="?android:attr/selectableItemBackgroundBorderless"
+                android:contentDescription="ترک صدا"
+                android:scaleType="fitCenter"
+                android:padding="10dp"
+                android:src="@drawable/ic_np_audio" />
+
+            <ImageButton
+                android:id="@+id/btn_subs"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:background="?android:attr/selectableItemBackgroundBorderless"
+                android:contentDescription="زیرنویس"
+                android:scaleType="fitCenter"
+                android:padding="10dp"
+                android:src="@drawable/ic_np_subtitles" />
+
+            <ImageButton
+                android:id="@+id/btn_speed"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:background="?android:attr/selectableItemBackgroundBorderless"
+                android:contentDescription="سرعت پخش"
+                android:scaleType="fitCenter"
+                android:padding="10dp"
+                android:src="@drawable/ic_np_speed" />
+
+            <ImageButton
+                android:id="@+id/btn_lock"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:background="?android:attr/selectableItemBackgroundBorderless"
+                android:contentDescription="قفل صفحه"
+                android:scaleType="fitCenter"
+                android:padding="10dp"
+                android:src="@drawable/ic_np_lock" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- screen-lock chip (only while locked) -->
+    <LinearLayout
+        android:id="@+id/lock_chip"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:background="@drawable/np_lock_bg"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="18dp"
+        android:paddingEnd="14dp"
+        android:paddingTop="10dp"
+        android:paddingBottom="10dp"
+        android:visibility="gone">
+
+        <ImageView
+            android:layout_width="22dp"
+            android:layout_height="22dp"
+            android:scaleType="fitCenter"
+            android:src="@drawable/ic_np_lock" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="10dp"
+            android:text="نگه دارید تا باز شود"
+            android:textColor="#FFFFFF"
+            android:textSize="13sp" />
+    </LinearLayout>
 </FrameLayout>

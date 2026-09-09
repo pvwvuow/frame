@@ -72,12 +72,16 @@ const NATIVE_CONTAINER_EXT = /\.(avi|wmv|mpg|mpeg|ts|flv|mkv|mk3d)(\?|#|$)/i;
  *   - .mkv/.mk3d always (Matroska + the muxed Persian SRT)
  *   - extension-less/token http(s) URLs — container unknown; Media3 sniffs it
  *   - legacy containers (avi/wmv/mpg/mpeg/ts/flv) — no WebView demuxer
- *   - plain mp4/m4v/mov/webm/m3u8 stay on the light web path */
+ *   - v0.17.0 — plain http:// (no TLS) ALWAYS rides native: release builds
+ *     disable mixed content + cleartext in the WebView (Play-Protect
+ *     hardening), and Media3 has no such restriction
+ *   - plain https mp4/m4v/mov/webm/m3u8 stay on the light web path */
 export function needsNativePlayer(url: string): boolean {
   if (!url) return false;
   if (url.startsWith("local:")) return true;
   if (NATIVE_CONTAINER_EXT.test(url)) return true;
   if (/^https?:\/\//i.test(url) && !WEBVIEW_SAFE_EXT.test(url)) return true;
+  if (/^http:\/\//i.test(url)) return true;
   return false;
 }
 

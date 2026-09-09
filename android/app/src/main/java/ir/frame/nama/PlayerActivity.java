@@ -1,12 +1,25 @@
 package ir.frame.nama;
 
 import android.app.Activity;
+import android.app.AlertDialog;
+import android.content.DialogInterface;
 import android.content.Intent;
+import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.view.Gravity;
+import android.view.GestureDetector;
+import android.view.HapticFeedbackConstants;
+import android.view.MotionEvent;
+import android.view.View;
 import android.view.WindowManager;
+import android.widget.FrameLayout;
+import android.widget.ImageButton;
+import android.widget.PopupMenu;
+import android.widget.SeekBar;
+import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.annotation.OptIn;
@@ -19,7 +32,11 @@ import androidx.media3.common.MediaItem;
 import androidx.media3.common.MediaMetadata;
 import androidx.media3.common.MimeTypes;
 import androidx.media3.common.PlaybackException;
+import androidx.media3.common.PlaybackParameters;
 import androidx.media3.common.Player;
+import androidx.media3.common.TrackGroup;
+import androidx.media3.common.TrackSelectionOverride;
+import androidx.media3.common.Tracks;
 import androidx.media3.common.util.UnstableApi;
 import androidx.media3.datasource.okhttp.OkHttpDataSource;
 import androidx.media3.exoplayer.DefaultRenderersFactory;
@@ -28,25 +45,72 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory;
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector;
 import androidx.media3.ui.PlayerView;
 
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+
 /**
  * v0.12.0 — native fullscreen player.
  *
- * The Android WebView cannot demux Matroska: ~8,200 of the catalog's videos
+ * The Android WebView cannot demux Matroska: most of the catalog's videos
  * are MKV (every SoftSub release) and simply never played in the responsive
  * web player. ExoPlayer/Media3 plays MKV (+ HEVC when the device has the
- * decoder) and renders the Persian SRT muxed INSIDE the container — which is
- * exactly the audience this app serves.
+ * decoder) and renders the Persian SRT muxed INSIDE the container.
+ *
+ * v0.17.0 — FEATURE PARITY WITH THE MOBILE PLAYER. The controller used to be
+ * the bare ExoPlayer default — none of the PlayerMobile feature set existed
+ * natively. This rewrite adds the custom Netflix-style surface:
+ *   - tap = controls, double-tap sides = ±10s with ripple + haptic
+ *   - drag scrub with time preview + buffered bar
+ *   - speed menu (0.5×–2×), embedded subtitle/audio track picker
+ *   - screen lock (long-press the chip to unlock), Persian digits everywhere
+ *
+ * TLS note (v0.17.0): trust-all certificate validation is now scoped to the
+ * archive's dl hosts ONLY (RELAXED_TLS_HOSTS); every other host gets standard
+ * strict TLS. Desktop parity (rejectUnauthorized:false) is kept for those
+ * broken-cert dl hosts.
  *
  * Result contract (back to the JS player through NamaNativePlugin):
  * positionMs / durationMs / ended / error.
  */
+@OptIn(markerClass = UnstableApi.class)
 public class PlayerActivity extends Activity {
+
+    /** The ONE host family the catalog streams from (dls..dls9 subdomains).
+     *  These keep the desktop-parity relaxed TLS; all other hosts are strict. */
+    private static final Set<String> RELAXED_TLS_HOSTS = new HashSet<>(
+        Arrays.asList("aparatchi-dlcenter.top"));
+
+    private static boolean relaxedHost(String host) {
+        if (host == null) return false;
+        for (String h : RELAXED_TLS_HOSTS) {
+            if (host.equals(h) || host.endsWith("." + h)) return true;
+        }
+        return false;
+    }
 
     private ExoPlayer player;
     private PlayerView playerView;
     private final Handler tick = new Handler(Looper.getMainLooper());
-    /** v0.16.3 — the audio track was already dropped after a codec failure */
-    private boolean audioDropped = false;
+
+    // custom controller views
+    private View topBar, bottomBar, gestureSurface, rippleHost, lockChip;
+    private ImageButton btnPlayPause;
+    private TextView tvTitle, tvSubtitle, tvPosition, tvDuration, tvPreview;
+    private SeekBar seek;
+    private boolean controlsVisible = true;
+    private boolean locked = false;
+    private boolean dragging = false;
+    private final Runnable hideRunnable = this::hideControls;
+    private final Runnable uiRunnable = new Runnable() {
+        @Override
+        public void run() {
+            updateUi();
+            tick.postDelayed(this, 500L);
+        }
+    };
 
     /** polled by JS through the plugin while the activity is up */
     private static volatile long sPositionMs = 0L;
@@ -70,6 +134,22 @@ public class PlayerActivity extends Activity {
             tick.postDelayed(this, 1000L);
         }
     };
+
+    /* ---------------- Persian digits + time ---------------- */
+
+    private static String fa(String s) {
+        String r = s;
+        for (int i = 0; i < 10; i++) r = r.replace((char) ('0' + i), (char) ('۰' + i));
+        return r;
+    }
+
+    private static String clock(long sec) {
+        if (sec < 0) sec = 0;
+        long h = sec / 3600, m = (sec % 3600) / 60, s = sec % 60;
+        return fa(h > 0
+            ? String.format("%d:%02d:%02d", h, m, s)
+            : String.format("%d:%02d", m, s));
+    }
 
     @OptIn(markerClass = UnstableApi.class)
     @Override
@@ -100,45 +180,45 @@ public class PlayerActivity extends Activity {
                 .setEnableDecoderFallback(true)
                 .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_OFF);
 
-        // v0.16.1 — ride the EXACT same network behavior the desktop app uses
-        // (electron/stream-proxy.cjs proxyFetch): the same desktop-Chrome UA
-        // (dl hosts run UA filters), full redirect chains including
-        // http⇄https, and certificate-relaxed TLS (the desktop sets
-        // rejectUnauthorized:false — the archive's dl hosts are a minefield
-        // of broken/expired certs that would otherwise kill playback ONLY on
-        // Android). Timeouts mirror the previous DefaultHttpDataSource.
+        // v0.16.1 — desktop-parity network behavior (UA, redirects, timeouts).
+        // v0.17.0 — the trust-all TLS is SCOPED: only the archive's dl hosts
+        // keep the relaxed sockets; everything else verifies certificates
+        // normally (Supabase/GitHub traffic never had any reason to be here,
+        // and global trust-all was a Play-Protect red-block signal).
         String DESKTOP_UA =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
                 + "Chrome/126.0 Safari/537.36";
-        final javax.net.ssl.X509TrustManager trustAll =
-            new javax.net.ssl.X509TrustManager() {
-                @Override
-                public void checkClientTrusted(java.security.cert.X509Certificate[] chain, String authType) {
-                }
-
-                @Override
-                public void checkServerTrusted(java.security.cert.X509Certificate[] chain, String authType) {
-                }
-
-                @Override
-                public java.security.cert.X509Certificate[] getAcceptedIssuers() {
-                    return new java.security.cert.X509Certificate[0];
-                }
-            };
-        javax.net.ssl.SSLContext sslContext;
-        try {
-            sslContext = javax.net.ssl.SSLContext.getInstance("TLS");
-            sslContext.init(null, new javax.net.ssl.TrustManager[] { trustAll }, new java.security.SecureRandom());
-        } catch (Exception e) {
-            throw new IllegalStateException("TLS init failed", e);
-        }
-        okhttp3.OkHttpClient httpClient = new okhttp3.OkHttpClient.Builder()
-            .sslSocketFactory(sslContext.getSocketFactory(), trustAll)
-            .hostnameVerifier((hostname, session) -> true)
+        okhttp3.OkHttpClient.Builder hb = new okhttp3.OkHttpClient.Builder()
             .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
             .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
-            .retryOnConnectionFailure(true)
-            .build(); // followRedirects + followSslRedirects (http⇄https) default ON
+            .retryOnConnectionFailure(true); // followRedirects + followSslRedirects (http⇄https) default ON
+        if (relaxedHost(Uri.parse(url).getHost())) {
+            final javax.net.ssl.X509TrustManager trustAll =
+                new javax.net.ssl.X509TrustManager() {
+                    @Override
+                    public void checkClientTrusted(java.security.cert.X509Certificate[] chain, String authType) {
+                    }
+
+                    @Override
+                    public void checkServerTrusted(java.security.cert.X509Certificate[] chain, String authType) {
+                    }
+
+                    @Override
+                    public java.security.cert.X509Certificate[] getAcceptedIssuers() {
+                        return new java.security.cert.X509Certificate[0];
+                    }
+                };
+            javax.net.ssl.SSLContext sslContext;
+            try {
+                sslContext = javax.net.ssl.SSLContext.getInstance("TLS");
+                sslContext.init(null, new javax.net.ssl.TrustManager[] { trustAll }, new java.security.SecureRandom());
+            } catch (Exception e) {
+                throw new IllegalStateException("TLS init failed", e);
+            }
+            hb.sslSocketFactory(sslContext.getSocketFactory(), trustAll)
+                .hostnameVerifier((hostname, session) -> true);
+        }
+        okhttp3.OkHttpClient httpClient = hb.build();
 
         OkHttpDataSource.Factory http = new OkHttpDataSource.Factory(httpClient)
             .setUserAgent(DESKTOP_UA);
@@ -215,6 +295,11 @@ public class PlayerActivity extends Activity {
             }
 
             @Override
+            public void onIsPlayingChanged(boolean isPlaying) {
+                updatePlayPauseIcon();
+            }
+
+            @Override
             public void onPlayerError(PlaybackException error) {
                 // v0.16.3 — surface the precise code name to JS (was: only
                 // getMessage(), which made every failure look the same)
@@ -253,7 +338,303 @@ public class PlayerActivity extends Activity {
         });
 
         tick.post(tickRunner);
+        tick.post(uiRunnable);
+
+        bindController();
     }
+
+    /* ================= custom controller (v0.17.0) ================= */
+
+    private void bindController() {
+        topBar = findViewById(R.id.top_bar);
+        bottomBar = findViewById(R.id.bottom_bar);
+        gestureSurface = findViewById(R.id.gesture_surface);
+        rippleHost = findViewById(R.id.ripple_host);
+        lockChip = findViewById(R.id.lock_chip);
+        btnPlayPause = (ImageButton) findViewById(R.id.btn_play_pause);
+        tvTitle = (TextView) findViewById(R.id.tv_title);
+        tvSubtitle = (TextView) findViewById(R.id.tv_subtitle);
+        tvPosition = (TextView) findViewById(R.id.tv_position);
+        tvDuration = (TextView) findViewById(R.id.tv_duration);
+        tvPreview = (TextView) findViewById(R.id.tv_preview);
+        seek = (SeekBar) findViewById(R.id.seek);
+
+        tvTitle.setText(getIntent().getStringExtra("title"));
+        String sub = getIntent().getStringExtra("subtitle");
+        tvSubtitle.setText(sub == null || sub.isEmpty() ? "پخش با پلیر دستگاه — زیرنویس و کیفیت از نوار پایین" : sub);
+
+        findViewById(R.id.btn_back).setOnClickListener(v -> finish());
+
+        btnPlayPause.setOnClickListener(v -> {
+            togglePlayPause();
+            bumpUi();
+        });
+
+        findViewById(R.id.btn_rewind).setOnClickListener(v -> {
+            seekBy(-10_000L);
+            bumpUi();
+        });
+        findViewById(R.id.btn_forward).setOnClickListener(v -> {
+            seekBy(10_000L);
+            bumpUi();
+        });
+
+        // tap = controls, double-tap sides = ±10s (physical: left=back)
+        final GestureDetector detector = new GestureDetector(this,
+            new GestureDetector.SimpleOnGestureListener() {
+                @Override
+                public boolean onDown(MotionEvent e) {
+                    return true;
+                }
+
+                @Override
+                public boolean onSingleTapConfirmed(MotionEvent e) {
+                    if (locked) {
+                        flashLockChip();
+                        return true;
+                    }
+                    if (controlsVisible) hideControls();
+                    else showControls();
+                    return true;
+                }
+
+                @Override
+                public boolean onDoubleTap(MotionEvent e) {
+                    if (locked) {
+                        flashLockChip();
+                        return true;
+                    }
+                    boolean forward = e.getX() > gestureSurface.getWidth() / 2f;
+                    showRipple(forward);
+                    seekBy(forward ? 10_000L : -10_000L);
+                    return true;
+                }
+            });
+        gestureSurface.setOnTouchListener((v, ev) -> {
+            detector.onTouchEvent(ev);
+            return true;
+        });
+
+        // drag scrub with preview
+        seek.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override
+            public void onProgressChanged(SeekBar bar, int progress, boolean fromUser) {
+                if (!fromUser || player == null) return;
+                long d = player.getDuration();
+                if (d <= 0) return;
+                tvPreview.setText(clock(progress * d / 1000L));
+            }
+
+            @Override
+            public void onStartTrackingTouch(SeekBar bar) {
+                dragging = true;
+                tvPreview.setVisibility(View.VISIBLE);
+                bumpUi();
+            }
+
+            @Override
+            public void onStopTrackingTouch(SeekBar bar) {
+                dragging = false;
+                tvPreview.setVisibility(View.GONE);
+                if (player != null) {
+                    long d = player.getDuration();
+                    if (d > 0) player.seekTo(bar.getProgress() * d / 1000L);
+                }
+                bumpUi();
+            }
+        });
+
+        findViewById(R.id.btn_speed).setOnClickListener(v -> showSpeedMenu());
+        findViewById(R.id.btn_subs).setOnClickListener(v -> showTrackMenu(C.TRACK_TYPE_TEXT));
+        findViewById(R.id.btn_audio).setOnClickListener(v -> showTrackMenu(C.TRACK_TYPE_AUDIO));
+
+        findViewById(R.id.btn_lock).setOnClickListener(v -> setLocked(true));
+        lockChip.setOnLongClickListener(v -> {
+            setLocked(false);
+            return true;
+        });
+
+        showControls();
+        updatePlayPauseIcon();
+    }
+
+    private void togglePlayPause() {
+        if (player == null) return;
+        if (player.isPlaying()) player.pause();
+        else player.play();
+    }
+
+    private void seekBy(long deltaMs) {
+        if (player == null) return;
+        long d = player.getDuration();
+        long target = player.getCurrentPosition() + deltaMs;
+        if (d > 0 && target > d) target = d;
+        if (target < 0) target = 0;
+        player.seekTo(target);
+        gestureSurface.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY);
+    }
+
+    private void updatePlayPauseIcon() {
+        if (player == null || btnPlayPause == null) return;
+        btnPlayPause.setImageResource(player.isPlaying() ? R.drawable.ic_np_pause : R.drawable.ic_np_play);
+    }
+
+    private void updateUi() {
+        if (player == null || seek == null || dragging) return;
+        long pos = player.getCurrentPosition();
+        long d = player.getDuration();
+        seek.setProgress(d > 0 ? (int) (pos * 1000L / d) : 0);
+        seek.setSecondaryProgress((int) (player.getBufferedPercentage() * 10f));
+        tvPosition.setText(clock(pos / 1000L));
+        tvDuration.setText(clock(d > 0 ? d / 1000L : 0));
+    }
+
+    private void showControls() {
+        if (locked) return;
+        controlsVisible = true;
+        topBar.setVisibility(View.VISIBLE);
+        bottomBar.setVisibility(View.VISIBLE);
+        btnPlayPause.setVisibility(View.VISIBLE);
+        bumpUi();
+    }
+
+    private void hideControls() {
+        if (locked || (player != null && !player.isPlaying())) return; // paused → stay visible
+        controlsVisible = false;
+        topBar.setVisibility(View.GONE);
+        bottomBar.setVisibility(View.GONE);
+        btnPlayPause.setVisibility(View.GONE);
+    }
+
+    private void bumpUi() {
+        tick.removeCallbacks(hideRunnable);
+        tick.postDelayed(hideRunnable, 3500L);
+    }
+
+    private void setLocked(boolean on) {
+        locked = on;
+        lockChip.setVisibility(on ? View.VISIBLE : View.GONE);
+        if (on) {
+            controlsVisible = false;
+            topBar.setVisibility(View.GONE);
+            bottomBar.setVisibility(View.GONE);
+            btnPlayPause.setVisibility(View.GONE);
+            tick.removeCallbacks(hideRunnable);
+            Toast.makeText(this, "صفحه قفل شد — برای باز کردن نگه دارید", Toast.LENGTH_SHORT).show();
+        } else {
+            showControls();
+        }
+    }
+
+    private void flashLockChip() {
+        lockChip.setAlpha(0.4f);
+        lockChip.animate().alpha(1f).setDuration(350).start();
+        gestureSurface.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY);
+    }
+
+    private void showRipple(boolean forward) {
+        TextView tv = new TextView(this);
+        tv.setText(forward ? "۱۰ ثانیه به جلو" : "۱۰ ثانیه به عقب");
+        tv.setTextColor(Color.WHITE);
+        tv.setTextSize(14);
+        tv.setBackgroundResource(R.drawable.np_ripple);
+        tv.setPadding(28, 40, 28, 40);
+        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.CENTER);
+        rippleHost.addView(tv, lp);
+        tv.setScaleX(0.75f);
+        tv.setScaleY(0.75f);
+        tv.animate().scaleX(1.15f).scaleY(1.15f).alpha(0f).setDuration(480)
+            .withEndAction(() -> rippleHost.removeView(tv)).start();
+        gestureSurface.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY);
+    }
+
+    private void showSpeedMenu() {
+        if (player == null) return;
+        float[] speeds = {0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f};
+        String[] labels = {"۰٫۵×", "۰٫۷۵×", "۱×", "۱٫۲۵×", "۱٫۵×", "۲×"};
+        float cur = player.getPlaybackParameters().speed;
+        PopupMenu pm = new PopupMenu(this, findViewById(R.id.btn_speed));
+        for (int i = 0; i < speeds.length; i++) {
+            pm.getMenu().add(0, i, i, (Math.abs(cur - speeds[i]) < 0.01f ? "✓ " : "") + labels[i]);
+        }
+        pm.setOnMenuItemClickListener(item -> {
+            float s = speeds[item.getItemId()];
+            player.setPlaybackParameters(new PlaybackParameters(s));
+            Toast.makeText(this, "سرعت: " + labels[item.getItemId()], Toast.LENGTH_SHORT).show();
+            return true;
+        });
+        pm.show();
+    }
+
+    /** Embedded track picker (subtitles / audio) — parity with the web
+     *  player's subtitle & audio sheets. External user-uploaded subs are
+     *  handed to Media3 through playVideo's subs param when provided. */
+    private void showTrackMenu(final int trackType) {
+        if (player == null) return;
+        Tracks tracks = player.getCurrentTracks();
+        List<Tracks.Group> groups = new ArrayList<>();
+        for (Tracks.Group g : tracks.getGroups()) {
+            if (g.getType() == trackType && g.getLength() > 0) groups.add(g);
+        }
+        if (groups.isEmpty()) {
+            Toast.makeText(this,
+                trackType == C.TRACK_TYPE_TEXT
+                    ? "زیرنویسی در این نسخه تعبیه نشده"
+                    : "ترک صدای دیگری وجود ندارد",
+                Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        boolean disabled = player.getTrackSelectionParameters().isTrackTypeDisabled(trackType);
+        List<String> labels = new ArrayList<>();
+        labels.add(trackType == C.TRACK_TYPE_TEXT ? "خاموش" : "پیش‌فرض");
+        List<int[]> ref = new ArrayList<>(); // {groupIdx, trackIdx}
+        int checked = disabled ? 0 : -1;
+        for (int gi = 0; gi < groups.size(); gi++) {
+            Tracks.Group g = groups.get(gi);
+            for (int ti = 0; ti < g.getLength(); ti++) {
+                String label = g.getTrackFormat(ti).label;
+                if (label == null || label.isEmpty()) {
+                    label = g.getTrackFormat(ti).language;
+                }
+                if (label == null || label.isEmpty()) {
+                    label = "ترک " + fa(String.valueOf(ref.size() + 1));
+                }
+                labels.add(label);
+                ref.add(new int[] { gi, ti });
+                if (!disabled && g.isTrackSelected(ti) && checked < 0) checked = ref.size();
+            }
+        }
+        if (checked < 0) checked = 0;
+
+        new AlertDialog.Builder(this)
+            .setTitle(trackType == C.TRACK_TYPE_TEXT ? "زیرنویس" : "ترک صدا")
+            .setSingleChoiceItems(labels.toArray(new String[0]), checked,
+                (DialogInterface dlg, int which) -> {
+                    dlg.dismiss();
+                    if (player == null) return;
+                    Player.TrackSelectionParameters.Builder pb =
+                        player.getTrackSelectionParameters().buildUpon();
+                    if (which == 0) {
+                        pb.clearOverridesOfType(trackType);
+                        pb.setTrackTypeDisabled(trackType, true);
+                    } else {
+                        int[] r = ref.get(which - 1);
+                        Tracks.Group g = groups.get(r[0]);
+                        pb.setTrackTypeDisabled(trackType, false);
+                        pb.setOverrideForType(
+                            new TrackSelectionOverride(g.getMediaTrackGroup(r[1]), r[1]));
+                    }
+                    player.setTrackSelectionParameters(pb.build());
+                })
+            .setNegativeButton("بستن", null)
+            .show();
+    }
+
+    /* ================= lifecycle + result contract ================= */
+
+    private boolean audioDropped = false;
 
     @Override
     public void finish() {
@@ -274,6 +655,8 @@ public class PlayerActivity extends Activity {
     @Override
     protected void onDestroy() {
         tick.removeCallbacks(tickRunner);
+        tick.removeCallbacks(uiRunnable);
+        tick.removeCallbacks(hideRunnable);
         if (playerView != null) playerView.setPlayer(null);
         if (player != null) {
             player.release();

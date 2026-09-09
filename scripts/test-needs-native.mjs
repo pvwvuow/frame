@@ -41,6 +41,14 @@ const WEB = [
 ];
 for (const [name, url] of WEB) ok(`webview-safe: ${name}`, needsNativePlayer(url) === false);
 
+/* v0.17.0 — plain http:// never rides the WebView: release builds disable
+ * mixed content + cleartext (Play-Protect hardening) and Media3 has no such
+ * restriction. Even http://*.mp4 goes native now. */
+ok("native: plain-http mp4 (mixed content is off in release)", needsNativePlayer("http://dl.example.com/movie.mp4") === true);
+ok("native: plain-http webm", needsNativePlayer("http://dl.example.com/movie.webm") === true);
+ok("native: plain-http m3u8", needsNativePlayer("http://dl.example.com/stream.m3u8") === true);
+ok("webview-safe: https mp4 still light path", needsNativePlayer("https://dl.example.com/movie.mp4") === false);
+
 /* ---- desktop-parity invariant --------------------------------------------
  * Every URL the desktop sends through the Electron proxy (isMkvUrl OR an
  * extension-less/token http URL) MUST go native on Android — there is no

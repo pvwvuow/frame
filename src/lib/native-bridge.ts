@@ -53,7 +53,11 @@ type NamaNativeBridge = {
    *  call rejects with "no-webroot" and the caller must apply the code
    *  bundle first. */
   applyCoverPack: (o: { zipPath: string; rev: number }) => Promise<{ ok: boolean; webroot?: string }>;
-  installApk: (o: { path: string }) => Promise<{ ok: boolean; needPermission?: boolean }>;
+  /** v0.17.0 — open an https URL in the system browser. Replaces the old
+   *  in-app APK download+install (REQUEST_INSTALL_PACKAGES) — the
+   *  "dropper" pattern Google Play Protect flags as harmful. Full-APK
+   *  updates now land in the browser like the first install. */
+  openUrl: (o: { url: string }) => Promise<{ ok: boolean }>;
   addListener: (event: "namaDownload", cb: (e: NamaDownloadEvent) => void) => Promise<{ remove: () => void }> & { remove: () => void };
 };
 
