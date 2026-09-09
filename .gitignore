@@ -71,6 +71,14 @@ server.log
 !/scripts/test-cinema-e2e.mjs
 !/scripts/test-mobile-player-e2e.mjs
 !/scripts/preflight.mjs
+!/scripts/cap-sync.cjs
+!/scripts/mobile-build.cjs
+!/scripts/mobile-covers.cjs
+!/scripts/mobile-covers-fill.cjs
+!/scripts/mobile-serve.cjs
+!/scripts/mobile-shard-catalog.cjs
+!/scripts/test-mobile-playback.mjs
+!/scripts/test-needs-native.mjs
 /scripts/mock-od/tree/
 /electron/dist/
 /upload/
