@@ -69,6 +69,7 @@ server.log
 !/scripts/test-source-fix.mjs
 !/scripts/test-cinema-engine.mjs
 !/scripts/test-cinema-e2e.mjs
+!/scripts/test-mobile-player-e2e.mjs
 !/scripts/preflight.mjs
 /scripts/mock-od/tree/
 /electron/dist/

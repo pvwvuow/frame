@@ -27,7 +27,7 @@ export default function SubOverlay({
   cues: ParsedCue[];
   videoRef: RefObject<HTMLVideoElement | null>;
   on: boolean;
-  size?: "s" | "m" | "l";
+  size?: "s" | "m" | "l" | "xl";
   /** smaller paddings/baseline for the floating PiP window */
   pip?: boolean;
 }) {

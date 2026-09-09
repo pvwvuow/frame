@@ -879,6 +879,7 @@ export default function Player() {
       ref={wrapRef}
       data-subsize={subSize}
       data-ctrl
+      data-player="theater"
       className={`force-dark fixed inset-0 z-[100] select-none overflow-hidden bg-black ${showUi ? "cursor-default" : "cursor-none"}`}
       onMouseMove={bumpUi}
       onClick={(e) => {

@@ -357,6 +357,7 @@ html[data-reduce-motion="1"] *, html[data-reduce-motion="1"] *::before, html[dat
 .sub-overlay[data-subsize="s"] .sub-overlay__text { font-size: clamp(12px, 2.4vh, 26px); }
 .sub-overlay[data-subsize="m"] .sub-overlay__text { font-size: clamp(14px, 3.2vh, 34px); }
 .sub-overlay[data-subsize="l"] .sub-overlay__text { font-size: clamp(16px, 4.2vh, 44px); }
+.sub-overlay[data-subsize="xl"] .sub-overlay__text { font-size: clamp(20px, 5.6vh, 60px); }
 .sub-overlay--pip .sub-overlay__text { font-size: clamp(11px, 4.2vh, 20px); }
 video::cue {
   font-family: Vazirmatn, sans-serif;
@@ -489,3 +490,10 @@ html[data-electron="1"][data-platform="darwin"][dir="ltr"] .nav-inner { padding-
 @media (prefers-reduced-motion: reduce) {
   .nama-splash-breathe { animation: none; }
 }
+
+/* v0.15.0 — mobile player double-tap seek ripple */
+@keyframes ripple-pop {
+  0% { transform: translate(-50%, -50%) scale(0.4); opacity: 0.9; }
+  100% { transform: translate(-50%, -50%) scale(1.15); opacity: 0; }
+}
+.ripple-pop { animation: ripple-pop 0.55s ease-out forwards; }
