@@ -20,6 +20,10 @@ def appVersionName = versionProps['versionName'] ?: '1.0.0'
 // native code/config changes. The in-app updater uses it to decide between a
 // web-bundle OTA and a full APK download.
 def appNativeRev = (versionProps['nativeRev'] ?: '1').toInteger()
+// v0.16.0 — cover-pack revision baked into the APK: what poster/backdrop webp
+// baseline the assets carry (0 = none). The in-app updater merges newer
+// Frame-coverpack-r<N>.zip parts on top at runtime.
+def appCoversRev = (versionProps['coversRev'] ?: '0').toInteger()
 
 android {
     namespace = "ir.frame.nama"
@@ -32,6 +36,8 @@ android {
         versionName appVersionName
         // v0.12.0 — native player (Media3), download engine, OTA self-update
         buildConfigField "int", "NATIVE_REV", "${appNativeRev}"
+        // v0.16.0 — cover-pack baseline revision
+        buildConfigField "int", "COVERS_REV", "${appCoversRev}"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

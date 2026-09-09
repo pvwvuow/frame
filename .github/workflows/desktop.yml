@@ -210,6 +210,9 @@ jobs:
       # v0.12.0 — the in-app updater OTA path: the static export as a zip.
       # Name encodes the required native revision (Frame-webbundle-v1.2.3-n2.zip)
       # so the app can pick bundle-OTA vs full-APK without extra metadata.
+      # v0.16.0 — the bundle is CODE + catalog shards only (~20MB): the covers
+      # library no longer lives in out/ (mobile-build.cjs strips it), so OTA
+      # updates stop weighing ~130MB. Covers ride the split cover packs below.
       - name: Build web bundle (OTA) and upload
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -221,10 +224,25 @@ jobs:
           rm -f "$DEST"
           # zip the CONTENTS of out/ (index.html at the zip root — the OTA
           # applier validates that and serves the folder as the web root)
-          (cd out && zip -qr "../$DEST" .)
+          (cd out && zip -qr "../$DEST" . -x "covers/*")
           ls -la "$DEST"
           gh release upload "$TAG" "$DEST" --clobber --repo "$GITHUB_REPOSITORY"
           echo "attached $DEST to release $TAG"
+
+      # v0.16.0 — split cover packs: ordered ~12MB chunks staged by
+      # mobile-build.cjs (.covers-pack/Frame-coverpack-rN-pNN.zip), merged
+      # into the live web root by the app's applyCoverPack at runtime.
+      - name: Upload cover pack parts (OTA)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          if compgen -G ".covers-pack/Frame-coverpack-*.zip" > /dev/null; then
+            gh release upload "$TAG" .covers-pack/Frame-coverpack-*.zip --clobber --repo "$GITHUB_REPOSITORY"
+            ls -la .covers-pack/
+          else
+            echo "::warning::no cover packs staged — covers stay on the metahub/placeholder fallback"
+          fi
 
       - uses: actions/upload-artifact@v4
         with:

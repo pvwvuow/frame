@@ -60,7 +60,7 @@ export default function CollectionPage() {
         {lead && (
           <>
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={lead.backdrop} alt="" className="absolute inset-0 h-full w-full object-cover" />
+            <img src={lead.backdrop} alt="" data-ph-title={lead?.title ?? ""} className="absolute inset-0 h-full w-full object-cover" />
             <div className="absolute inset-0 bg-gradient-to-l from-ink/95 via-ink/80 to-ink/50" />
             <div className="absolute inset-0 bg-gradient-to-t from-ink via-ink/30 to-ink/30" />
           </>

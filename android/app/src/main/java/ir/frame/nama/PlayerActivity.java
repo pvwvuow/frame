@@ -20,8 +20,10 @@ import androidx.media3.common.MediaMetadata;
 import androidx.media3.common.MimeTypes;
 import androidx.media3.common.Player;
 import androidx.media3.common.util.UnstableApi;
+import androidx.media3.datasource.DefaultHttpDataSource;
 import androidx.media3.exoplayer.DefaultRenderersFactory;
 import androidx.media3.exoplayer.ExoPlayer;
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory;
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector;
 import androidx.media3.ui.PlayerView;
 
@@ -95,6 +97,18 @@ public class PlayerActivity extends Activity {
                 .setEnableDecoderFallback(true)
                 .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_OFF);
 
+        // v0.16.0 — the dl hosts behind the catalog are picky: ExoPlayer's
+        // default UA ("ExoPlayerLib") risks UA filters and cross-protocol
+        // redirects (http⇄https) are disabled by default. Ride the same UA the
+        // WebView uses and follow any redirect chain.
+        DefaultHttpDataSource.Factory http = new DefaultHttpDataSource.Factory()
+            .setUserAgent(
+                "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) "
+                    + "Chrome/120.0.0.0 Mobile Safari/537.36")
+            .setAllowCrossProtocolRedirects(true)
+            .setConnectTimeoutMs(15_000)
+            .setReadTimeoutMs(30_000);
+
         DefaultTrackSelector selector = new DefaultTrackSelector(this);
         selector.setParameters(
             selector.buildUponParameters()
@@ -103,6 +117,7 @@ public class PlayerActivity extends Activity {
                 .build());
 
         player = new ExoPlayer.Builder(this, renderers)
+            .setMediaSourceFactory(new DefaultMediaSourceFactory(http))
             .setTrackSelector(selector)
             .build();
         player.setAudioAttributes(

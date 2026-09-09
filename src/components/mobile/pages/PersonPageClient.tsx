@@ -55,7 +55,7 @@ export default function PersonPage() {
     <main className="pb-16">
       <section className="relative overflow-hidden">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={best.backdrop} alt="" className="absolute inset-0 h-full w-full object-cover" />
+        <img src={best.backdrop} alt="" data-ph-title={best?.title ?? ""} className="absolute inset-0 h-full w-full object-cover" />
         <div className="absolute inset-0 bg-gradient-to-l from-ink/95 via-ink/85 to-ink/60" />
         <div className="absolute inset-0 bg-gradient-to-t from-ink via-ink/40 to-ink/30" />
         <div className="relative mx-auto max-w-[1600px] px-4 pb-10 pt-28 sm:px-8 lg:px-12 lg:pt-36">

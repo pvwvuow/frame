@@ -122,3 +122,7 @@ capacitor-cordova-android-plugins/build/
 out/
 .mobile-tmp-api/
 android/app/src/main/assets/public/
+
+# v0.16.0 — generated split cover packs (staged by mobile-build.cjs)
+/.covers-pack/
+/.covers-pack-work/

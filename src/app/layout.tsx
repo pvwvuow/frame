@@ -82,6 +82,15 @@ const IMG_FALLBACK_SCRIPT = String.raw`(function(){
       el.src = src.replace(/\.jpe?g$/i, '.webp');
       return;
     }
+    if (!el.dataset.mh) {
+      el.dataset.mh = '1';
+      var m = src.match(/\/covers\/(tt\d+)\//i);
+      if (m) {
+        var wide = /backdrop|-wide/i.test(src);
+        el.src = 'https://images.metahub.space/' + (wide ? 'background/medium/' : 'poster/medium/') + m[1] + '/img';
+        return;
+      }
+    }
     el.dataset.fb = '1';
     var t = el.getAttribute('data-ph-title') || '';
     if (t) { el.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(phSvg(t, /backdrop|-wide/.test(src))); return; }

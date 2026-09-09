@@ -64,6 +64,9 @@ public class NamaNativePlugin extends Plugin {
         ret.put("nativeRev", BuildConfig.NATIVE_REV);
         ret.put("otaVersion", prefs().getString("otaVersion", ""));
         ret.put("hasNativePlayer", true);
+        // v0.16.0 — cover-pack revision this install carries: the APK baseline
+        // or whatever the runtime has merged via applyCoverPack (max wins)
+        ret.put("coversRev", Math.max(BuildConfig.COVERS_REV, prefs().getInt("coversAppliedRev", 0)));
         call.resolve(ret);
     }
 
@@ -362,6 +365,20 @@ public class NamaNativePlugin extends Plugin {
             }
             File otaRoot = new File(getContext().getFilesDir(), "ota");
             File target = new File(otaRoot, version.isEmpty() ? "ota-" + System.currentTimeMillis() : version);
+            // v0.16.0 — the web root is replaced wholesale, but runtime-merged
+            // cover packs (covers/**) must survive code OTAs: carry the dir out
+            // of the previous bundle before it is deleted, tuck it back in after
+            File carryCovers = new File(otaRoot, ".carry-covers");
+            deleteR(carryCovers);
+            File[] prevKids = otaRoot.listFiles();
+            if (prevKids != null) {
+                for (File k : prevKids) {
+                    File cov = new File(k, "covers");
+                    if (!k.equals(target) && cov.isDirectory() && !carryCovers.isDirectory()) {
+                        cov.renameTo(carryCovers);
+                    }
+                }
+            }
             if (target.exists()) deleteR(target);
             target.mkdirs();
             try (ZipInputStream zin = new ZipInputStream(new BufferedInputStream(new FileInputStream(zip)))) {
@@ -388,6 +405,11 @@ public class NamaNativePlugin extends Plugin {
                 call.reject("bundle invalid (no index.html)");
                 return;
             }
+            // tuck the carried cover pack back into the fresh web root
+            if (carryCovers.isDirectory() && !new File(target, "covers").exists()) {
+                carryCovers.renameTo(new File(target, "covers"));
+            }
+            deleteR(carryCovers);
             zip.delete();
             // keep only the newest bundle around
             File[] kids = otaRoot.listFiles();
@@ -401,6 +423,74 @@ public class NamaNativePlugin extends Plugin {
             JSObject ret = new JSObject();
             ret.put("ok", true);
             ret.put("path", target.getAbsolutePath());
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject("apply failed: " + e.getMessage());
+        }
+    }
+
+    /**
+     * v0.16.0 — merge a downloaded covers pack (entries under covers/) into the
+     * CURRENT server base dir without touching anything else. The split keeps
+     * OTA code bundles small (~20MB) while the heavy poster library rides in
+     * versioned packs: «فقط بخش‌هایی که تغییر کرده‌اند دانلود می‌شوند».
+     * Requires a materialized web root — if the WebView still serves from APK
+     * assets the call rejects with "no-webroot" and the JS side must apply the
+     * code bundle first.
+     */
+    @PluginMethod
+    public void applyCoverPack(PluginCall call) {
+        String rel = call.getString("zipPath", "");
+        int rev = call.getInt("rev", 0);
+        try {
+            File zip = fileUnder(rel);
+            if (!zip.exists()) {
+                call.reject("pack zip missing");
+                return;
+            }
+            String basePath = getBridge().getServerBasePath();
+            // Capacitor's default (assets mode) base path is the RELATIVE
+            // "public" — a materialized web root is always an absolute dir
+            if (basePath == null || !basePath.startsWith("/")) {
+                call.reject("no-webroot");
+                return;
+            }
+            File target = new File(basePath);
+            if (!new File(target, "index.html").exists()) {
+                call.reject("no-webroot");
+                return;
+            }
+            int merged = 0;
+            try (ZipInputStream zin = new ZipInputStream(new BufferedInputStream(new FileInputStream(zip)))) {
+                ZipEntry e;
+                byte[] buf = new byte[1 << 16];
+                String canonicalTarget = target.getCanonicalPath() + File.separator;
+                while ((e = zin.getNextEntry()) != null) {
+                    // merge mode: only covers/** entries belong to a pack
+                    if (e.getName().startsWith("covers/") && !e.isDirectory()) {
+                        File out = new File(target, e.getName());
+                        if (!out.getCanonicalPath().startsWith(canonicalTarget)) continue; // zip-slip
+                        File parent = out.getParentFile();
+                        if (parent != null) parent.mkdirs();
+                        try (OutputStream fo = new FileOutputStream(out)) {
+                            int n;
+                            while ((n = zin.read(buf)) > 0) fo.write(buf, 0, n);
+                        }
+                        merged++;
+                    }
+                    zin.closeEntry();
+                }
+            }
+            zip.delete();
+            if (merged == 0) {
+                call.reject("pack invalid (no covers entries)");
+                return;
+            }
+            if (rev > 0) prefs().edit().putInt("coversAppliedRev", Math.max(rev, prefs().getInt("coversAppliedRev", 0))).apply();
+            JSObject ret = new JSObject();
+            ret.put("ok", true);
+            ret.put("merged", merged);
+            ret.put("webroot", target.getAbsolutePath());
             call.resolve(ret);
         } catch (Exception e) {
             call.reject("apply failed: " + e.getMessage());
