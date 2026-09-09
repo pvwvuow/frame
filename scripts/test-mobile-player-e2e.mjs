@@ -371,6 +371,46 @@ await page.locator('button:has-text("— لغو")').first().click();
 await waitFor("sleep chip gone", async () => (await page.locator('button:has-text("— لغو")').count()) === 0, 4000);
 ok("sleep: tapping the chip cancels the timer", true);
 
+/* player engine choice (v0.18.1): settings sheet → «پلیر ویدیو» segmented.
+ * In this harness the bridge probe FAILS (plain chromium) and the source is
+ * a web-safe mp4 → forcing «همیشه نیتیو» must fall back to WEB (honest
+ * fallback), never to the unsupported screen and never into a handoff. */
+const closeSheetBackdrop = async () => {
+  await page.evaluate(() => {
+    const bd = [...document.querySelectorAll("div")].find(
+      (d) => typeof d.className === "string" && d.className.includes("inset-0") && d.className.includes("bg-black/60")
+    );
+    if (bd) bd.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+  });
+  await page.waitForTimeout(200);
+};
+await touchTap(195, 700);
+await page.locator('button[aria-label="تنظیمات پلیر"]').waitFor({ state: "visible", timeout: 5000 });
+await page.locator('button[aria-label="تنظیمات پلیر"]').click();
+await waitFor("settings sheet open", async () => (await page.locator("text=پلیر ویدیو").count()) > 0, 5000);
+ok("settings: engine selector (پلیر ویدیو) visible", true);
+await page.screenshot({ path: `${shots}/06c-engine-sheet.png` });
+await page.locator('button:has-text("همیشه نیتیو")').first().click();
+await page.waitForTimeout(250);
+const engSaved = await page.evaluate(() => localStorage.getItem("nama-pref-engine"));
+ok("engine: «همیشه نیتیو» persists to nama-pref-engine", engSaved === "native", `ls=${engSaved}`);
+await closeSheetBackdrop();
+await waitFor("engine sheet closed once", async () => (await page.locator("text=پلیر ویدیو").count()) === 0, 4000);
+await page.waitForTimeout(400);
+const engState = await videoState();
+ok("engine: native-forced + dead bridge → honest web fallback (playback intact)", engState === "playing" || engState === "paused", `state=${engState}`);
+// back into the sheet → restore smart default
+await touchTap(195, 700);
+await page.locator('button[aria-label="تنظیمات پلیر"]').waitFor({ state: "visible", timeout: 5000 });
+await page.locator('button[aria-label="تنظیمات پلیر"]').click();
+await waitFor("settings sheet reopen", async () => (await page.locator("text=پلیر ویدیو").count()) > 0, 5000);
+await page.locator('button:has-text("هوشمند (پیش‌فرض)")').first().click();
+await page.waitForTimeout(250);
+const engBack = await page.evaluate(() => localStorage.getItem("nama-pref-engine"));
+ok("engine: restored to auto", engBack === "auto", `ls=${engBack}`);
+await closeSheetBackdrop();
+await waitFor("settings sheet closed", async () => (await page.locator("text=پلیر ویدیو").count()) === 0, 4000);
+
 /* hold-to-2× (W3): touchstart → 700ms → badge + rate 2 → release restores 1.5 */
 if ((await videoState()) !== "playing") {
   await page.evaluate(() => { const v = document.querySelector("video"); if (v?.paused) v.play().catch(() => {}); });

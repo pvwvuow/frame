@@ -42,10 +42,26 @@ export function resolveOwner(opts: {
   cinemaActive: boolean;
   proxyReady: boolean;
   url: string;
+  /** v0.18.1 — user's player-engine choice (player-prefs.getPlayerEngine).
+   *  "auto" (default/undefined) = smart routing below.
+   *  "native" = the user FORCED the native player for every source:
+   *    - probe in flight → "pending" (never mount the WebView on a guess,
+   *      the flip to native right after would double-start playback)
+   *    - bridge alive → "native" for EVERY url (Media3 plays mp4/m3u8 too)
+   *    - bridge PROBED dead → honest fallback: web for WebView-safe sources,
+   *      "unsupported" for the ones only native could ever decode.
+   *  cinemaActive is checked BEFORE the engine: the watch-party always rides
+   *  the web <video>, whatever the preference says. */
+  engine?: "auto" | "native";
 }): PlaybackOwner {
   if (!opts.proxyReady) return "pending";
   if (opts.cinemaActive) return "web"; // cinema beats ride the web <video>
   const native = needsNativePlayer(opts.url);
+  if (opts.engine === "native") {
+    if (opts.hasBridge === null) return "pending";
+    if (opts.hasBridge) return "native";
+    return native ? "unsupported" : "web";
+  }
   if (opts.hasBridge === null) return native ? "pending" : "web"; // probing
   if (!opts.hasBridge) return native ? "unsupported" : "web"; // probed dead
   return native ? "native" : "web";

@@ -68,6 +68,7 @@ import { setQualityPref } from "@/lib/quality-pref";
 import { titleHref, watchHref } from "@/lib/mobile-links";
 import { isLocalFile, localFilePath, nativeBridge, needsNativePlayer, probeNativeBridge } from "@/lib/native-bridge";
 import { resolveOwner, shouldLadderAdvance, isLadderExhausted, isDuplicateNotice, type PlaybackOwner } from "@/lib/mobile-playback";
+import { getPlayerEngine, setPlayerEngine, type PlayerEngine } from "@/lib/player-prefs";
 import { useCinema, cinemaTargetPosition, setCinemaFollowHandler, type CinemaBeat } from "@/lib/cinema";
 import CinemaPanel from "../cinema/CinemaPanel";
 import { useLibrary } from "../library/LibraryProvider";
@@ -169,11 +170,27 @@ export default function PlayerMobile() {
       alive = false;
     };
   }, []);
+  // v0.18.1 — user-chosen player engine (settings sheet / app settings).
+  // Re-read on every open: the pref can change in the /settings page while
+  // the player is closed. webOverride = the native player's «سوئیچ به وب»
+  // (cinema) came back for THIS session — it must beat the «همیشه نیتیو»
+  // preference or the switch would boomerang straight back into native.
+  const [engine, setEngineState] = useState<PlayerEngine>("auto");
+  const [webOverride, setWebOverride] = useState(false);
+  useEffect(() => {
+    if (open) {
+      setEngineState(getPlayerEngine());
+    } else {
+      setWebOverride(false); // a fresh open re-applies the saved engine
+    }
+  }, [open]);
+  const effEngine: PlayerEngine = webOverride ? "auto" : engine;
   const owner: PlaybackOwner = resolveOwner({
     hasBridge: bridgeOk,
     cinemaActive: cin.status !== "idle",
     proxyReady: proxyBase !== undefined,
     url: activeSrc,
+    engine: effEngine,
   });
   const wantsNative = owner === "native";
   const ownerUnsupported = owner === "unsupported";
@@ -496,15 +513,21 @@ export default function PlayerMobile() {
       // v0.16.2 — a fresh open must always re-handoff (same-title resume bug)
       nativeKeyRef.current = null;
       pendingNativeRef.current = false;
+      // v0.18.1 — a resume carried for an engine flip must never leak into
+      // the NEXT title's first mount
+      resumeAt.current = null;
       return;
     }
+    // v0.18.1 — the engine choice is part of the handoff identity: flipping
+    // «همیشه نیتیو»/«هوشمند» mid-title MUST re-handoff even for a source the
+    // key already covers (same contentKey#srcIdx#reloadKey).
     if (!wantsNative) {
       pendingNativeRef.current = false;
       return;
     }
     if (fatal) return;
     if (!activeSrc) return;
-    const key = `${contentKey}#${srcIdx}#${reloadKey}`;
+    const key = `${contentKey}#${srcIdx}#${reloadKey}#${effEngine}`;
     if (nativeKeyRef.current === key) return;
     nativeKeyRef.current = key;
     pendingNativeRef.current = true;
@@ -541,18 +564,30 @@ export default function PlayerMobile() {
         const pos = (r.positionMs || 0) / 1000;
         const dur = (r.durationMs || 0) / 1000;
         if (dur > 0) save(Math.min(pos, dur), dur);
+        // v0.18.1 — remember where native left off: if the user now flips the
+        // engine to web (videoEl is still unmounted, so the flip handler has
+        // no currentTime), the web mount resumes exactly here
+        if (pos > 0.5) resumeAt.current = pos;
         // v0.18.0 — the native episodes sheet picked another episode → the
         // normal JS engine opens it (handoff re-runs there if it is MKV)
         if (r.switchToEpisodeId) {
           setNativeActive(false);
           setPlaying(false);
           setLoading(false);
+          // v0.18.1 — the OLD episode's position must not resume inside the
+          // newly picked episode's first mount
+          resumeAt.current = null;
           router.push(watchHref(slug, r.switchToEpisodeId));
           return;
         }
         // v0.18.0 — «سوییچ به نسخه وب‌سازگار»: re-open the SAME position on
-        // the first WebView-safe variant and light the cinema drawer up
+        // the first WebView-safe variant and light the cinema drawer up.
+        // v0.18.1 — webOverride: with «همیشه نیتیو» saved, the plain owner
+        // rule would send the very next render straight back to native (the
+        // cinema switch would boomerang) — this session now stays on the web
+        // engine until the player closes.
         if (r.switchToWeb) {
+          setWebOverride(true);
           setNativeActive(false);
           setPlaying(false);
           const wIdx = srcList.findIndex((s) => !needsNativePlayer(mediaSrc(s.url, proxyBase ?? null)));
@@ -606,7 +641,7 @@ export default function PlayerMobile() {
         // like any other source failure
         advanceLadder();
       });
-  }, [open, wantsNative, activeSrc, proxyBase, fatal, contentKey, srcIdx, reloadKey, advanceLadder, save, startAt, title, subtitle, nextEpisode, goBackToTitle, episodes, episode?.id, epProgress, poster, slug, router, showNotice]);
+  }, [open, wantsNative, effEngine, activeSrc, proxyBase, fatal, contentKey, srcIdx, reloadKey, advanceLadder, save, startAt, title, subtitle, nextEpisode, goBackToTitle, episodes, episode?.id, epProgress, poster, slug, router, showNotice]);
 
   // lifecycle guard: a detached <video> must never keep playing in the void
   useEffect(() => {
@@ -2526,6 +2561,39 @@ export default function PlayerMobile() {
             {sheet === "settings" && (
               <>
                 <p className="mb-3 text-sm font-black text-white">تنظیمات پلیر</p>
+                {/* v0.18.1 — which engine plays the video */}
+                <p className="mb-1 text-[11px] font-black text-zinc-400">پلیر ویدیو</p>
+                <div className="mb-1.5 flex items-center gap-1 rounded-xl bg-white/5 p-1">
+                  {(
+                    [
+                      ["auto", "هوشمند (پیش‌فرض)"],
+                      ["native", "همیشه نیتیو"],
+                    ] as const
+                  ).map(([v, l]) => (
+                    <button
+                      key={v}
+                      type="button"
+                      onClick={() => {
+                        haptic(8);
+                        if (v === engine) return;
+                        // carry the exact position into the new engine —
+                        // the handoff effect picks resumeAt.current up
+                        const t = videoEl?.currentTime ?? 0;
+                        if (t > 0.5) resumeAt.current = t;
+                        setEngineState(v);
+                        setPlayerEngine(v);
+                      }}
+                      className={`flex-1 rounded-lg py-2 text-[11px] font-bold transition ${engine === v ? "bg-white text-black" : "text-zinc-300"}`}
+                    >
+                      {l}
+                    </button>
+                  ))}
+                </div>
+                <p className="mb-3 text-[10px] leading-4 text-zinc-500">
+                  {engine === "native"
+                    ? "همه‌ی ویدیوها با پلیر نیتیو (Media3) پخش می‌شود — تجربه‌ی یکدست برای هر فرمتی."
+                    : "پلیر وب — سریع، با سینما و همه‌ی امکانات — پیش‌فرض است؛ فرمت‌های سنگین مثل MKV خودکار به پلیر نیتیو سپرده می‌شوند."}
+                </p>
                 {/* seek step */}
                 <p className="mb-1 text-[11px] font-black text-zinc-400">گام پرش (دابل‌تپ)</p>
                 <div className="mb-3 flex items-center gap-1 rounded-xl bg-white/5 p-1">
@@ -2593,6 +2661,7 @@ export default function PlayerMobile() {
                 {/* stream info */}
                 <p className="mb-1 mt-3 text-[11px] font-black text-zinc-400">اطلاعات استریم</p>
                 <div className="rounded-xl bg-white/5 p-3 text-[11px] leading-6 text-zinc-400">
+                  <p>پلیر فعال: {owner === "native" ? `نیتیو (Media3)${engine === "native" && !webOverride ? " — انتخاب شما" : ""}` : `وب${webOverride ? " — این جلسه، با سوئیچ شما" : ""}`}</p>
                   <p>رزولوشن: {videoEl ? `${fa(videoEl.videoWidth)}×${fa(videoEl.videoHeight)}` : "—"}</p>
                   <p>نسخه فعال: {qualityLabel || "عادی"}{currentVariant ? ` · ${variantShort(currentVariant) || "اصلی"}` : ""}</p>
                   <p>سلامت بافر: {fa(Math.max(0, Math.round(buffered - current)))} ثانیه</p>

@@ -16,7 +16,18 @@
 export type OrientLock = "auto" | "portrait" | "landscape";
 export type ZoomMode = "contain" | "cover" | "fill";
 
+/** v0.18.1 — which PLAYER ENGINE owns playback on Android.
+ *  «auto»   = the smart default: the WEB player (cinema-capable, all W1–W18
+ *             features) whenever the WebView can actually demux the source;
+ *             MKV/AVI/local/cleartext hand off to the native Media3 player.
+ *  «native» = user override: EVERY source rides the native Media3 player —
+ *             one consistent engine regardless of format. The cinema switch
+ *             inside the native player still wins via the webOverride
+ *             (PlayerMobile), because cinema physically rides the <video>. */
+export type PlayerEngine = "auto" | "native";
+
 const K = {
+  engine: "nama-pref-engine",
   seekStep: "nama-seek-step",
   orientLock: "nama-pref-orient-lock",
   autoLock: "nama-pref-auto-lock",
@@ -52,6 +63,16 @@ export function getSeekStepPref(): number {
 
 export function setSeekStepPref(v: number): void {
   if (v === 5 || v === 10 || v === 15 || v === 30) lsSet(K.seekStep, String(v));
+}
+
+/* ---- player engine (web vs native ownership) ------------------------------ */
+
+export function getPlayerEngine(): PlayerEngine {
+  return lsGet(K.engine) === "native" ? "native" : "auto"; // default = smart
+}
+
+export function setPlayerEngine(v: PlayerEngine): void {
+  lsSet(K.engine, v === "native" ? "native" : "auto");
 }
 
 /* ---- simple on/off + enum prefs ------------------------------------------ */

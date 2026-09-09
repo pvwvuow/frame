@@ -57,6 +57,20 @@ ok("owner: local: file on healthy Android → native", resolveOwner({ hasBridge:
 ok("owner: token URL on healthy Android → native", resolveOwner({ hasBridge: true, cinemaActive: false, proxyReady: true, url: "https://x/dl/8a71f" }) === "native");
 ok("owner: plain mp4 on Android → web (light path)", resolveOwner({ hasBridge: true, cinemaActive: false, proxyReady: true, url: "https://x/a.mp4" }) === "web");
 
+/* ---- resolveOwner · engine pref (v0.18.1 «پلیر ویدیو») --------------------
+ * "native" = the user FORCED the native Media3 player for every source.
+ * The bridge probe still gates: no handoff on a guess, honest fallback when
+ * the plugin is dead. Cinema beats the engine either way. */
+ok("engine native: even a plain mp4 → native (one consistent engine)", resolveOwner({ hasBridge: true, cinemaActive: false, proxyReady: true, url: "https://x/a.mp4", engine: "native" }) === "native");
+ok("engine native: token URL → native", resolveOwner({ hasBridge: true, cinemaActive: false, proxyReady: true, url: "https://x/dl/8a71f", engine: "native" }) === "native");
+ok("engine native: while probing → pending (never mount the WebView on a guess)", resolveOwner({ hasBridge: null, cinemaActive: false, proxyReady: true, url: "https://x/a.mp4", engine: "native" }) === "pending");
+ok("engine native: bridge dead + web-safe → honest web fallback", resolveOwner({ hasBridge: false, cinemaActive: false, proxyReady: true, url: "https://x/a.mp4", engine: "native" }) === "web");
+ok("engine native: bridge dead + mkv → unsupported (web could never decode it)", resolveOwner({ hasBridge: false, cinemaActive: false, proxyReady: true, url: "https://x/a.mkv", engine: "native" }) === "unsupported");
+ok("engine native: cinema still rides the web <video>", resolveOwner({ hasBridge: true, cinemaActive: true, proxyReady: true, url: "https://x/a.mp4", engine: "native" }) === "web");
+ok("engine auto (explicit): mkv → native (same as default)", resolveOwner({ hasBridge: true, cinemaActive: false, proxyReady: true, url: "https://x/a.mkv", engine: "auto" }) === "native");
+ok("engine auto (explicit): mp4 → web", resolveOwner({ hasBridge: true, cinemaActive: false, proxyReady: true, url: "https://x/a.mp4", engine: "auto" }) === "web");
+ok("engine auto (explicit): probing + mp4 → web", resolveOwner({ hasBridge: null, cinemaActive: false, proxyReady: true, url: "https://x/a.mp4", engine: "auto" }) === "web");
+
 /* ---- shouldLadderAdvance (echo guard) ------------------------------------ */
 const t0 = 1_000_000;
 ok("ladder: first failure always advances", shouldLadderAdvance(null, 0, t0) === true);

@@ -12,6 +12,8 @@ import { fa } from "@/lib/format";
 import { useI18n } from "../i18n/LocaleProvider";
 import { isLocale } from "@/lib/i18n";
 import { fileToAvatarDataUrl } from "@/lib/avatar";
+import { IS_MOBILE } from "@/lib/links";
+import { getPlayerEngine, setPlayerEngine, type PlayerEngine } from "@/lib/player-prefs";
 
 export const AVATARS = [
   "from-brand to-purple-600",
@@ -131,6 +133,11 @@ export default function SettingsForm({ initial }: { initial: ProfileData }) {
   const lib = useLibrary();
   const electron = useIsElectron();
   const { session } = useCloudSession();
+  // v0.18.1 — mobile-only: which engine plays videos (smart web-first vs always-native)
+  const [engine, setEngine] = useState<PlayerEngine>("auto");
+  useEffect(() => {
+    if (IS_MOBILE) setEngine(getPlayerEngine());
+  }, []);
   const dirty = useMemo(() => JSON.stringify(p) !== JSON.stringify(initial), [p, initial]);
 
   // deep-link: /settings#shortcuts
@@ -354,6 +361,30 @@ export default function SettingsForm({ initial }: { initial: ProfileData }) {
                 </div>
               </div>
             </Card>
+            {/* v0.18.1 — mobile-only: the Android build has TWO engines (web
+                WebView player + native Media3 player); let the user pick.
+                Desktop has a single engine → zero diff there. */}
+            {IS_MOBILE && (
+              <Card title="پلیر ویدیو (اندروید)" desc="کدام موتور، ویدیو را پخش کند؟">
+                <Chips
+                  label="پلیر پیش‌فرض"
+                  value={engine}
+                  onChange={(v) => {
+                    setEngine(v);
+                    setPlayerEngine(v);
+                  }}
+                  options={[
+                    ["auto", "هوشمند (پیش‌فرض)"],
+                    ["native", "همیشه نیتیو"],
+                  ]}
+                />
+                <p className="text-[11px] leading-5 text-zinc-500">
+                  {engine === "native"
+                    ? "همه‌ی ویدیوها با پلیر نیتیو (Media3) پخش می‌شود — تجربه‌ی یکدست برای هر فرمتی. برای سینما، از دکمه‌ی سوئیچ داخل همان پلیر استفاده کنید."
+                    : "پلیر وب — سریع، با سینما و همه‌ی امکانات — پیش‌فرض است؛ فرمت‌های سنگین مثل MKV خودکار و بی‌دردسر به پلیر نیتیو سپرده می‌شوند."}
+                </p>
+              </Card>
+            )}
           </>
         )}
 
