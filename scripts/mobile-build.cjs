@@ -36,7 +36,8 @@ const ROOT = path.join(__dirname, "..");
 //     required for every user on ≤ rev 5. NOTE: this is the LAST APK that
 //     users of ≤ rev 5 receive via the in-app installer; from now on the
 //     updater opens the browser.
-const NATIVE_REV = 7; // v0.18.0 — PlayerActivity: episodes sheet + prev/next, honest cinema switch (switchToWeb), zoom cycle, sleep timer, speed 0.25–3×, MediaSession + artwork → APK required for every user on ≤ rev 6
+const NATIVE_REV = 8; // v0.19.0 — PlayerActivity: CRASH SHIELD (setup exceptions degrade to an honest error result instead of killing the app) → APK required for every user on ≤ rev 7.
+                      // ⚠️ bump THIS constant AND let it rewrite version.properties — bumping version.properties alone gets silently overwritten by android:export (this script) and CI ships an OTA bundle instead of the full APK (the v0.19.0 bug).
 const API_DIR = path.join(ROOT, "src", "app", "api");
 const TMP_DIR = path.join(ROOT, ".mobile-tmp-api");
 const PACK_DIR = path.join(ROOT, ".covers-pack");
