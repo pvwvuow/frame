@@ -237,6 +237,13 @@ public class PlayerActivity extends Activity {
         sEnded = false;
         sError = "";
 
+        // v0.19.0 — CRASH SHIELD: any exception during player construction
+        // (TLS init, codec/OEM quirks, Media3 internals) used to propagate
+        // out of onCreate and kill the WHOLE app. It degrades to an honest
+        // «error» result instead — JS ladders to the next variant, the user
+        // just sees the player close. Everything below only touches locals
+        // and the (nullable) player/mediaSession fields, so the catch is safe.
+        try {
         DefaultRenderersFactory renderers =
             new DefaultRenderersFactory(this)
                 .setEnableDecoderFallback(true)
@@ -411,6 +418,12 @@ public class PlayerActivity extends Activity {
                 tick.postDelayed(() -> finish(), 600L);
             }
         });
+        } catch (Exception e) {
+            sError = "setup-failed: " + e.getClass().getSimpleName()
+                + (e.getMessage() == null ? "" : (": " + e.getMessage()));
+            tick.postDelayed(() -> finish(), 250L);
+            return;
+        }
 
         tick.post(tickRunner);
         tick.post(uiRunnable);

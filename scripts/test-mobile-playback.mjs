@@ -34,6 +34,9 @@ emit("src/lib/mobile-playback.ts", "mobile-playback.mjs", true);
 const { resolveOwner, shouldLadderAdvance, isLadderExhausted, isDuplicateNotice } = await import(
   pathToFileURL(join(TMP, "mobile-playback.mjs")).href
 );
+const { classifyUrl, needsNativePlayer } = await import(
+  pathToFileURL(join(TMP, "video-url.mjs")).href
+);
 
 let failures = 0;
 const ok = (name, cond) => {
@@ -41,20 +44,38 @@ const ok = (name, cond) => {
   if (!cond) failures += 1;
 };
 
-/* ---- resolveOwner -------------------------------------------------------- */
-/* v0.16.3 — hasBridge is tri-state: null = health probe in flight,
- * false = probe PROVED the plugin dead, true = probe passed. */
-ok("owner: probing + native-classified URL → pending (no phantom fetch, no handoff)", resolveOwner({ hasBridge: null, cinemaActive: false, proxyReady: true, url: "https://x/a.mkv" }) === "pending");
-ok("owner: probing + token URL → pending", resolveOwner({ hasBridge: null, cinemaActive: false, proxyReady: true, url: "https://x/dl/8a71f" }) === "pending");
+/* ---- classifyUrl (v0.19.0 WEB-FIRST) --------------------------------------
+ * The catalog is ~all MKV: routing every .mkv straight to native handed the
+ * WHOLE catalog to the player without the cinema. v0.19.0 splits three ways:
+ * web (sniffs+plays reliably) / fragile (web-FIRST, native = fallback) /
+ * native (the WebView can never own it). */
+ok("class: plain mp4 → web", classifyUrl("https://x/a.mp4") === "web");
+ok("class: m3u8 → web", classifyUrl("https://x/a.m3u8") === "web");
+ok("class: mkv → fragile (web-first, Media3 fallback)", classifyUrl("https://x/a.mkv") === "fragile");
+ok("class: token/extension-less https → fragile (Chromium sniffs BYTES)", classifyUrl("https://x/dl/8a71f") === "fragile");
+ok("class: avi → native (no Chromium demuxer)", classifyUrl("https://x/a.avi") === "native");
+ok("class: wmv/ts/flv/mpg → native", classifyUrl("https://x/a.ts") === "native" && classifyUrl("https://x/a.flv") === "native");
+ok("class: cleartext http → native (release WebView blocks it)", classifyUrl("http://x/a.mp4") === "native");
+ok("class: local: download → native", classifyUrl("local:/data/user/0/ir.frame.nama/files/dl/x.mkv") === "native");
+ok("needsNative (STRICT): only what the WebView can never own", needsNativePlayer("https://x/a.mkv") === false && needsNativePlayer("https://x/dl/8a71f") === false && needsNativePlayer("https://x/a.avi") === true && needsNativePlayer("local:/f/x.mkv") === true && needsNativePlayer("http://x/a.mp4") === true);
+
+/* ---- resolveOwner --------------------------------------------------------*/
+/* v0.19.0 — web-first auto: web AND fragile classes ride the WebView
+ * bridge-INDEPENDENTLY (Chromium sniffs the bytes; Media3 is the FALLBACK
+ * rung, wired in PlayerMobile's exhaustion path). Only the native class
+ * consults the tri-state bridge probe. */
+ok("owner: probing + mkv → web (web-first — no probe dependency)", resolveOwner({ hasBridge: null, cinemaActive: false, proxyReady: true, url: "https://x/a.mkv" }) === "web");
+ok("owner: probing + token URL → web", resolveOwner({ hasBridge: null, cinemaActive: false, proxyReady: true, url: "https://x/dl/8a71f" }) === "web");
 ok("owner: probing + web-safe mp4 → web (never wait for the probe)", resolveOwner({ hasBridge: null, cinemaActive: false, proxyReady: true, url: "https://x/a.mp4" }) === "web");
-ok("owner: probed DEAD plugin + mkv → unsupported (honest screen, not a fake error)", resolveOwner({ hasBridge: false, cinemaActive: false, proxyReady: true, url: "https://x/a.mkv" }) === "unsupported");
+ok("owner: probed DEAD plugin + mkv → STILL web (honest web attempt first)", resolveOwner({ hasBridge: false, cinemaActive: false, proxyReady: true, url: "https://x/a.mkv" }) === "web");
 ok("owner: probed DEAD plugin + local: download → unsupported", resolveOwner({ hasBridge: false, cinemaActive: false, proxyReady: true, url: "local:/data/user/0/ir.frame.nama/files/dl/x.mkv" }) === "unsupported");
 ok("owner: probed DEAD plugin still plays mp4 in WebView", resolveOwner({ hasBridge: false, cinemaActive: false, proxyReady: true, url: "https://x/a.mp4" }) === "web");
 ok("owner: proxy unresolved yet → pending (no decision without the base)", resolveOwner({ hasBridge: true, cinemaActive: false, proxyReady: false, url: "https://x/a.mkv" }) === "pending");
 ok("owner: cinema rides the web video even for MKV", resolveOwner({ hasBridge: true, cinemaActive: true, proxyReady: true, url: "https://x/a.mkv" }) === "web");
-ok("owner: mkv on healthy Android → native", resolveOwner({ hasBridge: true, cinemaActive: false, proxyReady: true, url: "https://x/a.mkv" }) === "native");
+ok("owner: mkv on healthy Android → WEB (the cinema player owns it first)", resolveOwner({ hasBridge: true, cinemaActive: false, proxyReady: true, url: "https://x/a.mkv" }) === "web");
 ok("owner: local: file on healthy Android → native", resolveOwner({ hasBridge: true, cinemaActive: false, proxyReady: true, url: "local:/data/user/0/ir.frame.nama/files/dl/x.mkv" }) === "native");
-ok("owner: token URL on healthy Android → native", resolveOwner({ hasBridge: true, cinemaActive: false, proxyReady: true, url: "https://x/dl/8a71f" }) === "native");
+ok("owner: token URL on healthy Android → WEB (sniff first)", resolveOwner({ hasBridge: true, cinemaActive: false, proxyReady: true, url: "https://x/dl/8a71f" }) === "web");
+ok("owner: avi on healthy Android → native (no web demuxer, no wasted fetch)", resolveOwner({ hasBridge: true, cinemaActive: false, proxyReady: true, url: "https://x/a.avi" }) === "native");
 ok("owner: plain mp4 on Android → web (light path)", resolveOwner({ hasBridge: true, cinemaActive: false, proxyReady: true, url: "https://x/a.mp4" }) === "web");
 
 /* ---- resolveOwner · engine pref (v0.18.1 «پلیر ویدیو») --------------------
@@ -65,9 +86,9 @@ ok("engine native: even a plain mp4 → native (one consistent engine)", resolve
 ok("engine native: token URL → native", resolveOwner({ hasBridge: true, cinemaActive: false, proxyReady: true, url: "https://x/dl/8a71f", engine: "native" }) === "native");
 ok("engine native: while probing → pending (never mount the WebView on a guess)", resolveOwner({ hasBridge: null, cinemaActive: false, proxyReady: true, url: "https://x/a.mp4", engine: "native" }) === "pending");
 ok("engine native: bridge dead + web-safe → honest web fallback", resolveOwner({ hasBridge: false, cinemaActive: false, proxyReady: true, url: "https://x/a.mp4", engine: "native" }) === "web");
-ok("engine native: bridge dead + mkv → unsupported (web could never decode it)", resolveOwner({ hasBridge: false, cinemaActive: false, proxyReady: true, url: "https://x/a.mkv", engine: "native" }) === "unsupported");
+ok("engine native: bridge dead + mkv → honest web fallback (web may still decode it)", resolveOwner({ hasBridge: false, cinemaActive: false, proxyReady: true, url: "https://x/a.mkv", engine: "native" }) === "web");
 ok("engine native: cinema still rides the web <video>", resolveOwner({ hasBridge: true, cinemaActive: true, proxyReady: true, url: "https://x/a.mp4", engine: "native" }) === "web");
-ok("engine auto (explicit): mkv → native (same as default)", resolveOwner({ hasBridge: true, cinemaActive: false, proxyReady: true, url: "https://x/a.mkv", engine: "auto" }) === "native");
+ok("engine auto (explicit): mkv → web (same as default)", resolveOwner({ hasBridge: true, cinemaActive: false, proxyReady: true, url: "https://x/a.mkv", engine: "auto" }) === "web");
 ok("engine auto (explicit): mp4 → web", resolveOwner({ hasBridge: true, cinemaActive: false, proxyReady: true, url: "https://x/a.mp4", engine: "auto" }) === "web");
 ok("engine auto (explicit): probing + mp4 → web", resolveOwner({ hasBridge: null, cinemaActive: false, proxyReady: true, url: "https://x/a.mp4", engine: "auto" }) === "web");
 

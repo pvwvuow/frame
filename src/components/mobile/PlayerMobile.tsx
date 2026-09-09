@@ -58,7 +58,7 @@ import {
 } from "../Icons";
 import FavoriteButton from "../FavoriteButton";
 import WatchlistButton from "../WatchlistButton";
-import { isMkvUrl, loadProxyBase, mediaSrc } from "@/lib/video-url";
+import { classifyUrl, isMkvUrl, loadProxyBase, mediaSrc } from "@/lib/video-url";
 import { parseVtt, srtToVtt, stopMediaEl, type ParsedCue } from "@/lib/media";
 import { useSubs } from "@/lib/subs-engine";
 import SubOverlay from "../SubOverlay";
@@ -66,7 +66,7 @@ import { ensurePlayableAudio } from "@/lib/audio-guard";
 import { preferredSourceIdx, qualityPrefIdx, rememberedVariantIdx, rememberVariantPref, variantShort } from "@/lib/variant";
 import { setQualityPref } from "@/lib/quality-pref";
 import { titleHref, watchHref } from "@/lib/mobile-links";
-import { isLocalFile, localFilePath, nativeBridge, needsNativePlayer, probeNativeBridge } from "@/lib/native-bridge";
+import { isLocalFile, localFilePath, nativeBridge, probeNativeBridge } from "@/lib/native-bridge";
 import { resolveOwner, shouldLadderAdvance, isLadderExhausted, isDuplicateNotice, type PlaybackOwner } from "@/lib/mobile-playback";
 import { getPlayerEngine, setPlayerEngine, type PlayerEngine } from "@/lib/player-prefs";
 import { useCinema, cinemaTargetPosition, setCinemaFollowHandler, type CinemaBeat } from "@/lib/cinema";
@@ -185,13 +185,24 @@ export default function PlayerMobile() {
     }
   }, [open]);
   const effEngine: PlayerEngine = webOverride ? "auto" : engine;
-  const owner: PlaybackOwner = resolveOwner({
-    hasBridge: bridgeOk,
-    cinemaActive: cin.status !== "idle",
-    proxyReady: proxyBase !== undefined,
-    url: activeSrc,
-    engine: effEngine,
-  });
+  // v0.19.0 — the native FALLBACK rung of the web-first ladder. When every
+  // web attempt failed, the best still-untried source is handed to Media3:
+  // while nativeFallbackIdx === srcIdx the owner is forced to "native" so the
+  // WebView unmounts and the normal handoff effect takes over. The Set makes
+  // the fallback one-shot per source — no web⇄native ping-pong.
+  const [nativeFallbackIdx, setNativeFallbackIdx] = useState<number | null>(null);
+  const [natUnavailable, setNatUnavailable] = useState(false);
+  const nativeTriedRef = useRef<Set<number>>(new Set());
+  const owner: PlaybackOwner =
+    nativeFallbackIdx !== null && nativeFallbackIdx === srcIdx && bridgeOk
+      ? "native"
+      : resolveOwner({
+          hasBridge: bridgeOk,
+          cinemaActive: cin.status !== "idle",
+          proxyReady: proxyBase !== undefined,
+          url: activeSrc,
+          engine: effEngine,
+        });
   const wantsNative = owner === "native";
   const ownerUnsupported = owner === "unsupported";
 
@@ -363,6 +374,17 @@ export default function PlayerMobile() {
         setTimeout(() => showNotice("ذخیره داده فعال است — کیفیت متوسط انتخاب شد"), 0);
       }
     }
+    // v0.19.0 — web-first default: with NO explicit user taste, never START
+    // on a source only the native player could own when any web-ownable
+    // variant exists (it carries the cinema + the whole W-feature set). An
+    // explicit hint / quality pref / remembered taste always wins untouched.
+    if (hint < 0 && qp < 0 && remembered < 0 && initial >= 0) {
+      const cls0 = classifyUrl(mediaSrc(srcList[initial]?.url ?? "", proxyBase ?? null));
+      if (cls0 === "native") {
+        const w = srcList.findIndex((s) => classifyUrl(mediaSrc(s.url, proxyBase ?? null)) !== "native");
+        if (w >= 0) initial = w;
+      }
+    }
     setSrcIdx(initial);
     manualPickRef.current = false;
     setSheet(null);
@@ -482,6 +504,40 @@ export default function PlayerMobile() {
     setFatal(true);
   }, []);
 
+  /* v0.19.0 — the LAST rung of the web-first ladder. The web player owns
+   * everything it can sniff; when the whole variant ladder burned without a
+   * single web playback, the still-untried native-capable sources (mkv with
+   * exotic codecs, token URLs, avi/local/http) get ONE native attempt each.
+   * Returns true when the rung handled the exhaustion (fallback fired or the
+   * honest «نیتیو در دسترس نیست» panel) — false when plain fatal is right. */
+  const tryNativeFallback = useCallback((): boolean => {
+    if (effEngine === "native") return false; // the ladder already walked natively
+    const capable = srcList
+      .map((s, i) => ({ i, cls: classifyUrl(mediaSrc(s.url, proxyBase ?? null)) }))
+      .filter((x) => x.cls !== "web" && !nativeTriedRef.current.has(x.i))
+      .map((x) => x.i);
+    if (!capable.length) return false;
+    if (!bridgeOk) {
+      // the probe PROVED the plugin dead and only native could decode what is
+      // left → the honest panel instead of a fake «اتصال برقرار نشد»
+      const v = videoRef.current;
+      if (v && v.currentTime > 0.5) resumeAt.current = v.currentTime;
+      stopMediaEl(v);
+      setLoading(false);
+      setNatUnavailable(true);
+      return true;
+    }
+    const idx = capable.includes(srcIdxRef.current) ? srcIdxRef.current : capable[0];
+    nativeTriedRef.current.add(idx);
+    setNatUnavailable(false);
+    setNativeFallbackIdx(idx);
+    if (idx !== srcIdxRef.current) setSrcIdx(idx);
+    else setReloadKey((k) => k + 1); // same idx → bump the handoff identity
+    setLoading(true);
+    showNotice("پخش وب ممکن نشد — پلیر نیتیو امتحان می‌شود");
+    return true;
+  }, [effEngine, bridgeOk, srcList, proxyBase, showNotice]);
+
   const advanceLadder = useCallback(
     (resumePos?: number) => {
       const now = Date.now();
@@ -499,11 +555,11 @@ export default function PlayerMobile() {
         setSrcIdx(next);
         setLoading(true);
         showNotice("پخش این نسخه ناموفق بود — نسخه‌ی بعدی امتحان می‌شود");
-      } else {
+      } else if (!tryNativeFallback()) {
         haltForFatal();
       }
     },
-    [srcList.length, showNotice, haltForFatal]
+    [srcList.length, showNotice, haltForFatal, tryNativeFallback]
   );
 
   useEffect(() => {
@@ -516,6 +572,10 @@ export default function PlayerMobile() {
       // v0.18.1 — a resume carried for an engine flip must never leak into
       // the NEXT title's first mount
       resumeAt.current = null;
+      // v0.19.0 — the fallback rung is per-open too
+      nativeTriedRef.current = new Set();
+      setNativeFallbackIdx(null);
+      setNatUnavailable(false);
       return;
     }
     // v0.18.1 — the engine choice is part of the handoff identity: flipping
@@ -542,7 +602,10 @@ export default function PlayerMobile() {
     const manifest = episodes.length
       ? buildEpisodesManifest(episodes, episode?.id ?? null, epProgress)
       : null;
-    const webSafeIdx = srcList.findIndex((s) => !needsNativePlayer(mediaSrc(s.url, proxyBase ?? null)));
+    // v0.19.0 — the «سوییچ به نسخه وب‌سازگار» offer must land on a source
+    // GUARANTEED to play on the web (classify "web"), not merely web-first
+    // ("fragile" might fail the same way that just pushed us native).
+    const webSafeIdx = srcList.findIndex((s) => classifyUrl(mediaSrc(s.url, proxyBase ?? null)) === "web");
     b.playVideo({
       url: isLocalFile(activeSrc) ? localFilePath(activeSrc) : activeSrc,
       title: title ?? "Frame",
@@ -590,12 +653,14 @@ export default function PlayerMobile() {
           setWebOverride(true);
           setNativeActive(false);
           setPlaying(false);
-          const wIdx = srcList.findIndex((s) => !needsNativePlayer(mediaSrc(s.url, proxyBase ?? null)));
+          const wIdx = srcList.findIndex((s) => classifyUrl(mediaSrc(s.url, proxyBase ?? null)) === "web");
           if (wIdx >= 0) {
             resumeAt.current = pos > 0.5 ? pos : startMs / 1000;
             manualPickRef.current = true;
             errCountRef.current = 0;
             ladderAtRef.current = null;
+            nativeTriedRef.current = new Set();
+            setNativeFallbackIdx(null);
             setFatal(false);
             setSrcIdx(wIdx);
             setLoading(true);
@@ -660,6 +725,10 @@ export default function PlayerMobile() {
     ladderAtRef.current = null;
     pendingNativeRef.current = false;
     lastNoticeRef.current = null;
+    // v0.19.0 — fresh title: the fallback rung re-arms
+    nativeTriedRef.current = new Set();
+    setNativeFallbackIdx(null);
+    setNatUnavailable(false);
     setSheet(null);
   }, [contentKey]);
 
@@ -765,6 +834,10 @@ export default function PlayerMobile() {
       if (!usePlayerStore.getState().open) return;
       // v0.16.2 — the native player owns playback right now: not our error
       if (pendingNativeRef.current) return;
+      // v0.19.0 — MEDIA_ERR_ABORTED (code 1) = OUR OWN src swap mid-load; an
+      // echo, never a dead link. The 1500ms same-idx guard usually eats it;
+      // this is belt+braces so a swap can never double-burn the ladder.
+      if (v.error?.code === 1) return;
       // network drop ≠ dead link — never burn the variant ladder for it
       if (!navigator.onLine) {
         netDownRef.current = true;
@@ -805,6 +878,11 @@ export default function PlayerMobile() {
       errCountRef.current = 0;
       ladderAtRef.current = null;
       pendingNativeRef.current = false;
+      // v0.19.0 — an explicit pick re-arms the fallback rung and cancels any
+      // pending native-fallback ownership for the PREVIOUS source
+      nativeTriedRef.current = new Set();
+      setNativeFallbackIdx(null);
+      setNatUnavailable(false);
       setFatal(false);
     }
     setSrcIdx(i);
@@ -2096,6 +2174,9 @@ export default function PlayerMobile() {
                 onClick={() => {
                   errCountRef.current = 0;
                   ladderAtRef.current = null;
+                  nativeTriedRef.current = new Set();
+                  setNativeFallbackIdx(null);
+                  setNatUnavailable(false);
                   setFatal(false);
                   setLoading(true);
                   // resumeAt was already preserved by haltForFatal
@@ -2111,6 +2192,9 @@ export default function PlayerMobile() {
                   onClick={() => {
                     errCountRef.current = 0;
                     ladderAtRef.current = null;
+                    nativeTriedRef.current = new Set();
+                    setNativeFallbackIdx(null);
+                    setNatUnavailable(false);
                     setFatal(false);
                     pickSource(0);
                   }}
@@ -2129,13 +2213,16 @@ export default function PlayerMobile() {
 
       {/* v0.16.3 — the health probe PROVED the native plugin is dead (or the
           runtime rejected it): be honest instead of a fake «اتصال برقرار نشد».
-          WebView-safe sources still play; MKV/extension-less sources land here. */}
-      {ownerUnsupported && activeSrc && !fatal && (
+          v0.19.0 — ALSO shown when the web-first ladder burned everything and
+          the only remaining sources need the (absent) native player. */}
+      {(ownerUnsupported || natUnavailable) && activeSrc && !fatal && (
         <div className="absolute inset-0 z-30 grid place-items-center bg-black/90" dir="rtl">
           <div className="max-w-sm p-6 text-center">
             <p className="text-xl font-black text-white">پلیر نیتیو در دسترس نیست</p>
             <p className="mt-2 text-sm leading-7 text-zinc-400">
-              این نسخه از اپ نمی‌تواند فایل‌های MKV و کانتینرهای خاص را پخش کند. اپ را به آخرین نسخه آپدیت کنید؛ نسخه‌های mp4 همچنان پخش می‌شوند.
+              {ownerUnsupported
+                ? "این نسخه از اپ نمی‌تواند فایل‌های MKV و کانتینرهای خاص را پخش کند. اپ را به آخرین نسخه آپدیت کنید؛ نسخه‌های mp4 همچنان پخش می‌شوند."
+                : "پخش وب این نسخه‌ها ممکن نشد و پلیر نیتیو هم در این نسخه از اپ در دسترس نیست. اپ را آپدیت کنید یا نسخه/قسمت دیگری را امتحان کنید."}
             </p>
             <div className="mt-5 flex flex-wrap justify-center gap-3">
               <button
@@ -2592,7 +2679,7 @@ export default function PlayerMobile() {
                 <p className="mb-3 text-[10px] leading-4 text-zinc-500">
                   {engine === "native"
                     ? "همه‌ی ویدیوها با پلیر نیتیو (Media3) پخش می‌شود — تجربه‌ی یکدست برای هر فرمتی."
-                    : "پلیر وب — سریع، با سینما و همه‌ی امکانات — پیش‌فرض است؛ فرمت‌های سنگین مثل MKV خودکار به پلیر نیتیو سپرده می‌شوند."}
+                    : "پلیر وب — سینما و همه‌ی امکانات — برای همه‌ی ویدیوها اولویت دارد؛ فقط اگر وب نتوانست پخش کند، نسخه به پلیر نیتیو سپرده می‌شود."}
                 </p>
                 {/* seek step */}
                 <p className="mb-1 text-[11px] font-black text-zinc-400">گام پرش (دابل‌تپ)</p>

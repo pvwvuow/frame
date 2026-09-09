@@ -20,7 +20,7 @@
  * The primitives below are pure + node-testable; PlayerMobile consumes them.
  */
 
-import { needsNativePlayer } from "./video-url";
+import { classifyUrl, needsNativePlayer } from "./video-url";
 
 export type PlaybackOwner = "web" | "native" | "pending" | "unsupported";
 
@@ -31,19 +31,26 @@ export type PlaybackOwner = "web" | "native" | "pending" | "unsupported";
  *  v0.16.3 — hasBridge is tri-state: `null` means the native plugin health
  *  probe is still in flight (Capacitor's registerPlugin() yields a truthy
  *  Proxy even for a DEAD plugin, so "looks like a bridge" proves nothing).
- *    - probe in flight + native URL → "pending": mount NEITHER the WebView
- *      <video> (a phantom MKV fetch would fire a fake error and burn the
- *      ladder) NOR hand off. The probe is a single fast IPC — milliseconds.
- *    - probe PROVED the plugin dead + native URL → "unsupported": the caller
- *      shows the honest «پلیر نیتیو در این نسخه در دسترس نیست — اپ را آپدیت
- *      کنید» screen. WebView-safe sources still play ("web"). */
+ *
+ *  v0.19.0 — WEB-FIRST auto routing (the v0.18.1 «هوشمند» flipped):
+ *    - classifyUrl "web" AND "fragile" → the WEB player, bridge-independent.
+ *      Fragile (mkv/token URLs) mounts the WebView and lets Chromium sniff
+ *      the BYTES — if it plays (most H.264/AAC MKVs do), the user gets the
+ *      cinema-capable player for the whole catalog; if the <video>
+ *      hard-fails, the ladder walks and the EXHAUSTION fallback hands the
+ *      best still-untried source to native (wired in PlayerMobile).
+ *    - classifyUrl "native" (local:, cleartext, avi/wmv/ts…) → the native
+ *      player when the probe proved the bridge alive, «unsupported» when it
+ *      proved it dead, «pending» while probing.
+ *  The user's engine override (v0.18.1) still wins over all of it, and
+ *  cinema still beats every engine (the watch-party rides the <video>). */
 export function resolveOwner(opts: {
   hasBridge: boolean | null;
   cinemaActive: boolean;
   proxyReady: boolean;
   url: string;
   /** v0.18.1 — user's player-engine choice (player-prefs.getPlayerEngine).
-   *  "auto" (default/undefined) = smart routing below.
+   *  "auto" (default/undefined) = the web-first routing below.
    *  "native" = the user FORCED the native player for every source:
    *    - probe in flight → "pending" (never mount the WebView on a guess,
    *      the flip to native right after would double-start playback)
@@ -62,9 +69,12 @@ export function resolveOwner(opts: {
     if (opts.hasBridge) return "native";
     return native ? "unsupported" : "web";
   }
-  if (opts.hasBridge === null) return native ? "pending" : "web"; // probing
-  if (!opts.hasBridge) return native ? "unsupported" : "web"; // probed dead
-  return native ? "native" : "web";
+  // v0.19.0 — auto: the class decides. Only the «WebView can never» class
+  // depends on the bridge probe; mkv/token URLs are web-first either way.
+  const cls = classifyUrl(opts.url);
+  if (cls !== "native") return "web";
+  if (opts.hasBridge === null) return "pending"; // probing
+  return opts.hasBridge ? "native" : "unsupported";
 }
 
 /** Duplicate-error echo guard: Chromium may deliver two error events for the

@@ -43,44 +43,78 @@ export function isMkvUrl(url: string): boolean {
 
 const KNOWN_VIDEO_EXT = /\.(mp4|m4v|mkv|mk3d|webm|avi|mov|wmv|mpg|mpeg|ts|flv)(\?|#|$)/i;
 
-/* v0.16.1 — FIX «بعضی فیلم‌ها اصلاً پخش نمی‌شوند» (the fatal
- * «پخش این نسخه ممکن نشد» screen for a whole class of titles).
+/* v0.19.0 — WEB-FIRST ownership (rewrites the v0.16.1 premise).
  *
- * Root cause: the Android runtime has NO Electron stream-proxy. Desktop
- * routes every extension-less/token URL (redirectors, /dl/<id> style) through
- * the proxy, which content-sniffs the real container — most are MKV SoftSub
- * releases. On Android the same URLs were fed RAW to the WebView <video>,
- * which cannot demux Matroska → instant error → the dead-link ladder burns
- * every variant → fatal. Same for legacy containers (.avi/.wmv/…) that the
- * WebView has no demuxer for at all.
+ * History: v0.16.1 assumed the WebView «cannot demux Matroska» and routed
+ * every MKV + every extension-less/token URL straight to the native Media3
+ * player. That handed ~the WHOLE catalog (the archive is MKV SoftSub/Dubbed
+ * releases) to the player without the cinema — the user's «چند پلیر» +
+ * «پیش‌فرض، پلیر بی‌سینما» complaints. The premise was wrong: Chromium's
+ * demuxer sniffs BYTES, not extensions, and the desktop app has been playing
+ * these exact MKVs through a 1:1 byte pipe into a <video> for years (the
+ * Electron stream-proxy adds subtitles, not decoders).
  *
- * The classifier below is the single source of truth for «this URL must ride
- * the native Media3 player» (which sniffs containers itself and plays MKV,
- * AVI, TS, FLV… with real codecs). Only containers the WebView demuxes
- * reliably stay on the web path. Desktop never calls it with a live bridge
- * (nativeBridge() is null on Electron), so PC behavior is untouched. */
+ * classifyUrl() is now the single source of truth:
+ *   web      — reliable on the web player (mp4/m4v/mov/webm/m3u8)
+ *   fragile  — web-FIRST (mkv/mk3d + token/unknown https); the native player
+ *              is the FALLBACK when the <video> hard-fails (DTS/AC3 audio,
+ *              x265 without hardware decode, disguised containers)
+ *   native   — the WebView can never own it (local:, cleartext http:// in
+ *              release builds, avi/wmv/mpg/mpeg/ts/flv — no demuxer)
+ * Desktop never consults any of this for playback (nativeBridge() is null on
+ * Electron; the proxy owns routing) — PC behavior is untouched. */
 
 /** Containers the Android WebView plays reliably on its own. */
 const WEBVIEW_SAFE_EXT = /\.(mp4|m4v|mov|webm|m3u8)(\?|#|$)/i;
 
-/** Legacy/disguised containers that must go straight to the native player. */
-const NATIVE_CONTAINER_EXT = /\.(avi|wmv|mpg|mpeg|ts|flv|mkv|mk3d)(\?|#|$)/i;
+/** Legacy containers with NO Chromium demuxer at all — a web attempt is a
+ *  guaranteed dead fetch, so these alone stay preemptive-native. */
+const NATIVE_CONTAINER_EXT = /\.(avi|wmv|mpg|mpeg|ts|flv)(\?|#|$)/i;
+
+/** Matroska: Chromium DOES demux it (the desktop 1:1 proxy pipe proves the
+ *  engine plays H.264/AAC-in-MKV every day) — but the codecs INSIDE vary
+ *  (DTS/AC3 audio, x265), so MKV is web-FIRST with the native player kept
+ *  as the fallback when the <video> hard-fails. */
+const FRAGILE_CONTAINER_EXT = /\.(mkv|mk3d)(\?|#|$)/i;
+
+export type UrlClass =
+  | "web" // WebView plays it reliably — always the web player
+  | "fragile" // web-FIRST; native is the fallback on a real decode failure
+  | "native"; // WebView can never own it (local files, cleartext, no demuxer)
+
+/** v0.19.0 — the ONE classification the mobile owner logic consumes.
+ *  Replaces the old binary needsNativePlayer routing: the catalog is ~all
+ *  MKV (SoftSub/Dubbed releases), so routing every .mkv straight to the
+ *  native player handed ~the whole catalog to the player WITHOUT the cinema
+ *  and the web player never got a chance. Web-first flips that: the user's
+ *  default experience is the cinema-capable web player, and Media3 only
+ *  steps in when Chromium genuinely cannot decode the stream. */
+export function classifyUrl(url: string): UrlClass {
+  if (!url) return "web"; // empty src — harmless, the player shows idle
+  if (url.startsWith("local:")) return "native";
+  if (/^http:\/\//i.test(url)) return "native"; // release WebView blocks cleartext (BEFORE the ext rules — even http mkv/mp4)
+  if (FRAGILE_CONTAINER_EXT.test(url)) return "fragile";
+  if (NATIVE_CONTAINER_EXT.test(url)) return "native";
+  if (/^https?:\/\//i.test(url)) {
+    return WEBVIEW_SAFE_EXT.test(url) ? "web" : "fragile"; // token/redirector: sniff on web first
+  }
+  return "web";
+}
 
 /** True when this URL needs the native Media3 player (WebView would fail).
- *  Rules, in order:
+ *  v0.19.0 — MKV and extension-less/token URLs are NO LONGER here (they ride
+ *  the web player first — classifyUrl "fragile"); this predicate keeps the
+ *  STRICT meaning «the WebView can never own this» for:
  *   - local: offline downloads always play natively
- *   - .mkv/.mk3d always (Matroska + the muxed Persian SRT)
- *   - extension-less/token http(s) URLs — container unknown; Media3 sniffs it
  *   - legacy containers (avi/wmv/mpg/mpeg/ts/flv) — no WebView demuxer
- *   - v0.17.0 — plain http:// (no TLS) ALWAYS rides native: release builds
- *     disable mixed content + cleartext in the WebView (Play-Protect
- *     hardening), and Media3 has no such restriction
- *   - plain https mp4/m4v/mov/webm/m3u8 stay on the light web path */
+ *   - v0.17.0 — plain http:// (no TLS): release builds disable cleartext
+ *  Used by the desktop player's (dead-on-Electron) handoff block and by the
+ *  mobile «سوییچ به نسخه وب‌سازگار» flag, where the switch must land on a
+ *  source GUARANTEED to play on the web — not merely web-first. */
 export function needsNativePlayer(url: string): boolean {
   if (!url) return false;
   if (url.startsWith("local:")) return true;
   if (NATIVE_CONTAINER_EXT.test(url)) return true;
-  if (/^https?:\/\//i.test(url) && !WEBVIEW_SAFE_EXT.test(url)) return true;
   if (/^http:\/\//i.test(url)) return true;
   return false;
 }

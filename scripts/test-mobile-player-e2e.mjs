@@ -72,6 +72,7 @@ const MIME = {
   ".jpg": "image/jpeg",
   ".json": "application/json",
   ".mp4": "video/mp4",
+  ".mkv": "application/octet-stream", // v0.19.0: bytes decide, not the label — pure sniffing territory
   ".woff2": "font/woff2",
   ".woff": "font/woff",
   ".txt": "text/plain",
@@ -88,11 +89,14 @@ const server = createServer(async (req, res) => {
       // clean-ish route fallback: /x/y → out/x/y.html then out/x/y/index.html
       if (existsSync(file + ".html")) file = file + ".html";
       else if (existsSync(join(file, "index.html"))) file = join(file, "index.html");
+      // v0.19.0 — the mkv fixture IS the mp4 bytes: a lying extension with a
+      // generic content-type, so the <video> must SNIFF the bytes to play it
+      else if (/\.mkv$/.test(file) && existsSync(file.replace(/\.mkv$/, ".mp4"))) file = file.replace(/\.mkv$/, ".mp4");
       else { res.writeHead(404); res.end("not found"); return; }
     }
     const buf = await readFile(file);
     const range = req.headers.range;
-    if (range && p.endsWith(".mp4")) {
+    if (range && (p.endsWith(".mp4") || p.endsWith(".mkv"))) {
       const m = /bytes=(\d*)-(\d*)/.exec(range);
       const start = m && m[1] ? parseInt(m[1], 10) : 0;
       const end = m && m[2] ? parseInt(m[2], 10) : buf.length - 1;
@@ -567,6 +571,80 @@ await waitFor("player closed from the mini card", async () => (await page.locato
 ok("mini: ✕ closes the card AND the player (progress saved)", true);
 ok("mini: route stays where the user browsed (no watch redirect)", !page.url().includes("/watch/"), page.url());
 await page.screenshot({ path: `${shots}/11-mini-closed.png` });
+
+/* ---------- v0.19.0 — MKV is WEB-FIRST now (the ONE-player default) -------
+ * The fixture bytes are mp4, the URL says .mkv, the content-type is generic —
+ * pure byte-sniffing territory. v0.18.x routed ANY .mkv straight to the
+ * native player (no <video> element at all → the player WITHOUT the cinema
+ * opened for ~the whole catalog). Web-first must mount the WebView and PLAY
+ * the same URL. */
+const MKV_ROW = {
+  ...TEST_ROW,
+  id: 900002,
+  slug: "mkv-web-first",
+  title: "تست وب‌اول MKV",
+  videoUrl: "/test-media/cinema-test.mkv",
+  sources: [{ q: "720p", v: "تست محلی", url: "/test-media/cinema-test.mkv" }],
+};
+const ctx2 = await browser.newContext({
+  viewport: { width: 390, height: 844 },
+  isMobile: true,
+  hasTouch: true,
+  deviceScaleFactor: 2,
+  userAgent: "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36",
+  locale: "fa-IR",
+});
+await ctx2.route("**/catalog/mobile/manifest.json", (r) =>
+  r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(TINY_MANIFEST) }));
+await ctx2.route(/\/catalog\/mobile\/full-\d+\.json$/, (r) =>
+  r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(r.request().url().endsWith("full-00.json") ? [MKV_ROW] : []) }));
+await ctx2.route("**/api/**", (r) => r.fulfill({ status: 200, contentType: "application/json", body: "{}" }));
+const page2 = await ctx2.newPage();
+await page2.goto(`${BASE}/watch/_?s=mkv-web-first`, { waitUntil: "domcontentloaded" });
+await waitFor("mkv: PlayerMobile mounted with a LIVE <video> (no native handoff)", async () =>
+  (await page2.evaluate(() => !!document.querySelector('[data-player="mobile"] video'))) === true, 8000);
+ok("mkv: web-first owns the .mkv source — no native handoff", true);
+await waitFor("mkv: the sniffed bytes actually PLAY", async () => {
+  const s = await page2.evaluate(() => { const v = document.querySelector("video"); return v ? (v.paused ? "paused" : "playing") : "none"; });
+  return s === "playing";
+}, 10000);
+ok("mkv: playback confirmed (Chromium sniffed mp4 bytes inside a .mkv URL)", true);
+await page2.screenshot({ path: `${shots}/12-mkv-web-first.png` });
+await ctx2.close();
+
+/* ---------- v0.19.0 — the native FALLBACK rung is wired --------------------
+ * A dead .mkv source burns the whole web ladder (single source → exhausted);
+ * the bridge probe FAILED in this harness (plain chromium) → the honest
+ * «پلیر نیتیو در دسترس نیست» panel must appear — NOT the misleading
+ * «اتصال برقرار نشد» fatal. */
+const DEAD_ROW = {
+  ...TEST_ROW,
+  id: 900003,
+  slug: "dead-mkv-fallback",
+  title: "تست fallback نیتیو",
+  videoUrl: "/test-media/dead-source.mkv",
+  sources: [{ q: "720p", v: "تست محلی", url: "/test-media/dead-source.mkv" }],
+};
+const ctx3 = await browser.newContext({
+  viewport: { width: 390, height: 844 },
+  isMobile: true,
+  hasTouch: true,
+  deviceScaleFactor: 2,
+  userAgent: "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36",
+  locale: "fa-IR",
+});
+await ctx3.route("**/catalog/mobile/manifest.json", (r) =>
+  r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(TINY_MANIFEST) }));
+await ctx3.route(/\/catalog\/mobile\/full-\d+\.json$/, (r) =>
+  r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(r.request().url().endsWith("full-00.json") ? [DEAD_ROW] : []) }));
+await ctx3.route("**/api/**", (r) => r.fulfill({ status: 200, contentType: "application/json", body: "{}" }));
+const page3 = await ctx3.newPage();
+await page3.goto(`${BASE}/watch/_?s=dead-mkv-fallback`, { waitUntil: "domcontentloaded" });
+await waitFor("dead mkv: exhaustion lands on the honest «نیتیو در دسترس نیست» panel", async () =>
+  (await page3.locator("text=پلیر نیتیو در دسترس نیست").count()) > 0, 15000);
+ok("dead mkv: NOT the fake «پخش این نسخه ممکن نشد» fatal", (await page3.locator("text=پخش این نسخه ممکن نشد").count()) === 0);
+await page3.screenshot({ path: `${shots}/13-dead-mkv-natunavailable.png` });
+await ctx3.close();
 
 await browser.close();
 server.close();
