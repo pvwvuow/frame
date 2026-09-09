@@ -20,7 +20,7 @@ import androidx.media3.common.MediaMetadata;
 import androidx.media3.common.MimeTypes;
 import androidx.media3.common.Player;
 import androidx.media3.common.util.UnstableApi;
-import androidx.media3.datasource.DefaultHttpDataSource;
+import androidx.media3.datasource.okhttp.OkHttpDataSource;
 import androidx.media3.exoplayer.DefaultRenderersFactory;
 import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory;
@@ -97,17 +97,48 @@ public class PlayerActivity extends Activity {
                 .setEnableDecoderFallback(true)
                 .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_OFF);
 
-        // v0.16.0 — the dl hosts behind the catalog are picky: ExoPlayer's
-        // default UA ("ExoPlayerLib") risks UA filters and cross-protocol
-        // redirects (http⇄https) are disabled by default. Ride the same UA the
-        // WebView uses and follow any redirect chain.
-        DefaultHttpDataSource.Factory http = new DefaultHttpDataSource.Factory()
-            .setUserAgent(
-                "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) "
-                    + "Chrome/120.0.0.0 Mobile Safari/537.36")
-            .setAllowCrossProtocolRedirects(true)
-            .setConnectTimeoutMs(15_000)
-            .setReadTimeoutMs(30_000);
+        // v0.16.1 — ride the EXACT same network behavior the desktop app uses
+        // (electron/stream-proxy.cjs proxyFetch): the same desktop-Chrome UA
+        // (dl hosts run UA filters), full redirect chains including
+        // http⇄https, and certificate-relaxed TLS (the desktop sets
+        // rejectUnauthorized:false — the archive's dl hosts are a minefield
+        // of broken/expired certs that would otherwise kill playback ONLY on
+        // Android). Timeouts mirror the previous DefaultHttpDataSource.
+        String DESKTOP_UA =
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
+                + "Chrome/126.0 Safari/537.36";
+        final javax.net.ssl.X509TrustManager trustAll =
+            new javax.net.ssl.X509TrustManager() {
+                @Override
+                public void checkClientTrusted(java.security.cert.X509Certificate[] chain, String authType) {
+                }
+
+                @Override
+                public void checkServerTrusted(java.security.cert.X509Certificate[] chain, String authType) {
+                }
+
+                @Override
+                public java.security.cert.X509Certificate[] getAcceptedIssuers() {
+                    return new java.security.cert.X509Certificate[0];
+                }
+            };
+        javax.net.ssl.SSLContext sslContext;
+        try {
+            sslContext = javax.net.ssl.SSLContext.getInstance("TLS");
+            sslContext.init(null, new javax.net.ssl.TrustManager[] { trustAll }, new java.security.SecureRandom());
+        } catch (Exception e) {
+            throw new IllegalStateException("TLS init failed", e);
+        }
+        okhttp3.OkHttpClient httpClient = new okhttp3.OkHttpClient.Builder()
+            .sslSocketFactory(sslContext.getSocketFactory(), trustAll)
+            .hostnameVerifier((hostname, session) -> true)
+            .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+            .retryOnConnectionFailure(true)
+            .build(); // followRedirects + followSslRedirects (http⇄https) default ON
+
+        OkHttpDataSource.Factory http = new OkHttpDataSource.Factory(httpClient)
+            .setUserAgent(DESKTOP_UA);
 
         DefaultTrackSelector selector = new DefaultTrackSelector(this);
         selector.setParameters(

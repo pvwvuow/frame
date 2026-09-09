@@ -12,6 +12,7 @@
  * keep returning null. */
 
 import { Capacitor, registerPlugin } from "@capacitor/core";
+import { needsNativePlayer as classifyNativeUrl } from "./video-url";
 
 export type NamaInstallInfo = {
   versionName: string;
@@ -97,13 +98,14 @@ export function isAndroidNative(): boolean {
   return nativeBridge() !== null;
 }
 
-/** MKV/MK3D (+ unknown-container streams) that the WebView <video> cannot
- *  demux — the exact reason «فیلم‌های زیرنویس‌دار پلی نمی‌شوند». Local
- *  offline downloads (local:<absPath>) always play natively too. */
+/** MKV/MK3D (+ unknown-container streams, legacy containers, local offline
+ *  downloads) that the WebView <video> cannot demux — the exact reason
+ *  «فیلم‌های زیرنویس‌دار پلی نمی‌شوند» and «بعضی فیلم‌ها اصلاً پلی نمی‌شوند».
+ *  v0.16.1 — the real classifier lives in video-url.ts (pure, node-testable);
+ *  every non-WebView-safe URL now rides the native Media3 player, not just
+ *  .mkv-extension ones. */
 export function needsNativePlayer(url: string): boolean {
-  if (!url) return false;
-  if (isLocalFile(url)) return true;
-  return /\.mkv|\.mk3d/i.test(url);
+  return classifyNativeUrl(url);
 }
 
 /** Offline download marker: "local:" + the absolute file path on device. */

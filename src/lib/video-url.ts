@@ -43,6 +43,44 @@ export function isMkvUrl(url: string): boolean {
 
 const KNOWN_VIDEO_EXT = /\.(mp4|m4v|mkv|mk3d|webm|avi|mov|wmv|mpg|mpeg|ts|flv)(\?|#|$)/i;
 
+/* v0.16.1 — FIX «بعضی فیلم‌ها اصلاً پخش نمی‌شوند» (the fatal
+ * «پخش این نسخه ممکن نشد» screen for a whole class of titles).
+ *
+ * Root cause: the Android runtime has NO Electron stream-proxy. Desktop
+ * routes every extension-less/token URL (redirectors, /dl/<id> style) through
+ * the proxy, which content-sniffs the real container — most are MKV SoftSub
+ * releases. On Android the same URLs were fed RAW to the WebView <video>,
+ * which cannot demux Matroska → instant error → the dead-link ladder burns
+ * every variant → fatal. Same for legacy containers (.avi/.wmv/…) that the
+ * WebView has no demuxer for at all.
+ *
+ * The classifier below is the single source of truth for «this URL must ride
+ * the native Media3 player» (which sniffs containers itself and plays MKV,
+ * AVI, TS, FLV… with real codecs). Only containers the WebView demuxes
+ * reliably stay on the web path. Desktop never calls it with a live bridge
+ * (nativeBridge() is null on Electron), so PC behavior is untouched. */
+
+/** Containers the Android WebView plays reliably on its own. */
+const WEBVIEW_SAFE_EXT = /\.(mp4|m4v|mov|webm|m3u8)(\?|#|$)/i;
+
+/** Legacy/disguised containers that must go straight to the native player. */
+const NATIVE_CONTAINER_EXT = /\.(avi|wmv|mpg|mpeg|ts|flv|mkv|mk3d)(\?|#|$)/i;
+
+/** True when this URL needs the native Media3 player (WebView would fail).
+ *  Rules, in order:
+ *   - local: offline downloads always play natively
+ *   - .mkv/.mk3d always (Matroska + the muxed Persian SRT)
+ *   - extension-less/token http(s) URLs — container unknown; Media3 sniffs it
+ *   - legacy containers (avi/wmv/mpg/mpeg/ts/flv) — no WebView demuxer
+ *   - plain mp4/m4v/mov/webm/m3u8 stay on the light web path */
+export function needsNativePlayer(url: string): boolean {
+  if (!url) return false;
+  if (url.startsWith("local:")) return true;
+  if (NATIVE_CONTAINER_EXT.test(url)) return true;
+  if (/^https?:\/\//i.test(url) && !WEBVIEW_SAFE_EXT.test(url)) return true;
+  return false;
+}
+
 /** Media src for a raw catalog URL – via the proxy for MKV (and any URL
  *  whose container the proxy must sniff), direct for plain video files. */
 export function mediaSrc(rawUrl: string, proxyBase: string | null | undefined): string {

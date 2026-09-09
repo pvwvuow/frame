@@ -21,7 +21,9 @@ const ROOT = path.join(__dirname, "..");
 // v0.12.0 — native surface revision (bump ONLY when android/ java/config
 // changes ship): 2 = initial player + downloads + self-update bridge
 // 3 = v0.16.0 — applyCoverPack + covers-carryover + player HTTP hardening
-const NATIVE_REV = 3;
+// 4 = v0.16.1 — cleartext traffic + OkHttp datasource (desktop-parity
+//     UA/TLS/redirects) → APK required for every user on ≤ rev 3
+const NATIVE_REV = 4;
 const API_DIR = path.join(ROOT, "src", "app", "api");
 const TMP_DIR = path.join(ROOT, ".mobile-tmp-api");
 const PACK_DIR = path.join(ROOT, ".covers-pack");
