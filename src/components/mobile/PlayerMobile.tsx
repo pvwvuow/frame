@@ -13,6 +13,15 @@
  * Media3 handoff for MKV, and the cinema watch-party (host beats / guest
  * mirror / follow handler / resume).
  *
+ * v0.16.2 STRUCTURAL REWORK — «بازنگری کامل ساختار پخش»:
+ *  - OWNERSHIP is declarative (resolveOwner, render-time): native-owned
+ *    sources never mount the WebView <video> at all → no phantom fetches,
+ *    no WebView errors racing the Media3 handoff.
+ *  - FATAL halts the media (stopMediaEl) and unmounts the video → the
+ *    «پیام اتصال برقرار نشد روی فیلمی که پخش می‌شود» class is dead.
+ *  - The dead-link ladder is echo-proof (one step per source per window,
+ *    stale native results ignored) and re-arms on every successful start.
+ *
  * Mobile layer: fullscreen-first (Netflix-style) with a portrait strip
  * fallback, touch gestures (single tap = controls, double-tap sides =
  * ±seek with ripple + haptic, double-tap center = play/pause, horizontal
@@ -55,7 +64,8 @@ import { ensurePlayableAudio } from "@/lib/audio-guard";
 import { preferredSourceIdx, qualityPrefIdx, rememberedVariantIdx, rememberVariantPref, variantShort } from "@/lib/variant";
 import { setQualityPref } from "@/lib/quality-pref";
 import { titleHref, watchHref } from "@/lib/mobile-links";
-import { isLocalFile, localFilePath, nativeBridge, needsNativePlayer } from "@/lib/native-bridge";
+import { isLocalFile, localFilePath, nativeBridge } from "@/lib/native-bridge";
+import { resolveOwner, shouldLadderAdvance, isLadderExhausted, isDuplicateNotice } from "@/lib/mobile-playback";
 import { useCinema, cinemaTargetPosition, setCinemaFollowHandler, type CinemaBeat } from "@/lib/cinema";
 import CinemaPanel from "../cinema/CinemaPanel";
 import { useLibrary } from "../library/LibraryProvider";
@@ -109,6 +119,17 @@ export default function PlayerMobile() {
   const rawActive = srcList[Math.min(srcIdx, srcList.length - 1)]?.url || src;
   const activeSrc = mediaSrc(rawActive, proxyBase);
 
+  // v0.16.2 — ONE declarative ownership decision per source. When native owns
+  // playback the WebView element is never mounted, so it can neither race the
+  // Media3 activity nor fire phantom errors into the failure ladder.
+  const wantsNative =
+    resolveOwner({
+      hasBridge: !!nativeBridge(),
+      cinemaActive: cin.status !== "idle",
+      proxyReady: proxyBase !== undefined,
+      url: activeSrc,
+    }) === "native";
+
   const [playing, setPlaying] = useState(false);
   const [current, setCurrent] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -128,8 +149,15 @@ export default function PlayerMobile() {
   const errCountRef = useRef(0);
   const resumeAt = useRef<number | null>(null);
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // v0.16.2 — race-proofing state
+  const ladderAtRef = useRef<{ idx: number; at: number } | null>(null);
+  const lastNoticeRef = useRef<{ msg: string; at: number } | null>(null);
+  const pendingNativeRef = useRef(false);
 
   const showNotice = useCallback((msg: string) => {
+    const now = Date.now();
+    if (isDuplicateNotice(lastNoticeRef.current, msg, now)) return;
+    lastNoticeRef.current = { msg, at: now };
     setNotice(msg);
     if (noticeTimer.current) clearTimeout(noticeTimer.current);
     noticeTimer.current = setTimeout(() => setNotice(null), 6000);
@@ -293,16 +321,61 @@ export default function PlayerMobile() {
   }, [save, store, router, slug]);
 
   /* ---- native Android playback (Media3) — parity with desktop ------------- */
+  // v0.16.2 — shared failure-ladder primitives. advanceLadder steps ONE source
+  // per window (echo-proof), preserves the resume position and only declares
+  // fatal when every variant is exhausted. haltForFatal STOPS the media before
+  // showing the overlay — the fatal screen never plays over live audio again.
+  const haltForFatal = useCallback(() => {
+    const v = videoRef.current;
+    if (v && v.currentTime > 0.5) resumeAt.current = v.currentTime; // keep position for retry
+    stopMediaEl(v);
+    setLoading(false);
+    setFatal(true);
+  }, []);
+
+  const advanceLadder = useCallback(
+    (resumePos?: number) => {
+      const now = Date.now();
+      if (!shouldLadderAdvance(ladderAtRef.current, srcIdxRef.current, now)) return;
+      ladderAtRef.current = { idx: srcIdxRef.current, at: now };
+      errCountRef.current += 1;
+      const next = srcIdxRef.current + 1;
+      if (!isLadderExhausted(next, srcList.length, errCountRef.current)) {
+        if (!resumePos) {
+          const v = videoRef.current;
+          if (v && v.currentTime > 0.5) resumeAt.current = v.currentTime;
+        } else if (resumePos > 0.5) {
+          resumeAt.current = resumePos;
+        }
+        setSrcIdx(next);
+        setLoading(true);
+        showNotice("پخش این نسخه ناموفق بود — نسخه‌ی بعدی امتحان می‌شود");
+      } else {
+        haltForFatal();
+      }
+    },
+    [srcList.length, showNotice, haltForFatal]
+  );
+
   useEffect(() => {
     const b = nativeBridge();
     if (!b) return;
-    if (useCinema.getState().status !== "idle") return;
-    if (proxyBase === undefined) return;
-    if (!open || fatal) return;
-    if (!activeSrc || !needsNativePlayer(activeSrc)) return;
+    if (!open) {
+      // v0.16.2 — a fresh open must always re-handoff (same-title resume bug)
+      nativeKeyRef.current = null;
+      pendingNativeRef.current = false;
+      return;
+    }
+    if (!wantsNative) {
+      pendingNativeRef.current = false;
+      return;
+    }
+    if (fatal) return;
+    if (!activeSrc) return;
     const key = `${contentKey}#${srcIdx}#${reloadKey}`;
     if (nativeKeyRef.current === key) return;
     nativeKeyRef.current = key;
+    pendingNativeRef.current = true;
     setNativeActive(true);
     setLoading(true);
     const startMs = Math.round((resumeAt.current ?? startAt ?? 0) * 1000);
@@ -315,24 +388,20 @@ export default function PlayerMobile() {
       positionMs: startMs,
     })
       .then((r) => {
+        // v0.16.2 — a STALE activity result (source already superseded) must
+        // never touch the ladder — this was the silent double-burn
+        if (nativeKeyRef.current !== key) return;
+        pendingNativeRef.current = false;
         setNativeActive(false);
         if (usePlayerStore.getState().contentKey !== relKey) return;
         const pos = (r.positionMs || 0) / 1000;
         const dur = (r.durationMs || 0) / 1000;
         if (dur > 0) save(Math.min(pos, dur), dur);
         if (r.error) {
-          const next = srcIdx + 1;
-          if (next < srcList.length && errCountRef.current < srcList.length) {
-            errCountRef.current += 1;
-            resumeAt.current = pos > 0.5 ? pos : null;
-            setSrcIdx(next);
-            showNotice("پخش این نسخه ناموفق بود — نسخه‌ی بعدی امتحان می‌شود");
-          } else {
-            setFatal(true);
-            setLoading(false);
-          }
+          advanceLadder(pos);
           return;
         }
+        errCountRef.current = 0; // success re-arms the ladder
         setPlaying(false);
         setLoading(false);
         setCurrent(pos);
@@ -344,11 +413,14 @@ export default function PlayerMobile() {
         goBackToTitle();
       })
       .catch(() => {
+        // v0.16.2 — bridge/activity failure = THIS source unavailable →
+        // ladder on, like any other source failure (was: instant fatal)
+        if (nativeKeyRef.current !== key) return;
+        pendingNativeRef.current = false;
         setNativeActive(false);
-        setFatal(true);
-        setLoading(false);
+        advanceLadder();
       });
-  }, [open, activeSrc, proxyBase, fatal, contentKey, srcIdx, reloadKey]);
+  }, [open, wantsNative, activeSrc, proxyBase, fatal, contentKey, srcIdx, reloadKey, advanceLadder, save, startAt, title, subtitle, nextEpisode, goBackToTitle]);
 
   // lifecycle guard: a detached <video> must never keep playing in the void
   useEffect(() => {
@@ -364,6 +436,9 @@ export default function PlayerMobile() {
     setEnded(false);
     setFatal(false);
     errCountRef.current = 0;
+    ladderAtRef.current = null;
+    pendingNativeRef.current = false;
+    lastNoticeRef.current = null;
     setSheet(null);
   }, [contentKey]);
 
@@ -395,6 +470,7 @@ export default function PlayerMobile() {
     if (!v) return;
     const onLoaded = () => {
       setDuration(v.duration);
+      errCountRef.current = 0; // v0.16.2 — a successful start re-arms the ladder
       const resume = resumeAt.current ?? startAt;
       resumeAt.current = null;
       if (resume > 0 && resume < (v.duration || Infinity) - 5) v.currentTime = resume;
@@ -440,6 +516,8 @@ export default function PlayerMobile() {
     const onWaiting = () => setLoading(true);
     const onError = () => {
       if (!usePlayerStore.getState().open) return;
+      // v0.16.2 — the native player owns playback right now: not our error
+      if (pendingNativeRef.current) return;
       // network drop ≠ dead link — never burn the variant ladder for it
       if (!navigator.onLine) {
         netDownRef.current = true;
@@ -448,17 +526,7 @@ export default function PlayerMobile() {
         showNotice("اتصال اینترنت قطع شده است — با وصل شدن ادامه می‌دهیم");
         return;
       }
-      const next = srcIdx + 1;
-      if (next < srcList.length && errCountRef.current < srcList.length) {
-        errCountRef.current += 1;
-        if (v.currentTime > 0.5) resumeAt.current = v.currentTime;
-        setSrcIdx(next);
-        setLoading(true);
-        showNotice("پخش این نسخه ناموفق بود — نسخه‌ی بعدی امتحان می‌شود");
-      } else {
-        setFatal(true);
-        setLoading(false);
-      }
+      advanceLadder();
     };
     v.addEventListener("loadedmetadata", onLoaded);
     v.addEventListener("timeupdate", onTime);
@@ -478,7 +546,7 @@ export default function PlayerMobile() {
       v.removeEventListener("waiting", onWaiting);
       v.removeEventListener("error", onError);
     };
-  }, [videoEl, startAt, save, bumpUi, nextEpisode, volume, muted, srcIdx, srcList, showNotice]);
+  }, [videoEl, startAt, save, bumpUi, nextEpisode, volume, muted, advanceLadder, showNotice]);
 
   const pickSource = (i: number, manual = true) => {
     const v = videoRef.current;
@@ -488,6 +556,8 @@ export default function PlayerMobile() {
       rememberVariantPref(srcList[i]?.v);
       setQualityPref(srcList[i]?.q || "best");
       errCountRef.current = 0;
+      ladderAtRef.current = null;
+      pendingNativeRef.current = false;
       setFatal(false);
     }
     setSrcIdx(i);
@@ -926,12 +996,14 @@ export default function PlayerMobile() {
       dir="rtl"
       style={{ paddingTop: isLandscape ? "0px" : "env(safe-area-inset-top)" }}
     >
-      {/* video surface — fullscreen layer in landscape, 16:9 strip in portrait */}
+        {/* video surface — fullscreen layer in landscape, 16:9 strip in portrait */}
       <div
         className={isLandscape ? "absolute inset-0" : "relative w-full bg-black"}
         style={isLandscape ? undefined : { aspectRatio: "16 / 9" }}
       >
-        {proxyBase !== undefined && !nativeActive && (
+        {/* v0.16.2 — the WebView element only mounts for WEB-owned sources and
+            never under the fatal overlay: nothing can play behind the message */}
+        {proxyBase !== undefined && !wantsNative && !fatal && !nativeActive && (
           <video
             ref={(el) => {
               videoRef.current = el;
@@ -1329,10 +1401,10 @@ export default function PlayerMobile() {
                 type="button"
                 onClick={() => {
                   errCountRef.current = 0;
+                  ladderAtRef.current = null;
                   setFatal(false);
                   setLoading(true);
-                  const v = videoRef.current;
-                  if (v && v.currentTime > 0.5) resumeAt.current = v.currentTime;
+                  // resumeAt was already preserved by haltForFatal
                   setReloadKey((k) => k + 1);
                 }}
                 className="flex h-12 items-center rounded-full bg-white px-6 text-sm font-bold text-black"
@@ -1344,6 +1416,7 @@ export default function PlayerMobile() {
                   type="button"
                   onClick={() => {
                     errCountRef.current = 0;
+                    ladderAtRef.current = null;
                     setFatal(false);
                     pickSource(0);
                   }}
