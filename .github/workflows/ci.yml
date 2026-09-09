@@ -14,7 +14,12 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      # CI runs NODE tests + the web build only — the Electron BINARY is never
+      # executed here. Skipping its ~100MB download makes CI immune to
+      # github-releases download glitches (HTTP 500) that once broke this job.
       - run: npm ci --legacy-peer-deps
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
       - name: Preflight gate
         run: node scripts/preflight.mjs --quick
         env:
