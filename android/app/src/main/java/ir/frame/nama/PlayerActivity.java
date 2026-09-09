@@ -36,6 +36,7 @@ import androidx.media3.common.PlaybackParameters;
 import androidx.media3.common.Player;
 import androidx.media3.common.TrackGroup;
 import androidx.media3.common.TrackSelectionOverride;
+import androidx.media3.common.TrackSelectionParameters;
 import androidx.media3.common.Tracks;
 import androidx.media3.common.util.UnstableApi;
 import androidx.media3.datasource.okhttp.OkHttpDataSource;
@@ -96,7 +97,8 @@ public class PlayerActivity extends Activity {
     private final Handler tick = new Handler(Looper.getMainLooper());
 
     // custom controller views
-    private View topBar, bottomBar, gestureSurface, rippleHost, lockChip;
+    private View topBar, bottomBar, gestureSurface, lockChip;
+    private FrameLayout rippleHost;
     private ImageButton btnPlayPause;
     private TextView tvTitle, tvSubtitle, tvPosition, tvDuration, tvPreview;
     private SeekBar seek;
@@ -349,7 +351,7 @@ public class PlayerActivity extends Activity {
         topBar = findViewById(R.id.top_bar);
         bottomBar = findViewById(R.id.bottom_bar);
         gestureSurface = findViewById(R.id.gesture_surface);
-        rippleHost = findViewById(R.id.ripple_host);
+        rippleHost = (FrameLayout) findViewById(R.id.ripple_host);
         lockChip = findViewById(R.id.lock_chip);
         btnPlayPause = (ImageButton) findViewById(R.id.btn_play_pause);
         tvTitle = (TextView) findViewById(R.id.tv_title);
@@ -575,7 +577,7 @@ public class PlayerActivity extends Activity {
         Tracks tracks = player.getCurrentTracks();
         List<Tracks.Group> groups = new ArrayList<>();
         for (Tracks.Group g : tracks.getGroups()) {
-            if (g.getType() == trackType && g.getLength() > 0) groups.add(g);
+            if (g.getType() == trackType && g.length > 0) groups.add(g);
         }
         if (groups.isEmpty()) {
             Toast.makeText(this,
@@ -586,14 +588,14 @@ public class PlayerActivity extends Activity {
             return;
         }
 
-        boolean disabled = player.getTrackSelectionParameters().isTrackTypeDisabled(trackType);
+        boolean disabled = player.getTrackSelectionParameters().disabledTrackTypes.contains(trackType);
         List<String> labels = new ArrayList<>();
         labels.add(trackType == C.TRACK_TYPE_TEXT ? "خاموش" : "پیش‌فرض");
         List<int[]> ref = new ArrayList<>(); // {groupIdx, trackIdx}
         int checked = disabled ? 0 : -1;
         for (int gi = 0; gi < groups.size(); gi++) {
             Tracks.Group g = groups.get(gi);
-            for (int ti = 0; ti < g.getLength(); ti++) {
+            for (int ti = 0; ti < g.length; ti++) {
                 String label = g.getTrackFormat(ti).label;
                 if (label == null || label.isEmpty()) {
                     label = g.getTrackFormat(ti).language;
@@ -614,7 +616,7 @@ public class PlayerActivity extends Activity {
                 (DialogInterface dlg, int which) -> {
                     dlg.dismiss();
                     if (player == null) return;
-                    Player.TrackSelectionParameters.Builder pb =
+                    TrackSelectionParameters.Builder pb =
                         player.getTrackSelectionParameters().buildUpon();
                     if (which == 0) {
                         pb.clearOverridesOfType(trackType);
@@ -624,7 +626,7 @@ public class PlayerActivity extends Activity {
                         Tracks.Group g = groups.get(r[0]);
                         pb.setTrackTypeDisabled(trackType, false);
                         pb.setOverrideForType(
-                            new TrackSelectionOverride(g.getMediaTrackGroup(r[1]), r[1]));
+                            new TrackSelectionOverride(g.getMediaTrackGroup(), r[1]));
                     }
                     player.setTrackSelectionParameters(pb.build());
                 })
