@@ -104,3 +104,19 @@ export function isDuplicateNotice(
 ): boolean {
   return !!last && last.msg === msg && now - last.at < 5000;
 }
+
+/** v0.19.2 — how long the open path waits for <video> metadata before the
+ *  source is declared dead and the ladder steps (the metadata watchdog).
+ *  A hung/slow host used to leave the spinner up FOREVER — Chromium can keep
+ *  a stalled fetch far beyond any patience without ever firing `error`.
+ *  The localStorage hook exists for the E2E suite only (a real 12s hang
+ *  test would dominate the run); production always uses the 12s default. */
+export function metaWatchdogMs(): number {
+  try {
+    const n = Number((globalThis as { localStorage?: Storage }).localStorage?.getItem("nama-meta-watchdog-ms"));
+    if (Number.isFinite(n) && n >= 250) return n;
+  } catch {
+    /* no storage — default */
+  }
+  return 12000;
+}

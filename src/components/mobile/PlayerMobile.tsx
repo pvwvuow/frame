@@ -67,7 +67,7 @@ import { preferredSourceIdx, qualityPrefIdx, rememberedVariantIdx, rememberVaria
 import { setQualityPref } from "@/lib/quality-pref";
 import { titleHref, watchHref } from "@/lib/mobile-links";
 import { isLocalFile, localFilePath, nativeBridge, probeNativeBridge } from "@/lib/native-bridge";
-import { resolveOwner, shouldLadderAdvance, isLadderExhausted, isDuplicateNotice, type PlaybackOwner } from "@/lib/mobile-playback";
+import { resolveOwner, shouldLadderAdvance, isLadderExhausted, isDuplicateNotice, metaWatchdogMs, type PlaybackOwner } from "@/lib/mobile-playback";
 import { getPlayerEngine, setPlayerEngine, type PlayerEngine } from "@/lib/player-prefs";
 import { useCinema, cinemaTargetPosition, setCinemaFollowHandler, type CinemaBeat } from "@/lib/cinema";
 import CinemaPanel from "../cinema/CinemaPanel";
@@ -730,6 +730,17 @@ export default function PlayerMobile() {
     setNativeFallbackIdx(null);
     setNatUnavailable(false);
     setSheet(null);
+    // v0.19.2 — a fresh open must LOOK fresh: this component stays mounted
+    // across opens (only the render is skipped while closed), so loading/
+    // playing/time leak in from the PREVIOUS session — the next movie opened
+    // with the old pause icon, NO loading spinner and a center-play that did
+    // nothing until metadata arrived (the «موقع باز کردن فیلم باگه» report).
+    setLoading(true);
+    setPlaying(false);
+    setCurrent(0);
+    setDuration(0);
+    setBuffered(0);
+    setEpProgress(new Map());
   }, [contentKey]);
 
   // ---- Subs v3: proxy-extracted cues + user-loaded file --------------------
@@ -867,6 +878,27 @@ export default function PlayerMobile() {
       v.removeEventListener("error", onError);
     };
   }, [videoEl, startAt, save, bumpUi, nextEpisode, volume, muted, advanceLadder, showNotice, tapHolding, rate, autoLock, contentKey]);
+
+  // v0.19.2 — METADATA WATCHDOG. A hung/slow host must never leave the open
+  // spinner up forever: Chromium can stall a fetch far beyond any patience
+  // without firing `error`, and the ladder had no way to learn about it (the
+  // «باز کردن فیلم باگه» report). If the mounted web <video> still has NO
+  // metadata (readyState 0) when the timer fires, THIS source is declared
+  // dead exactly like an error event — the echo-guarded ladder steps and
+  // finally hands the native fallback rung its chance. Metadata already in,
+  // an offline overlay, or a pending error event → the timer is a no-op.
+  useEffect(() => {
+    if (!open || owner !== "web" || !videoEl || !activeSrc) return;
+    const t = setTimeout(() => {
+      const v = videoRef.current;
+      if (!v || !usePlayerStore.getState().open) return;
+      if (v.readyState >= 1) return; // metadata arrived — progress, not a hang
+      if (!navigator.onLine) return; // the offline overlay owns this state
+      if (v.error) return; // the error handler already owns this state
+      advanceLadder();
+    }, metaWatchdogMs());
+    return () => clearTimeout(t);
+  }, [open, owner, videoEl, activeSrc, reloadKey, advanceLadder]);
 
   const pickSource = (i: number, manual = true) => {
     const v = videoRef.current;

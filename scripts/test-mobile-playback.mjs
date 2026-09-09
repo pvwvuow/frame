@@ -31,7 +31,7 @@ const emit = (rel, outName, rewrite) => {
 };
 emit("src/lib/video-url.ts", "video-url.mjs");
 emit("src/lib/mobile-playback.ts", "mobile-playback.mjs", true);
-const { resolveOwner, shouldLadderAdvance, isLadderExhausted, isDuplicateNotice } = await import(
+const { resolveOwner, shouldLadderAdvance, isLadderExhausted, isDuplicateNotice, metaWatchdogMs } = await import(
   pathToFileURL(join(TMP, "mobile-playback.mjs")).href
 );
 const { classifyUrl, needsNativePlayer } = await import(
@@ -110,6 +110,19 @@ ok("notice: first message shows", isDuplicateNotice(null, "m", t0) === false);
 ok("notice: same message within 5s suppressed", isDuplicateNotice({ msg: "m", at: t0 }, "m", t0 + 2000) === true);
 ok("notice: different message shows", isDuplicateNotice({ msg: "a", at: t0 }, "b", t0 + 100) === false);
 ok("notice: same message after 5s shows", isDuplicateNotice({ msg: "m", at: t0 }, "m", t0 + 5001) === false);
+
+/* ---- metaWatchdogMs (v0.19.2 — the open-path hang breaker) ----------------
+ * A stalled host never fires `error` — the watchdog declares the source dead
+ * after the delay. 12s in production; the localStorage hook is E2E-only. */
+ok("watchdog: production default is 12s", metaWatchdogMs() === 12000);
+globalThis.localStorage = { getItem: (k) => (k === "nama-meta-watchdog-ms" ? "1200" : null) };
+ok("watchdog: E2E hook shortens the delay", metaWatchdogMs() === 1200);
+globalThis.localStorage = { getItem: () => "junk" };
+ok("watchdog: junk value → default", metaWatchdogMs() === 12000);
+globalThis.localStorage = { getItem: () => "100" };
+ok("watchdog: below the 250ms floor → default", metaWatchdogMs() === 12000);
+delete globalThis.localStorage;
+ok("watchdog: no storage at all → default", metaWatchdogMs() === 12000);
 
 rmSync(TMP, { recursive: true, force: true });
 console.log(failures === 0 ? "\nALL PASS" : `\n${failures} FAILURES`);

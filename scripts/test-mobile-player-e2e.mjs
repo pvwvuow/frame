@@ -82,6 +82,35 @@ const server = createServer(async (req, res) => {
   try {
     const url = new URL(req.url, BASE);
     let p = decodeURIComponent(url.pathname);
+    // v0.19.2 — /hang/* NEVER responds: Chromium stalls the fetch without an
+    // error event (the exact real-world slow-host disease) → only the
+    // metadata watchdog can rescue the open path from the eternal spinner.
+    if (p.startsWith("/hang/")) return; // socket stays open, no bytes, no error
+    // v0.19.2 — /slow/* serves the mp4 fixture AFTER a 3.5s delay (Range
+    // honored): keeps the loading spinner alive long enough to assert the
+    // fresh-open reset deterministically.
+    if (p.startsWith("/slow/")) {
+      const slowFile = join(OUT, "test-media/cinema-test.mp4");
+      const slowBuf = await readFile(slowFile);
+      await new Promise((r) => setTimeout(r, 3500));
+      const srange = req.headers.range;
+      if (srange) {
+        const m = /bytes=(\d*)-(\d*)/.exec(srange);
+        const start = m && m[1] ? parseInt(m[1], 10) : 0;
+        const end = m && m[2] ? parseInt(m[2], 10) : slowBuf.length - 1;
+        res.writeHead(206, {
+          "Content-Type": "video/mp4",
+          "Content-Range": `bytes ${start}-${end}/${slowBuf.length}`,
+          "Accept-Ranges": "bytes",
+          "Content-Length": end - start + 1,
+        });
+        res.end(slowBuf.subarray(start, end + 1));
+      } else {
+        res.writeHead(200, { "Content-Type": "video/mp4", "Accept-Ranges": "bytes", "Content-Length": slowBuf.length });
+        res.end(slowBuf);
+      }
+      return;
+    }
     if (p === "/") p = "/index.html";
     let file = join(OUT, normalize(p).replace(/^(\.\.[/\\])+/, ""));
     if (!file.startsWith(OUT)) { res.writeHead(403); res.end(); return; }
@@ -645,6 +674,105 @@ await waitFor("dead mkv: exhaustion lands on the honest «نیتیو در دست
 ok("dead mkv: NOT the fake «پخش این نسخه ممکن نشد» fatal", (await page3.locator("text=پخش این نسخه ممکن نشد").count()) === 0);
 await page3.screenshot({ path: `${shots}/13-dead-mkv-natunavailable.png` });
 await ctx3.close();
+
+/* ---------- v0.19.2 — fresh-open reset (the «باز کردن فیلم باگه» bug) ------
+ * The component STAYS MOUNTED across opens (only the render is skipped while
+ * closed), so loading/playing/time leaked in from the PREVIOUS session: the
+ * next video opened with NO spinner, the stale controls and a dead center
+ * play. Drive a REAL SPA re-open (episodes sheet → another episode) onto a
+ * 3.5s-delayed source — the spinner must be up right after the open. */
+const STALE_ROW = {
+  ...TEST_ROW,
+  id: 900004,
+  slug: "stale-reset",
+  title: "تست باز شدن تازه",
+  type: "series",
+  episodes: [
+    { id: 880001, season: 1, number: 1, name: "قسمت اول", thumbnail: "/test-media/poster.svg",
+      videoUrl: "/test-media/cinema-test.mp4", sources: JSON.stringify([{ q: "720p", v: "تست محلی", url: "/test-media/cinema-test.mp4" }]) },
+    { id: 880002, season: 1, number: 2, name: "قسمت دوم کند", thumbnail: "/test-media/poster.svg",
+      videoUrl: "/slow/slow-source.mp4", sources: JSON.stringify([{ q: "720p", v: "تست محلی", url: "/slow/slow-source.mp4" }]) },
+  ],
+};
+const ctx4 = await browser.newContext({
+  viewport: { width: 390, height: 844 },
+  isMobile: true,
+  hasTouch: true,
+  deviceScaleFactor: 2,
+  userAgent: "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36",
+  locale: "fa-IR",
+});
+await ctx4.route("**/catalog/mobile/manifest.json", (r) =>
+  r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(TINY_MANIFEST) }));
+await ctx4.route(/\/catalog\/mobile\/full-\d+\.json$/, (r) =>
+  r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(r.request().url().endsWith("full-00.json") ? [STALE_ROW] : []) }));
+await ctx4.route("**/api/**", (r) => r.fulfill({ status: 200, contentType: "application/json", body: "{}" }));
+const page4 = await ctx4.newPage();
+const pageState = (p) => p.evaluate(() => { const v = document.querySelector("video"); return v ? (v.paused ? "paused" : "playing") : "none"; });
+await page4.goto(`${BASE}/watch/_?s=stale-reset&ep=880001`, { waitUntil: "domcontentloaded" });
+await waitFor("stale: ep1 playing (baseline session)", async () => (await pageState(page4)) === "playing", 15000);
+await page4.waitForTimeout(1500); // build stale state (playing=true, loading=false, current>0)
+// the player goes fullscreen-FIRST on mount (same as the P0 scenario) — but
+// if this harness run refused fullscreen, drive it from the portrait strip
+let fs4 = await page4.evaluate(() => !!document.fullscreenElement);
+if (!fs4) {
+  await page4.touchscreen.tap(195, 100); // reveal the compact strip bar
+  await page4.locator('button[aria-label="تمام‌صفحه"]').first().click();
+  await waitFor("stale: landscape entered", async () => page4.evaluate(() => !!document.fullscreenElement), 8000);
+}
+await page4.touchscreen.tap(195, 700); // reveal controls in landscape
+const epSheetBtn = page4.locator('button:has-text("قسمت‌ها")').first();
+await epSheetBtn.waitFor({ timeout: 6000 });
+await epSheetBtn.click();
+await page4.waitForTimeout(400);
+await page4.locator('a:has-text("قسمت دوم کند")').first().click(); // SPA open of the DELAYED source
+await page4.waitForTimeout(700); // mid-delay: the 3.5s server hold keeps this window wide
+const spin = await page4.evaluate(() => !!document.querySelector('[data-player="mobile"] .animate-spin'));
+ok("stale-open: the loading spinner IS up on the fresh open (state reset)", spin);
+await page4.screenshot({ path: `${shots}/14-fresh-open-spinner.png` });
+await waitFor("stale-open: the delayed episode eventually PLAYS", async () => (await pageState(page4)) === "playing", 15000);
+ok("stale-open: SPA episode switch completes end-to-end", true);
+await ctx4.close();
+
+/* ---------- v0.19.2 — the metadata watchdog --------------------------------
+ * /hang/ NEVER responds: no bytes, no error event — the open path used to
+ * spin FOREVER on exactly this (slow host, stalled fetch). The watchdog
+ * (1200ms via the E2E localStorage hook; production default 12s) must
+ * declare the hung source dead and step the ladder onto the healthy one. */
+const HANG_ROW = {
+  ...TEST_ROW,
+  id: 900005,
+  slug: "hang-watchdog",
+  title: "تست نگهبان متادیتا",
+  sources: [
+    { q: "720p", v: "تست محلی", url: "/hang/hang-source.mp4" },
+    { q: "480p", v: "تست محلی", url: "/test-media/cinema-test.mp4" },
+  ],
+};
+const ctx5 = await browser.newContext({
+  viewport: { width: 390, height: 844 },
+  isMobile: true,
+  hasTouch: true,
+  deviceScaleFactor: 2,
+  userAgent: "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36",
+  locale: "fa-IR",
+});
+await ctx5.route("**/catalog/mobile/manifest.json", (r) =>
+  r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(TINY_MANIFEST) }));
+await ctx5.route(/\/catalog\/mobile\/full-\d+\.json$/, (r) =>
+  r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(r.request().url().endsWith("full-00.json") ? [HANG_ROW] : []) }));
+await ctx5.route("**/api/**", (r) => r.fulfill({ status: 200, contentType: "application/json", body: "{}" }));
+const page5 = await ctx5.newPage();
+await page5.goto(`${BASE}/`, { waitUntil: "domcontentloaded" });
+await page5.evaluate(() => localStorage.setItem("nama-meta-watchdog-ms", "1200"));
+await page5.goto(`${BASE}/watch/_?s=hang-watchdog`, { waitUntil: "domcontentloaded" });
+await waitFor("watchdog: the hung source was declared dead (ladder notice fired)", async () =>
+  (await page5.locator("text=پخش این نسخه ناموفق بود").count()) > 0, 10000);
+await waitFor("watchdog: the ladder stepped onto the healthy source and PLAYS", async () =>
+  (await pageState(page5)) === "playing", 12000);
+ok("watchdog: no eternal spinner on a stalled host", true);
+await page5.screenshot({ path: `${shots}/15-watchdog-recovered.png` });
+await ctx5.close();
 
 await browser.close();
 server.close();
