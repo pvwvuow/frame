@@ -64,8 +64,8 @@ import { ensurePlayableAudio } from "@/lib/audio-guard";
 import { preferredSourceIdx, qualityPrefIdx, rememberedVariantIdx, rememberVariantPref, variantShort } from "@/lib/variant";
 import { setQualityPref } from "@/lib/quality-pref";
 import { titleHref, watchHref } from "@/lib/mobile-links";
-import { isLocalFile, localFilePath, nativeBridge } from "@/lib/native-bridge";
-import { resolveOwner, shouldLadderAdvance, isLadderExhausted, isDuplicateNotice } from "@/lib/mobile-playback";
+import { isLocalFile, localFilePath, nativeBridge, probeNativeBridge } from "@/lib/native-bridge";
+import { resolveOwner, shouldLadderAdvance, isLadderExhausted, isDuplicateNotice, type PlaybackOwner } from "@/lib/mobile-playback";
 import { useCinema, cinemaTargetPosition, setCinemaFollowHandler, type CinemaBeat } from "@/lib/cinema";
 import CinemaPanel from "../cinema/CinemaPanel";
 import { useLibrary } from "../library/LibraryProvider";
@@ -122,13 +122,30 @@ export default function PlayerMobile() {
   // v0.16.2 — ONE declarative ownership decision per source. When native owns
   // playback the WebView element is never mounted, so it can neither race the
   // Media3 activity nor fire phantom errors into the failure ladder.
-  const wantsNative =
-    resolveOwner({
-      hasBridge: !!nativeBridge(),
-      cinemaActive: cin.status !== "idle",
-      proxyReady: proxyBase !== undefined,
-      url: activeSrc,
-    }) === "native";
+  // v0.16.3 — hasBridge comes from a REAL health probe (null = probing):
+  // Capacitor's registerPlugin() yields a truthy Proxy even for a dead plugin,
+  // and trusting it once burned the whole ladder into a fake «اتصال برقرار
+  // نشد» (the v0.12.0→v0.16.2 root bug). While probing, a native-classified
+  // source stays "pending" — no phantom fetch, no premature handoff. A PROBED
+  // dead plugin → "unsupported": the honest «اپ را آپدیت کنید» screen.
+  const [bridgeOk, setBridgeOk] = useState<boolean | null>(null);
+  useEffect(() => {
+    let alive = true;
+    void probeNativeBridge().then((ok) => {
+      if (alive) setBridgeOk(ok);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+  const owner: PlaybackOwner = resolveOwner({
+    hasBridge: bridgeOk,
+    cinemaActive: cin.status !== "idle",
+    proxyReady: proxyBase !== undefined,
+    url: activeSrc,
+  });
+  const wantsNative = owner === "native";
+  const ownerUnsupported = owner === "unsupported";
 
   const [playing, setPlaying] = useState(false);
   const [current, setCurrent] = useState(0);
@@ -412,12 +429,23 @@ export default function PlayerMobile() {
         }
         goBackToTitle();
       })
-      .catch(() => {
-        // v0.16.2 — bridge/activity failure = THIS source unavailable →
-        // ladder on, like any other source failure (was: instant fatal)
+      .catch((e: unknown) => {
+        // v0.16.3 — never swallow the rejection: a dead plugin used to burn the
+        // whole ladder into a fake «اتصال برقرار نشد» within milliseconds.
+        console.error("[nama] playVideo rejected:", e);
         if (nativeKeyRef.current !== key) return;
         pendingNativeRef.current = false;
         setNativeActive(false);
+        const msg = String((e as { message?: string; code?: string })?.message ?? (e as { code?: string })?.code ?? e ?? "");
+        if (/not implemented|Unimplemented/i.test(msg)) {
+          // the plugin is NOT registered on the native side — the ladder must
+          // not burn; flip ownership to the honest «unsupported» screen
+          showNotice("پلیر نیتیو در این نسخه در دسترس نیست — اپ را آپدیت کنید");
+          setBridgeOk(false);
+          return;
+        }
+        // bridge/activity failure = THIS source unavailable → ladder on,
+        // like any other source failure
         advanceLadder();
       });
   }, [open, wantsNative, activeSrc, proxyBase, fatal, contentKey, srcIdx, reloadKey, advanceLadder, save, startAt, title, subtitle, nextEpisode, goBackToTitle]);
@@ -1002,8 +1030,11 @@ export default function PlayerMobile() {
         style={isLandscape ? undefined : { aspectRatio: "16 / 9" }}
       >
         {/* v0.16.2 — the WebView element only mounts for WEB-owned sources and
-            never under the fatal overlay: nothing can play behind the message */}
-        {proxyBase !== undefined && !wantsNative && !fatal && !nativeActive && (
+            never under the fatal overlay: nothing can play behind the message.
+            v0.16.3 — "pending"/"unsupported"/"native" owners mount nothing
+            either (a phantom MKV fetch would fire a fake error and burn the
+            ladder — the exact v0.16.1 disease). */}
+        {proxyBase !== undefined && owner === "web" && !fatal && !nativeActive && (
           <video
             ref={(el) => {
               videoRef.current = el;
@@ -1425,6 +1456,35 @@ export default function PlayerMobile() {
                   نسخه اول
                 </button>
               )}
+              <button type="button" onClick={goBackToTitle} className="h-12 rounded-full border border-white/20 px-6 text-sm font-bold text-white">
+                بازگشت
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* v0.16.3 — the health probe PROVED the native plugin is dead (or the
+          runtime rejected it): be honest instead of a fake «اتصال برقرار نشد».
+          WebView-safe sources still play; MKV/extension-less sources land here. */}
+      {ownerUnsupported && activeSrc && !fatal && (
+        <div className="absolute inset-0 z-30 grid place-items-center bg-black/90" dir="rtl">
+          <div className="max-w-sm p-6 text-center">
+            <p className="text-xl font-black text-white">پلیر نیتیو در دسترس نیست</p>
+            <p className="mt-2 text-sm leading-7 text-zinc-400">
+              این نسخه از اپ نمی‌تواند فایل‌های MKV و کانتینرهای خاص را پخش کند. اپ را به آخرین نسخه آپدیت کنید؛ نسخه‌های mp4 همچنان پخش می‌شوند.
+            </p>
+            <div className="mt-5 flex flex-wrap justify-center gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setBridgeOk(null);
+                  void probeNativeBridge(true).then(setBridgeOk);
+                }}
+                className="flex h-12 items-center rounded-full bg-white px-6 text-sm font-bold text-black"
+              >
+                بررسی دوباره
+              </button>
               <button type="button" onClick={goBackToTitle} className="h-12 rounded-full border border-white/20 px-6 text-sm font-bold text-white">
                 بازگشت
               </button>

@@ -23,7 +23,12 @@ const ROOT = path.join(__dirname, "..");
 // 3 = v0.16.0 — applyCoverPack + covers-carryover + player HTTP hardening
 // 4 = v0.16.1 — cleartext traffic + OkHttp datasource (desktop-parity
 //     UA/TLS/redirects) → APK required for every user on ≤ rev 3
-const NATIVE_REV = 4;
+// 5 = v0.16.3 — THE ROOT PLAYBACK FIX: NamaNativePlugin is now registered
+//     BEFORE super.onCreate() in MainActivity (the bridge was dead since
+//     v0.12.0 — every native handoff rejected "not implemented"); plus the
+//     audio-decoder resilience in PlayerActivity → APK required for every
+//     user on ≤ rev 4
+const NATIVE_REV = 5;
 const API_DIR = path.join(ROOT, "src", "app", "api");
 const TMP_DIR = path.join(ROOT, ".mobile-tmp-api");
 const PACK_DIR = path.join(ROOT, ".covers-pack");

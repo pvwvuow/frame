@@ -18,6 +18,7 @@ import androidx.media3.common.C;
 import androidx.media3.common.MediaItem;
 import androidx.media3.common.MediaMetadata;
 import androidx.media3.common.MimeTypes;
+import androidx.media3.common.PlaybackException;
 import androidx.media3.common.Player;
 import androidx.media3.common.util.UnstableApi;
 import androidx.media3.datasource.okhttp.OkHttpDataSource;
@@ -44,6 +45,8 @@ public class PlayerActivity extends Activity {
     private ExoPlayer player;
     private PlayerView playerView;
     private final Handler tick = new Handler(Looper.getMainLooper());
+    /** v0.16.3 — the audio track was already dropped after a codec failure */
+    private boolean audioDropped = false;
 
     /** polled by JS through the plugin while the activity is up */
     private static volatile long sPositionMs = 0L;
@@ -212,8 +215,37 @@ public class PlayerActivity extends Activity {
             }
 
             @Override
-            public void onPlayerError(androidx.media3.common.PlaybackException error) {
-                sError = error.getMessage() == null ? "playback-error" : error.getMessage();
+            public void onPlayerError(PlaybackException error) {
+                // v0.16.3 — surface the precise code name to JS (was: only
+                // getMessage(), which made every failure look the same)
+                String codeName = error.errorCodeName == null
+                    ? ("code " + error.errorCode)
+                    : error.errorCodeName;
+                sError = codeName + ": "
+                    + (error.getMessage() == null ? "playback-error" : error.getMessage());
+
+                // v0.16.3 — an undecodable AUDIO track (AC3/E-AC3/DTS on
+                // devices/emulators without the codec — e.g. Nox) must not kill
+                // playback: drop the audio track once and keep the picture.
+                // If the retry still fails (or the failure was video-side),
+                // finish with the error so JS ladders to the next variant.
+                boolean codecFailure =
+                    error.errorCode == PlaybackException.ERROR_CODE_DECODER_INIT_FAILED
+                        || error.errorCode == PlaybackException.ERROR_CODE_DECODING_FAILED;
+                if (codecFailure && !audioDropped && player != null) {
+                    audioDropped = true;
+                    Toast.makeText(PlayerActivity.this,
+                        "صدای این نسخه پشتیبانی نمی‌شود — پخش بی‌صدا ادامه می‌یابد",
+                        Toast.LENGTH_LONG).show();
+                    player.setTrackSelectionParameters(
+                        player.getTrackSelectionParameters().buildUpon()
+                            .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, true)
+                            .build());
+                    player.prepare();
+                    player.setPlayWhenReady(true);
+                    return;
+                }
+
                 Toast.makeText(PlayerActivity.this,
                     "پخش این نسخه ممکن نشد", Toast.LENGTH_LONG).show();
                 tick.postDelayed(() -> finish(), 600L);

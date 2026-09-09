@@ -98,6 +98,35 @@ export function isAndroidNative(): boolean {
   return nativeBridge() !== null;
 }
 
+/* v0.16.3 — REAL bridge health. nativeBridge() only proves that @capacitor/core
+ * built its Proxy — NOT that the native side actually registered the plugin
+ * (the v0.12.0→v0.16.2 class of bug: an unregistered plugin still yields a
+ * truthy Proxy whose every method rejects with «"NamaNative.x()" is not
+ * implemented on android»). Ownership decisions must be based on a PROBE, so a
+ * dead plugin falls back to the honest web path instead of burning the whole
+ * variant ladder into a fake «اتصال برقرار نشد». */
+let bridgeHealthy: boolean | undefined;
+
+export async function probeNativeBridge(force = false): Promise<boolean> {
+  if (bridgeHealthy !== undefined && !force) return bridgeHealthy;
+  const b = nativeBridge();
+  if (!b) return (bridgeHealthy = false);
+  try {
+    const info = await b.getInstallInfo();
+    bridgeHealthy = !!info && info.hasNativePlayer === true;
+  } catch (e) {
+    console.error("[nama] NamaNative plugin unreachable:", e);
+    bridgeHealthy = false;
+  }
+  return bridgeHealthy;
+}
+
+/** true only once a probe has PROVEN the plugin answers. Until then callers
+ *  must treat ownership as unknown (see resolveOwner's "pending" state). */
+export function isBridgeHealthy(): boolean {
+  return bridgeHealthy === true;
+}
+
 /** MKV/MK3D (+ unknown-container streams, legacy containers, local offline
  *  downloads) that the WebView <video> cannot demux — the exact reason
  *  «فیلم‌های زیرنویس‌دار پلی نمی‌شوند» and «بعضی فیلم‌ها اصلاً پلی نمی‌شوند».

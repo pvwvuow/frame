@@ -1,11 +1,11 @@
 {
   "name": "frame",
-  "version": "0.16.2",
+  "version": "0.16.3",
   "private": true,
   "scripts": {
     "dev": "next dev -p 3000",
     "build": "prisma generate && next build --webpack && node scripts/postbuild.cjs",
-    "verify": "npx tsc --noEmit && node scripts/preflight.mjs && node scripts/test-startup-fixes.mjs && node scripts/test-stream-proxy.mjs && node scripts/test-source-fix.mjs && node scripts/test-downloads.mjs",
+    "verify": "npx tsc --noEmit && node scripts/preflight.mjs && node scripts/test-startup-fixes.mjs && node scripts/test-stream-proxy.mjs && node scripts/test-source-fix.mjs && node scripts/test-needs-native.mjs && node scripts/test-mobile-playback.mjs",
     "start": "NODE_ENV=production node .next/standalone/server.js",
     "lint": "eslint .",
     "db:push": "prisma db push --accept-data-loss",

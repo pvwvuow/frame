@@ -42,11 +42,19 @@ const ok = (name, cond) => {
 };
 
 /* ---- resolveOwner -------------------------------------------------------- */
-ok("owner: no bridge (Electron/browser) → web", resolveOwner({ hasBridge: false, cinemaActive: false, proxyReady: true, url: "https://x/a.mkv" }) === "web");
-ok("owner: proxy unresolved yet → web", resolveOwner({ hasBridge: true, cinemaActive: false, proxyReady: false, url: "https://x/a.mkv" }) === "web");
+/* v0.16.3 — hasBridge is tri-state: null = health probe in flight,
+ * false = probe PROVED the plugin dead, true = probe passed. */
+ok("owner: probing + native-classified URL → pending (no phantom fetch, no handoff)", resolveOwner({ hasBridge: null, cinemaActive: false, proxyReady: true, url: "https://x/a.mkv" }) === "pending");
+ok("owner: probing + token URL → pending", resolveOwner({ hasBridge: null, cinemaActive: false, proxyReady: true, url: "https://x/dl/8a71f" }) === "pending");
+ok("owner: probing + web-safe mp4 → web (never wait for the probe)", resolveOwner({ hasBridge: null, cinemaActive: false, proxyReady: true, url: "https://x/a.mp4" }) === "web");
+ok("owner: probed DEAD plugin + mkv → unsupported (honest screen, not a fake error)", resolveOwner({ hasBridge: false, cinemaActive: false, proxyReady: true, url: "https://x/a.mkv" }) === "unsupported");
+ok("owner: probed DEAD plugin + local: download → unsupported", resolveOwner({ hasBridge: false, cinemaActive: false, proxyReady: true, url: "local:/data/user/0/ir.frame.nama/files/dl/x.mkv" }) === "unsupported");
+ok("owner: probed DEAD plugin still plays mp4 in WebView", resolveOwner({ hasBridge: false, cinemaActive: false, proxyReady: true, url: "https://x/a.mp4" }) === "web");
+ok("owner: proxy unresolved yet → pending (no decision without the base)", resolveOwner({ hasBridge: true, cinemaActive: false, proxyReady: false, url: "https://x/a.mkv" }) === "pending");
 ok("owner: cinema rides the web video even for MKV", resolveOwner({ hasBridge: true, cinemaActive: true, proxyReady: true, url: "https://x/a.mkv" }) === "web");
-ok("owner: mkv on Android → native", resolveOwner({ hasBridge: true, cinemaActive: false, proxyReady: true, url: "https://x/a.mkv" }) === "native");
-ok("owner: token URL on Android → native", resolveOwner({ hasBridge: true, cinemaActive: false, proxyReady: true, url: "https://x/dl/8a71f" }) === "native");
+ok("owner: mkv on healthy Android → native", resolveOwner({ hasBridge: true, cinemaActive: false, proxyReady: true, url: "https://x/a.mkv" }) === "native");
+ok("owner: local: file on healthy Android → native", resolveOwner({ hasBridge: true, cinemaActive: false, proxyReady: true, url: "local:/data/user/0/ir.frame.nama/files/dl/x.mkv" }) === "native");
+ok("owner: token URL on healthy Android → native", resolveOwner({ hasBridge: true, cinemaActive: false, proxyReady: true, url: "https://x/dl/8a71f" }) === "native");
 ok("owner: plain mp4 on Android → web (light path)", resolveOwner({ hasBridge: true, cinemaActive: false, proxyReady: true, url: "https://x/a.mp4" }) === "web");
 
 /* ---- shouldLadderAdvance (echo guard) ------------------------------------ */

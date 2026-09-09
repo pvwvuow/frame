@@ -22,21 +22,33 @@
 
 import { needsNativePlayer } from "./video-url";
 
-export type PlaybackOwner = "web" | "native";
+export type PlaybackOwner = "web" | "native" | "pending" | "unsupported";
 
 /** ONE declarative decision of who owns playback for the active source.
  *  Made at render time: native-owned sources never mount the WebView
- *  element at all, so no phantom fetches and no WebView errors for them. */
+ *  element at all, so no phantom fetches and no WebView errors for them.
+ *
+ *  v0.16.3 — hasBridge is tri-state: `null` means the native plugin health
+ *  probe is still in flight (Capacitor's registerPlugin() yields a truthy
+ *  Proxy even for a DEAD plugin, so "looks like a bridge" proves nothing).
+ *    - probe in flight + native URL → "pending": mount NEITHER the WebView
+ *      <video> (a phantom MKV fetch would fire a fake error and burn the
+ *      ladder) NOR hand off. The probe is a single fast IPC — milliseconds.
+ *    - probe PROVED the plugin dead + native URL → "unsupported": the caller
+ *      shows the honest «پلیر نیتیو در این نسخه در دسترس نیست — اپ را آپدیت
+ *      کنید» screen. WebView-safe sources still play ("web"). */
 export function resolveOwner(opts: {
-  hasBridge: boolean;
+  hasBridge: boolean | null;
   cinemaActive: boolean;
   proxyReady: boolean;
   url: string;
 }): PlaybackOwner {
-  if (!opts.hasBridge) return "web";
-  if (!opts.proxyReady) return "web";
+  if (!opts.proxyReady) return "pending";
   if (opts.cinemaActive) return "web"; // cinema beats ride the web <video>
-  return needsNativePlayer(opts.url) ? "native" : "web";
+  const native = needsNativePlayer(opts.url);
+  if (opts.hasBridge === null) return native ? "pending" : "web"; // probing
+  if (!opts.hasBridge) return native ? "unsupported" : "web"; // probed dead
+  return native ? "native" : "web";
 }
 
 /** Duplicate-error echo guard: Chromium may deliver two error events for the
