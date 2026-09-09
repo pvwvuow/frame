@@ -57,7 +57,9 @@ export function useMkvWebSubs(
   enabled: boolean,
   getPosition?: () => number,
   getIsPlaying?: () => boolean,
-  getDuration?: () => number
+  getDuration?: () => number,
+  /** v0.21.0 — inter-chunk pacing (never fight the <video> for bandwidth) */
+  pace?: () => Promise<void>
 ) {
   const [cues, setCues] = useState<ParsedCue[]>([]);
   const [status, setStatus] = useState<MkvWebStatus>(EMPTY);
@@ -99,7 +101,8 @@ export function useMkvWebSubs(
           cov: st.covSec(),
         });
       },
-      () => durRef.current?.() ?? 0
+      () => durRef.current?.() ?? 0,
+      pace ?? (() => Promise.resolve())
     );
     scanRef.current = scan;
     scan.start(posRef.current?.() ?? 0);

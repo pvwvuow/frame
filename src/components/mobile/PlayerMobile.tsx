@@ -61,6 +61,7 @@ import WatchlistButton from "../WatchlistButton";
 import { classifyUrl, isMkvUrl, loadProxyBase, mediaSrc } from "@/lib/video-url";
 import { probeMkvHead } from "@/lib/mkv-web";
 import { useMkvWebSubs } from "@/lib/mkv-web-subs";
+import { MkvMseSession } from "@/lib/mkv-mse";
 import { parseVtt, srtToVtt, stopMediaEl, type ParsedCue } from "@/lib/media";
 import { useSubs } from "@/lib/subs-engine";
 import SubOverlay from "../SubOverlay";
@@ -68,7 +69,7 @@ import { ensurePlayableAudio } from "@/lib/audio-guard";
 import { preferredSourceIdx, qualityPrefIdx, rememberedVariantIdx, rememberVariantPref, variantShort } from "@/lib/variant";
 import { setQualityPref } from "@/lib/quality-pref";
 import { titleHref, watchHref } from "@/lib/mobile-links";
-import { isLocalFile, localFilePath, nativeBridge, probeNativeBridge } from "@/lib/native-bridge";
+import { isLocalFile, localFilePath, nativeBridge, probeNativeBridge, getInstallInfo } from "@/lib/native-bridge";
 import { resolveOwner, shouldLadderAdvance, isLadderExhausted, isDuplicateNotice, metaWatchdogMs, type PlaybackOwner } from "@/lib/mobile-playback";
 import { getPlayerEngine, setPlayerEngine, type PlayerEngine } from "@/lib/player-prefs";
 import { useCinema, cinemaTargetPosition, setCinemaFollowHandler, type CinemaBeat } from "@/lib/cinema";
@@ -204,6 +205,53 @@ export default function PlayerMobile() {
   const [nativeFallbackIdx, setNativeFallbackIdx] = useState<number | null>(null);
   const [natUnavailable, setNatUnavailable] = useState(false);
   const nativeTriedRef = useRef<Set<number>>(new Set());
+  /* ---- v0.21.0 — the MSE fallback transport (fMP4 over MediaSource) ----
+   * mseWanted = the raw URL the MSE session owns; mseUrl = its blob URL for
+   * the <video>. A device that cannot demux Matroska directly gets its
+   * catalog remuxed in JS instead of losing the cinema player. */
+  const [mseWanted, setMseWanted] = useState<string | null>(null);
+  const [mseUrl, setMseUrl] = useState<string | null>(null);
+  const [mseStateLabel, setMseStateLabel] = useState<string>("off");
+  const mseSessionRef = useRef<MkvMseSession | null>(null);
+  const mseWantedRef = useRef<string | null>(null);
+  const mseTriedRef = useRef<Set<string>>(new Set());
+  const msePendingSeekRef = useRef<number | null>(null);
+  const mseSeekTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    mseWantedRef.current = mseWanted;
+  }, [mseWanted]);
+  /* ---- v0.21.0 — diagnostics (the «کامل بررسی کن» surface: the settings
+   * sheet and the fatal panel show REAL state — version, engine, owner,
+   * transport, last media error, probe verdict — so a device report is
+   * actionable instead of «هیچی کار نمی‌کنه») ---- */
+  const [lastVideoErr, setLastVideoErr] = useState<string>("—");
+  const [probeInfo, setProbeInfo] = useState<string>("—");
+  const [appVer, setAppVer] = useState<string>("—");
+  useEffect(() => {
+    void getInstallInfo().then((i) => {
+      if (i?.versionName) setAppVer(`${i.versionName} (n${i.nativeRev ?? "?"})`);
+    }).catch(() => {});
+  }, []);
+  /* ---- v0.21.0 — bandwidth pacing for BOTH background byte consumers
+   * (subtitle scanner + MSE session). The v0.20.0 scanner ripped 768KB
+   * chunks back-to-back from open and starved the <video>'s own buffering
+   * on a real link — the «هیچی پخش نمی‌کند» experience. Every consumer
+   * waits while buffer health is low and keeps a base inter-chunk gap. */
+  const mkvPace = useCallback(async () => {
+    for (let i = 0; i < 20; i++) {
+      const v = videoRef.current;
+      if (!v || !usePlayerStore.getState().open) return;
+      if (v.paused || v.ended) break; // nothing to starve while paused
+      const ahead = v.buffered.length ? v.buffered.end(v.buffered.length - 1) - v.currentTime : 99;
+      if (ahead >= 24) break;
+      await new Promise((r) => setTimeout(r, 800));
+    }
+    await new Promise((r) => setTimeout(r, 1100)); // base gap between chunks
+  }, []);
+
+  /* v0.21.0 — the subtitle scan gate (scanReady) is declared after the
+   * `playing` state below — it must not read it before initialization. */
+
   const owner: PlaybackOwner =
     nativeFallbackIdx !== null && nativeFallbackIdx === srcIdx && bridgeOk
       ? "native"
@@ -221,6 +269,23 @@ export default function PlayerMobile() {
   const [current, setCurrent] = useState(0);
   const [duration, setDuration] = useState(0);
   const [buffered, setBuffered] = useState(0);
+
+  /* v0.21.0 — the subtitle scan gates on PLAYBACK being established (first
+   * `playing` — or a 15s grace for paused opens). It never races the video
+   * to byte 0 again. */
+  const [scanReady, setScanReady] = useState(false);
+  useEffect(() => {
+    if (!open) {
+      setScanReady(false);
+      return;
+    }
+    if (playing) {
+      setScanReady(true);
+      return;
+    }
+    const t = setTimeout(() => setScanReady(true), 15000);
+    return () => clearTimeout(t);
+  }, [open, playing]);
   const [volume, setVolume] = useState(1);
   const [muted, setMuted] = useState(false);
   const [rate, setRate] = useState(1);
@@ -440,7 +505,28 @@ export default function PlayerMobile() {
           if (p.status >= 400) advanceLadder(); // proven-dead source — step now
           return; // status 0 = transport hiccup → let the element try
         }
+        setProbeInfo(
+          p.matroska
+            ? `matroska · صدا: ${p.audioLabel ?? "?"} · ${p.mse?.supported ? `MSE OK (${p.mse.videoCodec})` : p.mse ? `MSE ✗ ${p.mse.reason}` : "MSE ?"}`
+            : "matroska نیست"
+        );
         if (!p.matroska) return; // token URL hiding an mp4 → element path
+        // v0.21.0 — MSE-FIRST for devices that already proved direct-MKV
+        // playback fails: skip the doomed <video> attempt entirely and let
+        // the fMP4 transport own the file from the start.
+        let preferMse = false;
+        try {
+          preferMse = sessionStorage.getItem("nama-mkv-mse") === "1";
+        } catch {
+          /* no storage */
+        }
+        if (preferMse && p.mse?.supported && effEngineRef.current === "auto") {
+          resumeAt.current = resumeAt.current ?? startAt ?? 0;
+          setMseUrl(null);
+          setMseWanted(url0);
+          setLoading(true);
+          return;
+        }
         if (p.audioOk === false && effEngineRef.current === "auto" && bridgeOkRef.current) {
           tryNativeFallback(
             `صوت این نسخه (${p.audioLabel ?? "پشتیبانی‌نشده"}) در پلیر وب قابل پخش نیست — پلیر نیتیو باز می‌شود`
@@ -576,6 +662,9 @@ export default function PlayerMobile() {
       const idx = capable.includes(srcIdxRef.current) ? srcIdxRef.current : capable[0];
       nativeTriedRef.current.add(idx);
       setNatUnavailable(false);
+      // v0.21.0 — the MSE transport cannot follow us to native
+      setMseWanted(null);
+      setMseUrl(null);
       setNativeFallbackIdx(idx);
       if (idx !== srcIdxRef.current) setSrcIdx(idx);
       else setReloadKey((k) => k + 1); // same idx → bump the handoff identity
@@ -789,6 +878,15 @@ export default function PlayerMobile() {
     setDuration(0);
     setBuffered(0);
     setEpProgress(new Map());
+    // v0.21.0 — fresh transport + diagnostics per open
+    setMseWanted(null);
+    setMseUrl(null);
+    setMseStateLabel("off");
+    mseSessionRef.current = null;
+    mseTriedRef.current = new Set();
+    msePendingSeekRef.current = null;
+    setLastVideoErr("—");
+    setProbeInfo("—");
   }, [contentKey]);
 
   // ---- Subs v3: proxy-extracted cues + user-loaded file --------------------
@@ -805,22 +903,71 @@ export default function PlayerMobile() {
   // «پلیر اصلی کار نمی‌کنه» report. The scanner feeds the SAME cue pipeline.
   const { cues: webSubCues, status: webSubStatus, kick: webKick } = useMkvWebSubs(
     rawActive || null,
-    Boolean(open && owner === "web" && !fatal && !nativeActive && subOn && !proxyBase && isMkvUrl(rawActive || "")),
+    Boolean(
+      open &&
+        owner === "web" &&
+        !fatal &&
+        !nativeActive &&
+        subOn &&
+        !proxyBase &&
+        !mseWanted && // v0.21.0 — the MSE session's own store feeds cues then
+        isMkvUrl(rawActive || "") &&
+        scanReady
+    ),
     () => videoRef.current?.currentTime ?? 0,
     () => !(videoRef.current?.paused ?? true),
-    () => videoRef.current?.duration ?? 0
+    () => videoRef.current?.duration ?? 0,
+    mkvPace
   );
   const [fileCues, setFileCues] = useState<ParsedCue[] | null>(null);
   useEffect(() => {
     setFileCues(null);
   }, [contentKey]);
-  const subCues = fileCues ?? (mkvCues.length ? mkvCues : webSubCues);
+  // v0.21.0 — when the MSE transport owns playback, its demux scanner is
+  // ALREADY parsing the file: poll the same cue store (the subs pipeline
+  // gets its cues without a second ranged scan).
+  const [mseCues, setMseCues] = useState<ParsedCue[]>([]);
+  const [mseSubInfo, setMseSubInfo] = useState<{ kinds: string[]; probed: boolean; audio: string[] } | null>(null);
+  useEffect(() => {
+    if (!mseWanted) {
+      setMseCues([]);
+      setMseSubInfo(null);
+      return;
+    }
+    let lastCount = -1;
+    const tick = setInterval(() => {
+      const s = mseSessionRef.current;
+      if (!s) return;
+      const st = s.store_;
+      const list = st.cues();
+      if (list.length !== lastCount) {
+        lastCount = list.length;
+        setMseCues(list);
+      }
+      setMseSubInfo({ kinds: [...st.kinds], probed: st.probed, audio: [...st.audioCodecs] });
+    }, 3000);
+    return () => clearInterval(tick);
+  }, [mseWanted]);
+  const subCues = fileCues ?? (mkvCues.length ? mkvCues : mseCues.length ? mseCues : webSubCues);
   const subLoaded = subCues.length > 0;
   // the subs sheet speaks SubStatus: whichever path actually probed wins
-  // (proxy on desktop/Electron; the in-WebView scanner on Android)
+  // (proxy on desktop/Electron; the in-WebView scanner on Android; the MSE
+  // session's own store when the fMP4 transport owns the file)
   const subInfo = proxySubInfo.probed
     ? proxySubInfo
-    : {
+    : mseWanted && mseSubInfo
+      ? {
+          found: mseCues.length > 0,
+          probed: mseSubInfo.probed,
+          matroska: true,
+          cueCount: mseCues.length,
+          cov: null,
+          kinds: mseSubInfo.kinds,
+          audio: mseSubInfo.audio,
+          audioOk: null,
+          audioLabel: null,
+        }
+      : {
         found: webSubStatus.subFound,
         probed: webSubStatus.probed,
         matroska: webSubStatus.matroska,
@@ -842,16 +989,149 @@ export default function PlayerMobile() {
     return () => videoEl.removeEventListener("seeked", onSeeked);
   }, [kickSubs, webKick, videoEl]);
 
+  // ---- v0.21.0 — the MSE session lifecycle --------------------------------
+  // One session per (open, web-owner, wanted url). The <video> renders the
+  // session's blob URL; sourceopen drives the init segments; the session's
+  // own stall-watch and append errors feed the honest ladder on death.
+  useEffect(() => {
+    if (!open || !videoEl || owner !== "web" || fatal || !mseWanted) return;
+    if (mseWanted !== rawActive) return; // stale want (source switched)
+    if (typeof MediaSource === "undefined") {
+      setMseWanted(null);
+      return;
+    }
+    setMseStateLabel("probing");
+    const s = new MkvMseSession(rawActive, {
+      onObjectUrl: (u) => setMseUrl(u),
+      onState: (st) => setMseStateLabel(st),
+      onFatal: (reason) => {
+        setLastVideoErr((e) => (e === "—" ? `MSE: ${reason}` : e));
+        setMseWanted(null);
+        setMseUrl(null);
+        if (!tryNativeFallback("پخش وب (بازسازی فایل) هم ممکن نشد — پلیر نیتیو امتحان می‌شود")) {
+          advanceLadder();
+        }
+      },
+      pace: mkvPace,
+    });
+    mseSessionRef.current = s;
+    s.noteVideoDuration(videoEl.duration);
+    const startPos = msePendingSeekRef.current ?? resumeAt.current ?? startAt ?? 0;
+    msePendingSeekRef.current = null;
+    void s.start(startPos).catch((e) => {
+      console.error("[nama] mse start:", e);
+    });
+    return () => {
+      s.stop();
+      if (mseSessionRef.current === s) mseSessionRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, videoEl, owner, fatal, mseWanted, rawActive]);
+
+  // v0.21.0 — MSE seek handling: a scrub to an UNBUFFERED position restarts
+  // the session at the new byte offset (covered seeks stay inside MSE).
+  useEffect(() => {
+    if (!videoEl || !mseWanted) return;
+    const onSeeking = () => {
+      const s = mseSessionRef.current;
+      const v = videoRef.current;
+      if (!s || !v) return;
+      const t = v.currentTime;
+      for (let i = 0; i < v.buffered.length; i++) {
+        if (t >= v.buffered.start(i) - 0.25 && t < v.buffered.end(i)) return; // covered
+      }
+      if (mseSeekTimer.current) clearTimeout(mseSeekTimer.current);
+      mseSeekTimer.current = setTimeout(() => {
+        msePendingSeekRef.current = t;
+        s.seekTo(t);
+      }, 700);
+    };
+    videoEl.addEventListener("seeking", onSeeking);
+    return () => {
+      if (mseSeekTimer.current) clearTimeout(mseSeekTimer.current);
+      videoEl.removeEventListener("seeking", onSeeking);
+    };
+  }, [videoEl, mseWanted]);
+
+  /* v0.21.0 — THE failure verdict. A media error is no longer blindly fed to
+   * the variant ladder — the class of failure decides:
+   *  - decode/src-not-supported (code 3/4) on Matroska content → ONE MSE
+   *    attempt on the SAME bytes (the device WebView may just not demux
+   *    Matroska — the file is still H.264/AAC web-playable). MSE failure →
+   *    the native fallback rung DIRECTLY (identical variants would fail
+   *    identically — no 5×12s ladder burn into the no-cinema player).
+   *  - network errors keep the classic ladder (another variant may live on
+   *    a healthier host). */
+  const handleMediaFailure = useCallback(
+    (v: HTMLVideoElement) => {
+      const code = v.error?.code ?? 0;
+      const msg = String(v.error?.message ?? "").slice(0, 90);
+      setLastVideoErr(`code ${code}${msg ? ` · ${msg}` : ""}`);
+      const cur = srcList[Math.min(srcIdxRef.current, srcList.length - 1)]?.url || src || "";
+      const idxAtFail = srcIdxRef.current;
+      const cls = classifyUrl(mediaSrc(cur, proxyBase ?? null));
+      const mkvish = isMkvUrl(cur) || cls === "fragile";
+      if (mkvish && (code === 3 || code === 4) && typeof MediaSource !== "undefined" && !mseTriedRef.current.has(cur) && mseWantedRef.current !== cur) {
+        mseTriedRef.current.add(cur);
+        try {
+          sessionStorage.setItem("nama-mkv-mse", "1"); // this device prefers the fMP4 transport from now on
+        } catch {
+          /* no storage */
+        }
+        const pos = v.currentTime > 0.5 ? v.currentTime : 0;
+        void probeMkvHead(cur)
+          .then((p) => {
+            if (usePlayerStore.getState().contentKey !== contentKey) return;
+            if (srcIdxRef.current !== idxAtFail) return; // user already moved on
+            if (!p.reachable || !p.matroska) {
+              advanceLadder();
+              return;
+            }
+            if (p.mse?.supported) {
+              resumeAt.current = pos > 0.5 ? pos : resumeAt.current;
+              stopMediaEl(v);
+              setFatal(false);
+              setMseUrl(null);
+              setMseWanted(cur);
+              setLoading(true);
+              showNotice("پخش مستقیم ممکن نشد — بازسازی فایل برای پلیر وب…");
+              return;
+            }
+            // this WebView cannot demux MKV and the file is not MSE-able either
+            if (!tryNativeFallback("پلیر وب این فایل را پخش نمی‌کند — پلیر نیتیو باز می‌شود")) haltForFatal();
+          })
+          .catch(() => {
+            if (srcIdxRef.current === idxAtFail) advanceLadder();
+          });
+        return;
+      }
+      if (mseWantedRef.current === cur && code >= 3) {
+        // the MSE transport itself died at the element level → native rung
+        if (!tryNativeFallback("پخش وب ممکن نشد — پلیر نیتیو امتحان می‌شود")) haltForFatal();
+        return;
+      }
+      advanceLadder();
+    },
+    [srcList, src, proxyBase, contentKey, advanceLadder, tryNativeFallback, haltForFatal, showNotice]
+  );
+
   // ---- core <video> listeners ----------------------------------------------
   useEffect(() => {
     const v = videoEl;
     if (!v) return;
     const onLoaded = () => {
-      setDuration(v.duration);
+      setDuration(Number.isFinite(v.duration) ? v.duration : 0); // MSE: Infinity until duration lands
       errCountRef.current = 0; // v0.16.2 — a successful start re-arms the ladder
-      const resume = resumeAt.current ?? startAt;
-      resumeAt.current = null;
-      if (resume > 0 && resume < (v.duration || Infinity) - 5) v.currentTime = resume;
+      // v0.21.0 — a pending MSE restart-seek wins over resume/startAt
+      const pending = msePendingSeekRef.current;
+      if (pending != null) {
+        msePendingSeekRef.current = null;
+        if (pending > 0 && pending < (v.duration || Infinity) - 5) v.currentTime = pending;
+      } else {
+        const resume = resumeAt.current ?? startAt;
+        resumeAt.current = null;
+        if (resume > 0 && resume < (v.duration || Infinity) - 5) v.currentTime = resume;
+      }
       setLoading(false);
       v.volume = volume;
       v.muted = muted;
@@ -883,6 +1163,17 @@ export default function PlayerMobile() {
       } else {
         slowRef.current.since = 0;
       }
+      // v0.21.0 — feed the MSE session (park/resume + runway logic) + duration
+      const mse = mseSessionRef.current;
+      if (mse) {
+        mse.noteVideoDuration(v.duration);
+        mse.progress(v.currentTime);
+      }
+      // v0.21.0 — MSE durations can land late/corrected (Info Duration lies,
+      // endOfStream): keep the seekbar in sync as the element re-reports it
+      setDuration((d) =>
+        Number.isFinite(v.duration) && v.duration > 0 && Math.abs(v.duration - d) > 0.5 ? v.duration : d
+      );
     };
     const onPlay = () => {
       setPlaying(true);
@@ -934,7 +1225,8 @@ export default function PlayerMobile() {
         showNotice("اتصال اینترنت قطع شده است — با وصل شدن ادامه می‌دهیم");
         return;
       }
-      advanceLadder();
+      // v0.21.0 — the failure verdict (MSE attempt / smart ladder)
+      handleMediaFailure(v);
     };
     v.addEventListener("loadedmetadata", onLoaded);
     v.addEventListener("timeupdate", onTime);
@@ -954,7 +1246,7 @@ export default function PlayerMobile() {
       v.removeEventListener("waiting", onWaiting);
       v.removeEventListener("error", onError);
     };
-  }, [videoEl, startAt, save, bumpUi, nextEpisode, volume, muted, advanceLadder, showNotice, tapHolding, rate, autoLock, contentKey]);
+  }, [videoEl, startAt, save, bumpUi, nextEpisode, volume, muted, advanceLadder, handleMediaFailure, showNotice, tapHolding, rate, autoLock, contentKey]);
 
   // v0.19.2 — METADATA WATCHDOG. A hung/slow host must never leave the open
   // spinner up forever: Chromium can stall a fetch far beyond any patience
@@ -963,9 +1255,10 @@ export default function PlayerMobile() {
   // metadata (readyState 0) when the timer fires, THIS source is declared
   // dead exactly like an error event — the echo-guarded ladder steps and
   // finally hands the native fallback rung its chance. Metadata already in,
-  // an offline overlay, or a pending error event → the timer is a no-op.
+  // an offline overlay, a pending error event, or an ACTIVE MSE session
+  // (it owns startup + its own stall-watch) → the timer is a no-op.
   useEffect(() => {
-    if (!open || owner !== "web" || !videoEl || !activeSrc) return;
+    if (!open || owner !== "web" || !videoEl || !activeSrc || mseWanted) return;
     const t = setTimeout(() => {
       const v = videoRef.current;
       if (!v || !usePlayerStore.getState().open) return;
@@ -975,7 +1268,7 @@ export default function PlayerMobile() {
       advanceLadder();
     }, metaWatchdogMs());
     return () => clearTimeout(t);
-  }, [open, owner, videoEl, activeSrc, reloadKey, advanceLadder]);
+  }, [open, owner, videoEl, activeSrc, reloadKey, advanceLadder, mseWanted]);
 
   const pickSource = (i: number, manual = true) => {
     const v = videoRef.current;
@@ -993,6 +1286,10 @@ export default function PlayerMobile() {
       setNativeFallbackIdx(null);
       setNatUnavailable(false);
       setFatal(false);
+      // v0.21.0 — a manual pick leaves the MSE transport (the new source
+      // starts on the plain element; the verdict ladder re-owns it if needed)
+      setMseWanted(null);
+      setMseUrl(null);
     }
     setSrcIdx(i);
     setSheet(null);
@@ -1763,7 +2060,7 @@ export default function PlayerMobile() {
               setVideoEl(el);
             }}
             key={`${activeSrc}#${reloadKey}`}
-            src={activeSrc}
+            src={mseWanted ? (mseUrl ?? undefined) : activeSrc}
             poster={poster}
             className="h-full w-full"
             style={{
@@ -2277,6 +2574,9 @@ export default function PlayerMobile() {
           <div className="max-w-sm p-6 text-center">
             <p className="text-xl font-black text-white">پخش این نسخه ممکن نشد</p>
             <p className="mt-2 text-sm leading-7 text-zinc-400">اتصال به منبع پخش برقرار نشد یا فایل قابل پخش نیست. دوباره تلاش کنید یا نسخه/قسمت دیگری را امتحان کنید.</p>
+            <p className="mt-3 rounded-lg bg-white/5 px-3 py-2 text-[10px] leading-5 text-zinc-500" dir="ltr">
+              {appVer} · err: {lastVideoErr} · src: {probeInfo}
+            </p>
             <div className="mt-5 flex flex-wrap justify-center gap-3">
               <button
                 type="button"
@@ -2854,11 +3154,18 @@ export default function PlayerMobile() {
                     </span>
                   </button>
                 ))}
-                {/* stream info */}
-                <p className="mb-1 mt-3 text-[11px] font-black text-zinc-400">اطلاعات استریم</p>
+                {/* stream info + v0.21.0 diagnostics */}
+                <p className="mb-1 mt-3 text-[11px] font-black text-zinc-400">اطلاعات پخش</p>
                 <div className="rounded-xl bg-white/5 p-3 text-[11px] leading-6 text-zinc-400">
-                  <p>پلیر فعال: {owner === "native" ? `نیتیو (Media3)${engine === "native" && !webOverride ? " — انتخاب شما" : ""}` : `وب${webOverride ? " — این جلسه، با سوئیچ شما" : ""}`}</p>
-                  <p>رزولوشن: {videoEl ? `${fa(videoEl.videoWidth)}×${fa(videoEl.videoHeight)}` : "—"}</p>
+                  <p>اپ: {appVer}</p>
+                  <p>
+                    پلیر فعال: {owner === "native" ? `نیتیو (Media3)${engine === "native" && !webOverride ? " — انتخاب شما" : ""}` : mseWanted ? "وب — بازسازی فایل (MSE)" : "وب (مستقیم)"}
+                    {webOverride && owner !== "native" ? " — این جلسه، با سوئیچ شما" : ""}
+                  </p>
+                  {mseWanted && <p>وضعیت MSE: {mseStateLabel}</p>}
+                  <p>خطای آخر ویدیو: <span dir="ltr" className="tabular-nums">{lastVideoErr}</span></p>
+                  <p>پیش‌بررسی منبع: <span dir="ltr" className="tabular-nums">{probeInfo}</span></p>
+                  <p>رزولوشن: {videoEl && videoEl.videoWidth ? `${fa(videoEl.videoWidth)}×${fa(videoEl.videoHeight)}` : "—"}</p>
                   <p>نسخه فعال: {qualityLabel || "عادی"}{currentVariant ? ` · ${variantShort(currentVariant) || "اصلی"}` : ""}</p>
                   <p>سلامت بافر: {fa(Math.max(0, Math.round(buffered - current)))} ثانیه</p>
                   <p>شبکه: {netInfo().type}{fa(netInfo().downlink ?? 0) !== "۰" ? ` · ~${fa(netInfo().downlink ?? 0)}Mb/s` : ""}</p>

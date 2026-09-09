@@ -1,6 +1,6 @@
 {
   "name": "frame",
-  "version": "0.20.0",
+  "version": "0.21.0",
   "private": true,
   "scripts": {
     "dev": "next dev -p 3000",
@@ -121,7 +121,7 @@
     "tw-animate-css": "^1.3.5",
     "typescript": "^5"
   },
-  "description": "فریم (Frame) — سینمای خانگی | ویندوز، مک، لینوکس و اندروید",
+  "description": "\u0641\u0631\u06cc\u0645 (Frame) \u2014 \u0633\u06cc\u0646\u0645\u0627\u06cc \u062e\u0627\u0646\u06af\u06cc | \u0648\u06cc\u0646\u062f\u0648\u0632\u060c \u0645\u06a9\u060c \u0644\u06cc\u0646\u0648\u06a9\u0633 \u0648 \u0627\u0646\u062f\u0631\u0648\u06cc\u062f",
   "author": "Nama",
   "main": "electron/dist/main.cjs",
   "homepage": "https://github.com/pvwvuow/frame",

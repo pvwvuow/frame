@@ -100,20 +100,38 @@ export const ID = {
   VOID: 0xec,
   INFO: 0x1549a966,
   TIMESTAMPSCALE: 0x2ad7b1,
+  DURATION: 0x4489,
   TRACKS: 0x1654ae6b,
   TRACK_ENTRY: 0xae,
   TRACK_NUMBER: 0xd7,
   TRACK_TYPE: 0x83,
   CODEC_ID: 0x86,
+  CODEC_PRIVATE: 0x63a2,
   TRACK_LANGUAGE: 0x22b59c,
   TRACK_NAME: 0x536e,
+  PIXEL_WIDTH: 0xb0,
+  PIXEL_HEIGHT: 0xba,
   CLUSTER: 0x1f43b675,
   TIMECODE: 0xe7,
   SIMPLE_BLOCK: 0xa3,
   BLOCK_GROUP: 0xa0,
   BLOCK: 0xa1,
+  REFERENCE_BLOCK: 0xfb,
   CUES: 0x1c53bb6b,
 } as const;
+
+/** v0.21.0 — one decoded demux frame handed to the MSE remux path. `data`
+ *  is a subarray view into the scanner's buffer (safe: feed() copies on
+ *  concat, so views outlive the feed call that produced them). */
+export type MkvFrame = {
+  /** marked track vint (block-header form, same key space as mediaTracks) */
+  track: number;
+  /** presentation timestamp, ms from file start */
+  ptsMs: number;
+  /** SimpleBlock keyframe flag (Block-in-Group → reference-based, best-effort) */
+  key: boolean;
+  data: Uint8Array;
+};
 
 const KNOWN_IDS = new Set<number>(Object.values(ID));
 
@@ -176,6 +194,21 @@ export function sniffEbml(buf: Uint8Array): number {
 
 export type TextTrackInfo = { vint: number; codec: "utf8" | "webvtt" | "ass"; lang: string; name: string };
 
+/** v0.21.0 — one entry of the full track registry (Tracks→TrackEntry). */
+export type MkvMediaTrack = {
+  /** marked vint — the key block headers carry */
+  num: number;
+  /** 1 = video, 2 = audio, 0x11 = subtitle */
+  type: number;
+  codec: string;
+  /** CodecPrivate bytes: avcC for V_MPEG4/ISO/AVC, ASC for A_AAC, … */
+  private: Uint8Array | null;
+  width: number;
+  height: number;
+  lang: string;
+  name: string;
+};
+
 export class MkvCueStore {
   timestampScale = 1_000_000; // ns per tick (default 1ms)
   textTracks = new Map<number, TextTrackInfo>();
@@ -187,6 +220,34 @@ export class MkvCueStore {
   matroska = false;
   fileSize = 0;
   private served: number | null = null;
+
+  /* ---- v0.21.0 — full media-track registry (the MSE demux path) ---- */
+
+  /** ALL tracks (video/audio/subtitle) keyed by the MARKED track vint — the
+   *  same key space the block headers carry. CodecPrivate (avcC / ASC) is
+   *  what makes fMP4 remuxing possible without re-deriving decoder config. */
+  mediaTracks = new Map<number, MkvMediaTrack>();
+  /** Segment→Info→Duration, seconds (float; null when absent) */
+  durationSec: number | null = null;
+
+  registerMediaTrack(t: MkvMediaTrack) {
+    this.mediaTracks.set(t.num, t);
+  }
+
+  get videoMediaTrack(): MkvMediaTrack | null {
+    for (const t of this.mediaTracks.values()) if (t.type === 1 && t.codec.startsWith("V_")) return t;
+    return null;
+  }
+
+  get audioMediaTrack(): MkvMediaTrack | null {
+    for (const t of this.mediaTracks.values()) if (t.type === 2 && t.codec.startsWith("A_")) return t;
+    return null;
+  }
+
+  /** The plain (block-header) vint a given plain TrackNumber maps to. */
+  static marked(num: number): number {
+    return markedTrackVint(num);
+  }
 
   registerTextTrack(vintNo: number, kind: "utf8" | "webvtt" | "ass", lang: string, name: string) {
     this.textTracks.set(vintNo, { vint: vintNo, codec: kind, lang: lang || "", name: name || "" });
@@ -391,7 +452,12 @@ export class MkvScanner {
   private clusterTc = 0;
   private scaleMs = 1;
   private junk = 0;
-  /** v0.20.0 SESSION FIX — a scanner opened MID-FILE (byteBase > 0) sees a
+  /** v0.21.0 — set while walking a BLOCK_GROUP; the enclosed BLOCK's
+   *  keyframe-ness is inferred from the absence of a ReferenceBlock. */
+  private groupHasRef = false;
+  /** v0.21.0 — demux frame sink (video/audio) for the MSE remux path. */
+  private onFrame: ((f: MkvFrame) => void) | null;
+  /** v0.21.0 — v0.20.0 SESSION FIX — a scanner opened MID-FILE (byteBase > 0) sees a
    *  window that starts inside a cluster/block; walking elements from there
    *  can parse a plausible fake claim and blind-skip the whole window (the
    *  «8 cues instead of 12» bug). Such a scanner MUST align to the first
@@ -400,10 +466,12 @@ export class MkvScanner {
   private aligned: boolean;
   constructor(
     private store: MkvCueStore,
-    private byteBase = 0
+    private byteBase = 0,
+    onFrame?: (f: MkvFrame) => void
   ) {
     this.scaleMs = (store.timestampScale || 1_000_000) / 1e6;
     this.aligned = byteBase === 0;
+    this.onFrame = onFrame ?? null;
   }
 
   feed(chunk: Uint8Array) {
@@ -539,14 +607,18 @@ export class MkvScanner {
       case ID.BLOCK: {
         if (el.unknown || el.size > 32 << 20) return this.skipElement(el);
         if (el.dataStart + el.size > buf.length) return "more";
-        this.parseBlock(buf, el.dataStart, el.size);
+        this.parseBlock(buf, el.dataStart, el.size, el.id === ID.SIMPLE_BLOCK);
         this.pos = el.dataStart + el.size;
         return "ok";
       }
       case ID.BLOCK_GROUP:
+        this.groupHasRef = false;
         this.stack.push({ end: elEndAbs });
         this.pos = el.dataStart;
         return "ok";
+      case ID.REFERENCE_BLOCK:
+        this.groupHasRef = true; // a B-frame lives in this group
+        return this.skipElement(el, true);
       default: {
         this.junk += 1;
         if (this.junk >= 24) {
@@ -573,6 +645,16 @@ export class MkvScanner {
         if (scale >= 1 && scale <= 1e9) {
           this.store.timestampScale = scale;
           this.scaleMs = scale / 1e6;
+        }
+      } else if (idV.value === ID.DURATION && (sizeV.value === 4 || sizeV.value === 8)) {
+        // v0.21.0 — Segment→Info→Duration: an IEEE float in TimestampScale
+        // units (usually ns). Gives the MSE path an exact mediaSource.duration.
+        if (ds + sizeV.value > buf.length) return;
+        const dv = new DataView(buf.buffer, buf.byteOffset + ds, sizeV.value);
+        const val = sizeV.value === 4 ? dv.getFloat32(0) : dv.getFloat64(0);
+        if (Number.isFinite(val) && val > 0) {
+          const sec = (val * this.store.timestampScale) / 1e9;
+          if (sec > 0 && sec < 24 * 3600 * 8) this.store.durationSec = sec;
         }
       }
       p = ds + sizeV.value;
@@ -630,6 +712,9 @@ export class MkvScanner {
     let codec = "";
     let subLang = "";
     let subName = "";
+    let codecPrivate: Uint8Array | null = null;
+    let width = 0;
+    let height = 0;
     const flush = () => {
       if (trackNum != null && codec) {
         if (trackType === 0x11) {
@@ -647,11 +732,25 @@ export class MkvScanner {
         } else if (trackType === 1) {
           this.store.videoCodec = codec;
         }
+        // v0.21.0 — EVERY track lands in the registry (the MSE demux path
+        // needs the video/audio entries with their CodecPrivate bytes).
+        this.store.registerMediaTrack({
+          num: markedTrackVint(trackNum),
+          type: trackType ?? 0,
+          codec,
+          private: codecPrivate,
+          width,
+          height,
+          lang: subLang,
+          name: subName,
+        });
       }
       trackNum = trackType = null;
       codec = "";
       subLang = "";
       subName = "";
+      codecPrivate = null;
+      width = height = 0;
     };
     while (p < buf.length - 1) {
       const idV = peekVint(buf, p, true);
@@ -677,8 +776,30 @@ export class MkvScanner {
             trackNum = n;
           } else if (id2.value === ID.TRACK_TYPE) trackType = buf[d2];
           else if (id2.value === ID.CODEC_ID) codec = asciiDec.decode(buf.subarray(d2, d2 + sz2.value));
+          else if (id2.value === ID.CODEC_PRIVATE) codecPrivate = buf.slice(d2, d2 + sz2.value);
           else if (id2.value === ID.TRACK_LANGUAGE) subLang = utf8Dec.decode(buf.subarray(d2, d2 + sz2.value));
           else if (id2.value === ID.TRACK_NAME) subName = utf8Dec.decode(buf.subarray(d2, d2 + sz2.value));
+          else if (id2.value === 0xe0 || id2.value === 0xe1) {
+            // v0.21.0 fix — PixelWidth/Height (and friends) live INSIDE the
+            // Video (0xe0) / Audio (0xe1) MASTER elements, not directly in
+            // the TrackEntry — scan one level deeper.
+            let q3 = d2;
+            const dEnd = Math.min(d2 + sz2.value, buf.length);
+            while (q3 < dEnd - 1) {
+              const id3 = peekVint(buf, q3, true);
+              if (id3.st !== "ok") break;
+              const sz3 = peekVint(buf, q3 + id3.len);
+              if (sz3.st !== "ok") break;
+              const d3 = q3 + id3.len + sz3.len;
+              if (d3 + sz3.value > buf.length) break;
+              if (id3.value === ID.PIXEL_WIDTH && sz3.value <= 2) {
+                width = sz3.value === 1 ? buf[d3]! : (buf[d3]! << 8) | buf[d3 + 1]!;
+              } else if (id3.value === ID.PIXEL_HEIGHT && sz3.value <= 2) {
+                height = sz3.value === 1 ? buf[d3]! : (buf[d3]! << 8) | buf[d3 + 1]!;
+              }
+              q3 = d3 + sz3.value;
+            }
+          }
           q = d2 + sz2.value;
         }
       }
@@ -690,32 +811,116 @@ export class MkvScanner {
     }
   }
 
-  /** SimpleBlock / Block header → subtitle frame when it belongs to a KNOWN
-   *  text subtitle track. Layout: [track vint][timecode int16][flags u8]. */
-  private parseBlock(buf: Uint8Array, start: number, size: number) {
+  /** SimpleBlock / Block header → subtitle frame OR (v0.21.0) a demux frame
+   *  for the video/audio tracks the MSE path consumes.
+   *  Layout: [track vint][timecode int16][flags u8]. Lacing (flags 1–2):
+   *  0 none, 1 Xiph, 2 fixed, 3 EBML. */
+  private parseBlock(buf: Uint8Array, start: number, size: number, simple = true) {
     const tv = peekVint(buf, start, true);
     if (tv.st !== "ok" || tv.len > 8) return;
     if (tv.len + 3 > size) return;
     const track = tv.value;
-    const info = this.store.textTracks.get(track);
-    if (!info) return;
-    const tcRel = (buf[start + tv.len] << 8) | buf[start + tv.len + 1];
+    // v0.21.0 FIX — the block timecode is a SIGNED int16; the audio priming
+    // frame carries pts −23ms which wrapped to 65513 in the unsigned read,
+    // throwing the whole MSE audio grid 65s into the future (samples land
+    // beyond the media duration → silently discarded → empty buffered).
+    let tcRel = (buf[start + tv.len] << 8) | buf[start + tv.len + 1];
+    if (tcRel >= 0x8000) tcRel -= 0x10000;
     const flags = buf[start + tv.len + 2];
     const lacing = (flags >> 1) & 0x03;
-    if (lacing !== 0) return;
-    const frameStart = start + tv.len + 3;
-    const frame = buf.subarray(frameStart, start + size);
     const base = Math.round((this.clusterTc + tcRel) * this.scaleMs);
-    if (info.codec === "ass") {
-      const cue = assFrameToCue(frame);
-      if (!cue) return;
-      this.store.addCue(track, cue.start != null ? cue.start : base, cue.text, cue.start != null ? cue.end : null);
-    } else if (info.codec === "webvtt") {
-      const text = webvttFrameToText(frame);
-      if (text) this.store.addCue(track, base, text, null);
+    const isSub = this.store.textTracks.has(track);
+    const media = !isSub && this.onFrame ? this.store.mediaTracks.get(track) : undefined;
+    if (isSub) {
+      if (lacing !== 0) return; // subs: unchanged v0.20.0 behavior
+      const info = this.store.textTracks.get(track);
+      if (!info) return;
+      const frameStart = start + tv.len + 3;
+      const frame = buf.subarray(frameStart, start + size);
+      if (info.codec === "ass") {
+        const cue = assFrameToCue(frame);
+        if (!cue) return;
+        this.store.addCue(track, cue.start != null ? cue.start : base, cue.text, cue.start != null ? cue.end : null);
+      } else if (info.codec === "webvtt") {
+        const text = webvttFrameToText(frame);
+        if (text) this.store.addCue(track, base, text, null);
+      } else {
+        const text = srtFrameToText(frame);
+        if (text) this.store.addCue(track, base, text, null);
+      }
+      return;
+    }
+    if (!media || !this.onFrame) return; // unknown/irrelevant track → drop
+    const key = simple ? !!(flags & 0x80) : !this.groupHasRef;
+    const body = start + tv.len + 3;
+    const bodyEnd = start + size;
+    const emit = (off: number, len: number, pts: number) => {
+      if (len <= 0 || off + len > bodyEnd) return;
+      this.onFrame!({ track, ptsMs: pts, key, data: buf.subarray(off, off + len) });
+    };
+    if (lacing === 0) {
+      emit(body, bodyEnd - body, base);
+      return;
+    }
+    // ---- laced: a frame-count byte follows the 3-byte header ----
+    let q = body + 1;
+    if (q > bodyEnd) return;
+    const n = buf[body] + 1;
+    if (n <= 1 || n > 64) return; // nonsense count → misaligned junk
+    if (lacing === 1) {
+      // Xiph: n-1 length-bytes (each byte adds 255; the final byte < 255)
+      const lens: number[] = [];
+      for (let i = 0; i < n - 1; i++) {
+        let len = 0;
+        while (q < bodyEnd) {
+          const b = buf[q++];
+          len += b;
+          if (b !== 255) break;
+        }
+        lens.push(len);
+      }
+      let consumed = 0;
+      for (let i = 0; i < lens.length; i++) consumed += lens[i]!;
+      const last = bodyEnd - q - consumed;
+      if (last < 0) return;
+      const span = Math.max(1, Math.floor((bodyEnd - body) / n));
+      for (let i = 0; i < n; i++) {
+        const off = q;
+        const len = i < n - 1 ? lens[i]! : last;
+        emit(off, len, base + i * span);
+        q += len;
+      }
+    } else if (lacing === 2) {
+      // fixed-size: every frame has the same length
+      const frameLen = Math.floor((bodyEnd - q) / n);
+      if (frameLen <= 0) return;
+      for (let i = 0; i < n; i++) {
+        emit(q, frameLen, base + i * Math.max(1, Math.round(this.scaleMs)));
+        q += frameLen;
+      }
     } else {
-      const text = srtFrameToText(frame);
-      if (text) this.store.addCue(track, base, text, null);
+      // EBML lacing: n-1 vint sizes (marker kept), last = remainder
+      const lens: number[] = [];
+      let prev = 0;
+      for (let i = 0; i < n - 1; i++) {
+        const v = peekVint(buf, q, true);
+        if (v.st !== "ok") return;
+        const sz = i === 0 ? v.value : prev + (v.value - ((1 << (7 * v.len - 1)) - 1));
+        if (sz <= 0) return;
+        lens.push(sz);
+        prev = sz;
+        q += v.len;
+      }
+      let consumed = 0;
+      for (const l of lens) consumed += l!;
+      const last = bodyEnd - q - consumed;
+      if (last < 0) return;
+      const span = Math.max(1, Math.floor((bodyEnd - body) / n));
+      for (let i = 0; i < n; i++) {
+        const len = i < n - 1 ? lens[i]! : last;
+        emit(q, len, base + i * span);
+        q += len;
+      }
     }
   }
 }
@@ -787,6 +992,47 @@ export async function fetchRange(url: string, start: number, endInclusive: numbe
 }
 
 /* ------------------------------------------------------------------ */
+/* v0.21.0 — MSE capability verdict (the fMP4 fallback path)           */
+/* ------------------------------------------------------------------ */
+
+export type MseCapability = {
+  supported: boolean;
+  /** "" when supported; otherwise why not (diag surfaces this verbatim) */
+  reason: string;
+  videoCodec: string; // avc1.PPCCLL from avcC, "" when unavailable
+  audioCodec: string; // mp4a.40.N from the ASC, "" when unavailable
+};
+
+/** Can THIS file be played through MediaSource (fMP4 remux) on THIS engine?
+ *  Pure apart from the MediaSource.isTypeSupported probes (guarded). The
+ *  catalog's dominant family — H.264-in-MKV + AAC — is exactly the family
+ *  fMP4/MSE covers; DTS/AC3/HEVC stay native (they cannot be remuxed into
+ *  something Chromium decodes either). */
+export function computeMseCapability(store: MkvCueStore): MseCapability {
+  const no = (reason: string): MseCapability => ({ supported: false, reason, videoCodec: "", audioCodec: "" });
+  const v = store.videoMediaTrack;
+  const a = store.audioMediaTrack;
+  if (!v) return no("no-video-track");
+  if (!/^V_MPEG4\/ISO\/AVC/i.test(v.codec)) return no(`video:${v.codec}`);
+  if (!v.private || v.private.length < 8 || v.private[0] !== 1) return no("no-avcC");
+  if (!(v.width > 0 && v.height > 0)) return no("no-dimensions");
+  const hex2 = (n: number) => n.toString(16).padStart(2, "0").toUpperCase();
+  const videoCodec = `avc1.${hex2(v.private[1]!)}${hex2(v.private[2]!)}${hex2(v.private[3]!)}`;
+  let audioCodec = "";
+  if (a) {
+    if (!/^A_AAC/i.test(a.codec)) return no(`audio:${a.codec}`);
+    if (!a.private || a.private.length < 2) return no("no-ASC");
+    const ot = a.private[0]! >> 3;
+    audioCodec = `mp4a.40.${ot === 31 ? 2 : ot}`; // extended OT → treat as LC
+  }
+  const ms = (globalThis as { MediaSource?: { isTypeSupported?: (t: string) => boolean } }).MediaSource;
+  if (!ms?.isTypeSupported) return no("no-MSE");
+  if (!ms.isTypeSupported(`video/mp4; codecs="${videoCodec}"`)) return no(`type-unsupported:${videoCodec}`);
+  if (a && !ms.isTypeSupported(`audio/mp4; codecs="${audioCodec}"`)) return no(`type-unsupported:${audioCodec}`);
+  return { supported: true, reason: "", videoCodec, audioCodec };
+}
+
+/* ------------------------------------------------------------------ */
 /* header probe (cached, promise-deduped)                              */
 /* ------------------------------------------------------------------ */
 
@@ -802,6 +1048,8 @@ export type MkvProbe = {
   subFound: boolean;
   kinds: string[];
   fileSize: number;
+  /** v0.21.0 — can the MSE fMP4 path own this file on this engine? */
+  mse: MseCapability | null; // null when the head wasn't Matroska
 };
 
 const HEAD_BYTES = 384 << 10; // EBML+SeekHead+Info+Tracks live here virtually always
@@ -824,6 +1072,7 @@ export function probeMkvHead(url: string, force = false): Promise<MkvProbe> {
       subFound: false,
       kinds: [],
       fileSize: 0,
+      mse: null,
     };
     const r = await fetchRange(url, 0, HEAD_BYTES - 1);
     if (!r.ok) return { ...base, status: r.status };
@@ -843,6 +1092,7 @@ export function probeMkvHead(url: string, force = false): Promise<MkvProbe> {
       subFound: store.textTracks.size > 0,
       kinds: [...store.kinds],
       fileSize: r.total,
+      mse: store.matroska ? computeMseCapability(store) : null,
     };
   })();
   if (!force) probeCache.set(url, p);
@@ -883,7 +1133,12 @@ export class MkvWebScan {
     readonly url: string,
     private onCues: (cues: ParsedCue[]) => void,
     private onState: (state: ScanState) => void = () => {},
-    private getDur: () => number = () => 0
+    private getDur: () => number = () => 0,
+    /** v0.21.0 — inter-chunk pacing hook. The scanner used to rip 768KB
+     *  chunks back-to-back and starve the <video> element's own buffering
+     *  on a constrained link (the «هیچی پخش نمی‌کنه» v0.20.0 report): the
+     *  player supplies a pace() that waits while buffer health is low. */
+    private pace: () => Promise<void> = () => Promise.resolve()
   ) {}
 
   private setState(s: ScanState) {
@@ -974,6 +1229,8 @@ export class MkvWebScan {
         }
         while (!this.stopped && !this.dead && this.bytes < SCAN_MAX_BYTES) {
           if (this.cursor == null) break;
+          await this.pace(); // v0.21.0 — never fight playback for bandwidth
+          if (this.stopped) return;
           const r = await fetchRange(this.url, this.cursor, this.cursor + SCAN_CHUNK - 1);
           if (this.stopped) return;
           if (!r.ok) {
