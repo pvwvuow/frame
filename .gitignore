@@ -134,3 +134,5 @@ android/app/src/main/assets/public/
 # v0.16.0 — generated split cover packs (staged by mobile-build.cjs)
 /.covers-pack/
 /.covers-pack-work/
+!/scripts/test-mkv-web.mjs
+!/scripts/test-mkv-web-browser.mjs

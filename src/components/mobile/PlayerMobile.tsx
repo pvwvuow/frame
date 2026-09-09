@@ -59,6 +59,8 @@ import {
 import FavoriteButton from "../FavoriteButton";
 import WatchlistButton from "../WatchlistButton";
 import { classifyUrl, isMkvUrl, loadProxyBase, mediaSrc } from "@/lib/video-url";
+import { probeMkvHead } from "@/lib/mkv-web";
+import { useMkvWebSubs } from "@/lib/mkv-web-subs";
 import { parseVtt, srtToVtt, stopMediaEl, type ParsedCue } from "@/lib/media";
 import { useSubs } from "@/lib/subs-engine";
 import SubOverlay from "../SubOverlay";
@@ -185,6 +187,15 @@ export default function PlayerMobile() {
     }
   }, [open]);
   const effEngine: PlayerEngine = webOverride ? "auto" : engine;
+  // v0.20.0 — fresh reads from async preflight promises (stale-state guards)
+  const effEngineRef = useRef(effEngine);
+  const bridgeOkRef = useRef(bridgeOk);
+  useEffect(() => {
+    effEngineRef.current = effEngine;
+  }, [effEngine]);
+  useEffect(() => {
+    bridgeOkRef.current = bridgeOk;
+  }, [bridgeOk]);
   // v0.19.0 — the native FALLBACK rung of the web-first ladder. When every
   // web attempt failed, the best still-untried source is handed to Media3:
   // while nativeFallbackIdx === srcIdx the owner is forced to "native" so the
@@ -406,6 +417,40 @@ export default function PlayerMobile() {
         guardCtl.abort();
       };
     }
+    // v0.20.0 — BYTE-AWARE PREFLIGHT (the no-proxy / Android half of
+    // ensurePlayableAudio). The v0.19.x web-first policy classified by
+    // EXTENSION; the actual BYTES now get a vote BEFORE the <video> burns
+    // 12s of metadata watchdog on a doomed source:
+    //  - dead head (403/404/503 geo-page) → the ladder steps immediately
+    //  - AC3/DTS first-audio → the honest native handoff (a silent film is
+    //    exactly the «پلیر اصلی کار نمی‌کنه» experience)
+    //  - healthy Matroska → the web player keeps it (subs scan starts)
+    const url0 = srcList[initial]?.url ?? "";
+    if (
+      url0 &&
+      !cinActive &&
+      effEngineRef.current === "auto" &&
+      classifyUrl(mediaSrc(url0, proxyBase ?? null)) === "fragile"
+    ) {
+      let alive = true;
+      void probeMkvHead(url0).then((p) => {
+        if (!alive) return;
+        if (usePlayerStore.getState().contentKey !== contentKey) return; // stale probe
+        if (!p.reachable) {
+          if (p.status >= 400) advanceLadder(); // proven-dead source — step now
+          return; // status 0 = transport hiccup → let the element try
+        }
+        if (!p.matroska) return; // token URL hiding an mp4 → element path
+        if (p.audioOk === false && effEngineRef.current === "auto" && bridgeOkRef.current) {
+          tryNativeFallback(
+            `صوت این نسخه (${p.audioLabel ?? "پشتیبانی‌نشده"}) در پلیر وب قابل پخش نیست — پلیر نیتیو باز می‌شود`
+          );
+        }
+      });
+      return () => {
+        alive = false;
+      };
+    }
   }, [contentKey, srcList.length, proxyBase]);
 
   // lock body scroll behind the player overlay
@@ -510,33 +555,36 @@ export default function PlayerMobile() {
    * exotic codecs, token URLs, avi/local/http) get ONE native attempt each.
    * Returns true when the rung handled the exhaustion (fallback fired or the
    * honest «نیتیو در دسترس نیست» panel) — false when plain fatal is right. */
-  const tryNativeFallback = useCallback((): boolean => {
-    if (effEngine === "native") return false; // the ladder already walked natively
-    const capable = srcList
-      .map((s, i) => ({ i, cls: classifyUrl(mediaSrc(s.url, proxyBase ?? null)) }))
-      .filter((x) => x.cls !== "web" && !nativeTriedRef.current.has(x.i))
-      .map((x) => x.i);
-    if (!capable.length) return false;
-    if (!bridgeOk) {
-      // the probe PROVED the plugin dead and only native could decode what is
-      // left → the honest panel instead of a fake «اتصال برقرار نشد»
-      const v = videoRef.current;
-      if (v && v.currentTime > 0.5) resumeAt.current = v.currentTime;
-      stopMediaEl(v);
-      setLoading(false);
-      setNatUnavailable(true);
+  const tryNativeFallback = useCallback(
+    (notice?: string): boolean => {
+      if (effEngine === "native") return false; // the ladder already walked natively
+      const capable = srcList
+        .map((s, i) => ({ i, cls: classifyUrl(mediaSrc(s.url, proxyBase ?? null)) }))
+        .filter((x) => x.cls !== "web" && !nativeTriedRef.current.has(x.i))
+        .map((x) => x.i);
+      if (!capable.length) return false;
+      if (!bridgeOk) {
+        // the probe PROVED the plugin dead and only native could decode what is
+        // left → the honest panel instead of a fake «اتصال برقرار نشد»
+        const v = videoRef.current;
+        if (v && v.currentTime > 0.5) resumeAt.current = v.currentTime;
+        stopMediaEl(v);
+        setLoading(false);
+        setNatUnavailable(true);
+        return true;
+      }
+      const idx = capable.includes(srcIdxRef.current) ? srcIdxRef.current : capable[0];
+      nativeTriedRef.current.add(idx);
+      setNatUnavailable(false);
+      setNativeFallbackIdx(idx);
+      if (idx !== srcIdxRef.current) setSrcIdx(idx);
+      else setReloadKey((k) => k + 1); // same idx → bump the handoff identity
+      setLoading(true);
+      showNotice(notice || "پخش وب ممکن نشد — پلیر نیتیو امتحان می‌شود");
       return true;
-    }
-    const idx = capable.includes(srcIdxRef.current) ? srcIdxRef.current : capable[0];
-    nativeTriedRef.current.add(idx);
-    setNatUnavailable(false);
-    setNativeFallbackIdx(idx);
-    if (idx !== srcIdxRef.current) setSrcIdx(idx);
-    else setReloadKey((k) => k + 1); // same idx → bump the handoff identity
-    setLoading(true);
-    showNotice("پخش وب ممکن نشد — پلیر نیتیو امتحان می‌شود");
-    return true;
-  }, [effEngine, bridgeOk, srcList, proxyBase, showNotice]);
+    },
+    [effEngine, bridgeOk, srcList, proxyBase, showNotice]
+  );
 
   const advanceLadder = useCallback(
     (resumePos?: number) => {
@@ -744,26 +792,55 @@ export default function PlayerMobile() {
   }, [contentKey]);
 
   // ---- Subs v3: proxy-extracted cues + user-loaded file --------------------
-  const { cues: mkvCues, status: subInfo, kick: kickSubs } = useSubs(
+  const { cues: mkvCues, status: proxySubInfo, kick: kickSubs } = useSubs(
     rawActive || null,
     proxyBase,
     open,
     () => videoRef.current?.currentTime ?? 0,
     () => videoRef.current?.duration ?? 0
   );
+  // v0.20.0 — IN-WEBVIEW subs for the no-proxy (Android) path. The web
+  // cinema player used to ship ZERO embedded subtitles (the proxy never
+  // exists there) while the native player rendered them — the core of the
+  // «پلیر اصلی کار نمی‌کنه» report. The scanner feeds the SAME cue pipeline.
+  const { cues: webSubCues, status: webSubStatus, kick: webKick } = useMkvWebSubs(
+    rawActive || null,
+    Boolean(open && owner === "web" && !fatal && !nativeActive && subOn && !proxyBase && isMkvUrl(rawActive || "")),
+    () => videoRef.current?.currentTime ?? 0,
+    () => !(videoRef.current?.paused ?? true),
+    () => videoRef.current?.duration ?? 0
+  );
   const [fileCues, setFileCues] = useState<ParsedCue[] | null>(null);
   useEffect(() => {
     setFileCues(null);
   }, [contentKey]);
-  const subCues = fileCues ?? mkvCues;
+  const subCues = fileCues ?? (mkvCues.length ? mkvCues : webSubCues);
   const subLoaded = subCues.length > 0;
+  // the subs sheet speaks SubStatus: whichever path actually probed wins
+  // (proxy on desktop/Electron; the in-WebView scanner on Android)
+  const subInfo = proxySubInfo.probed
+    ? proxySubInfo
+    : {
+        found: webSubStatus.subFound,
+        probed: webSubStatus.probed,
+        matroska: webSubStatus.matroska,
+        cueCount: webSubStatus.cueCount,
+        cov: webSubStatus.cov,
+        kinds: webSubStatus.kinds,
+        audio: webSubStatus.audio,
+        audioOk: webSubStatus.audioOk,
+        audioLabel: webSubStatus.audioLabel,
+      };
 
   useEffect(() => {
     if (!videoEl) return;
-    const onSeeked = () => kickSubs();
+    const onSeeked = () => {
+      kickSubs();
+      webKick();
+    };
     videoEl.addEventListener("seeked", onSeeked);
     return () => videoEl.removeEventListener("seeked", onSeeked);
-  }, [kickSubs, videoEl]);
+  }, [kickSubs, webKick, videoEl]);
 
   // ---- core <video> listeners ----------------------------------------------
   useEffect(() => {
