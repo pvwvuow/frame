@@ -82,6 +82,8 @@ server.log
 !/scripts/export-catalog.mjs
 !/scripts/feature-new-hero.mjs
 !/scripts/publish-catalog.mjs
+!/scripts/test-hero-pick.mjs
+!/scripts/test-catalog-repair.mjs
 /scripts/mock-od/tree/
 /electron/dist/
 /upload/

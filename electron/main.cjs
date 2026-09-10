@@ -580,7 +580,13 @@ async function startServer() {
     DATABASE_URL: toFileUrl(dbPath),
     NEXT_TELEMETRY_DISABLED: "1",
     NAMA_ELECTRON: "1",
-    NAMA_CATALOG_SEED: needsCatalogRefresh ? seed : "",
+    /* v0.24.0 — the seed path is passed on EVERY boot, not only when the
+       file-marker differs: the server now decides from its own in-DB
+       completion proof (seed.applied) + a light featured-set verification.
+       The old marker gate starved the repair merge on devices whose marker
+       was written by a "skipped" remote sync while their catalog was still
+       half-applied (the frozen mixed-hero bug). */
+    NAMA_CATALOG_SEED: fs.existsSync(seed) ? seed : "",
     NAMA_CATALOG_URL: catalogUrl,
   };
 
@@ -595,18 +601,21 @@ async function startServer() {
   /* Fresh seed (first run): the server only rebases cover URLs in place and
      pre-stores the release catalog hash (seed-version.json, written by
      afterPack) so the remote sync fast-paths instead of downloading the
-     whole ~69MB index.json for content the seed already carries. */
+     whole ~69MB index.json for content the seed already carries.
+     v0.24.0: the release hash is passed on EVERY boot — a completed seed
+     merge records it too, so the remote probe skips its ~80MB download on
+     release-day upgrades (content already delivered offline by the seed). */
   if (freshSeedCopy) {
     env.NAMA_CATALOG_FRESH_SEED = "1";
-    try {
-      const vf = path.join(path.dirname(seed), "seed-version.json");
-      if (fs.existsSync(vf)) {
-        const vHash = (JSON.parse(fs.readFileSync(vf, "utf8")).sha256 || "").toLowerCase();
-        if (/^[0-9a-f]{64}$/.test(vHash)) env.NAMA_CATALOG_SEED_VERSION_HASH = vHash;
-      }
-    } catch (e) {
-      log.warn("seed-version.json read failed:", e);
+  }
+  try {
+    const vf = path.join(path.dirname(seed), "seed-version.json");
+    if (fs.existsSync(vf)) {
+      const vHash = (JSON.parse(fs.readFileSync(vf, "utf8")).sha256 || "").toLowerCase();
+      if (/^[0-9a-f]{64}$/.test(vHash)) env.NAMA_CATALOG_SEED_VERSION_HASH = vHash;
     }
+  } catch (e) {
+    log.warn("seed-version.json read failed:", e);
   }
   /* If the server dies instantly (port race, antivirus lock) retry once on a
      fresh port before surfacing an error. v0.10.14: the FIRST attempt uses

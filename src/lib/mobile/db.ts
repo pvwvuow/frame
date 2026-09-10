@@ -60,6 +60,7 @@ export type CatalogManifest = {
 
 import Dexie from "dexie";
 import { isElectron } from "@/lib/platform";
+import { pickHero } from "@/lib/hero-pick";
 
 /* ------------------------------------------------------------------ */
 /* Dexie database                                                      */
@@ -354,11 +355,66 @@ const matches = (t: LiteTitle, opts: CatalogQuery) =>
   (!opts.year || t.year === opts.year) &&
   (!opts.minRating || t.rating >= opts.minRating);
 
+/* ------------------------------------------------------------------ */
+/* Hero — the self-curating slideshow (v0.24.0)                        */
+/* ------------------------------------------------------------------ */
+
+/** Hydrate one hero candidate to a full record; null when the row is gone or
+ *  a series has no episodes at all (the hero's Play button must work). */
+async function hydrateHero(id: number): Promise<TitleView | null> {
+  if (isDesktopRuntime()) {
+    const r = await fetch(`/api/x/full/${id}`, { cache: "no-store" });
+    if (!r.ok) return null;
+    const j = (await r.json()) as { title: TitleView | null; episodes?: EpisodeRec[] };
+    if (!j.title) return null;
+    if (j.title.type === "series" && !(j.episodes && j.episodes.length)) return null;
+    return j.title;
+  }
+  const full = (await db.titles.get(id)) as unknown as (CatalogTitle & { episodes?: unknown[] }) | undefined;
+  if (!full) return null;
+  if (full.type === "series" && !(full.episodes && full.episodes.length)) return null;
+  return {
+    ...toLite(full),
+    description: full.description ?? "",
+    videoUrl: full.videoUrl ?? "",
+    trailerUrl: full.trailerUrl ?? null,
+    sources: full.sources ?? "[]",
+    createdAt: manifest?.generatedAt ?? new Date().toISOString(),
+  };
+}
+
+/** Hydrate ranked candidates in order until `want` valid slides are collected
+ *  (scanning at most the first 16 — dead rows must not stall the hero). */
+async function hydrateLineup(candidates: LiteTitle[], want = 8): Promise<TitleView[]> {
+  const out: TitleView[] = [];
+  for (const c of candidates.slice(0, 16)) {
+    if (out.length >= want) break;
+    const full = await hydrateHero(c.id);
+    if (full) out.push(full);
+  }
+  return out;
+}
+
 export async function getFeatured(): Promise<TitleView[]> {
   await ensureReady();
+  // 1) AUTO: re-derive the lineup from the local add-dates (the wave rules of
+  //    scripts/feature-new-hero.mjs). This is the primary source — it cannot
+  //    go stale the way the `featured` flags do (a half-applied catalog merge
+  //    used to freeze a mixed hero on devices; see src/lib/hero-pick.ts).
+  const wave = pickHero(lite);
+  if (wave.length) {
+    const lineup = await hydrateLineup(wave as LiteTitle[]);
+    if (lineup.length >= 3) return lineup;
+  }
+  // 2) FALLBACK: the featured flags (hand pin via HERO_TT, pre-add-date
+  //    catalogs, tiny demo/test data where the wave rules find nothing).
   const rows = lite.filter((t) => t.featured).sort(bySort("trending")).slice(0, 8);
-  const full = await Promise.all(rows.map((r) => getFullTitle(r.id)));
-  return full.filter((t): t is TitleView => t !== null);
+  if (!rows.length) return [];
+  const lineup = await hydrateLineup(rows);
+  if (lineup.length) return lineup;
+  // 3) LAST RESORT: hydration failed entirely (offline desktop?) — plain lite
+  //    rows so the hero surface never renders empty.
+  return rows;
 }
 
 export async function getTrending(limit = 12): Promise<LiteTitle[]> {

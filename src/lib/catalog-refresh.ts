@@ -1,5 +1,6 @@
 import { PrismaClient } from "@prisma/client";
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { db } from "@/lib/db";
 import { ensureSeeded } from "@/db/seed";
 
@@ -89,6 +90,12 @@ const EMPTY: CatalogRefreshResult = {
 };
 
 const HASH_KEY = "catalog.hash";
+/** v0.24.0 — completion proof: the value is the SHA-256 of the bundled seed
+ *  file whose catalog is FULLY merged into this database. Written only after
+ *  a verified skip or a completed merge, so a process killed mid-merge (the
+ *  frozen mixed-hero bug: half-applied flags, no proof) re-merges on the
+ *  next boot instead of staying half-updated forever. */
+const SEED_PROOF_KEY = "seed.applied";
 
 let seedInflight: Promise<CatalogRefreshResult> | null = null;
 let syncInflight: Promise<CatalogRefreshResult> | null = null;
@@ -175,20 +182,28 @@ export function runStartupSync(): Promise<StartupSyncState> {
       if (process.env.NAMA_CATALOG_FRESH_SEED === "1") {
         catalog = await adoptFreshSeed();
       }
+      /* v0.24.0 — SEED FIRST, and UNCONDITIONALLY. The bundled seed used to
+       * run only as a fallback when the remote sync failed, so the v0.23.1
+       * skip-guard (probeUnknown → ok:true) starved it: devices whose merge
+       * had been killed halfway kept a frozen half-updated catalog forever.
+       * The seed path now decides from its own in-DB completion proof:
+       * instant skip when the content is already in place, a full repair
+       * merge when it is not — no network required. Running it first also
+       * stores the release hash on success, so the remote probe below skips
+       * its ~80MB download entirely on release-day upgrades. */
+      phase = "seed";
+      if (seedPath) {
+        const seed = await refreshCatalogOnce(seedPath);
+        if (seed.ok) catalog = seed;
+      }
       phase = "remote";
       if (catalogUrl) {
         const remote = await syncCatalogOnce(catalogUrl);
-        if (remote?.ok) {
+        if (remote?.ok && (!remote.skipped || !catalog?.ok || catalog.skipped)) {
+          // prefer a positive remote apply (it is the newer content) in the
+          // report; keep a positive seed merge when the remote only skipped
           catalog = remote;
-        } else if (!catalog?.ok && seedPath) {
-          // remote unreachable (offline / GitHub down) → fall back to the
-          // bundled seed so an app update still delivers its content
-          phase = "seed";
-          catalog = await refreshCatalogOnce(seedPath);
         }
-      } else if (!catalog?.ok && seedPath) {
-        phase = "seed";
-        catalog = await refreshCatalogOnce(seedPath);
       }
       return {
         status: catalog?.ok ? "ok" : "error",
@@ -326,8 +341,63 @@ async function openSeedClient(seedPath: string): Promise<PrismaClient> {
 
 async function refreshCatalog(seedPath: string): Promise<CatalogRefreshResult> {
   await ensureSeeded(); // heal legacy schemas before merging into them
+
+  /* Content identity of the bundled seed file (~90MB, one hash ≈ a blink). */
+  const seedSha = sha256(readFileSync(seedPath));
+
+  /* 1) Completion proof — this exact seed was already fully merged here.
+   *    Written only after a completed merge or a verified skip, so a process
+   *    killed mid-merge never leaves a stale proof behind. */
+  const proof = await db.syncState.findUnique({ where: { key: SEED_PROOF_KEY } });
+  if (proof?.value === seedSha) {
+    const titles = await db.title.count();
+    return { ok: true, skipped: true, titles, episodes: 0, created: 0, updated: 0, removed: 0 };
+  }
+
+  /* 2) The database already provably carries this seed's catalog — a prior
+   *    remote apply of the same release content (adoptFreshSeed pre-stores
+   *    this hash on fresh copies) → record the proof, skip the merge. */
+  const versionHash = (process.env.NAMA_CATALOG_SEED_VERSION_HASH || "").trim().toLowerCase();
+  const releaseHashOk = /^[0-9a-f]{64}$/.test(versionHash);
+  if (releaseHashOk) {
+    const applied = await db.syncState.findUnique({ where: { key: HASH_KEY } });
+    if (applied?.value === versionHash) {
+      await db.syncState.upsert({
+        where: { key: SEED_PROOF_KEY },
+        update: { value: seedSha },
+        create: { key: SEED_PROOF_KEY, value: seedSha },
+      });
+      const titles = await db.title.count();
+      return { ok: true, skipped: true, titles, episodes: 0, created: 0, updated: 0, removed: 0 };
+    }
+  }
+
   const seed = await openSeedClient(seedPath);
   try {
+    /* 3) Light verification (v0.24.0) — two cheap queries instead of a
+     *    14k-title merge churn on every boot: same title count and same
+     *    featured set ⇒ the seed's catalog is already in place. A NEWER
+     *    database (count >) is fine too — the remote sync owns that delta.
+     *    A mismatch is exactly the half-applied-merge state (or a genuinely
+     *    older DB) that must fall through to the full merge below. */
+    const [seedCount, dbCount] = [await seed.title.count(), await db.title.count()];
+    const featuredSlugs = (client: PrismaClient) =>
+      client.title.findMany({ where: { featured: true }, select: { slug: true }, orderBy: { slug: "asc" } });
+    const [seedFeatured, dbFeatured] = await Promise.all([featuredSlugs(seed), featuredSlugs(db)]);
+    const sameFeatured =
+      seedFeatured.length === dbFeatured.length &&
+      seedFeatured.every((t, i) => t.slug === dbFeatured[i].slug);
+    if (dbCount >= seedCount && sameFeatured) {
+      if (dbCount === seedCount) {
+        await db.syncState.upsert({
+          where: { key: SEED_PROOF_KEY },
+          update: { value: seedSha },
+          create: { key: SEED_PROOF_KEY, value: seedSha },
+        });
+      }
+      return { ok: true, skipped: true, titles: dbCount, episodes: 0, created: 0, updated: 0, removed: 0 };
+    }
+
     /* Cover-light packages: root-relative asset paths of the bundled seed
        must point at the hosted site root (covers are not bundled). */
     const envRoot = (process.env.NAMA_CATALOG_SITE_ROOT || "").trim();
@@ -371,7 +441,26 @@ async function refreshCatalog(seedPath: string): Promise<CatalogRefreshResult> {
         thumbnail: rb(e.thumbnail),
       })),
     }));
-    return await applyCatalog(items);
+    const result = await applyCatalog(items);
+    if (result.ok) {
+      /* The database now provably reflects this seed — and, when the shell
+       * tells us which hosted catalog the seed was exported from, that
+       * release hash too, so the remote sync's version probe skips its
+       * ~80MB download for content the seed just delivered offline. */
+      await db.syncState.upsert({
+        where: { key: SEED_PROOF_KEY },
+        update: { value: seedSha },
+        create: { key: SEED_PROOF_KEY, value: seedSha },
+      });
+      if (releaseHashOk) {
+        await db.syncState.upsert({
+          where: { key: HASH_KEY },
+          update: { value: versionHash },
+          create: { key: HASH_KEY, value: versionHash },
+        });
+      }
+    }
+    return result;
   } finally {
     await seed.$disconnect().catch(() => {});
   }
@@ -381,7 +470,7 @@ async function refreshCatalog(seedPath: string): Promise<CatalogRefreshResult> {
 /* remote (online) path                                               */
 /* ------------------------------------------------------------------ */
 
-function sha256(s: string): string {
+function sha256(s: string | Buffer): string {
   return createHash("sha256").update(s).digest("hex");
 }
 
