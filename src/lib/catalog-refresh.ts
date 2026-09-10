@@ -39,6 +39,10 @@ export type CatalogRefreshResult = {
   updated: number;
   removed: number;
   skipped?: boolean;
+  /** v0.23.1 — the version probe could not confirm the remote state (network
+   *  flake); with a stored hash we skip the cycle instead of burning ~80MB,
+   *  and the UI says “couldn’t check, retry later” instead of “up to date”. */
+  probeUnknown?: boolean;
   error?: string;
 };
 
@@ -422,26 +426,33 @@ function rebaseAsset(url_: string, siteRoot: string): string {
 }
 
 const FETCH_TIMEOUT_MS = 300_000; // full-catalog payloads grow with the library (+sources ≈ 69MB)
-const VERSION_TIMEOUT_MS = 8_000;
+const VERSION_TIMEOUT_MS = 15_000; // v0.23.1: 8s was too tight for cold connections to raw.githubusercontent
 
 /**
  * Tiny companion of index.json (same directory): { sha256, titles, … }.
  * When present the app can detect "nothing changed" without downloading
  * the multi-megabyte payload on every start.
+ *
+ * v0.23.1: one short retry — a single timed-out probe on a flaky connection
+ * used to fall through to the full ~80MB download path below.
  */
 async function probeVersionHash(catalogUrl: string): Promise<string | null> {
-  try {
-    const vUrl = catalogUrl.replace(/[^/]*(?:\?.*)?#.*$/, "version.json");
-    const res = await fetch(vUrl, {
-      headers: { "User-Agent": "Nama-Catalog-Sync" },
-      signal: AbortSignal.timeout(VERSION_TIMEOUT_MS),
-    });
-    if (!res.ok) return null;
-    const j = (await res.json()) as { sha256?: string };
-    return typeof j.sha256 === "string" && /^[0-9a-f]{64}$/i.test(j.sha256) ? j.sha256.toLowerCase() : null;
-  } catch {
-    return null; // probe is optional – full download decides below
+  const vUrl = catalogUrl.replace(/[^/]*(?:\?.*)?#.*$/, "version.json");
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const res = await fetch(vUrl, {
+        headers: { "User-Agent": "Nama-Catalog-Sync" },
+        signal: AbortSignal.timeout(VERSION_TIMEOUT_MS),
+        cache: "no-store",
+      });
+      if (!res.ok) return null;
+      const j = (await res.json()) as { sha256?: string };
+      return typeof j.sha256 === "string" && /^[0-9a-f]{64}$/i.test(j.sha256) ? j.sha256.toLowerCase() : null;
+    } catch {
+      // transient network hiccup → retry once, then report unknown
+    }
   }
+  return null;
 }
 
 async function syncCatalog(catalogUrl: string): Promise<CatalogRefreshResult> {
@@ -451,13 +462,29 @@ async function syncCatalog(catalogUrl: string): Promise<CatalogRefreshResult> {
   // → "catalog sync watcher timed out" on every boot of upgraded old installs)
   await ensureSeeded();
   const prev = await db.syncState.findUnique({ where: { key: HASH_KEY } });
-
-  // fast path: the version probe tells us the payload is unchanged
   const knownHash = await probeVersionHash(catalogUrl);
-  if (knownHash && prev?.value === knownHash) {
-    scheduleResync(catalogUrl);
-    const count = await db.title.count();
-    return { ok: true, skipped: true, titles: count, episodes: 0, created: 0, updated: 0, removed: 0 };
+
+  // v0.23.1 — PROOF-OF-CHANGE GUARD. The version.json probe is the only cheap
+  // way to know the remote changed. When the probe itself is unreachable
+  // (flaky connection to raw.githubusercontent), the previous code fell
+  // through to a FULL ~80MB index.json download — on every boot and every 6h
+  // resync cycle, repeatedly, with no evidence anything changed. Now a known
+  // stored hash only re-downloads when the probe POSITIVELY reports a new
+  // hash; an unreachable probe means "assume unchanged, retry next cycle".
+  // (version.json and index.json share a host — if the probe fails, the big
+  // fetch would have failed too.) The very first sync (no stored hash) still
+  // downloads unconditionally.
+  if (prev?.value) {
+    if (knownHash === prev.value) {
+      scheduleResync(catalogUrl);
+      const count = await db.title.count();
+      return { ok: true, skipped: true, titles: count, episodes: 0, created: 0, updated: 0, removed: 0 };
+    }
+    if (knownHash === null) {
+      scheduleResync(catalogUrl);
+      const count = await db.title.count();
+      return { ok: true, skipped: true, probeUnknown: true, titles: count, episodes: 0, created: 0, updated: 0, removed: 0 };
+    }
   }
 
   const res = await fetch(catalogUrl, {

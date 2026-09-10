@@ -6,6 +6,7 @@ import { fa } from "@/lib/format";
 type SyncResult = {
   ok: boolean;
   skipped?: boolean;
+  probeUnknown?: boolean;
   titles?: number;
   episodes?: number;
   created?: number;
@@ -53,7 +54,12 @@ export default function CatalogUpdateCard() {
   let msg = "";
   let tone = "text-zinc-400";
   if (result) {
-    if (result.ok && result.skipped) {
+    if (result.ok && result.skipped && result.probeUnknown) {
+      // v0.23.1 — the version probe couldn’t reach GitHub; we deliberately did
+      // NOT burn ~80MB on an unproven “maybe changed” (proof-of-change guard)
+      msg = "بررسی منبع کاتالوگ موقتاً ممکن نشد — بعداً خودکار دوباره تلاش می‌شود.";
+      tone = "text-amber-400";
+    } else if (result.ok && result.skipped) {
       msg = "کاتالوگ به‌روز است — چیز جدیدی نیست.";
       tone = "text-emerald-400";
     } else if (result.ok) {
@@ -84,6 +90,11 @@ export default function CatalogUpdateCard() {
             فیلم‌ها و سریال‌های جدید به‌صورت خودکار از اینترنت دریافت می‌شوند — نیازی به نصب نسخه جدید نیست.
             هر بار برنامه را باز کنید (و هر ۶ ساعت) لیست از GitHub بررسی و محتوای جدید بدون دست‌زدن به
             پروفایل‌ها، علاقه‌مندی‌ها و ادامه‌ی تماشا اضافه می‌شود.
+          </p>
+          <p className="mt-2 max-w-2xl text-[11px] leading-5 text-zinc-500">
+            نکته: وقتی محتوای جدیدی منتشر شود، اولین همگام‌سازی فهرست کامل کتابخانه (حدود ۸۰ مگابایت) را
+            یک بار دانلود می‌کند — این طبیعی است و تا انتشار محتوای بعدی تکرار نمی‌شود؛ در شبکه‌های ناپایدار
+            هم دیگر بدون تغییر واقعی، دانلود سنگینی اتفاق نمی‌افتد.
           </p>
         </div>
         <button
