@@ -43,7 +43,6 @@ import androidx.media3.common.Tracks;
 import androidx.media3.common.util.UnstableApi;
 import androidx.media3.datasource.okhttp.OkHttpDataSource;
 import androidx.media3.exoplayer.DefaultRenderersFactory;
-import androidx.media3.exoplayer.ExoPlaybackException;
 import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory;
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector;
@@ -396,34 +395,22 @@ public class PlayerActivity extends Activity {
                 // devices without the codec) must not kill playback.
                 // v0.21.1 — HARDENING: the old handler muted the WHOLE audio
                 // track on the FIRST codec failure — even video-side ones —
-                // and never tried the file's OTHER audio tracks. Now:
-                //   1. video-side decode failure → finish immediately (JS
-                //      ladders to the next variant; muting audio fixes nothing)
-                //   2. audio-side → try every UNTRIED audio group (multi-audio
-                //      MKVs: main AAC + commentary DTS…)
-                //   3. no untried group left → mute once (the old behavior,
-                //      now the LAST resort), keep the picture
+                // and never tried the file's OTHER audio tracks. Now, driven
+                // by bounded error repetition (media3 1.4.1 exposes no
+                // track-type on ExoPlaybackException — the failed CI run
+                // proved getMediaTrackType() does not exist, so NO API guess):
+                //   1. every UNTRIED audio group gets one prepare (multi-audio
+                //      MKVs: main AAC + commentary DTS…, capped at 3 alternates)
+                //   2. then mute once (the old behavior, now the LAST resort)
+                //   3. then finish → the JS ladder owns the variant
                 boolean codecFailure =
                     error.errorCode == PlaybackException.ERROR_CODE_DECODER_INIT_FAILED
                         || error.errorCode == PlaybackException.ERROR_CODE_DECODING_FAILED;
                 if (codecFailure && player != null) {
-                    int mediaType = C.TRACK_TYPE_UNKNOWN;
-                    try {
-                        if (error instanceof ExoPlaybackException) {
-                            mediaType = ((ExoPlaybackException) error).getMediaTrackType();
-                        }
-                    } catch (Throwable t) {
-                        mediaType = C.TRACK_TYPE_UNKNOWN;
-                    }
-
-                    if (mediaType == C.TRACK_TYPE_VIDEO) {
-                        Toast.makeText(PlayerActivity.this,
-                            "پخش این نسخه ممکن نشد", Toast.LENGTH_LONG).show();
-                        tick.postDelayed(() -> finish(), 600L);
+                    if (!audioDropped && audioAltTries < MAX_AUDIO_ALTS && tryNextAudioTrack()) {
+                        audioAltTries++;
                         return;
                     }
-
-                    if (!audioDropped && tryNextAudioTrack()) return;
 
                     if (!audioDropped) {
                         audioDropped = true;
@@ -917,6 +904,10 @@ public class PlayerActivity extends Activity {
      *  position in getCurrentTracks()), so each error advances to the NEXT
      *  untried track instead of repeating the same failed one. */
     private final Set<Integer> triedAudioGroups = new HashSet<>();
+    /** v0.21.1 — hard cap on alternate-audio prepares per activity: bounds
+     *  the video-side failure path (each retry costs one prepare cycle). */
+    private static final int MAX_AUDIO_ALTS = 3;
+    private int audioAltTries = 0;
 
     /** v0.21.1 — select the next UNTRIED audio group when the selected one's
      *  codec cannot be decoded (multi-audio MKVs). Bounded: each call marks
