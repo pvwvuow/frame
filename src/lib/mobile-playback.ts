@@ -20,7 +20,7 @@
  * The primitives below are pure + node-testable; PlayerMobile consumes them.
  */
 
-import { classifyUrl, needsNativePlayer } from "./video-url";
+import { classifyUrl, needsNativePlayer, type UrlClass } from "./video-url";
 
 export type PlaybackOwner = "web" | "native" | "pending" | "unsupported";
 
@@ -119,4 +119,59 @@ export function metaWatchdogMs(): number {
     /* no storage — default */
   }
   return 12000;
+}
+
+/* ------------------------------------------------------------------ */
+/* v0.21.1 — the byte-preflight verdict + the smart ladder landing       */
+/* ------------------------------------------------------------------ */
+
+/** What the byte-preflight of ONE candidate source decides BEFORE the
+ *  <video> burns the metadata watchdog on it. Pure — fully node-testable.
+ *  The probe shape is the awaitable MkvProbe minus diagnostics. */
+export type PreflightProbe = {
+  reachable: boolean;
+  status: number;
+  matroska: boolean;
+  audioOk: boolean | null;
+  mse: { supported: boolean } | null;
+};
+
+export type PreflightAction =
+  | { action: "keep" } // the web player keeps this source as-is
+  | { action: "mse" } // the fMP4 transport should own it from the start
+  | { action: "native"; reason: string } // hand off to Media3 immediately
+  | { action: "next" } // proven-dead source — step the ladder NOW
+  | { action: "wait" }; // inconclusive — let the element try
+
+export function preflightDecision(
+  p: PreflightProbe,
+  opts: { preferMse: boolean; bridgeOk: boolean | null; engine: "auto" | "native" }
+): PreflightAction {
+  if (!p.reachable) {
+    // 403/404/503 geo-page → dead for the web player AND the element will hit
+    // the same wall; anything else (status 0) is a transport hiccup → wait
+    return p.status >= 400 ? { action: "next" } : { action: "wait" };
+  }
+  if (!p.matroska) return { action: "keep" }; // token URL hiding an mp4 → element path
+  if (opts.engine !== "auto") return { action: "keep" }; // the engine override path owns it
+  if (opts.preferMse && p.mse?.supported) return { action: "mse" };
+  if (p.audioOk === false) {
+    // AC3/DTS/… first-audio: a silent film IS «پلیر اصلی کار نمی‌کنه» — hand
+    // to Media3 when the bridge is proven alive; re-run lands here once the
+    // probe resolves (bridgeOk in deps), null keeps waiting.
+    return opts.bridgeOk ? { action: "native", reason: "audio" } : { action: "wait" };
+  }
+  return { action: "keep" }; // healthy Matroska → the web player keeps it
+}
+
+/** v0.21.1 — the ladder must LAND on a web-ownable source. After a web
+ *  failure, stepping to srcIdx+1 blindly lands on codec-native MKVs
+ *  (classifyUrl "native") — a guaranteed second failure plus another 12s
+ *  burn. Returns the next index > `from` whose class is web-ownable, or
+ *  -1 when only native-class sources remain (the fallback rung takes over). */
+export function nextWebIdxSkippingNative(classes: UrlClass[], from: number): number {
+  for (let i = from + 1; i < classes.length; i++) {
+    if (classes[i] !== "native") return i;
+  }
+  return -1;
 }

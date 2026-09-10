@@ -31,7 +31,7 @@ const emit = (rel, outName, rewrite) => {
 };
 emit("src/lib/video-url.ts", "video-url.mjs");
 emit("src/lib/mobile-playback.ts", "mobile-playback.mjs", true);
-const { resolveOwner, shouldLadderAdvance, isLadderExhausted, isDuplicateNotice, metaWatchdogMs } = await import(
+const { resolveOwner, shouldLadderAdvance, isLadderExhausted, isDuplicateNotice, metaWatchdogMs, preflightDecision, nextWebIdxSkippingNative } = await import(
   pathToFileURL(join(TMP, "mobile-playback.mjs")).href
 );
 const { classifyUrl, needsNativePlayer } = await import(
@@ -57,7 +57,15 @@ ok("class: avi → native (no Chromium demuxer)", classifyUrl("https://x/a.avi")
 ok("class: wmv/ts/flv/mpg → native", classifyUrl("https://x/a.ts") === "native" && classifyUrl("https://x/a.flv") === "native");
 ok("class: cleartext http → native (release WebView blocks it)", classifyUrl("http://x/a.mp4") === "native");
 ok("class: local: download → native", classifyUrl("local:/data/user/0/ir.frame.nama/files/dl/x.mkv") === "native");
+/* v0.21.1 — the filename CODEC layer: x265/HEVC/10bit/DTS/AC3 MKVs are
+ * WebView-undecodable → the NATIVE class (straight to Media3, no doomed
+ * <video> mount). Plain H.264/AAC MKVs stay fragile (web-first). */
+ok("class: x265 mkv → native (no 12s burn, no silent film)", classifyUrl("https://x/Breaking.Bad.S01E01.720p.x265.BluRay.SoftSub.mkv") === "native");
+ok("class: 10bit mkv → native", classifyUrl("https://x/Anime.1080p.10bit.BluRay.mkv") === "native");
+ok("class: DTS mkv → native", classifyUrl("https://x/Movie.1080p.DTS.BluRay.mkv") === "native");
+ok("class: plain mkv stays fragile (web-first)", classifyUrl("https://x/Movie.1080p.BluRay.mkv") === "fragile");
 ok("needsNative (STRICT): only what the WebView can never own", needsNativePlayer("https://x/a.mkv") === false && needsNativePlayer("https://x/dl/8a71f") === false && needsNativePlayer("https://x/a.avi") === true && needsNativePlayer("local:/f/x.mkv") === true && needsNativePlayer("http://x/a.mp4") === true);
+ok("needsNative (STRICT): codec MKV is strict-native", needsNativePlayer("https://x/a.x265.mkv") === true);
 
 /* ---- resolveOwner --------------------------------------------------------*/
 /* v0.19.0 — web-first auto: web AND fragile classes ride the WebView
@@ -77,6 +85,12 @@ ok("owner: local: file on healthy Android → native", resolveOwner({ hasBridge:
 ok("owner: token URL on healthy Android → WEB (sniff first)", resolveOwner({ hasBridge: true, cinemaActive: false, proxyReady: true, url: "https://x/dl/8a71f" }) === "web");
 ok("owner: avi on healthy Android → native (no web demuxer, no wasted fetch)", resolveOwner({ hasBridge: true, cinemaActive: false, proxyReady: true, url: "https://x/a.avi" }) === "native");
 ok("owner: plain mp4 on Android → web (light path)", resolveOwner({ hasBridge: true, cinemaActive: false, proxyReady: true, url: "https://x/a.mp4" }) === "web");
+/* v0.21.1 — codec-native MKVs are the NATIVE class: probing → pending, the
+ * healthy bridge hands them to Media3 DIRECTLY (the «Breaking Bad x265
+ * variants burned the web ladder» class), a dead bridge is honest. */
+ok("owner: probing + x265 mkv → pending (native class, probe owns the call)", resolveOwner({ hasBridge: null, cinemaActive: false, proxyReady: true, url: "https://x/a.x265.mkv" }) === "pending");
+ok("owner: healthy Android + x265 mkv → NATIVE directly", resolveOwner({ hasBridge: true, cinemaActive: false, proxyReady: true, url: "https://x/a.x265.mkv" }) === "native");
+ok("owner: dead bridge + x265 mkv → unsupported (honest)", resolveOwner({ hasBridge: false, cinemaActive: false, proxyReady: true, url: "https://x/a.x265.mkv" }) === "unsupported");
 
 /* ---- resolveOwner · engine pref (v0.18.1 «پلیر ویدیو») --------------------
  * "native" = the user FORCED the native Media3 player for every source.
@@ -91,6 +105,29 @@ ok("engine native: cinema still rides the web <video>", resolveOwner({ hasBridge
 ok("engine auto (explicit): mkv → web (same as default)", resolveOwner({ hasBridge: true, cinemaActive: false, proxyReady: true, url: "https://x/a.mkv", engine: "auto" }) === "web");
 ok("engine auto (explicit): mp4 → web", resolveOwner({ hasBridge: true, cinemaActive: false, proxyReady: true, url: "https://x/a.mp4", engine: "auto" }) === "web");
 ok("engine auto (explicit): probing + mp4 → web", resolveOwner({ hasBridge: null, cinemaActive: false, proxyReady: true, url: "https://x/a.mp4", engine: "auto" }) === "web");
+
+/* ---- v0.21.1 — preflightDecision (the byte-preflight verdict) --------------
+ * Every candidate source gets ONE pure verdict BEFORE the <video> mounts:
+ * dead heads step the ladder instantly, AC3/DTS audio hands off to Media3,
+ * MSE-capable files ride the fMP4 transport when the device prefers it. */
+const dead = { reachable: false, status: 503, matroska: false, audioOk: null, mse: null };
+ok("preflight: 403/503 dead head → next (no 12s watchdog burn)", preflightDecision(dead, { preferMse: false, bridgeOk: true, engine: "auto" }).action === "next");
+ok("preflight: transport hiccup (status 0) → wait (the element may still win)", preflightDecision({ ...dead, status: 0 }, { preferMse: false, bridgeOk: true, engine: "auto" }).action === "wait");
+ok("preflight: non-matroska bytes (token URL hiding an mp4) → keep", preflightDecision({ reachable: true, status: 200, matroska: false, audioOk: null, mse: null }, { preferMse: false, bridgeOk: true, engine: "auto" }).action === "keep");
+ok("preflight: healthy matroska → keep (web player owns it)", preflightDecision({ reachable: true, status: 200, matroska: true, audioOk: true, mse: { supported: true } }, { preferMse: false, bridgeOk: true, engine: "auto" }).action === "keep");
+ok("preflight: preferMse + MSE-capable → mse (device-proven transport)", preflightDecision({ reachable: true, status: 200, matroska: true, audioOk: true, mse: { supported: true } }, { preferMse: true, bridgeOk: true, engine: "auto" }).action === "mse");
+ok("preflight: AC3/DTS audio + healthy bridge → native (a silent film is broken)", preflightDecision({ reachable: true, status: 200, matroska: true, audioOk: false, mse: { supported: false } }, { preferMse: false, bridgeOk: true, engine: "auto" }).action === "native");
+ok("preflight: AC3/DTS audio + probe in flight → wait (no handoff on a guess)", preflightDecision({ reachable: true, status: 200, matroska: true, audioOk: false, mse: null }, { preferMse: false, bridgeOk: null, engine: "auto" }).action === "wait");
+ok("preflight: engine override → keep (the engine path owns routing)", preflightDecision({ reachable: true, status: 200, matroska: true, audioOk: false, mse: null }, { preferMse: false, bridgeOk: true, engine: "native" }).action === "keep");
+
+/* ---- v0.21.1 — nextWebIdxSkippingNative (the smart ladder landing) --------
+ * After a web failure the ladder must LAND on a web-ownable variant, never
+ * on another codec-native MKV (a guaranteed second failure + another burn). */
+ok("skip: lands on the next non-native index", nextWebIdxSkippingNative(["fragile", "native", "fragile"], 0) === 2);
+ok("skip: consecutive native-class sources are all skipped", nextWebIdxSkippingNative(["fragile", "native", "native", "web"], 0) === 3);
+ok("skip: no web-ownable source left → -1 (the native rung takes over)", nextWebIdxSkippingNative(["fragile", "native"], 1) === -1);
+ok("skip: next already web-ownable → plain step", nextWebIdxSkippingNative(["fragile", "fragile"], 0) === 1);
+ok("skip: from the last index → -1", nextWebIdxSkippingNative(["fragile"], 0) === -1);
 
 /* ---- shouldLadderAdvance (echo guard) ------------------------------------ */
 const t0 = 1_000_000;

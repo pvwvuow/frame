@@ -43,6 +43,7 @@ import androidx.media3.common.Tracks;
 import androidx.media3.common.util.UnstableApi;
 import androidx.media3.datasource.okhttp.OkHttpDataSource;
 import androidx.media3.exoplayer.DefaultRenderersFactory;
+import androidx.media3.exoplayer.ExoPlaybackException;
 import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory;
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector;
@@ -392,25 +393,51 @@ public class PlayerActivity extends Activity {
                     + (error.getMessage() == null ? "playback-error" : error.getMessage());
 
                 // v0.16.3 — an undecodable AUDIO track (AC3/E-AC3/DTS on
-                // devices/emulators without the codec — e.g. Nox) must not kill
-                // playback: drop the audio track once and keep the picture.
-                // If the retry still fails (or the failure was video-side),
-                // finish with the error so JS ladders to the next variant.
+                // devices without the codec) must not kill playback.
+                // v0.21.1 — HARDENING: the old handler muted the WHOLE audio
+                // track on the FIRST codec failure — even video-side ones —
+                // and never tried the file's OTHER audio tracks. Now:
+                //   1. video-side decode failure → finish immediately (JS
+                //      ladders to the next variant; muting audio fixes nothing)
+                //   2. audio-side → try every UNTRIED audio group (multi-audio
+                //      MKVs: main AAC + commentary DTS…)
+                //   3. no untried group left → mute once (the old behavior,
+                //      now the LAST resort), keep the picture
                 boolean codecFailure =
                     error.errorCode == PlaybackException.ERROR_CODE_DECODER_INIT_FAILED
                         || error.errorCode == PlaybackException.ERROR_CODE_DECODING_FAILED;
-                if (codecFailure && !audioDropped && player != null) {
-                    audioDropped = true;
-                    Toast.makeText(PlayerActivity.this,
-                        "صدای این نسخه پشتیبانی نمی‌شود — پخش بی‌صدا ادامه می‌یابد",
-                        Toast.LENGTH_LONG).show();
-                    player.setTrackSelectionParameters(
-                        player.getTrackSelectionParameters().buildUpon()
-                            .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, true)
-                            .build());
-                    player.prepare();
-                    player.setPlayWhenReady(true);
-                    return;
+                if (codecFailure && player != null) {
+                    int mediaType = C.TRACK_TYPE_UNKNOWN;
+                    try {
+                        if (error instanceof ExoPlaybackException) {
+                            mediaType = ((ExoPlaybackException) error).getMediaTrackType();
+                        }
+                    } catch (Throwable t) {
+                        mediaType = C.TRACK_TYPE_UNKNOWN;
+                    }
+
+                    if (mediaType == C.TRACK_TYPE_VIDEO) {
+                        Toast.makeText(PlayerActivity.this,
+                            "پخش این نسخه ممکن نشد", Toast.LENGTH_LONG).show();
+                        tick.postDelayed(() -> finish(), 600L);
+                        return;
+                    }
+
+                    if (!audioDropped && tryNextAudioTrack()) return;
+
+                    if (!audioDropped) {
+                        audioDropped = true;
+                        Toast.makeText(PlayerActivity.this,
+                            "صدای این نسخه پشتیبانی نمی‌شود — پخش بی‌صدا ادامه می‌یابد",
+                            Toast.LENGTH_LONG).show();
+                        player.setTrackSelectionParameters(
+                            player.getTrackSelectionParameters().buildUpon()
+                                .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, true)
+                                .build());
+                        player.prepare();
+                        player.setPlayWhenReady(true);
+                        return;
+                    }
                 }
 
                 Toast.makeText(PlayerActivity.this,
@@ -886,6 +913,58 @@ public class PlayerActivity extends Activity {
     }
 
     private boolean audioDropped = false;
+    /** v0.21.1 — audio hardening: audio groups already attempted (by their
+     *  position in getCurrentTracks()), so each error advances to the NEXT
+     *  untried track instead of repeating the same failed one. */
+    private final Set<Integer> triedAudioGroups = new HashSet<>();
+
+    /** v0.21.1 — select the next UNTRIED audio group when the selected one's
+     *  codec cannot be decoded (multi-audio MKVs). Bounded: each call marks
+     *  the group it tries, so the sequence terminates. Returns false when no
+     *  untried, plausibly-decodable group remains → the caller mutes. */
+    private boolean tryNextAudioTrack() {
+        try {
+            Tracks tracks = player.getCurrentTracks();
+            List<Tracks.Group> audio = new ArrayList<>();
+            List<Integer> audioGi = new ArrayList<>(); // full-list index per audio group
+            int selIdx = -1; // position WITHIN the audio list
+            for (int gi = 0; gi < tracks.getGroups().size(); gi++) {
+                Tracks.Group g = tracks.getGroups().get(gi);
+                if (g.getType() != C.TRACK_TYPE_AUDIO) continue;
+                audio.add(g);
+                audioGi.add(gi);
+                if (selIdx < 0) {
+                    for (int ti = 0; ti < g.length; ti++) {
+                        if (g.isTrackSelected(ti)) {
+                            selIdx = audio.size() - 1;
+                            break;
+                        }
+                    }
+                }
+            }
+            if (audio.size() <= 1) return false; // nothing to alternate to
+            for (int i = 0; i < audio.size(); i++) {
+                int gi = audioGi.get(i);
+                if (i == selIdx || triedAudioGroups.contains(gi)) continue;
+                Tracks.Group g = audio.get(i);
+                if (!g.isTrackSupported(0)) {
+                    triedAudioGroups.add(gi);
+                    continue;
+                }
+                triedAudioGroups.add(gi);
+                player.setTrackSelectionParameters(
+                    player.getTrackSelectionParameters().buildUpon()
+                        .setOverrideForType(new TrackSelectionOverride(g.getMediaTrackGroup(), 0))
+                        .build());
+                player.prepare();
+                player.setPlayWhenReady(true);
+                return true;
+            }
+            return false;
+        } catch (Throwable t) {
+            return false;
+        }
+    }
 
     /** v0.18.0 — episodes sheet picked another episode: hand the choice back
      *  to the JS engine (which re-runs ownership/handoff for that episode). */

@@ -77,6 +77,34 @@ const NATIVE_CONTAINER_EXT = /\.(avi|wmv|mpg|mpeg|ts|flv)(\?|#|$)/i;
  *  as the fallback when the <video> hard-fails. */
 const FRAGILE_CONTAINER_EXT = /\.(mkv|mk3d)(\?|#|$)/i;
 
+/* v0.21.1 — the filename CODEC layer (the missing half of web-first).
+ *
+ * Release names carry the codec: …x265.BluRay…, …1080p.x265.10bit…,
+ * …DTS…, …TrueHD…, …Atmos…, …AC3/DDP5.1…. The Android WebView ships NO
+ * license codecs — HEVC (x265/h265), AC3/E-AC3, DTS/TrueHD cannot be
+ * decoded, whatever the hardware offers (the v0.20.0 report «AC3/DTS
+ * releases played as SILENT video» + the ~11.5% x265-family share of the
+ * catalog, measured over 115k links). Every web attempt on these files is
+ * a guaranteed 12s watchdog burn or a silent film, then the ladder burns
+ * the NEXT doomed variant — the exact «هیچی پخش نمیکنه» report on titles
+ * like Breaking Bad whose variant list mixes x265 releases with plain
+ * BluRays.
+ *
+ * Boundary-delimited (./-/_/space/slash/query/=&/start/end) so it cannot
+ * match inside words: «DonyayeSerial» never matches «dts», «Bitrate» never
+ * matches «10bit» — while path segments like «/x265/» or «/hevc/» do. */
+const NATIVE_CODEC_RE =
+  /(?:^|[.\-_ /?=&])(x265|x\.265|h\.?265|hevc|10bit|dts(?:[-.]?hd)?|truehd|atmos|e-?ac3|ddp\d?|dd\+|dd[25]|ac3)(?:$|[.\-_ /?=&])/i;
+
+/** v0.21.1 — the release name advertises a codec the WebView cannot decode.
+ *  Used by classifyUrl to hand these files STRAIGHT to the native player
+ *  (Media3 rides the platform decoders) instead of burning the web ladder
+ *  on a guaranteed failure. Plain H.264/AAC releases are unaffected. */
+export function hasNativeOnlyCodec(url: string): boolean {
+  if (!url) return false;
+  return NATIVE_CODEC_RE.test(url);
+}
+
 export type UrlClass =
   | "web" // WebView plays it reliably — always the web player
   | "fragile" // web-FIRST; native is the fallback on a real decode failure
@@ -93,9 +121,17 @@ export function classifyUrl(url: string): UrlClass {
   if (!url) return "web"; // empty src — harmless, the player shows idle
   if (url.startsWith("local:")) return "native";
   if (/^http:\/\//i.test(url)) return "native"; // release WebView blocks cleartext (BEFORE the ext rules — even http mkv/mp4)
-  if (FRAGILE_CONTAINER_EXT.test(url)) return "fragile";
+  if (FRAGILE_CONTAINER_EXT.test(url)) {
+    // v0.21.1 — an MKV whose NAME advertises HEVC/AC3/DTS/… codecs is not
+    // web-first: the WebView can never decode it. Straight to Media3, no
+    // doomed <video> mount, no 12s burn, no silent film.
+    return hasNativeOnlyCodec(url) ? "native" : "fragile";
+  }
   if (NATIVE_CONTAINER_EXT.test(url)) return "native";
   if (/^https?:\/\//i.test(url)) {
+    // v0.21.1 — the codec tag wins on ANY https URL (token/redirector paths
+    // included): the name says HEVC/AC3/DTS → the WebView cannot own it.
+    if (hasNativeOnlyCodec(url)) return "native";
     return WEBVIEW_SAFE_EXT.test(url) ? "web" : "fragile"; // token/redirector: sniff on web first
   }
   return "web";
@@ -108,14 +144,18 @@ export function classifyUrl(url: string): UrlClass {
  *   - local: offline downloads always play natively
  *   - legacy containers (avi/wmv/mpg/mpeg/ts/flv) — no WebView demuxer
  *   - v0.17.0 — plain http:// (no TLS): release builds disable cleartext
- *  Used by the desktop player's (dead-on-Electron) handoff block and by the
+ *   - v0.21.1 — MKVs whose NAME advertises WebView-undecodable codecs
+ *     (x265/HEVC/10bit video, AC3/E-AC3/DTS/TrueHD/Atmos audio)
+ *  Used by the desktop player's (dead-on-Electron) handoff block, by the
  *  mobile «سوییچ به نسخه وب‌سازگار» flag, where the switch must land on a
- *  source GUARANTEED to play on the web — not merely web-first. */
+ *  source GUARANTEED to play on the web — not merely web-first — and by
+ *  resolveOwner's engine="native" branch. */
 export function needsNativePlayer(url: string): boolean {
   if (!url) return false;
   if (url.startsWith("local:")) return true;
   if (NATIVE_CONTAINER_EXT.test(url)) return true;
   if (/^http:\/\//i.test(url)) return true;
+  if (FRAGILE_CONTAINER_EXT.test(url) && hasNativeOnlyCodec(url)) return true;
   return false;
 }
 

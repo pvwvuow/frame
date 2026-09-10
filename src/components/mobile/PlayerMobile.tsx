@@ -70,7 +70,7 @@ import { preferredSourceIdx, qualityPrefIdx, rememberedVariantIdx, rememberVaria
 import { setQualityPref } from "@/lib/quality-pref";
 import { titleHref, watchHref } from "@/lib/mobile-links";
 import { isLocalFile, localFilePath, nativeBridge, probeNativeBridge, getInstallInfo } from "@/lib/native-bridge";
-import { resolveOwner, shouldLadderAdvance, isLadderExhausted, isDuplicateNotice, metaWatchdogMs, type PlaybackOwner } from "@/lib/mobile-playback";
+import { resolveOwner, shouldLadderAdvance, isLadderExhausted, isDuplicateNotice, metaWatchdogMs, preflightDecision, nextWebIdxSkippingNative, type PlaybackOwner } from "@/lib/mobile-playback";
 import { getPlayerEngine, setPlayerEngine, type PlayerEngine } from "@/lib/player-prefs";
 import { useCinema, cinemaTargetPosition, setCinemaFollowHandler, type CinemaBeat } from "@/lib/cinema";
 import CinemaPanel from "../cinema/CinemaPanel";
@@ -205,6 +205,9 @@ export default function PlayerMobile() {
   const [nativeFallbackIdx, setNativeFallbackIdx] = useState<number | null>(null);
   const [natUnavailable, setNatUnavailable] = useState(false);
   const nativeTriedRef = useRef<Set<number>>(new Set());
+  /** v0.21.1 — a fallback rung deferred until the bridge probe resolves
+   *  (bridgeOk null at call time). Holds the pending notice text. */
+  const nativeFallbackQueuedRef = useRef<string | null>(null);
   /* ---- v0.21.0 — the MSE fallback transport (fMP4 over MediaSource) ----
    * mseWanted = the raw URL the MSE session owns; mseUrl = its blob URL for
    * the <video>. A device that cannot demux Matroska directly gets its
@@ -482,62 +485,13 @@ export default function PlayerMobile() {
         guardCtl.abort();
       };
     }
-    // v0.20.0 — BYTE-AWARE PREFLIGHT (the no-proxy / Android half of
-    // ensurePlayableAudio). The v0.19.x web-first policy classified by
-    // EXTENSION; the actual BYTES now get a vote BEFORE the <video> burns
-    // 12s of metadata watchdog on a doomed source:
-    //  - dead head (403/404/503 geo-page) → the ladder steps immediately
-    //  - AC3/DTS first-audio → the honest native handoff (a silent film is
-    //    exactly the «پلیر اصلی کار نمی‌کنه» experience)
-    //  - healthy Matroska → the web player keeps it (subs scan starts)
-    const url0 = srcList[initial]?.url ?? "";
-    if (
-      url0 &&
-      !cinActive &&
-      effEngineRef.current === "auto" &&
-      classifyUrl(mediaSrc(url0, proxyBase ?? null)) === "fragile"
-    ) {
-      let alive = true;
-      void probeMkvHead(url0).then((p) => {
-        if (!alive) return;
-        if (usePlayerStore.getState().contentKey !== contentKey) return; // stale probe
-        if (!p.reachable) {
-          if (p.status >= 400) advanceLadder(); // proven-dead source — step now
-          return; // status 0 = transport hiccup → let the element try
-        }
-        setProbeInfo(
-          p.matroska
-            ? `matroska · صدا: ${p.audioLabel ?? "?"} · ${p.mse?.supported ? `MSE OK (${p.mse.videoCodec})` : p.mse ? `MSE ✗ ${p.mse.reason}` : "MSE ?"}`
-            : "matroska نیست"
-        );
-        if (!p.matroska) return; // token URL hiding an mp4 → element path
-        // v0.21.0 — MSE-FIRST for devices that already proved direct-MKV
-        // playback fails: skip the doomed <video> attempt entirely and let
-        // the fMP4 transport own the file from the start.
-        let preferMse = false;
-        try {
-          preferMse = sessionStorage.getItem("nama-mkv-mse") === "1";
-        } catch {
-          /* no storage */
-        }
-        if (preferMse && p.mse?.supported && effEngineRef.current === "auto") {
-          resumeAt.current = resumeAt.current ?? startAt ?? 0;
-          setMseUrl(null);
-          setMseWanted(url0);
-          setLoading(true);
-          return;
-        }
-        if (p.audioOk === false && effEngineRef.current === "auto" && bridgeOkRef.current) {
-          tryNativeFallback(
-            `صوت این نسخه (${p.audioLabel ?? "پشتیبانی‌نشده"}) در پلیر وب قابل پخش نیست — پلیر نیتیو باز می‌شود`
-          );
-        }
-      });
-      return () => {
-        alive = false;
-      };
-    }
+    // v0.21.1 — the initial-only preflight moved to the PER-SOURCE effect
+    // right below: every ladder step / manual pick now gets the same
+    // byte-level verdict BEFORE mounting, with a stale-result guard (the
+    // old block could double-step the ladder from a probe that resolved
+    // after the element had already moved on).
   }, [contentKey, srcList.length, proxyBase]);
+
 
   // lock body scroll behind the player overlay
   useEffect(() => {
@@ -649,6 +603,15 @@ export default function PlayerMobile() {
         .filter((x) => x.cls !== "web" && !nativeTriedRef.current.has(x.i))
         .map((x) => x.i);
       if (!capable.length) return false;
+      if (bridgeOk === null) {
+        // v0.21.1 — the plugin probe is STILL IN FLIGHT: the old `!bridgeOk`
+        // read null as «dead» and flashed the honest-unavailable panel for a
+        // verdict nobody had yet. Queue the rung; it fires the moment the
+        // probe resolves (true → native, false → the honest panel below).
+        nativeFallbackQueuedRef.current =
+          notice || "پخش وب ممکن نشد — پلیر نیتیو امتحان می‌شود";
+        return true;
+      }
       if (!bridgeOk) {
         // the probe PROVED the plugin dead and only native could decode what is
         // left → the honest panel instead of a fake «اتصال برقرار نشد»
@@ -672,8 +635,30 @@ export default function PlayerMobile() {
       showNotice(notice || "پخش وب ممکن نشد — پلیر نیتیو امتحان می‌شود");
       return true;
     },
-    [effEngine, bridgeOk, srcList, proxyBase, showNotice]
+    // v0.21.1 — the setState setters are listed explicitly so the manual
+    // memoization matches React Compiler's inference (they are stable
+    // identities; this is lint hygiene, not behavior).
+    [effEngine, bridgeOk, srcList, proxyBase, showNotice, setNatUnavailable, setMseWanted, setMseUrl, setNativeFallbackIdx, setSrcIdx, setReloadKey, setLoading]
   );
+
+  // v0.21.1 — drain the deferred fallback rung the moment the bridge probe
+  // resolves: true → run it for real; false → the honest «نیتیو در دسترس
+  // نیست» panel (the exact UI the queued call would have shown, minus the
+  // guess). A close clears the queue before any verdict can land.
+  useEffect(() => {
+    if (bridgeOk === null) return;
+    const queued = nativeFallbackQueuedRef.current;
+    if (!queued) return;
+    nativeFallbackQueuedRef.current = null;
+    if (bridgeOk) tryNativeFallback(queued);
+    else {
+      const v = videoRef.current;
+      if (v && v.currentTime > 0.5) resumeAt.current = v.currentTime;
+      stopMediaEl(v);
+      setLoading(false);
+      setNatUnavailable(true);
+    }
+  }, [bridgeOk, tryNativeFallback]);
 
   const advanceLadder = useCallback(
     (resumePos?: number) => {
@@ -681,8 +666,15 @@ export default function PlayerMobile() {
       if (!shouldLadderAdvance(ladderAtRef.current, srcIdxRef.current, now)) return;
       ladderAtRef.current = { idx: srcIdxRef.current, at: now };
       errCountRef.current += 1;
-      const next = srcIdxRef.current + 1;
-      if (!isLadderExhausted(next, srcList.length, errCountRef.current)) {
+      // v0.21.1 — LAND on a web-ownable variant. The old `current + 1` step
+      // landed blindly on codec-native MKVs (classifyUrl "native") — a
+      // guaranteed second failure plus another watchdog burn (the v0.20.0
+      // «هیچی پخش نمیکنه» report). While ANY web-ownable variant remains, the
+      // ladder skips the native-class ones (they are the fallback rung's
+      // candidates) and lands on the next one that can actually play.
+      const classes = srcList.map((s) => classifyUrl(mediaSrc(s.url, proxyBase ?? null)));
+      const next = nextWebIdxSkippingNative(classes, srcIdxRef.current);
+      if (next >= 0 && !isLadderExhausted(next, srcList.length, errCountRef.current)) {
         if (!resumePos) {
           const v = videoRef.current;
           if (v && v.currentTime > 0.5) resumeAt.current = v.currentTime;
@@ -696,8 +688,80 @@ export default function PlayerMobile() {
         haltForFatal();
       }
     },
-    [srcList.length, showNotice, haltForFatal, tryNativeFallback]
+    [srcList, proxyBase, showNotice, haltForFatal, tryNativeFallback]
   );
+
+  /* v0.21.1 — BYTE-AWARE PREFLIGHT for EVERY source, not just the first.
+   *
+   * The v0.20.0 preflight ran ONCE per open: dead/undecodable sources that
+   * the LADDER stepped onto afterwards mounted blind — each one burned the
+   * full 12s metadata watchdog (or played a silent AC3/DTS film) before
+   * anything learned what the HEAD bytes already knew. This effect re-runs
+   * the verdict whenever the ACTIVE source changes (probe results are
+   * cached per URL, so re-checks are instant) and when the bridge verdict
+   * lands — a queued AC3/DTS handoff fires the moment Media3 is proven
+   * alive. Gates: auto engine, no desktop proxy (ensurePlayableAudio owns
+   * that path), no cinema (the watch-party always rides the <video>), and
+   * the native-fallback rung owns the source (its handoff is in flight —
+   * a second verdict here could halt the very handoff it started). */
+  useEffect(() => {
+    if (!open || cinActive) return;
+    if (effEngineRef.current !== "auto") return;
+    if (proxyBase) return; // desktop: ensurePlayableAudio + the proxy own routing
+    if (nativeFallbackIdx !== null && nativeFallbackIdx === srcIdx) return;
+    if (mseWantedRef.current) return; // an active MSE session owns playback
+    const url0 = srcList[srcIdx]?.url ?? "";
+    if (!url0) return;
+    if (classifyUrl(mediaSrc(url0, proxyBase ?? null)) !== "fragile") return; // native-class → owner; web-class → element
+    const idxAtProbe = srcIdx;
+    let alive = true;
+    void probeMkvHead(url0).then((p) => {
+      if (!alive) return;
+      if (usePlayerStore.getState().contentKey !== contentKey) return;
+      if (srcIdxRef.current !== idxAtProbe) return; // the ladder/user moved on — stale probe
+      let preferMse = false;
+      try {
+        preferMse = sessionStorage.getItem("nama-mkv-mse") === "1";
+      } catch {
+        /* no storage */
+      }
+      const d = preflightDecision(
+        {
+          reachable: p.reachable,
+          status: p.status,
+          matroska: p.matroska,
+          audioOk: p.audioOk,
+          mse: p.mse ? { supported: p.mse.supported } : null,
+        },
+        { preferMse, bridgeOk: bridgeOkRef.current, engine: effEngineRef.current }
+      );
+      setProbeInfo(
+        p.matroska
+          ? `matroska · صدا: ${p.audioLabel ?? "?"} · ${p.mse?.supported ? `MSE OK (${p.mse.videoCodec})` : p.mse ? `MSE ✗ ${p.mse.reason}` : "MSE ?"}`
+          : "matroska نیست"
+      );
+      if (d.action === "next") {
+        advanceLadder(); // proven-dead source — step now, no watchdog burn
+        return;
+      }
+      if (d.action === "mse") {
+        resumeAt.current = resumeAt.current ?? startAt ?? 0;
+        setMseUrl(null);
+        setMseWanted(url0);
+        setLoading(true);
+        return;
+      }
+      if (d.action === "native") {
+        tryNativeFallback(
+          `صوت این نسخه (${p.audioLabel ?? "پشتیبانی‌نشده"}) در پلیر وب قابل پخش نیست — پلیر نیتیو باز می‌شود`
+        );
+      }
+      // keep / wait → the element path proceeds untouched
+    });
+    return () => {
+      alive = false;
+    };
+  }, [open, cinActive, contentKey, srcIdx, proxyBase, bridgeOk, nativeFallbackIdx, srcList, startAt, advanceLadder, tryNativeFallback]);
 
   useEffect(() => {
     const b = nativeBridge();
@@ -713,6 +777,8 @@ export default function PlayerMobile() {
       nativeTriedRef.current = new Set();
       setNativeFallbackIdx(null);
       setNatUnavailable(false);
+      // v0.21.1 — a deferred rung belongs to THIS open only
+      nativeFallbackQueuedRef.current = null;
       return;
     }
     // v0.18.1 — the engine choice is part of the handoff identity: flipping
