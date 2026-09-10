@@ -43,9 +43,16 @@ function main() {
     fs.writeFileSync(file, JSON.stringify(slice));
   }
 
+  /* Manifest version must CHANGE whenever the catalog content changes:
+   * db.ts's doInit() skips the whole import when storedManifest.version ===
+   * remote.version, so a constant (the old format-version 1) made Android
+   * keep the previous catalog forever after an update. The index payload's
+   * sha256 (from version.json, written by export-catalog.mjs) is the
+   * content identity — its prefix is unique per content change. */
   let version = "unknown";
   try {
-    version = JSON.parse(fs.readFileSync(path.join(ROOT, "public", "catalog", "version.json"), "utf8")).version ?? "unknown";
+    const vj = JSON.parse(fs.readFileSync(path.join(ROOT, "public", "catalog", "version.json"), "utf8"));
+    version = String(vj.sha256 || vj.version || "unknown").slice(0, 12);
   } catch {}
 
   const manifest = {
