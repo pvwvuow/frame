@@ -18,7 +18,9 @@ installMobileShim();
 
 const PHASE_TEXT: Record<ImportProgress["phase"], string> = {
   check: "بررسی آرشیو…",
-  download: "دانلود و آماده‌سازی آرشیو…",
+  /* v0.25.0 — the import is a LOCAL lite-shard read (~7MB, seconds); the old
+   * «دانلود و آماده‌سازی» wording described the full-record era */
+  download: "آماده‌سازی آرشیو…",
   index: "ایندکس‌گذاری…",
   done: "آماده است",
 };

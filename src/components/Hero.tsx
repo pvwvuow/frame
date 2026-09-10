@@ -10,6 +10,7 @@ import FavoriteButton from "./FavoriteButton";
 import { useI18n } from "./i18n/LocaleProvider";
 import { titleNames } from "@/lib/title-name";
 import { titleHref, watchHref } from "@/lib/mobile-links";
+import { posterSrc, backdropSrc } from "@/lib/covers";
 
 export default function Hero({ items, watchlistIds }: { items: TitleView[]; watchlistIds: number[] }) {
   const [idx, setIdx] = useState(0);
@@ -32,20 +33,29 @@ export default function Hero({ items, watchlistIds }: { items: TitleView[]; watc
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
     >
-      {items.map((t, i) => (
-        <div
-          key={t.id}
-          className={`absolute inset-0 transition-opacity duration-1000 ${i === idx ? "opacity-100" : "opacity-0"}`}
-          aria-hidden={i !== idx}
-        >
-          { }
-          <img
-            src={t.backdrop}
-            alt=""
-            className={`h-full w-full object-cover ${i === idx ? "animate-ken" : ""}`}
-          />
-        </div>
-      ))}
+      {items.map((t, i) => {
+        /* v0.25.0 — mount ONLY the active slide ±1 (wrap-aware): 8 full-bleed
+         * backdrops used to fetch eagerly on every home view */
+        const dist = Math.min(Math.abs(i - idx), items.length - Math.abs(i - idx));
+        return (
+          <div
+            key={t.id}
+            className={`absolute inset-0 transition-opacity duration-1000 ${i === idx ? "opacity-100" : "opacity-0"}`}
+            aria-hidden={i !== idx}
+          >
+            {dist <= 1 && (
+              <img
+                src={backdropSrc(t)}
+                alt=""
+                loading={dist === 0 ? "eager" : "lazy"}
+                decoding="async"
+                data-ph-title={titleNames(t, locale).primary}
+                className={`h-full w-full object-cover ${i === idx ? "animate-ken" : ""}`}
+              />
+            )}
+          </div>
+        );
+      })}
       <div className={`absolute inset-0 ${locale === "en" ? "bg-gradient-to-r" : "bg-gradient-to-l"} from-ink via-ink/60 to-ink/10`} />
       <div className="absolute inset-0 bg-gradient-to-t from-ink via-ink/30 to-black/40" />
 
@@ -130,7 +140,7 @@ export default function Hero({ items, watchlistIds }: { items: TitleView[]; watc
               }`}
             >
               { }
-              <img src={t.poster} alt={titleNames(t, locale).primary} className="h-full w-full object-cover" />
+              <img src={posterSrc(t)} alt={titleNames(t, locale).primary} loading="lazy" decoding="async" className="h-full w-full object-cover" />
             </button>
           ))}
         </div>

@@ -107,6 +107,28 @@ async function main() {
   const mb = (n) => (n / 1024 / 1024).toFixed(1) + "MB";
   console.log(`index.json: ${mb(body.length)} | sha256: ${sha}`);
   console.log("counts:", JSON.stringify(payload.counts));
+
+  /* v0.25.0 — PER-TITLE full records (the on-demand half of the mobile
+   * architecture). The Android shards become ~7MB LITE files (list fields
+   * only); the heavy part (description + all episode sources) is split into
+   * one small JSON per title under titles/{2-char-prefix}/{slug}.json and is
+   * fetched BY THE DEVICE the moment that title is opened (jsDelivr → raw
+   * GitHub fallback, cached in IndexedDB). These files are committed to the
+   * repo — raw.githubusercontent serves them; they are NOT bundled into the
+   * APK/webbundle (mobile-build.cjs strips out/catalog/titles). */
+  const titlesDir = path.join(dir, "titles");
+  fs.rmSync(titlesDir, { recursive: true, force: true });
+  let titleBytes = 0;
+  let titleFiles = 0;
+  for (const t of out) {
+    const bucket = path.join(titlesDir, String(t.slug || "").slice(0, 2));
+    fs.mkdirSync(bucket, { recursive: true });
+    const body2 = Buffer.from(JSON.stringify(t));
+    fs.writeFileSync(path.join(bucket, `${t.slug}.json`), body2);
+    titleBytes += body2.length;
+    titleFiles++;
+  }
+  console.log(`titles/: ${titleFiles} per-title full records | ${mb(titleBytes)}`);
   await db.$disconnect();
 }
 

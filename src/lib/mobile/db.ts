@@ -20,6 +20,10 @@ export type LiteTitle = {
   genres: string[];
   poster: string;
   backdrop: string;
+  /* v0.25.0 — remote (metahub) cover URLs; posterSrc/backdropSrc prefer them
+   * unless a local cover pack is installed (see src/lib/covers.ts) */
+  posterUrl?: string;
+  backdropUrl?: string;
   videoUrl: string;
   trailerUrl: string | null;
   quality: string;
@@ -31,6 +35,10 @@ export type LiteTitle = {
   trendingScore: number;
   director: string;
   cast: string[];
+  /* v0.25.0 — lite-shard counters: hydrateHero drops zero-episode series
+   * without any network round-trip; cards badge them */
+  episodeCount?: number;
+  seasonCount?: number;
   createdAt: string;
 };
 
@@ -56,6 +64,10 @@ export type CatalogManifest = {
   counts: { titles: number; movies: number; series: number; episodes: number };
   shardSize: number;
   shardCount: number;
+  /* v0.25.0 — lite manifests carry the per-title full-record base(s)
+   * (export-catalog.mjs → titles/{prefix}/{slug}.json) */
+  fullBase?: string;
+  fullBases?: string[];
 };
 
 import Dexie from "dexie";
@@ -80,6 +92,8 @@ export const db = new Dexie("frame-mobile") as Dexie & {
   ucitems: Dexie.Table<Record<string, unknown>, number>;
   /* v0.12.0 — offline downloads index */
   dlitems: Dexie.Table<Record<string, unknown>, string>;
+  /* v0.25.0 — per-title full records fetched on demand (slug → record) */
+  fulls: Dexie.Table<Record<string, unknown>, string>;
 };
 
 db.version(1).stores({
@@ -104,6 +118,13 @@ db.version(2).stores({
  * private storage (native download engine); this table is the index */
 db.version(3).stores({
   dlitems: "id, [titleId+episodeId], titleId, status",
+});
+
+/* v4 (v0.25.0): on-demand full records — one small JSON per title, fetched
+ * the first time that title is opened (jsDelivr → raw GitHub) and cached
+ * here, version-stamped. Cleared on every catalog re-import. */
+db.version(4).stores({
+  fulls: "slug",
 });
 
 /* stable episode ids derived from (title, season, number) */
@@ -181,8 +202,11 @@ async function doInit(onProgress?: (p: ImportProgress) => void): Promise<void> {
   p({ done: 0, total: remote.shardCount + 1, phase: "download" });
   const collected: LiteTitle[] = [];
   await db.titles.clear();
+  /* v0.25.0 — cached full records belong to the OLD catalog version; drop
+   * them so descriptions/episode lists can never go stale vs the new shards */
+  await db.fulls.clear();
   for (let s = 0; s < remote.shardCount; s++) {
-    const name = `full-${String(s).padStart(2, "0")}.json`;
+    const name = `${remote.format === "nama-catalog-mobile-lite" ? "lite" : "full"}-${String(s).padStart(2, "0")}.json`;
     const rows = await fetch(`/catalog/mobile/${name}`, { cache: "force-cache" }).then((r) => r.json()) as Record<string, unknown>[];
     const clean = rows.map((t, i) => sanitizeTitle(t, s * remote.shardSize + i + 1));
     await db.titles.bulkPut(clean);
@@ -203,9 +227,11 @@ async function doInit(onProgress?: (p: ImportProgress) => void): Promise<void> {
 type CatalogTitle = {
   id: number; slug: string; title: string; titleEn: string; type: string; year: number; rating: number;
   duration: number; description: string; genres: string[]; poster: string; backdrop: string;
+  posterUrl?: string; backdropUrl?: string;
   videoUrl: string; trailerUrl?: string | null; director: string; cast: string[]; country: string;
   ageRating: string; quality: string; sources: string; featured: boolean; trendingScore: number;
   views: number; source?: string; addedAt?: string; episodes?: Record<string, unknown>[];
+  episodeCount?: number; seasonCount?: number;
 };
 
 /** Normalize one JSON title: parse genres/cast, assign episode ids, fill defaults. */
@@ -217,6 +243,12 @@ function sanitizeTitle(t: Record<string, unknown>, fallbackId: number): CatalogT
   };
   const id = Number(t.id) || fallbackId;
   const eps = Array.isArray(t.episodes) ? (t.episodes as Record<string, unknown>[]) : [];
+  /* lite shards carry the counters explicitly (their episodes arrays are
+   * empty); full records derive them from the real episode list */
+  const seasonSet = new Set<number>();
+  for (const e of eps) seasonSet.add(Number(e.season) || 1);
+  const episodeCount = eps.length || Number(t.episodeCount) || 0;
+  const seasonCount = seasonSet.size || Number(t.seasonCount) || 0;
   const episodes = eps
     .map((e) => {
       const season = Number(e.season) || 1;
@@ -248,6 +280,8 @@ function sanitizeTitle(t: Record<string, unknown>, fallbackId: number): CatalogT
     genres: arr(t.genres),
     poster: String(t.poster ?? ""),
     backdrop: String(t.backdrop ?? ""),
+    posterUrl: t.posterUrl ? String(t.posterUrl) : "",
+    backdropUrl: t.backdropUrl ? String(t.backdropUrl) : "",
     videoUrl: String(t.videoUrl ?? ""),
     trailerUrl: t.trailerUrl ? String(t.trailerUrl) : null,
     director: String(t.director ?? ""),
@@ -261,6 +295,8 @@ function sanitizeTitle(t: Record<string, unknown>, fallbackId: number): CatalogT
     views: Number(t.views) || 0,
     source: String(t.source ?? "demo"),
     addedAt: String(t.addedAt ?? ""),
+    episodeCount,
+    seasonCount,
     episodes,
   };
 }
@@ -270,6 +306,8 @@ function toLite(t: CatalogTitle): LiteTitle {
     id: t.id, slug: t.slug, title: t.title, titleEn: t.titleEn,
     type: t.type as "movie" | "series", year: t.year, rating: t.rating, duration: t.duration,
     description: "", genres: t.genres, poster: t.poster, backdrop: t.backdrop, quality: t.quality,
+    posterUrl: t.posterUrl || "", backdropUrl: t.backdropUrl || "",
+    episodeCount: t.episodeCount ?? 0, seasonCount: t.seasonCount ?? 0,
     country: t.country, ageRating: t.ageRating, views: t.views, featured: t.featured,
     trendingScore: t.trendingScore, director: t.director, cast: t.cast,
     // createdAt carries the catalog add-date («جدیدترین‌ها» sort) — empty for
@@ -284,8 +322,100 @@ function reindex() {
 }
 
 /* ------------------------------------------------------------------ */
-/* Full record access                                                  */
+/* Full record access — v0.25.0 ON-DEMAND                              */
 /* ------------------------------------------------------------------ */
+
+/* Where per-title full records live (export-catalog.mjs writes one small JSON
+ * per title under public/catalog/titles/{prefix}/{slug}.json). The manifest's
+ * fullBases wins (the sharder knows the current mirrors); these are hard
+ * fallbacks so even an old manifest still resolves. */
+const FALLBACK_FULL_BASES = [
+  "https://cdn.jsdelivr.net/gh/pvwvuow/frame@main/public/catalog",
+  "https://raw.githubusercontent.com/pvwvuow/frame/main/public/catalog",
+];
+
+function fullBases(): string[] {
+  const fromManifest = manifest?.fullBases?.length
+    ? manifest.fullBases
+    : manifest?.fullBase
+      ? [manifest.fullBase]
+      : [];
+  return [...fromManifest, ...FALLBACK_FULL_BASES];
+}
+
+/** A Dexie `titles` row counts as a FULL record when it carries the heavy
+ *  fields — legacy imports (pre-v0.25) and e2e fixtures seed these; lite
+ *  imports don't. One code path serves both worlds. */
+function isFullRecord(rec: CatalogTitle | undefined | null): boolean {
+  if (!rec) return false;
+  if (Array.isArray(rec.episodes) && rec.episodes.length > 0) return true;
+  return !!(rec.description && rec.description.length > 0);
+}
+
+/** In-flight dedupe so a title opened from two surfaces costs ONE fetch. */
+const fullMemo = new Map<string, Promise<CatalogTitle | null>>();
+
+/** Fetch ONE title's full record (description + episodes + sources) from the
+ * remote per-title catalog, caching it in IndexedDB (`fulls`, version-stamped).
+ * Cache → network; failures are NOT cached (an offline first open retries the
+ * next time). This is the whole data half of «محتوا لحظه‌ای باشد»: the device
+ * no longer holds 14,874 full records — it holds the ~30 it actually opened. */
+function loadFullRecord(slug: string, fallbackId: number): Promise<CatalogTitle | null> {
+  const inflight = fullMemo.get(slug);
+  if (inflight) return inflight;
+  const job = (async () => {
+    try {
+      const cached = (await db.fulls.get(slug)) as ({ __v?: string } & Record<string, unknown>) | undefined;
+      if (cached && cached.__v === manifest?.version) return cached as unknown as CatalogTitle;
+      for (const base of fullBases()) {
+        try {
+          const ctrl = new AbortController();
+          const timer = setTimeout(() => ctrl.abort(), 12_000);
+          const res = await fetch(`${base}/titles/${encodeURIComponent(slug.slice(0, 2))}/${encodeURIComponent(slug)}.json`, {
+            signal: ctrl.signal,
+          });
+          clearTimeout(timer);
+          if (!res.ok) continue;
+          const rec = sanitizeTitle((await res.json()) as Record<string, unknown>, fallbackId);
+          await db.fulls.put({ ...(rec as unknown as Record<string, unknown>), __v: manifest?.version ?? "" });
+          return rec;
+        } catch {
+          /* next base */
+        }
+      }
+      return null;
+    } finally {
+      fullMemo.delete(slug);
+    }
+  })();
+  fullMemo.set(slug, job);
+  return job;
+}
+
+/** Lite row → TitleView (the degraded offline shape: no description/episodes
+ *  — surfaces render, and the next online open fills them in). */
+function liteView(l: LiteTitle): TitleView {
+  return {
+    ...l,
+    description: "",
+    videoUrl: "",
+    trailerUrl: l.trailerUrl ?? null,
+    sources: "[]",
+    createdAt: l.createdAt || manifest?.generatedAt || "",
+  };
+}
+
+/** Lite row + a full record → TitleView (the merge shape all callers expect). */
+function mergeFull(l: LiteTitle, full: CatalogTitle): TitleView {
+  return {
+    ...l,
+    description: full.description ?? "",
+    videoUrl: full.videoUrl ?? "",
+    trailerUrl: full.trailerUrl ?? null,
+    sources: full.sources ?? "[]",
+    createdAt: l.createdAt || manifest?.generatedAt || "",
+  };
+}
 
 export async function getFullTitle(id: number): Promise<TitleView | null> {
   if (isDesktopRuntime()) {
@@ -296,16 +426,10 @@ export async function getFullTitle(id: number): Promise<TitleView | null> {
   }
   const l = byId.get(id);
   if (!l) return null;
-  const full = (await db.titles.get(id)) as unknown as CatalogTitle | undefined;
-  if (!full) return null;
-  return {
-    ...l,
-    description: full.description ?? "",
-    videoUrl: full.videoUrl ?? "",
-    trailerUrl: full.trailerUrl ?? null,
-    sources: full.sources ?? "[]",
-    createdAt: manifest?.generatedAt ?? new Date().toISOString(),
-  };
+  const local = (await db.titles.get(id)) as unknown as CatalogTitle | undefined;
+  if (isFullRecord(local)) return mergeFull(l, local as CatalogTitle);
+  const full = await loadFullRecord(l.slug, id);
+  return full ? mergeFull(l, full) : liteView(l);
 }
 
 export async function getEpisodes(titleId: number): Promise<EpisodeRec[]> {
@@ -314,7 +438,13 @@ export async function getEpisodes(titleId: number): Promise<EpisodeRec[]> {
     if (!r.ok) return [];
     return (await r.json()) as EpisodeRec[];
   }
-  const full = (await db.titles.get(titleId)) as unknown as CatalogTitle | undefined;
+  const local = (await db.titles.get(titleId)) as unknown as CatalogTitle | undefined;
+  if (local && Array.isArray(local.episodes) && local.episodes.length) {
+    return local.episodes as unknown as EpisodeRec[]; // legacy full rows / fixtures
+  }
+  const l = byId.get(titleId);
+  if (!l) return [];
+  const full = await loadFullRecord(l.slug, titleId);
   return (full?.episodes as unknown as EpisodeRec[]) ?? [];
 }
 
@@ -360,7 +490,10 @@ const matches = (t: LiteTitle, opts: CatalogQuery) =>
 /* ------------------------------------------------------------------ */
 
 /** Hydrate one hero candidate to a full record; null when the row is gone or
- *  a series has no episodes at all (the hero's Play button must work). */
+ *  a series has no episodes at all (the hero's Play button must work).
+ *  v0.25.0: the zero-episode check reads the LITE counter (no network); the
+ *  description comes from loadFullRecord's cache/network, degrading to the
+ *  lite row offline instead of blocking the home screen. */
 async function hydrateHero(id: number): Promise<TitleView | null> {
   if (isDesktopRuntime()) {
     const r = await fetch(`/api/x/full/${id}`, { cache: "no-store" });
@@ -370,29 +503,34 @@ async function hydrateHero(id: number): Promise<TitleView | null> {
     if (j.title.type === "series" && !(j.episodes && j.episodes.length)) return null;
     return j.title;
   }
-  const full = (await db.titles.get(id)) as unknown as (CatalogTitle & { episodes?: unknown[] }) | undefined;
-  if (!full) return null;
-  if (full.type === "series" && !(full.episodes && full.episodes.length)) return null;
-  return {
-    ...toLite(full),
-    description: full.description ?? "",
-    videoUrl: full.videoUrl ?? "",
-    trailerUrl: full.trailerUrl ?? null,
-    sources: full.sources ?? "[]",
-    createdAt: manifest?.generatedAt ?? new Date().toISOString(),
-  };
+  const l = byId.get(id);
+  if (!l) return null;
+  if (l.type === "series" && !(l.episodeCount ?? 0)) return null;
+  const local = (await db.titles.get(id)) as unknown as CatalogTitle | undefined;
+  if (isFullRecord(local)) {
+    const full = local as CatalogTitle;
+    if (l.type === "series" && !(full.episodes && full.episodes.length)) return null;
+    return mergeFull(l, full);
+  }
+  const full = await loadFullRecord(l.slug, id);
+  if (full) {
+    if (l.type === "series" && !(full.episodes && full.episodes.length)) return null;
+    return mergeFull(l, full);
+  }
+  return liteView(l); // offline → the slide still renders (description empty)
 }
 
 /** Hydrate ranked candidates in order until `want` valid slides are collected
- *  (scanning at most the first 16 — dead rows must not stall the hero). */
+ *  (scanning at most the first 16 — dead rows must not stall the hero).
+ *  v0.25.0: the first slide is awaited so the hero paints after ONE fetch;
+ *  the rest hydrate in parallel (each cached → near-instant on later boots). */
 async function hydrateLineup(candidates: LiteTitle[], want = 8): Promise<TitleView[]> {
-  const out: TitleView[] = [];
-  for (const c of candidates.slice(0, 16)) {
-    if (out.length >= want) break;
-    const full = await hydrateHero(c.id);
-    if (full) out.push(full);
-  }
-  return out;
+  const order = candidates.slice(0, 16);
+  const first = order.length ? await hydrateHero(order[0].id) : null;
+  const rest = await Promise.all(order.slice(first ? 1 : 0).map((c) => hydrateHero(c.id)));
+  return [first, ...rest]
+    .filter((x): x is TitleView => !!x)
+    .slice(0, want);
 }
 
 export async function getFeatured(): Promise<TitleView[]> {

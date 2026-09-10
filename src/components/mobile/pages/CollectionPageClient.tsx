@@ -7,6 +7,7 @@ import TitleCard from "@/components/TitleCard";
 import { COLLECTIONS, getCollection, type TitleListItem } from "@/lib/mobile/db";
 import { getProgressMap } from "@/lib/mobile/userdata";
 import { fa, formatDuration } from "@/lib/format";
+import { backdropSrc } from "@/lib/covers";
 import { LayersIcon, ChevronRight, StarIcon, ClockIcon, PlayIcon } from "@/components/Icons";
 import { watchHref, collectionHref , useRouteSlug } from "@/lib/mobile-links";
 
@@ -60,7 +61,7 @@ export default function CollectionPage() {
         {lead && (
           <>
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={lead.backdrop} alt="" data-ph-title={lead?.title ?? ""} className="absolute inset-0 h-full w-full object-cover" />
+            <img src={backdropSrc(lead)} alt="" decoding="async" data-ph-title={lead?.title ?? ""} className="absolute inset-0 h-full w-full object-cover" />
             <div className="absolute inset-0 bg-gradient-to-l from-ink/95 via-ink/80 to-ink/50" />
             <div className="absolute inset-0 bg-gradient-to-t from-ink via-ink/30 to-ink/30" />
           </>

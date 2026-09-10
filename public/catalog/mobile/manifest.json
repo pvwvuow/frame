@@ -1,1 +1,1 @@
-{"format":"nama-catalog-mobile","version":"d107e6a4a8cd","generatedAt":"2026-09-10T10:32:13.801Z","counts":{"titles":14874,"movies":11722,"series":3152,"episodes":106232},"shardSize":700,"shardCount":22}
+{"format":"nama-catalog-mobile-lite","version":"f1cbc21e04a5","generatedAt":"2026-09-10T14:08:55.820Z","counts":{"titles":14874,"movies":11722,"series":3152,"episodes":106232},"shardSize":700,"shardCount":22,"fullBases":["https://cdn.jsdelivr.net/gh/pvwvuow/frame@main/public/catalog","https://raw.githubusercontent.com/pvwvuow/frame/main/public/catalog"]}

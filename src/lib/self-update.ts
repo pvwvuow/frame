@@ -25,7 +25,28 @@ const REPO = "pvwvuow/frame";
 const LATEST = `https://api.github.com/repos/${REPO}/releases/latest`;
 const LAST_CHECK_KEY = "frame.update.lastCheck";
 const COVERS_REV_KEY = "frame.covers.rev";
+/* v0.25.0 — cover packs are OPT-IN: images stream from metahub per-<img> by
+ * default (the user's call: «ن ک بره کل تصاویر و دیتا هارو یکجا دانلود کنه»). */
+const COVERS_AUTO_KEY = "frame.covers.auto";
 const partsKey = (rev: number) => `frame.covers.parts.r${rev}`;
+
+/** Whether the user opted into downloading/keeping the offline cover packs. */
+export function coversAutoEnabled(): boolean {
+  try {
+    return localStorage.getItem(COVERS_AUTO_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+export function setCoversAuto(on: boolean) {
+  try {
+    if (on) localStorage.setItem(COVERS_AUTO_KEY, "1");
+    else localStorage.removeItem(COVERS_AUTO_KEY);
+  } catch {
+    /* ignore */
+  }
+}
 
 /** CI asset names:
  *  Frame-webbundle-v0.16.0-n3.zip / Frame-coverpack-r1-p01.zip / Frame-v0.16.0-android.apk */
@@ -350,10 +371,13 @@ export function scheduleAutoUpdateCheck(onAvailable: (check: UpdateCheck) => voi
   }, 8000);
 }
 
-/** Cover-pack bootstrap: every boot, 15s in, silent — runs until every part
- *  of the newest pack rev is merged. Resumes from localStorage bookkeeping. */
+/** Cover-pack bootstrap — v0.25.0: OPT-IN ONLY (Settings › تصاویر آفلاین).
+ *  Every boot, 15s in, silent — runs until every part of the newest pack rev
+ *  is merged. Resumes from localStorage bookkeeping. Users who never opted
+ *  in stream their posters from metahub instead and download NOTHING. */
 export function scheduleCoverSync() {
   if (!nativeBridge()) return;
+  if (!coversAutoEnabled()) return;
   setTimeout(() => {
     void (async () => {
       try {

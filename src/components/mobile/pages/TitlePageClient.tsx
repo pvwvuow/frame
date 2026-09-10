@@ -45,6 +45,7 @@ import {
   type ProgressRow,
 } from "@/lib/mobile/userdata";
 import { fa, formatDuration, formatViews, typeLabel, formatClock } from "@/lib/format";
+import { posterSrc, backdropSrc } from "@/lib/covers";
 import { titleNames } from "@/lib/title-name";
 import { normalizeSources } from "@/lib/source-fix";
 import { titleHref, watchHref, personHref , useRouteSlug } from "@/lib/mobile-links";
@@ -184,7 +185,7 @@ export default function TitlePage() {
       {/* ── HERO ─────────────────────────────────────────────────────── */}
       <section className="relative min-h-[88vh] overflow-hidden">
         { }
-        <img src={t.backdrop} alt="" data-ph-title={t.title} className="absolute inset-0 h-full w-full object-cover" />
+        <img src={backdropSrc(t)} alt="" decoding="async" data-ph-title={t.title} className="absolute inset-0 h-full w-full object-cover" />
         <div className="absolute inset-0 bg-gradient-to-l from-ink/95 via-ink/60 to-ink/20" />
         <div className="absolute inset-0 bg-gradient-to-t from-ink via-ink/50 to-black/20" />
         <div className="absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-ink to-transparent" />
@@ -210,7 +211,7 @@ export default function TitlePage() {
             <div className="absolute -inset-4 rounded-[28px] bg-brand/20 blur-3xl" />
             <div className="relative overflow-hidden rounded-2xl shadow-[0_30px_80px_rgba(0,0,0,0.75)] ring-1 ring-white/10">
               { }
-              <img src={t.poster} alt={t.title} data-ph-title={t.title} className="aspect-[2/3] w-full object-cover" />
+              <img src={posterSrc(t)} alt={t.title} data-ph-title={t.title} className="aspect-[2/3] w-full object-cover" />
               {hasProgress && (
                 <div className="absolute inset-x-0 bottom-0 h-1.5 bg-white/20">
                   <div className="h-full bg-brand" style={{ width: `${pct}%` }} />
@@ -554,7 +555,7 @@ export default function TitlePage() {
 
           <div className="relative overflow-hidden rounded-3xl border border-white/5 p-5">
             { }
-            <img src={t.backdrop} alt="" data-ph-title={t.title} className="absolute inset-0 h-full w-full object-cover opacity-30 blur-sm" />
+            <img src={backdropSrc(t)} alt="" loading="lazy" decoding="async" data-ph-title={t.title} className="absolute inset-0 h-full w-full object-cover opacity-30 blur-sm" />
             <div className="absolute inset-0 bg-gradient-to-b from-ink-700/70 to-ink-800" />
             <div className="relative">
               <p className="flex items-center gap-1.5 text-xs text-zinc-400">
@@ -581,7 +582,7 @@ export default function TitlePage() {
                   <li key={s.id}>
                     <Link href={titleHref(s.slug)} className="flex items-center gap-3 rounded-xl p-1.5 transition hover:bg-white/5">
                       { }
-                      <img src={s.poster} alt={s.title} data-ph-title={s.title} className="h-14 w-10 rounded-md object-cover" />
+                      <img src={posterSrc(s)} alt={s.title} loading="lazy" decoding="async" data-ph-title={s.title} className="h-14 w-10 rounded-md object-cover" />
                       <span className="min-w-0">
                         <span className="block truncate text-sm font-bold text-white">{s.title}</span>
                         <span className="block text-[11px] text-zinc-500">

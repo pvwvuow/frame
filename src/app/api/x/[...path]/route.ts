@@ -44,6 +44,15 @@ const J = (s: string): string[] => {
   }
 };
 
+/** /covers/{tt}/… → metahub URL (the desktop installer ships no covers, so
+ *  the client's posterSrc/backdropSrc stream artwork remotely by default). */
+const ttOf = (p: string): string => {
+  const m = /^\/covers\/(tt\d+)\//.exec(p || "");
+  return m ? m[1] : "";
+};
+const metahub = (tt: string, kind: string): string =>
+  tt ? `https://images.metahub.space/${kind}/${tt}/img` : "";
+
 /** Project a full DbTitle row to the "lite" list shape the mobile layer uses. */
 const liteOf = (t: DbTitle) => ({
   id: t.id,
@@ -58,6 +67,9 @@ const liteOf = (t: DbTitle) => ({
   genres: J(t.genres),
   poster: t.poster,
   backdrop: t.backdrop,
+  // v0.25.0 — remote cover URLs (posterSrc/backdropSrc prefer them)
+  posterUrl: metahub(ttOf(t.poster), "poster/small"),
+  backdropUrl: metahub(ttOf(t.backdrop), "background/medium"),
   quality: t.quality,
   country: t.country,
   ageRating: t.ageRating,
@@ -89,6 +101,16 @@ export async function GET(req: Request, ctx: { params: Promise<{ path: string[] 
     case "lite": {
       const rows = await db.title.findMany({ orderBy: { id: "asc" } });
       const movies = rows.filter((r) => r.type !== "series").length;
+      /* v0.25.0 — real per-title episode/season counts (one groupBy; feeds
+       * the hero's zero-episode rule + list badges on desktop too) */
+      const epGroups = await db.episode.groupBy({ by: ["titleId", "season"], _count: { _all: true } });
+      const epCount = new Map<number, { ep: number; se: number }>();
+      for (const g of epGroups) {
+        const cur = epCount.get(g.titleId) ?? { ep: 0, se: 0 };
+        cur.ep += g._count._all;
+        cur.se += 1;
+        epCount.set(g.titleId, cur);
+      }
       return ok({
         manifest: {
           format: "frame-lite",
@@ -98,7 +120,10 @@ export async function GET(req: Request, ctx: { params: Promise<{ path: string[] 
           shardSize: 0,
           shardCount: 0,
         },
-        titles: rows.map(liteOf),
+        titles: rows.map((r) => {
+          const c = epCount.get(r.id);
+          return { ...liteOf(r), episodeCount: c?.ep ?? 0, seasonCount: c?.se ?? 0 };
+        }),
       });
     }
 

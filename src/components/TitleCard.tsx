@@ -12,6 +12,7 @@ import { useI18n } from "./i18n/LocaleProvider";
 import { titleNames } from "@/lib/title-name";
 import TitleName from "./TitleName";
 import { watchHref } from "@/lib/mobile-links";
+import { posterSrc } from "@/lib/covers";
 
 /** Shape needed by the card grid — list endpoints may ship the lightweight
  *  variant (no description/cast/sources) while full TitleView still fits. */
@@ -58,9 +59,10 @@ export default function TitleCard({
         <div className="relative aspect-[2/3] overflow-hidden rounded-xl bg-ink-700 ring-1 ring-white/5 transition-all duration-300 group-hover:-translate-y-1.5 group-hover:shadow-[0_20px_50px_rgba(0,0,0,0.6),0_0_0_1px_rgba(255,255,255,0.14)] group-focus-visible:ring-2 group-focus-visible:ring-brand">
           { }
           <img
-            src={t.poster}
+            src={posterSrc(t)}
             alt={names.label}
             loading="lazy"
+            decoding="async"
             data-ph-title={names.label}
             className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
           />

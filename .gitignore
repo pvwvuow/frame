@@ -84,6 +84,7 @@ server.log
 !/scripts/publish-catalog.mjs
 !/scripts/test-hero-pick.mjs
 !/scripts/test-catalog-repair.mjs
+!/scripts/test-ondemand.mjs
 /scripts/mock-od/tree/
 /electron/dist/
 /upload/

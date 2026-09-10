@@ -72,7 +72,7 @@ function folderViewsByViews() {
   const dir = path.join(ROOT, "public", "catalog", "mobile");
   if (!fs.existsSync(dir)) return map;
   for (const f of fs.readdirSync(dir)) {
-    if (!/^full-\d+\.json$/.test(f)) continue;
+    if (!/^(full|lite)-\d+\.json$/.test(f)) continue;
     try {
       const arr = JSON.parse(fs.readFileSync(path.join(dir, f), "utf8"));
       for (const t of arr) {
@@ -216,6 +216,13 @@ function main() {
       bytes += fs.statSync(p).size;
       fs.unlinkSync(p);
     }
+  }
+  /* v0.25.0 — the per-title full records (public/catalog/titles/, ~90MB)
+   * are a REMOTE resource: devices fetch them on demand from jsDelivr/raw.
+   * They must never ride inside the APK/OTA webbundle. */
+  if (fs.existsSync(path.join(OUT, "catalog", "titles"))) {
+    fs.rmSync(path.join(OUT, "catalog", "titles"), { recursive: true, force: true });
+    console.log("post-clean: removed out/catalog/titles (remote per-title records)");
   }
   console.log(`post-clean: removed ${removed} cover images + catalog/index.json (${(bytes / 1048576).toFixed(0)}MB)`);
 
