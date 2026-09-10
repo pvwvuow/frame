@@ -75,8 +75,10 @@ export async function getTrending(limit = 12) {
 
 export async function getNewest(limit = 12) {
   await ensureSeeded();
+  // v0.23.0: newest = actually-just-added — createdAt desc (NULLs sort last in
+  // SQLite DESC) then year/id as tiebreakers
   const rows = await db.title.findMany({
-    orderBy: [{ year: "desc" }, { id: "desc" }],
+    orderBy: [{ createdAt: "desc" }, { year: "desc" }, { id: "desc" }],
     take: limit,
   });
   return rows.map(pv);
@@ -162,15 +164,20 @@ function catalogWhere(type: "movie" | "series", opts: CatalogQuery) {
 }
 
 function catalogOrderBy(sort?: string) {
-  return sort === "rating"
-    ? { rating: "desc" as const }
-    : sort === "newest"
-      ? { year: "desc" as const }
+  // v0.23.0: "newest" = actually-just-added — createdAt desc first (NULLs sort
+  // last in SQLite DESC), year/id as tiebreakers
+  if (sort === "newest") {
+    return [{ createdAt: "desc" as const }, { year: "desc" as const }, { id: "desc" as const }];
+  }
+  const single =
+    sort === "rating"
+      ? { rating: "desc" as const }
       : sort === "views"
         ? { views: "desc" as const }
         : sort === "name"
           ? { title: "asc" as const }
           : { trendingScore: "desc" as const };
+  return [single];
 }
 
 export async function getCatalogPage(

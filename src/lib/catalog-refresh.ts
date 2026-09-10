@@ -66,6 +66,8 @@ export type CatalogItem = {
   trendingScore: number;
   views: number;
   source: string;
+  /** v0.23.0 — catalog add-date (ISO) from the hosted index; empty = old title */
+  addedAt?: string;
   episodes: {
     season: number;
     number: number;
@@ -506,6 +508,7 @@ async function syncCatalog(catalogUrl: string): Promise<CatalogRefreshResult> {
     trendingScore: Number(t.trendingScore) || 0,
     views: Number(t.views) || 0,
     source: String(t.source ?? "od"),
+    addedAt: typeof t.addedAt === "string" ? t.addedAt : "",
     episodes: Array.isArray(t.episodes)
       ? t.episodes.map((e) => ({
           season: Number(e.season) || 1,
@@ -582,6 +585,10 @@ async function applyCatalog(items: CatalogItem[]): Promise<CatalogRefreshResult>
       trendingScore: t.trendingScore,
       views: t.views,
       source: t.source,
+      // v0.23.0 — preserve the real add-date across desktop re-syncs so the
+      // «جدیدترین‌ها» row keeps its meaning on Electron too (idempotent:
+      // the same hosted date is written every time; empty → untouched)
+      ...(t.addedAt ? { createdAt: new Date(t.addedAt) } : {}),
     };
     const eps = t.episodes;
     episodeTotal += eps.length;

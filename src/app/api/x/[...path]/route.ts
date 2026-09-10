@@ -69,7 +69,8 @@ const liteOf = (t: DbTitle) => ({
   videoUrl: "",
   trailerUrl: null as string | null,
   sources: "[]",
-  createdAt: "",
+  // real add-date when the DB row has one (null rows → ""), «جدیدترین‌ها» sort
+  createdAt: t.createdAt ? new Date(t.createdAt).toISOString() : "",
 });
 
 const noStore = { "Cache-Control": "no-store" };

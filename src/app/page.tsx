@@ -132,6 +132,12 @@ export default function HomePage() {
           ))}
         </Row>
 
+        <Row title={tr("home.newestTitle")} subtitle={tr("home.newestSub")} href="/movies?sort=newest">
+          {newest.map((t) => (
+            <TitleCard key={t.id} t={t} progress={progressMap.get(t.id)} />
+          ))}
+        </Row>
+
         {myQueue.length > 0 && (
           <Row title={tr("home.queueTitle")} subtitle={tr("home.queueSub")} href="/my-list">
             {myQueue.map((r) => (
@@ -147,12 +153,6 @@ export default function HomePage() {
             ))}
           </Row>
         )}
-
-        <Row title={tr("home.newestTitle")} subtitle={tr("home.newestSub")} href="/movies?sort=newest">
-          {newest.map((t) => (
-            <TitleCard key={t.id} t={t} progress={progressMap.get(t.id)} />
-          ))}
-        </Row>
 
         <Row title={tr("home.seriesTitle")} subtitle={tr("home.seriesSub")} href="/series">
           {series.map((t) => (

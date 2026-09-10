@@ -204,7 +204,7 @@ type CatalogTitle = {
   duration: number; description: string; genres: string[]; poster: string; backdrop: string;
   videoUrl: string; trailerUrl?: string | null; director: string; cast: string[]; country: string;
   ageRating: string; quality: string; sources: string; featured: boolean; trendingScore: number;
-  views: number; source?: string; episodes?: Record<string, unknown>[];
+  views: number; source?: string; addedAt?: string; episodes?: Record<string, unknown>[];
 };
 
 /** Normalize one JSON title: parse genres/cast, assign episode ids, fill defaults. */
@@ -259,6 +259,7 @@ function sanitizeTitle(t: Record<string, unknown>, fallbackId: number): CatalogT
     trendingScore: Number(t.trendingScore) || 0,
     views: Number(t.views) || 0,
     source: String(t.source ?? "demo"),
+    addedAt: String(t.addedAt ?? ""),
     episodes,
   };
 }
@@ -270,7 +271,9 @@ function toLite(t: CatalogTitle): LiteTitle {
     description: "", genres: t.genres, poster: t.poster, backdrop: t.backdrop, quality: t.quality,
     country: t.country, ageRating: t.ageRating, views: t.views, featured: t.featured,
     trendingScore: t.trendingScore, director: t.director, cast: t.cast,
-    videoUrl: "", trailerUrl: null, sources: "[]", createdAt: "",
+    // createdAt carries the catalog add-date («جدیدترین‌ها» sort) — empty for
+    // titles that predate the add-date tracking, which sorts them last
+    videoUrl: "", trailerUrl: null, sources: "[]", createdAt: t.addedAt ?? "",
   };
 }
 
@@ -326,10 +329,20 @@ export const GENRES = [
 export type CatalogQuery = { genre?: string; sort?: string; year?: number; minRating?: number };
 export type TitleListItem = LiteTitle;
 
+/** Parse a lite title's add-date to a sortable epoch (missing → 0 = oldest). */
+const addedOf = (t: LiteTitle): number => {
+  if (!t.createdAt) return 0;
+  const ms = Date.parse(t.createdAt);
+  return Number.isNaN(ms) ? 0 : ms;
+};
+
 const bySort = (sort?: string) => {
   switch (sort) {
     case "rating": return (a: LiteTitle, b: LiteTitle) => b.rating - a.rating || b.id - a.id;
-    case "newest": return (a: LiteTitle, b: LiteTitle) => b.year - a.year || b.id - a.id;
+    // v0.23.0: newest = actually-just-added (add-date), not release-year —
+    // the v0.22.0 refresh added 484 titles spanning 1970–2025, so year order
+    // said nothing about what just landed. Empty add-date (old titles) sinks.
+    case "newest": return (a, b) => addedOf(b) - addedOf(a) || b.year - a.year || b.id - a.id;
     case "views": return (a: LiteTitle, b: LiteTitle) => b.views - a.views || b.id - a.id;
     case "name": return (a: LiteTitle, b: LiteTitle) => a.title.localeCompare(b.title, "fa");
     default: return (a: LiteTitle, b: LiteTitle) => b.trendingScore - a.trendingScore || b.id - a.id;
@@ -343,7 +356,7 @@ const matches = (t: LiteTitle, opts: CatalogQuery) =>
 
 export async function getFeatured(): Promise<TitleView[]> {
   await ensureReady();
-  const rows = lite.filter((t) => t.featured).sort(bySort("trending")).slice(0, 5);
+  const rows = lite.filter((t) => t.featured).sort(bySort("trending")).slice(0, 8);
   const full = await Promise.all(rows.map((r) => getFullTitle(r.id)));
   return full.filter((t): t is TitleView => t !== null);
 }
@@ -353,7 +366,7 @@ export async function getTrending(limit = 12): Promise<LiteTitle[]> {
   return [...lite].sort(bySort("trending")).slice(0, limit);
 }
 
-export async function getNewest(limit = 12): Promise<LiteTitle[]> {
+export async function getNewest(limit = 24): Promise<LiteTitle[]> {
   await ensureReady();
   return [...lite].sort(bySort("newest")).slice(0, limit);
 }

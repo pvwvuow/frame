@@ -79,6 +79,8 @@ server.log
 !/scripts/mobile-shard-catalog.cjs
 !/scripts/test-mobile-playback.mjs
 !/scripts/test-needs-native.mjs
+!/scripts/export-catalog.mjs
+!/scripts/feature-new-hero.mjs
 /scripts/mock-od/tree/
 /electron/dist/
 /upload/
