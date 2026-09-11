@@ -382,9 +382,11 @@ await page.locator('button[aria-label="زیرنویس"]').waitFor({ state: "visi
 await page.locator('button[aria-label="زیرنویس"]').click();
 await waitFor("sub sheet open", async () => (await page.locator("text=تأخیر زیرنویس").count()) > 0, 5000);
 await page.locator('button:has-text("+۰٫۵s")').first().click();
-await waitFor("sub delay stored", async () =>
-  (await page.evaluate(() => localStorage.getItem("nama-pref-sub-delay"))) === "0.5", 4000);
-ok("subtitles: +۰.۵s chip persists the delay (nama-pref-sub-delay)", true);
+/* v0.27.0 (DATA-11) — the delay is PER-TITLE now (nama-sub-delay-<key>);
+ * the old global key would leak the tweak into every other film */
+await waitFor("sub delay stored (per-title)", async () =>
+  (await page.evaluate(() => localStorage.getItem("nama-sub-delay-cinema-test-title"))) === "0.5", 4000);
+ok("subtitles: +۰.۵s chip persists the delay (nama-sub-delay-<slug>)", true);
 await page.locator('button:has-text("ریست")').first().click();
 await page.waitForTimeout(200);
 await page.locator("text=تأخیر زیرنویس").locator("visible=true").first().click({ position: { x: 10, y: 10 } }).catch(() => {});

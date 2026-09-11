@@ -26,6 +26,8 @@ import {
 } from "./Icons";
 import TitleName from "@/components/TitleName";
 import { titleHref } from "@/lib/mobile-links";
+import { useFocusTrap } from "@/lib/focus-trap";
+import { rememberSearch } from "@/lib/search-history";
 
 type Result = { id: number; slug: string; title: string; titleEn: string; poster: string; year: number; type: string; rating: number };
 
@@ -36,11 +38,16 @@ export default function CommandPalette() {
   const [q, setQ] = useState("");
   const [results, setResults] = useState<Result[]>([]);
   const [loading, setLoading] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const [nonce, setNonce] = useState(0);
   const [idx, setIdx] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
   const pathname = usePathname();
   const { setTheme } = useTheme();
+  /* v0.27.0 (A11Y-1) — real focus trap: Tab cycles inside, Escape closes,
+   * focus returns to the opener on close. */
+  const trapRef = useFocusTrap<HTMLDivElement>(open, { onClose: () => setOpen(false) });
 
   // ⌘K / Ctrl+K toggles, "/" opens when not typing
   useEffect(() => {
@@ -77,28 +84,32 @@ export default function CommandPalette() {
   useEffect(() => {
     if (!q.trim()) {
       setResults([]);
+      setFailed(false);
       return;
     }
     const ctrl = new AbortController();
     setLoading(true);
+    setFailed(false);
     const t = setTimeout(() => {
       fetch(`/api/search?q=${encodeURIComponent(q)}`, { signal: ctrl.signal })
         .then((r) => r.json())
         .then((d: Result[]) => setResults(d.slice(0, 6)))
-        .catch(() => {})
+        .catch((e: unknown) => {
+          // v0.27.0 (UI-2) — swallow → «چیزی پیدا نشد» was misleading
+          if ((e as { name?: string })?.name !== "AbortError") setFailed(true);
+        })
         .finally(() => setLoading(false));
     }, 180);
     return () => {
       clearTimeout(t);
       ctrl.abort();
     };
-  }, [q]);
+  }, [q, nonce]);
 
   const go = (href: string) => {
     setOpen(false);
     router.push(href);
   };
-
   const commands = useMemo<Cmd[]>(
     () => [
       { id: "home", label: "خانه", icon: HomeIcon, run: () => go("/"), keywords: "home" },
@@ -167,7 +178,7 @@ export default function CommandPalette() {
       };
     }),
   ];
-  if (q.trim()) items.push({ key: "search-all", run: () => go(`/search?q=${encodeURIComponent(q.trim())}`), node: <span className="text-sm text-brand">جستجوی کامل «{q.trim()}» →</span> });
+  if (q.trim()) items.push({ key: "search-all", run: () => { rememberSearch(q); go(`/search?q=${encodeURIComponent(q.trim())}`); }, node: <span className="text-sm text-brand">جستجوی کامل «{q.trim()}» →</span> });
 
   useEffect(() => setIdx(0), [q, results.length]);
 
@@ -188,7 +199,7 @@ export default function CommandPalette() {
 
   return (
     <div className="fixed inset-0 z-[120] flex items-start justify-center px-3 pt-[12vh]" style={{ background: "var(--overlay)" }} onMouseDown={(e) => e.target === e.currentTarget && setOpen(false)}>
-      <div role="dialog" aria-modal="true" aria-label="جستجوی سریع" className="glass-strong glass-in w-full max-w-xl overflow-hidden rounded-3xl">
+      <div ref={trapRef} role="dialog" aria-modal="true" aria-label="جستجوی سریع" className="glass-strong glass-in w-full max-w-xl overflow-hidden rounded-3xl">
         <div className="flex items-center gap-3 border-b border-white/10 px-4">
           <SearchIcon className="shrink-0 text-zinc-400" />
           <input
@@ -203,7 +214,16 @@ export default function CommandPalette() {
         </div>
         <ul className="max-h-[52vh] overflow-y-auto p-2">
           {loading && results.length === 0 && q.trim() && <li className="px-3 py-2 text-xs text-zinc-500">در حال جستجو…</li>}
-          {items.length === 0 && <li className="px-3 py-6 text-center text-sm text-zinc-500">چیزی پیدا نشد.</li>}
+          {failed && results.length === 0 && q.trim() && (
+            <li className="px-3 py-2">
+              {/* v0.27.0 (UI-2) — retryable network error, not «پیدا نشد» */}
+              <p className="text-xs font-bold text-rose-300">خطا در جستجو — اتصال برقرار نشد</p>
+              <button type="button" onClick={() => setNonce((n) => n + 1)} className="mt-1 rounded-full border border-white/15 px-3 py-1 text-[11px] font-bold text-white hover:bg-white/10">
+                تلاش مجدد
+              </button>
+            </li>
+          )}
+          {items.length === 0 && !failed && <li className="px-3 py-6 text-center text-sm text-zinc-500">چیزی پیدا نشد.</li>}
           {items.map((it, i) => (
             <li key={it.key}>
               <button

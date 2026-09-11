@@ -127,6 +127,27 @@ db.version(4).stores({
   fulls: "slug",
 });
 
+/* v5 (v0.27.0): downloads become PER-ACCOUNT (DATA-13) — the dlitems rows
+ * gain a userKey index so account B never sees account A's downloads.
+ * Progress rows stay per-episode in the same table (no index change needed:
+ * [userKey+titleId] + filter handles the per-episode lookups, DATA-7). */
+db.version(5)
+  .stores({
+    dlitems: "id, [titleId+episodeId], titleId, status, userKey",
+  })
+  .upgrade(async (tx) => {
+    // stamp existing rows with the CURRENT active space so nothing disappears
+    let active = "guest";
+    try {
+      active = localStorage.getItem("frame.acct.active") || "guest";
+    } catch {
+      /* ignore */
+    }
+    await tx.table("dlitems").toCollection().modify((rec: Record<string, unknown>) => {
+      if (!rec.userKey) rec.userKey = active;
+    });
+  });
+
 /* stable episode ids derived from (title, season, number) */
 export const episodeId = (titleId: number, season: number, number: number) => titleId * 100_000 + season * 1000 + number;
 

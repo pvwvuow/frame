@@ -74,8 +74,17 @@ export default function WatchPage() {
     const idx = episode ? eps.findIndex((e) => e.id === episode.id) : -1;
     const nextEpisode = idx >= 0 && idx < eps.length - 1 ? eps[idx + 1] : null;
 
-    const sameEpisode = episode ? progress?.episodeId === episode.id : !progress?.episodeId;
-    const startAt = progress && sameEpisode && progress.duration > 0 && progress.position / progress.duration < 0.97 ? progress.position : 0;
+    /* v0.27.0 (DATA-7) — per-EPISODE resume: progress is stored per episode
+     * now, so opening S01E03 resumes S01E03's own position even after the
+     * user later watched S02E01 (which owns the title-level pointer). */
+    let epProgress: { position: number; duration: number } | null = null;
+    if (t.type === "series" && episode) {
+      epProgress = await getProgressFor(t.id, episode.id);
+    }
+    const sameEpisode = episode ? (epProgress ? true : progress?.episodeId === episode.id) : !progress?.episodeId;
+    const res = epProgress ?? progress;
+    const startAt =
+      res && sameEpisode && res.duration > 0 && res.position / res.duration < 0.97 ? res.position : 0;
 
     return { missing: false, t, eps, episode, nextEpisode, startAt };
   }, [slug, ep, seasonP, epnumP]);

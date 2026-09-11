@@ -9,6 +9,7 @@ import { fa, formatClock } from "@/lib/format";
 import { PlayIcon, CloseIcon } from "../Icons";
 import TitleName from "@/components/TitleName";
 import { titleHref, watchHref } from "@/lib/mobile-links";
+import { pushProgressDelete } from "@/lib/cloud";
 
 export type ContinueLike = {
   title: TitleView;
@@ -33,6 +34,9 @@ export default function ContinueCard({ c, removable = true }: { c: ContinueLike;
       setGone(true);
       try {
         await fetch("/api/progress", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ titleId: c.title.id }) });
+        // v0.27.0 (DATA-3) — the removal must reach the cloud (queued while
+        // offline) or the next pull resurrects the row in «ادامه تماشا»
+        void pushProgressDelete(c.title.id);
         toast.success("از ادامه تماشا حذف شد");
         router.refresh();
       } catch {

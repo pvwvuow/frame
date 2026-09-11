@@ -7,7 +7,8 @@ import TitleCard from "@/components/TitleCard";
 import { search, getTrending, GENRES } from "@/lib/mobile/db";
 import { getProgressMap } from "@/lib/mobile/userdata";
 import { fa } from "@/lib/format";
-import { SearchIcon, FlameIcon, FilmIcon, TvIcon, SparkIcon } from "@/components/Icons";
+import { SearchIcon, FlameIcon, FilmIcon, TvIcon, SparkIcon, CloseIcon, HistoryIcon } from "@/components/Icons";
+import { getRecentSearches, rememberSearch, forgetSearch, clearRecentSearches } from "@/lib/search-history";
 
 // verified against the live catalog – every chip must return results
 // (genres are stored in Persian; cast names are Latin, so actor names
@@ -21,6 +22,15 @@ function SearchInner() {
   const type = sp.get("type") ?? undefined;
   const term = q.trim();
   const [st, setSt] = useState<{ all: Awaited<ReturnType<typeof search>>; trending: Awaited<ReturnType<typeof getTrending>>; progress: Map<number, { position: number; duration: number }> } | null>(null);
+  const [recent, setRecent] = useState<string[]>([]);
+
+  useEffect(() => {
+    setRecent(getRecentSearches());
+  }, []);
+
+  useEffect(() => {
+    if (term) rememberSearch(term);
+  }, [term]);
 
   useEffect(() => {
     let alive = true;
@@ -37,10 +47,14 @@ function SearchInner() {
   }, [q, term]);
 
   if (!st) {
+    /* v0.27.0 (QOL-1) — the loading state now SAYS what it is doing */
     return (
       <main className="pb-16">
         <div className="mx-auto max-w-[1600px] px-4 pt-32 text-center sm:px-8 lg:px-12">
-          <div className="mx-auto h-10 w-72 animate-pulse rounded-xl bg-white/10" />
+          <div className="mx-auto flex w-72 items-center justify-center gap-2">
+            <span className="h-4 w-4 animate-spin rounded-full border-2 border-brand border-t-transparent" />
+            <span className="text-sm text-zinc-400">در حال جستجو…</span>
+          </div>
         </div>
       </main>
     );
@@ -70,7 +84,11 @@ function SearchInner() {
             onSubmit={(e) => {
               e.preventDefault();
               const v = (e.currentTarget.elements.namedItem("q") as HTMLInputElement).value;
-              router.push(`/search?q=${encodeURIComponent(v)}`);
+              // v0.27.0 (QOL-2) — an empty submit used to navigate to a
+              // blank results page; the navbar already guards this
+              if (!v.trim()) return;
+              rememberSearch(v);
+              router.push(`/search?q=${encodeURIComponent(v.trim())}`);
             }}
             className="mx-auto mt-8 flex max-w-2xl items-center gap-3 rounded-full border border-white/10 bg-ink-700/70 py-2 pe-2 ps-5 shadow-[0_20px_60px_rgba(0,0,0,0.5)] backdrop-blur transition focus-within:border-brand/60 focus-within:shadow-[0_0_0_4px_rgba(229,9,20,0.15)]"
           >
@@ -98,6 +116,45 @@ function SearchInner() {
                   {p}
                 </Link>
               ))}
+            </div>
+          )}
+
+          {/* v0.27.0 (UI-4) — the USER'S OWN recent searches */}
+          {!term && recent.length > 0 && (
+            <div className="mx-auto mt-4 max-w-2xl text-center">
+              <div className="flex flex-wrap items-center justify-center gap-2 text-xs">
+                <span className="flex items-center gap-1 text-zinc-500">
+                  <HistoryIcon width={13} height={13} /> جستجوهای اخیر شما:
+                </span>
+                {recent.map((s) => (
+                  <span key={s} className="flex items-center overflow-hidden rounded-full border border-brand/30 bg-brand/10">
+                    <Link href={`/search?q=${encodeURIComponent(s)}`} className="px-3 py-1 text-zinc-100 hover:text-white">
+                      {s}
+                    </Link>
+                    <button
+                      type="button"
+                      aria-label={`حذف ${s}`}
+                      onClick={() => {
+                        forgetSearch(s);
+                        setRecent(getRecentSearches());
+                      }}
+                      className="grid h-6 w-6 place-items-center text-zinc-400 hover:text-rose-300"
+                    >
+                      <CloseIcon width={10} height={10} />
+                    </button>
+                  </span>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => {
+                    clearRecentSearches();
+                    setRecent([]);
+                  }}
+                  className="px-2 py-1 text-[10px] text-zinc-500 hover:text-zinc-300"
+                >
+                  پاک کردن همه
+                </button>
+              </div>
             </div>
           )}
         </div>
@@ -218,7 +275,10 @@ export default function SearchPage() {
     <Suspense fallback={
       <main className="pb-16">
         <div className="mx-auto max-w-[1600px] px-4 pt-32 text-center sm:px-8 lg:px-12">
-          <div className="mx-auto h-10 w-72 animate-pulse rounded-xl bg-white/10" />
+          <div className="mx-auto flex w-72 items-center justify-center gap-2">
+            <span className="h-4 w-4 animate-spin rounded-full border-2 border-brand border-t-transparent" />
+            <span className="text-sm text-zinc-400">در حال جستجو…</span>
+          </div>
         </div>
       </main>
     }>

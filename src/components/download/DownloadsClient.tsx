@@ -199,6 +199,20 @@ function ItemCard({ it }: { it: DownloadItem }) {
   const { t } = useI18n();
   const pct = it.total > 0 ? Math.min(100, Math.round((it.received / it.total) * 100)) : 0;
   const eta = it.speed > 0 && it.total > it.received ? Math.round((it.total - it.received) / it.speed) : 0;
+  /* v0.27.0 (UI-3) — canceling an IN-FLIGHT download used to be a single
+   * mis-tap away from destroying hours of downloading. Active transfers
+   * now ask first (paused/failed stay one-tap — nothing is in flight). */
+  const [confirmCancel, setConfirmCancel] = useState(false);
+  const inFlight = it.status === "downloading" || it.status === "queued" || it.status === "paused";
+
+  const onCancel = () => {
+    if (inFlight && !confirmCancel) {
+      setConfirmCancel(true);
+      return;
+    }
+    setConfirmCancel(false);
+    dlCancel(it.id);
+  };
 
   return (
     <li className="rounded-2xl border border-white/5 bg-ink-700/40 p-4 transition hover:border-white/10">
@@ -232,7 +246,7 @@ function ItemCard({ it }: { it: DownloadItem }) {
             </button>
           )}
           {(it.status === "downloading" || it.status === "queued" || it.status === "paused" || it.status === "failed") && (
-            <button type="button" onClick={() => dlCancel(it.id)} title={t("dl.cancel")} className="grid h-9 w-9 place-items-center rounded-full bg-white/5 text-zinc-300 transition hover:bg-rose-500/20 hover:text-rose-200">
+            <button type="button" onClick={onCancel} title={t("dl.cancel")} className={`grid h-9 w-9 place-items-center rounded-full transition ${confirmCancel ? "bg-rose-600 text-white" : "bg-white/5 text-zinc-300 hover:bg-rose-500/20 hover:text-rose-200"}`}>
               <CloseIcon width={14} height={14} />
             </button>
           )}
@@ -251,6 +265,13 @@ function ItemCard({ it }: { it: DownloadItem }) {
 
       {(it.status === "downloading" || it.status === "paused" || it.status === "queued") && (
         <div className="mt-3">
+          {confirmCancel && (
+            <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-100">
+              <span className="flex-1">دانلود «{it.name}» لغو شود؟ پیشرفت فعلی از بین می‌رود.</span>
+              <button type="button" onClick={onCancel} className="rounded-full bg-rose-600 px-3 py-1 font-bold text-white hover:bg-rose-700">بله، لغو کن</button>
+              <button type="button" onClick={() => setConfirmCancel(false)} className="rounded-full border border-white/15 px-3 py-1 font-bold text-white hover:bg-white/10">ادامه دانلود</button>
+            </div>
+          )}
           <div className="h-1.5 overflow-hidden rounded-full bg-white/10">
             <div className="h-full rounded-full bg-brand transition-[width] duration-500" style={{ width: `${pct}%` }} />
           </div>

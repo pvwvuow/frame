@@ -38,6 +38,22 @@ import {
   writeSignOutTombstone,
 } from "./auth-offline";
 import { attachIdentity } from "./identity";
+import {
+  clearAllTombstones,
+  clearTombstone,
+  countSyncOps,
+  dropOpsForOtherUids,
+  enqueueSyncOp,
+  getSyncOps,
+  peekTombstone,
+  readEvCursor,
+  recordTombstone,
+  removeSyncOps,
+  tombstoneNewerThan,
+  writeEvCursor,
+  type SyncOp,
+} from "./sync-queue";
+import { applyPlayerPrefs, collectPlayerPrefs } from "./player-prefs";
 
 /** e.g. "https://xxxxxxxxxxxx.supabase.co" — fill to hard-code the project. */
 export const SUPABASE_URL_DEFAULT = "https://emqsegjeiyimoyncbhfn.supabase.co";
@@ -340,9 +356,23 @@ async function currentAccessToken(): Promise<string | null> {
 
 /* ------------------------------------------------------------------ */
 /* v0.12.0 — FULL user sync: profile (name/avatar/settings) + history   */
+/* v0.27.0 — per-SCOPE profile merge (DATA-9): the profile no longer    */
+/*   syncs as one blob whose newest write clobbers everything. Identity */
+/*   fields (name/avatar) and playback fields (quality/subtitle/…) each */
+/*   carry their own touched timestamp (__tsIdentity / __tsPlayback),   */
+/*   so changing the avatar on the phone no longer reverts the default  */
+/*   quality changed on the desktop a second earlier.                   */
 /* ------------------------------------------------------------------ */
 
 const PROFILE_TOUCH_KEY = "frame.profile.touched";
+const PROFILE_PLAYBACK_TOUCH_KEY = "frame.profile.touched.playback";
+
+const IDENTITY_FIELDS = ["displayName", "avatar", "avatarImage", "language", "kidsMode"] as const;
+const PLAYBACK_FIELDS = [
+  "autoplay", "autoNext", "quality", "subtitle", "matureContent", "reduceMotion",
+  "skipIntro", "playbackSpeed", "volume", "dataSaver",
+  "notifyNewEpisodes", "notifyRecommendations", "notifyContinue", "playerPrefs",
+] as const;
 
 export function markProfileTouched(ts?: string) {
   try {
@@ -352,9 +382,26 @@ export function markProfileTouched(ts?: string) {
   }
 }
 
+/** v0.27.0 — playback-scope touch (quality/subtitle/player prefs…). */
+export function markProfilePlaybackTouched(ts?: string) {
+  try {
+    localStorage.setItem(PROFILE_PLAYBACK_TOUCH_KEY, ts || new Date().toISOString());
+  } catch {
+    /* ignore */
+  }
+}
+
 function readProfileTouched(): string {
   try {
     return localStorage.getItem(PROFILE_TOUCH_KEY) || "1970-01-01T00:00:00.000Z";
+  } catch {
+    return "1970-01-01T00:00:00.000Z";
+  }
+}
+
+function readProfilePlaybackTouched(): string {
+  try {
+    return localStorage.getItem(PROFILE_PLAYBACK_TOUCH_KEY) || "1970-01-01T00:00:00.000Z";
   } catch {
     return "1970-01-01T00:00:00.000Z";
   }
@@ -376,28 +423,39 @@ async function fetchLocalProfile(): Promise<Record<string, unknown> | null> {
   }
 }
 
-/** Push the local profile to Supabase (whole row as JSON, LWW by touched).
- *  Pass the snapshot's profileFull when available to skip the extra fetch. */
+/** Push the local profile to Supabase (row as JSON + per-scope timestamps,
+ *  LWW per scope). Pass the snapshot's profileFull when available to skip the
+ *  extra fetch. The live localStorage player prefs ride along as
+ *  `playerPrefs` (DATA-10) — they are the freshest local truth. */
 export async function pushProfile(profileData?: Record<string, unknown>): Promise<void> {
   try {
     const uid = await currentUserId();
     const sb = getSupabase();
     if (!uid || !sb) return;
-    const data = profileData ?? (await fetchLocalProfile());
-    if (!data) return;
+    const raw = profileData ?? (await fetchLocalProfile());
+    if (!raw) return;
+    const data: Record<string, unknown> = { ...raw };
+    delete data.__tsIdentity;
+    delete data.__tsPlayback;
+    data.playerPrefs = collectPlayerPrefs();
     // v0.13.0 FIX — when the touch mark was missing we used to write
     // 1970-01-01, so every OTHER device considered the profile forever
     // out-of-date (the two 1970 rows in Supabase). Default to now instead.
-    const touched = readProfileTouched();
+    const nowIso = new Date().toISOString();
+    const ident = readProfileTouched();
+    const play = readProfilePlaybackTouched();
+    data.__tsIdentity = ident.startsWith("1970") ? nowIso : ident;
+    data.__tsPlayback = play.startsWith("1970") ? nowIso : play;
     await sb
       .from("profiles")
-      .upsert({ user_id: uid, data, updated_at: touched.startsWith("1970") ? new Date().toISOString() : touched });
+      .upsert({ user_id: uid, data, updated_at: [data.__tsIdentity, data.__tsPlayback].sort().pop() });
   } catch {
     /* offline / table not created yet → next sync retries */
   }
 }
 
-/** If the cloud profile is NEWER than the local one, apply it locally. */
+/** If a scope of the cloud profile is NEWER than the local one, merge JUST
+ *  that scope into the local profile (field-level merge, DATA-9). */
 export async function pullProfileIfNewer(): Promise<boolean> {
   try {
     const uid = await currentUserId();
@@ -406,14 +464,35 @@ export async function pullProfileIfNewer(): Promise<boolean> {
     const { data } = await sb.from("profiles").select("data,updated_at").eq("user_id", uid).maybeSingle();
     const row = data as { data: Record<string, unknown>; updated_at: string } | null;
     if (!row?.data) return false;
-    if (toTs(row.updated_at) <= toTs(readProfileTouched())) return false;
+    const cloud = row.data;
+    const cloudIdent = toTs(cloud.__tsIdentity) || toTs(row.updated_at);
+    const cloudPlay = toTs(cloud.__tsPlayback) || toTs(row.updated_at);
+    const localIdent = toTs(readProfileTouched());
+    const localPlay = toTs(readProfilePlaybackTouched());
+    const adoptIdent = cloudIdent > localIdent;
+    const adoptPlay = cloudPlay > localPlay;
+    if (!adoptIdent && !adoptPlay) return false;
+    const local = await fetchLocalProfile();
+    if (!local) return false;
+    const patch: Record<string, unknown> = { ...local };
+    if (adoptIdent) for (const k of IDENTITY_FIELDS) if (k in cloud) patch[k] = cloud[k];
+    if (adoptPlay) for (const k of PLAYBACK_FIELDS) if (k in cloud) patch[k] = cloud[k];
+    delete patch.__tsIdentity;
+    delete patch.__tsPlayback;
     const r = await fetch("/api/profile", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(row.data),
+      body: JSON.stringify(patch),
     });
     if (!r.ok) return false;
-    markProfileTouched(row.updated_at);
+    if (adoptIdent) markProfileTouched(new Date(cloudIdent).toISOString());
+    if (adoptPlay) {
+      markProfilePlaybackTouched(new Date(cloudPlay).toISOString());
+      // live player prefs (zoom / sub-delay maps / engine) follow the cloud
+      if (cloud.playerPrefs && typeof cloud.playerPrefs === "object") {
+        applyPlayerPrefs(cloud.playerPrefs as Record<string, unknown>);
+      }
+    }
     return true;
   } catch {
     return false;
@@ -564,48 +643,81 @@ async function episodeKeysFor(ids: number[]): Promise<Map<number, EpisodeKey>> {
 export type ProgressPush = { titleId: number; episodeId: number | null; position: number; duration: number; updatedAt: string };
 
 /** Upsert watch-progress rows into Supabase (history/continue sync).
- *  v0.13.0 — rows carry {slug, season, episode}, not drifting local ids. */
+ *  v0.13.0 — rows carry {slug, season, episode}, not drifting local ids.
+ *  v0.27.0 — failures are ENQUEUED (DATA-12: offline playback still syncs
+ *  once the network returns, and progress deletions propagate — DATA-3). */
 export async function pushProgressRows(rows: ProgressPush[]): Promise<void> {
-  try {
-    const uid = await currentUserId();
-    const sb = getSupabase();
-    if (!uid || !sb || !rows.length) return;
-    const clean = rows
-      .filter((r) => Number.isFinite(r.titleId) && r.titleId > 0 && Number.isFinite(r.position))
-      .slice(0, 500);
-    if (!clean.length) return;
-    const keys = await cloudKeysFor(clean.map((r) => r.titleId));
-    const epKeys = await episodeKeysFor(clean.map((r) => r.episodeId ?? 0));
-    const out: {
-      user_id: string;
-      slug: string;
-      title: string;
-      season: number;
-      episode: number;
-      position: number;
-      duration: number;
-      updated_at: string;
-    }[] = [];
-    for (const r of clean) {
-      const k = keys.get(Math.round(r.titleId));
-      if (!k) continue; // not in the local catalog → nothing stable to sync
-      const ep = r.episodeId ? epKeys.get(Math.round(r.episodeId)) : undefined;
-      out.push({
-        user_id: uid,
-        slug: k.slug,
-        title: k.title,
-        season: ep?.season ?? 0,
-        episode: ep?.number ?? 0,
-        position: r.position,
-        duration: r.duration,
-        updated_at: new Date(toTs(r.updatedAt) || Date.now()).toISOString(),
-      });
+  const uid = await currentUserId();
+  const sb = getSupabase();
+  if (!uid || !sb || !rows.length) return;
+  const clean = rows
+    .filter((r) => Number.isFinite(r.titleId) && r.titleId > 0 && Number.isFinite(r.position))
+    .slice(0, 500);
+  if (!clean.length) return;
+  const keys = await cloudKeysFor(clean.map((r) => r.titleId));
+  const epKeys = await episodeKeysFor(clean.map((r) => r.episodeId ?? 0));
+  const out: {
+    user_id: string;
+    slug: string;
+    title: string;
+    season: number;
+    episode: number;
+    position: number;
+    duration: number;
+    updated_at: string;
+  }[] = [];
+  for (const r of clean) {
+    const k = keys.get(Math.round(r.titleId));
+    if (!k) continue; // not in the local catalog → nothing stable to sync
+    const ep = r.episodeId ? epKeys.get(Math.round(r.episodeId)) : undefined;
+    out.push({
+      user_id: uid,
+      slug: k.slug,
+      title: k.title,
+      season: ep?.season ?? 0,
+      episode: ep?.number ?? 0,
+      position: r.position,
+      duration: r.duration,
+      updated_at: new Date(toTs(r.updatedAt) || Date.now()).toISOString(),
+    });
+  }
+  if (!out.length) return;
+  for (let i = 0; i < out.length; i += 100) {
+    const { error } = await sb.from("watch_progress").upsert(out.slice(i, i + 100));
+    if (error) {
+      enqueueSyncOp("progress", uid, { rows: out.slice(i) });
+      return;
     }
-    for (let i = 0; i < out.length; i += 100) {
-      await sb.from("watch_progress").upsert(out.slice(i, i + 100));
+  }
+}
+
+/** v0.27.0 (DATA-3) — a progress row was REMOVED locally (رد از ادامه تماشا /
+ *  تاریخچه). Mirror the delete in the cloud + broadcast to other devices.
+ *  `titleIds` empty → the whole history was cleared (kind key "*"). */
+export async function pushProgressDelete(titleId?: number | number[]): Promise<void> {
+  const uid = await currentUserId();
+  const sb = getSupabase();
+  if (!uid || !sb) return;
+  const ids = Array.isArray(titleId) ? titleId : titleId ? [titleId] : [];
+  const at = new Date().toISOString();
+  if (!ids.length) {
+    recordTombstone("progress", "*");
+    const { error } = await sb.from("watch_progress").delete().eq("user_id", uid);
+    if (error) enqueueSyncOp("progress-del", uid, { slug: "*" });
+    else void recordDelEvent(sb, uid, { kind: "progress", key: "*", at });
+    return;
+  }
+  const keys = await cloudKeysFor(ids);
+  for (const id of ids) {
+    const k = keys.get(Number(id));
+    if (!k) {
+      enqueueSyncOp("progress-del", uid, { titleId: Number(id) });
+      continue;
     }
-  } catch {
-    /* offline / table not created yet */
+    recordTombstone("progress", k.slug);
+    const { error } = await sb.from("watch_progress").delete().eq("user_id", uid).eq("slug", k.slug);
+    if (error) enqueueSyncOp("progress-del", uid, { slug: k.slug });
+    else void recordDelEvent(sb, uid, { kind: "progress", key: k.slug, at });
   }
 }
 
@@ -635,64 +747,132 @@ export async function logEvent(type: string, payload?: Record<string, unknown>) 
 }
 
 /* ------------------------------------------------------------------ */
-/* Push helpers (fire & forget) — cloud mirrors the local library      */
+/* Push helpers — cloud mirrors the local library                       */
+/* v0.27.0 (DATA-1/2/4): NO push is fire-and-forget anymore.            */
+/*   • every push returns success; on failure the op is ENQUEUED         */
+/*     (flushed on `online` / interval / next fullSync)                  */
+/*   • every removal writes a LOCAL TOMBSTONE (blocks pull-resurrection) */
+/*   • every successful removal broadcasts a `sync_del` user_event so    */
+/*     OTHER devices delete too (DATA-2, rides user_events — no DDL)     */
 /* ------------------------------------------------------------------ */
 
-/* slug-level primitives (used by the id wrappers AND by the batch push) */
+/* slug-level primitives — low level, return success, NO queue side effects */
+
+async function sbFavoriteUpsert(sb: SupabaseClient, uid: string, r: CloudItemRef): Promise<boolean> {
+  const { error } = await sb.from("favorites").upsert({ user_id: uid, slug: r.slug, title: r.title ?? "" });
+  return !error;
+}
+async function sbFavoriteDelete(sb: SupabaseClient, uid: string, slug: string): Promise<boolean> {
+  const { error } = await sb.from("favorites").delete().eq("user_id", uid).eq("slug", slug);
+  return !error;
+}
+async function sbWatchlistUpsert(sb: SupabaseClient, uid: string, r: CloudItemRef, status: string): Promise<boolean> {
+  const { error } = await sb.from("watchlist").upsert({ user_id: uid, slug: r.slug, title: r.title ?? "", status, updated_at: new Date().toISOString() });
+  return !error;
+}
+async function sbWatchlistDelete(sb: SupabaseClient, uid: string, slug: string): Promise<boolean> {
+  const { error } = await sb.from("watchlist").delete().eq("user_id", uid).eq("slug", slug);
+  return !error;
+}
+async function sbRatingUpsert(sb: SupabaseClient, uid: string, r: CloudItemRef, score: number): Promise<boolean> {
+  const { error } = await sb.from("ratings").upsert({ user_id: uid, slug: r.slug, title: r.title ?? "", score, updated_at: new Date().toISOString() });
+  return !error;
+}
+async function sbRatingDelete(sb: SupabaseClient, uid: string, slug: string): Promise<boolean> {
+  const { error } = await sb.from("ratings").delete().eq("user_id", uid).eq("slug", slug);
+  return !error;
+}
+
+/** Broadcast a deletion (or collection rename) to every OTHER device via the
+ *  existing user_events table (type `sync_del`). Best-effort — the local
+ *  tombstone + queued op already protect THIS device. */
+async function recordDelEvent(sb: SupabaseClient, uid: string, payload: Record<string, unknown>): Promise<void> {
+  try {
+    await sb.from("user_events").insert({ user_id: uid, type: "sync_del", payload });
+  } catch {
+    /* analytics-grade best-effort */
+  }
+}
 
 async function pushFavoriteRef(r: CloudItemRef, value: boolean): Promise<void> {
-  try {
-    const uid = await currentUserId();
-    const sb = getSupabase();
-    if (!uid || !sb || !r.slug) return;
-    if (value) await sb.from("favorites").upsert({ user_id: uid, slug: r.slug, title: r.title ?? "" });
-    else await sb.from("favorites").delete().eq("user_id", uid).eq("slug", r.slug);
-  } catch {
-    /* offline → local remains the source of truth */
+  const uid = await currentUserId();
+  const sb = getSupabase();
+  if (!uid || !sb || !r.slug) return;
+  if (value) {
+    clearTombstone("favorite", r.slug);
+    if (!(await sbFavoriteUpsert(sb, uid, r))) {
+      enqueueSyncOp("favorite", uid, { slug: r.slug, title: r.title ?? "", value: true });
+    }
+  } else {
+    recordTombstone("favorite", r.slug);
+    if (await sbFavoriteDelete(sb, uid, r.slug)) {
+      void recordDelEvent(sb, uid, { kind: "favorite", key: r.slug, at: new Date().toISOString() });
+    } else {
+      enqueueSyncOp("favorite", uid, { slug: r.slug, title: r.title ?? "", value: false });
+    }
   }
 }
 
 async function pushWatchlistRef(r: CloudItemRef, status: string | null): Promise<void> {
-  try {
-    const uid = await currentUserId();
-    const sb = getSupabase();
-    if (!uid || !sb || !r.slug) return;
-    if (status)
-      await sb.from("watchlist").upsert({ user_id: uid, slug: r.slug, title: r.title ?? "", status, updated_at: new Date().toISOString() });
-    else await sb.from("watchlist").delete().eq("user_id", uid).eq("slug", r.slug);
-  } catch {
-    /* offline */
+  const uid = await currentUserId();
+  const sb = getSupabase();
+  if (!uid || !sb || !r.slug) return;
+  if (status) {
+    clearTombstone("watchlist", r.slug);
+    if (!(await sbWatchlistUpsert(sb, uid, r, status))) {
+      enqueueSyncOp("watchlist", uid, { slug: r.slug, title: r.title ?? "", status });
+    }
+  } else {
+    recordTombstone("watchlist", r.slug);
+    if (await sbWatchlistDelete(sb, uid, r.slug)) {
+      void recordDelEvent(sb, uid, { kind: "watchlist", key: r.slug, at: new Date().toISOString() });
+    } else {
+      enqueueSyncOp("watchlist", uid, { slug: r.slug, title: r.title ?? "", status: null });
+    }
   }
 }
 
 async function pushRatingRef(r: CloudItemRef, score: number | null): Promise<void> {
-  try {
-    const uid = await currentUserId();
-    const sb = getSupabase();
-    if (!uid || !sb || !r.slug) return;
-    if (score && score > 0)
-      await sb.from("ratings").upsert({ user_id: uid, slug: r.slug, title: r.title ?? "", score, updated_at: new Date().toISOString() });
-    else await sb.from("ratings").delete().eq("user_id", uid).eq("slug", r.slug);
-  } catch {
-    /* offline */
+  const uid = await currentUserId();
+  const sb = getSupabase();
+  if (!uid || !sb || !r.slug) return;
+  if (score && score > 0) {
+    clearTombstone("rating", r.slug);
+    if (!(await sbRatingUpsert(sb, uid, r, score))) {
+      enqueueSyncOp("rating", uid, { slug: r.slug, title: r.title ?? "", score });
+    }
+  } else {
+    recordTombstone("rating", r.slug);
+    if (await sbRatingDelete(sb, uid, r.slug)) {
+      void recordDelEvent(sb, uid, { kind: "rating", key: r.slug, at: new Date().toISOString() });
+    } else {
+      enqueueSyncOp("rating", uid, { slug: r.slug, title: r.title ?? "", score: null });
+    }
   }
 }
 
 /** Public wrappers: resolve the local id → slug, then push. Titles that the
- *  local catalog does not know are skipped (nothing stable to sync). */
+ *  local catalog does not know are queued RAW (titleId) so the flush can
+ *  retry resolution once the catalog is available — never silently dropped. */
 export async function pushFavorite(titleId: number, value: boolean) {
   const k = await cloudKeyFor(titleId);
-  if (k) await pushFavoriteRef({ slug: k.slug, title: k.title }, value);
+  if (k) return pushFavoriteRef({ slug: k.slug, title: k.title }, value);
+  const uid = await currentUserId();
+  if (uid) enqueueSyncOp("favorite", uid, { titleId, value });
 }
 
 export async function pushWatchlist(titleId: number, status: string | null) {
   const k = await cloudKeyFor(titleId);
-  if (k) await pushWatchlistRef({ slug: k.slug, title: k.title }, status);
+  if (k) return pushWatchlistRef({ slug: k.slug, title: k.title }, status);
+  const uid = await currentUserId();
+  if (uid) enqueueSyncOp("watchlist", uid, { titleId, status });
 }
 
 export async function pushRating(titleId: number, score: number | null) {
   const k = await cloudKeyFor(titleId);
-  if (k) await pushRatingRef({ slug: k.slug, title: k.title }, score);
+  if (k) return pushRatingRef({ slug: k.slug, title: k.title }, score);
+  const uid = await currentUserId();
+  if (uid) enqueueSyncOp("rating", uid, { titleId, score });
 }
 
 /* ------------------------------------------------------------------ */
@@ -701,8 +881,8 @@ export async function pushRating(titleId: number, score: number | null) {
 
 export type CloudSnapshot = {
   favorites: CloudItemRef[];
-  watchlist: (CloudItemRef & { status: string })[];
-  ratings: (CloudItemRef & { score: number })[];
+  watchlist: (CloudItemRef & { status: string; updatedAt?: string })[];
+  ratings: (CloudItemRef & { score: number; updatedAt?: string })[];
   collections: { name: string; items: CloudItemRef[] }[];
   progress: { slug: string; season: number; episode: number; position: number; duration: number; updatedAt: string }[];
 };
@@ -713,16 +893,19 @@ export async function pullCloudSnapshot(): Promise<CloudSnapshot | null> {
   if (!sb || !uid) return null;
   const [fav, wl, rt, cols, prog] = await Promise.all([
     sb.from("favorites").select("slug,title").eq("user_id", uid),
-    sb.from("watchlist").select("slug,title,status").eq("user_id", uid),
-    sb.from("ratings").select("slug,title,score").eq("user_id", uid),
+    // updated_at drives the LWW merge (DATA-5) — older columns tolerate
+    // projects where the column is missing (the whole select fails then,
+    // which the per-table catch below contains)
+    sb.from("watchlist").select("slug,title,status,updated_at").eq("user_id", uid),
+    sb.from("ratings").select("slug,title,score,updated_at").eq("user_id", uid),
     sb.from("user_collections").select("id,name,user_collection_items(slug,title)").eq("user_id", uid),
     // watch history follows the account (table may not exist yet on
     // the user's project → the error is contained and the rest still syncs)
     sb.from("watch_progress").select("slug,season,episode,position,duration,updated_at").eq("user_id", uid).limit(500),
   ]);
   const favRows = (fav.data ?? []) as Array<{ slug: string; title: string | null }>;
-  const wlRows = (wl.data ?? []) as Array<{ slug: string; title: string | null; status: string }>;
-  const rtRows = (rt.data ?? []) as Array<{ slug: string; title: string | null; score: number }>;
+  const wlRows = (wl.data ?? []) as unknown as Array<{ slug: string; title: string | null; status: string; updated_at?: string }>;
+  const rtRows = (rt.data ?? []) as unknown as Array<{ slug: string; title: string | null; score: number; updated_at?: string }>;
   type CloudCol = { id: string; name: string; user_collection_items: { slug: string; title: string | null }[] | null };
   const colRows = (cols.data ?? []) as unknown as CloudCol[];
   const progRows = (prog.data ?? []) as unknown as Array<{ slug: string; season: number; episode: number; position: number; duration: number; updated_at: string }>;
@@ -730,8 +913,8 @@ export async function pullCloudSnapshot(): Promise<CloudSnapshot | null> {
     favorites: favRows.filter((r) => r.slug).map((r) => ({ slug: r.slug, title: r.title ?? "" })),
     watchlist: wlRows
       .filter((r) => r.slug)
-      .map((r) => ({ slug: r.slug, title: r.title ?? "", status: String(r.status) })),
-    ratings: rtRows.filter((r) => r.slug).map((r) => ({ slug: r.slug, title: r.title ?? "", score: Number(r.score) })),
+      .map((r) => ({ slug: r.slug, title: r.title ?? "", status: String(r.status), updatedAt: r.updated_at ? String(r.updated_at) : undefined })),
+    ratings: rtRows.filter((r) => r.slug).map((r) => ({ slug: r.slug, title: r.title ?? "", score: Number(r.score), updatedAt: r.updated_at ? String(r.updated_at) : undefined })),
     collections: colRows.map((c) => ({
       name: String(c.name),
       items: (c.user_collection_items ?? []).filter((i) => i.slug).map((i) => ({ slug: i.slug, title: i.title ?? "" })),
@@ -749,24 +932,70 @@ export async function pullCloudSnapshot(): Promise<CloudSnapshot | null> {
   };
 }
 
-export type MergeResult = { ok: boolean; favoritesAdded?: number; listAdded?: number; listUpdated?: number; ratingsAdded?: number; progressApplied?: number; skipped?: number; reason?: string };
+export type MergeResult = { ok: boolean; favoritesAdded?: number; listAdded?: number; listUpdated?: number; ratingsAdded?: number; progressApplied?: number; deletionsApplied?: number; skipped?: number; reason?: string };
 
-/** Pull the cloud snapshot and merge it into the local database (cloud fills gaps, local wins on conflicts). */
+/** Pull the cloud snapshot + other devices' deletion events, and merge both
+ *  into the local database. v0.27.0: deletions finally propagate (DATA-2). */
 export async function syncCloudToLocal(): Promise<MergeResult> {
   try {
     const snap = await pullCloudSnapshot();
     if (!snap) return { ok: false, reason: "no-session" };
+    const deletions = await pullDeletionEvents();
     const r = await fetch("/api/cloud/merge", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(snap),
+      body: JSON.stringify({ ...snap, deletions }),
     });
     if (!r.ok) return { ok: false, reason: `merge-${r.status}` };
-    const d = (await r.json()) as { ok?: boolean; favoritesAdded: number; listAdded: number; listUpdated?: number; ratingsAdded: number; progressApplied?: number; skipped?: number };
+    const d = (await r.json()) as { ok?: boolean; favoritesAdded: number; listAdded: number; listUpdated?: number; ratingsAdded: number; progressApplied?: number; deletionsApplied?: number; skipped?: number };
     if (d && d.ok === false) return { ok: false, reason: "merge-unsupported" };
-    return { ok: true, favoritesAdded: d.favoritesAdded, listAdded: d.listAdded, ratingsAdded: d.ratingsAdded, progressApplied: d.progressApplied ?? 0, skipped: d.skipped ?? 0 };
+    return { ok: true, favoritesAdded: d.favoritesAdded, listAdded: d.listAdded, ratingsAdded: d.ratingsAdded, progressApplied: d.progressApplied ?? 0, deletionsApplied: d.deletionsApplied ?? 0, skipped: d.skipped ?? 0 };
   } catch (e) {
     return { ok: false, reason: e instanceof Error ? e.message : "network" };
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* v0.27.0 — cross-device deletion events (sync_del in user_events)     */
+/* ------------------------------------------------------------------ */
+
+export type DeletionEvent = {
+  kind: "favorite" | "watchlist" | "rating" | "progress" | "collection" | "collection-item";
+  key: string; // slug · collection NAME · "*" (whole history)
+  at: string;
+  action?: "delete" | "rename";
+  to?: string; // rename target
+  slug?: string; // collection-item
+};
+
+async function pullDeletionEvents(): Promise<DeletionEvent[]> {
+  try {
+    const sb = getSupabase();
+    const uid = await currentUserId();
+    if (!sb || !uid) return [];
+    let cur = readEvCursor();
+    if (cur && cur.uid !== uid) {
+      cur = { uid, at: "1970-01-01T00:00:00.000Z" };
+      writeEvCursor(cur);
+    }
+    const from = cur?.uid === uid ? cur.at : "1970-01-01T00:00:00.000Z";
+    const { data, error } = await sb
+      .from("user_events")
+      .select("payload,created_at")
+      .eq("user_id", uid)
+      .eq("type", "sync_del")
+      .gt("created_at", from)
+      .order("created_at", { ascending: true })
+      .limit(500);
+    if (error || !data) return [];
+    const rows = data as unknown as { payload: Partial<DeletionEvent> | null; created_at: string }[];
+    const last = rows[rows.length - 1];
+    if (last?.created_at) writeEvCursor({ uid, at: last.created_at });
+    return rows
+      .map((r) => ({ ...(r.payload ?? {}), at: r.payload?.at || r.created_at } as DeletionEvent))
+      .filter((d) => d.kind && d.key);
+  } catch {
+    return [];
   }
 }
 
@@ -793,8 +1022,35 @@ export function fullSync(): Promise<MergeResult> {
 }
 
 async function runFullSync(): Promise<MergeResult> {
+  wireFlushListeners();
   const uid = await currentUserId();
-  if (uid) await attachIdentity(uid, await currentAccessToken());
+  if (!uid) return { ok: false, reason: "no-session" };
+  // v0.27.0 (DATA-15) — the space rotation must be CONFIRMED before any cloud
+  // row is merged: offline (or unverified) attaches must never pour account
+  // B's snapshot into account A's still-active local space.
+  const att = await attachIdentity(uid, await currentAccessToken());
+  if (!att.attached) return { ok: false, reason: "identity-unverified" };
+  // account switched since the last sync? → hygiene: drop the other
+  // account's queued ops, forget tombstones, restart the event cursor
+  let lastUid = "";
+  try {
+    lastUid = localStorage.getItem("frame.sync.lastUid") ?? "";
+  } catch {
+    /* ignore */
+  }
+  if (lastUid !== uid) {
+    dropOpsForOtherUids(uid);
+    clearAllTombstones();
+    writeEvCursor({ uid, at: "1970-01-01T00:00:00.000Z" });
+    try {
+      localStorage.setItem("frame.sync.lastUid", uid);
+    } catch {
+      /* ignore */
+    }
+  }
+  // flush FIRST: a pending offline deletion must remove the cloud row BEFORE
+  // the pull — otherwise the pull would resurrect it for one cycle (DATA-1)
+  if (countSyncOps()) await flushSyncOps();
   const merged = await syncCloudToLocal();
   if (merged.ok) {
     // profile: cloud → local (if newer), then local → cloud
@@ -802,6 +1058,13 @@ async function runFullSync(): Promise<MergeResult> {
       await pullProfileIfNewer();
     } catch {
       /* never blocks the rest */
+    }
+    // v0.27.0 (DATA-6) — note/pin/plannedDate from other devices (rides the
+    // profile blob); runs AFTER the pull so pulled watchlist rows exist locally
+    try {
+      await applyCloudListDetails();
+    } catch {
+      /* best-effort */
     }
     // push local-only rows up as well (cheap, idempotent upserts)
     // v0.13.0 — every numeric id is resolved to its STABLE slug first (one
@@ -843,12 +1106,22 @@ async function runFullSync(): Promise<MergeResult> {
             .map(({ score, r }) => pushRatingRef(r, score)),
           pushCollectionsUp(lib.collections ?? []),
           pushProgressRows(lib.progress ?? []),
+          collectAndPushListDetails(),
           pushProfile((lib as { profileFull?: Record<string, unknown> }).profileFull),
           pushCinemaProfile((lib as { profileFull?: Record<string, unknown> }).profileFull),
         ]);
       }
     } catch {
       /* offline push is fine — pulls still worked */
+    }
+    // v0.27.0 — anything that failed during the push phase is already queued;
+    // try one immediate replay while the connection is obviously alive
+    if (countSyncOps()) {
+      try {
+        await flushSyncOps();
+      } catch {
+        /* retried by the listeners */
+      }
     }
     try {
       localStorage.setItem("frame.lastSync", new Date().toISOString());
@@ -860,55 +1133,52 @@ async function runFullSync(): Promise<MergeResult> {
 }
 
 /** Immediate: one item was REMOVED from a local collection → mirror in the
- *  cloud. Without this the next pull would re-add the removed title
- *  ("cloud fills gaps" only ever adds). */
+ *  cloud + broadcast (otherwise the next pull re-adds it / other devices
+ *  keep it forever — union-merge only adds). */
 export async function pushCollectionItemRemove(name: string, titleId: number): Promise<void> {
-  try {
-    const uid = await currentUserId();
-    const sb = getSupabase();
-    const clean = String(name ?? "").trim();
-    if (!uid || !sb || !clean || !titleId) return;
-    const { data: existing } = await sb
-      .from("user_collections")
-      .select("id")
-      .eq("user_id", uid)
-      .eq("name", clean)
-      .maybeSingle();
-    const colId = (existing as { id: string } | null)?.id;
-    if (!colId) return;
-    const k = await cloudKeyFor(titleId);
-    if (!k) return;
-    await sb.from("user_collection_items").delete().eq("collection_id", colId).eq("slug", k.slug);
-  } catch {
-    /* offline → next fullSync push will restore the remaining set */
-  }
+  const uid = await currentUserId();
+  const sb = getSupabase();
+  const clean = String(name ?? "").trim();
+  if (!uid || !sb || !clean || !titleId) return;
+  const k = await cloudKeyFor(titleId);
+  if (!k) return;
+  const { data: existing } = await sb
+    .from("user_collections")
+    .select("id")
+    .eq("user_id", uid)
+    .eq("name", clean)
+    .maybeSingle();
+  const colId = (existing as { id: string } | null)?.id;
+  if (!colId) return;
+  const { error } = await sb.from("user_collection_items").delete().eq("collection_id", colId).eq("slug", k.slug);
+  if (error) enqueueSyncOp("collection-item-del", uid, { name: clean, slug: k.slug });
+  else void recordDelEvent(sb, uid, { kind: "collection-item", key: clean, slug: k.slug, at: new Date().toISOString() });
 }
 
-/** Immediate: a collection was DELETED locally → mirror the delete in the cloud. */
+/** Immediate: a collection was DELETED locally → mirror + broadcast. */
 export async function pushCollectionDelete(name: string): Promise<void> {
-  try {
-    const uid = await currentUserId();
-    const sb = getSupabase();
-    const clean = String(name ?? "").trim();
-    if (!uid || !sb || !clean) return;
-    await sb.from("user_collections").delete().eq("user_id", uid).eq("name", clean);
-  } catch {
-    /* offline → will converge on the next fullSync */
-  }
+  const uid = await currentUserId();
+  const sb = getSupabase();
+  const clean = String(name ?? "").trim();
+  if (!uid || !sb || !clean) return;
+  recordTombstone("collection", clean);
+  const { error } = await sb.from("user_collections").delete().eq("user_id", uid).eq("name", clean);
+  if (error) enqueueSyncOp("collection-del", uid, { name: clean });
+  else void recordDelEvent(sb, uid, { kind: "collection", key: clean, action: "delete", at: new Date().toISOString() });
 }
 
-/** Immediate: a collection was RENAMED locally → mirror the rename in the cloud. */
+/** Immediate: a collection was RENAMED locally → mirror + broadcast. Other
+ *  devices apply the rename via the sync_del event (DATA-16 — previously the
+ *  old name survived there and the new name arrived as a DUPLICATE). */
 export async function pushCollectionRename(oldName: string, newName: string): Promise<void> {
-  try {
-    const uid = await currentUserId();
-    const sb = getSupabase();
-    const from = String(oldName ?? "").trim();
-    const to = String(newName ?? "").trim().slice(0, 60);
-    if (!uid || !sb || !from || !to) return;
-    await sb.from("user_collections").update({ name: to }).eq("user_id", uid).eq("name", from);
-  } catch {
-    /* offline → will converge on the next fullSync */
-  }
+  const uid = await currentUserId();
+  const sb = getSupabase();
+  const from = String(oldName ?? "").trim();
+  const to = String(newName ?? "").trim().slice(0, 60);
+  if (!uid || !sb || !from || !to) return;
+  const { error } = await sb.from("user_collections").update({ name: to }).eq("user_id", uid).eq("name", from);
+  if (error) enqueueSyncOp("collection-rename", uid, { from, to });
+  else void recordDelEvent(sb, uid, { kind: "collection", key: from, action: "rename", to, at: new Date().toISOString() });
 }
 
 /** Push the LOCAL collections up to the cloud (matched by name, idempotent).
@@ -988,5 +1258,252 @@ export async function wipeCloudAccountData(): Promise<boolean> {
     return results.every((r) => !r.error);
   } catch {
     return false;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* v0.27.0 — the offline op queue: flush + replay                      */
+/* ------------------------------------------------------------------ */
+
+let flushWired = false;
+
+/** `online` / interval / re-visibility → replay queued cloud ops (DATA-4). */
+export function wireFlushListeners(): void {
+  if (flushWired || typeof window === "undefined") return;
+  flushWired = true;
+  window.addEventListener("online", () => {
+    if (countSyncOps()) void flushSyncOps();
+  });
+  window.setInterval(() => {
+    if (countSyncOps()) void flushSyncOps();
+  }, 60_000);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible" && countSyncOps()) void flushSyncOps();
+  });
+}
+
+export async function flushSyncOps(): Promise<{ flushed: number; left: number }> {
+  const sb = getSupabase();
+  const uid = await currentUserId();
+  if (!sb || !uid) return { flushed: 0, left: countSyncOps() };
+  dropOpsForOtherUids(uid); // never replay account A's ops under account B
+  const done: string[] = [];
+  for (const op of getSyncOps()) {
+    let ok = false;
+    try {
+      ok = await replaySyncOp(sb, uid, op);
+    } catch {
+      ok = false;
+    }
+    if (!ok) break; // keep queue order; retry on the next trigger
+    done.push(op.id);
+  }
+  removeSyncOps(done);
+  return { flushed: done.length, left: countSyncOps() };
+}
+
+async function replaySyncOp(sb: SupabaseClient, uid: string, op: SyncOp): Promise<boolean> {
+  const p = op.payload as Record<string, unknown>;
+  const nowAt = new Date().toISOString();
+  switch (op.kind) {
+    case "favorite": {
+      let slug = String(p.slug ?? "");
+      let title = String(p.title ?? "");
+      const value = Boolean(p.value);
+      if (!slug) {
+        const k = await cloudKeyFor(Number(p.titleId ?? 0));
+        if (!k) return true; // still unresolvable → nothing stable, drop
+        slug = k.slug;
+        title = k.title;
+      }
+      if (value) {
+        clearTombstone("favorite", slug);
+        return sbFavoriteUpsert(sb, uid, { slug, title });
+      }
+      recordTombstone("favorite", slug);
+      const ok = await sbFavoriteDelete(sb, uid, slug);
+      if (ok) void recordDelEvent(sb, uid, { kind: "favorite", key: slug, at: nowAt });
+      return ok;
+    }
+    case "watchlist": {
+      let slug = String(p.slug ?? "");
+      let title = String(p.title ?? "");
+      const status = p.status ? String(p.status) : null;
+      if (!slug) {
+        const k = await cloudKeyFor(Number(p.titleId ?? 0));
+        if (!k) return true;
+        slug = k.slug;
+        title = k.title;
+      }
+      if (status) {
+        clearTombstone("watchlist", slug);
+        return sbWatchlistUpsert(sb, uid, { slug, title }, status);
+      }
+      recordTombstone("watchlist", slug);
+      const ok = await sbWatchlistDelete(sb, uid, slug);
+      if (ok) void recordDelEvent(sb, uid, { kind: "watchlist", key: slug, at: nowAt });
+      return ok;
+    }
+    case "rating": {
+      let slug = String(p.slug ?? "");
+      let title = String(p.title ?? "");
+      const rawScore = Number(p.score ?? 0);
+      const score = rawScore > 0 ? rawScore : null;
+      if (!slug) {
+        const k = await cloudKeyFor(Number(p.titleId ?? 0));
+        if (!k) return true;
+        slug = k.slug;
+        title = k.title;
+      }
+      if (score) {
+        clearTombstone("rating", slug);
+        return sbRatingUpsert(sb, uid, { slug, title }, score);
+      }
+      recordTombstone("rating", slug);
+      const ok = await sbRatingDelete(sb, uid, slug);
+      if (ok) void recordDelEvent(sb, uid, { kind: "rating", key: slug, at: nowAt });
+      return ok;
+    }
+    case "progress": {
+      const rows = (Array.isArray(p.rows) ? p.rows : []) as {
+        slug: string;
+        title: string;
+        season: number;
+        episode: number;
+        position: number;
+        duration: number;
+        updated_at: string;
+      }[];
+      if (!rows.length) return true;
+      for (let i = 0; i < rows.length; i += 100) {
+        const { error } = await sb.from("watch_progress").upsert(rows.slice(i, i + 100));
+        if (error) return false;
+      }
+      return true;
+    }
+    case "progress-del": {
+      let slug = String(p.slug ?? "");
+      if (!slug) {
+        const k = await cloudKeyFor(Number(p.titleId ?? 0));
+        if (!k) return true;
+        slug = k.slug;
+      }
+      recordTombstone("progress", slug);
+      if (slug === "*") {
+        const { error } = await sb.from("watch_progress").delete().eq("user_id", uid);
+        if (!error) void recordDelEvent(sb, uid, { kind: "progress", key: "*", at: nowAt });
+        return !error;
+      }
+      const { error } = await sb.from("watch_progress").delete().eq("user_id", uid).eq("slug", slug);
+      if (!error) void recordDelEvent(sb, uid, { kind: "progress", key: slug, at: nowAt });
+      return !error;
+    }
+    case "collection-del": {
+      const name = String(p.name ?? "").trim();
+      if (!name) return true;
+      recordTombstone("collection", name);
+      const { error } = await sb.from("user_collections").delete().eq("user_id", uid).eq("name", name);
+      if (!error) void recordDelEvent(sb, uid, { kind: "collection", key: name, action: "delete", at: nowAt });
+      return !error;
+    }
+    case "collection-rename": {
+      const from = String(p.from ?? "").trim();
+      const to = String(p.to ?? "").trim().slice(0, 60);
+      if (!from || !to) return true;
+      const { error } = await sb.from("user_collections").update({ name: to }).eq("user_id", uid).eq("name", from);
+      if (!error) void recordDelEvent(sb, uid, { kind: "collection", key: from, action: "rename", to, at: nowAt });
+      return !error;
+    }
+    case "collection-item-del": {
+      const name = String(p.name ?? "").trim();
+      const slug = String(p.slug ?? "");
+      if (!name || !slug) return true;
+      const { data: existing } = await sb.from("user_collections").select("id").eq("user_id", uid).eq("name", name).maybeSingle();
+      const colId = (existing as { id: string } | null)?.id;
+      if (!colId) return true; // collection already gone on the cloud side
+      const { error } = await sb.from("user_collection_items").delete().eq("collection_id", colId).eq("slug", slug);
+      if (!error) void recordDelEvent(sb, uid, { kind: "collection-item", key: name, slug, at: nowAt });
+      return !error;
+    }
+    default:
+      return true; // unknown op kind → drop instead of looping forever
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* v0.27.0 (DATA-6) — watchlist DETAILS ride the profile blob          */
+/*   note / pinned / plannedDate never had cloud columns; they now      */
+/*   live under profiles.data.listDetails keyed by slug, per-entry      */
+/*   updatedAt, capped at 400 entries. Zero Supabase DDL.               */
+/* ------------------------------------------------------------------ */
+
+export type ListDetail = { slug: string; note?: string; pinned?: boolean; plannedDate?: string | null; updatedAt?: string };
+
+/** Push local watchlist details (note/pin/plannedDate) into the profile blob. */
+export async function collectAndPushListDetails(): Promise<void> {
+  try {
+    const uid = await currentUserId();
+    const sb = getSupabase();
+    if (!uid || !sb) return;
+    const { getMyListRows } = await import("./mobile/userdata");
+    const rows = await getMyListRows().catch(() => []);
+    if (!rows.length) return;
+    const keys = await cloudKeysFor(rows.map((r) => r.title.id));
+    const local: Record<string, ListDetail> = {};
+    for (const r of rows) {
+      const k = keys.get(r.title.id);
+      if (!k) continue;
+      if (r.note || r.pinned || r.plannedDate) {
+        local[k.slug] = { slug: k.slug, note: r.note, pinned: r.pinned, plannedDate: r.plannedDate, updatedAt: r.updatedAt };
+      }
+    }
+    const { data } = await sb.from("profiles").select("data,updated_at").eq("user_id", uid).maybeSingle();
+    const blob = (((data as { data?: Record<string, unknown> } | null)?.data) ?? {}) as Record<string, unknown>;
+    const merged = { ...((blob.listDetails ?? {}) as Record<string, ListDetail>) };
+    for (const [slug, d] of Object.entries(local)) {
+      const old = merged[slug];
+      if (!old || toTs(d.updatedAt) >= toTs(old.updatedAt)) merged[slug] = d;
+    }
+    // size cap: keep the 400 most recently touched entries
+    const kept = Object.entries(merged)
+      .sort((a, b) => toTs(b[1].updatedAt) - toTs(a[1].updatedAt))
+      .slice(0, 400);
+    blob.listDetails = Object.fromEntries(kept);
+    await sb.from("profiles").upsert({ user_id: uid, data: blob, updated_at: new Date().toISOString() });
+  } catch {
+    /* offline / table missing → retried on the next sync */
+  }
+}
+
+/** Apply cloud watchlist details to local rows that are OLDER than them. */
+export async function applyCloudListDetails(): Promise<void> {
+  try {
+    const uid = await currentUserId();
+    const sb = getSupabase();
+    if (!uid || !sb) return;
+    const { data } = await sb.from("profiles").select("data").eq("user_id", uid).maybeSingle();
+    const blob = (data as { data?: Record<string, unknown> } | null)?.data;
+    const details = blob?.listDetails as Record<string, ListDetail> | undefined;
+    if (!details || !Object.keys(details).length) return;
+    const { getMyListRows, patchWatchlist } = await import("./mobile/userdata");
+    const rows = await getMyListRows().catch(() => []);
+    if (!rows.length) return;
+    const keys = await cloudKeysFor(rows.map((r) => r.title.id));
+    for (const r of rows) {
+      const k = keys.get(r.title.id);
+      const d = k ? details[k.slug] : undefined;
+      if (!d) continue;
+      if (toTs(d.updatedAt) <= toTs(r.updatedAt)) continue;
+      // only apply fields the detail actually carries — a note-only sync
+      // must not clear the pin the user set on this device
+      await patchWatchlist({
+        titleId: r.title.id,
+        ...(d.note !== undefined ? { note: d.note } : {}),
+        ...(d.pinned !== undefined ? { pinned: d.pinned } : {}),
+        ...(d.plannedDate !== undefined ? { plannedDate: d.plannedDate } : {}),
+      });
+    }
+  } catch {
+    /* best-effort */
   }
 }

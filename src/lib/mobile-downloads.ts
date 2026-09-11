@@ -14,6 +14,23 @@
 import { db } from "./mobile/db";
 import { nativeBridge, type NamaDownloadEvent } from "./native-bridge";
 
+/** v0.27.0 (DATA-13) — downloads belong to ONE account. The active data-space
+ * key (same value the rest of the user-data layer uses) scopes every record. */
+function activeUserKey(): string {
+  try {
+    const active = localStorage.getItem("frame.acct.active");
+    if (active) return active;
+  } catch {
+    /* ignore */
+  }
+  try {
+    const m = document.cookie.match(/(?:^|;\s*)nama_uid=([^;]*)/);
+    return m ? decodeURIComponent(m[1]) : "guest";
+  } catch {
+    return "guest";
+  }
+}
+
 export type DownloadRecord = {
   id: string;
   titleId: number;
@@ -32,6 +49,8 @@ export type DownloadRecord = {
   speed: number;
   dest: string; // relative path under filesDir
   createdAt: number;
+  /** v0.27.0 (DATA-13) — owning data space on this device */
+  userKey?: string;
 };
 
 const MAX_ACTIVE = 2;
@@ -80,13 +99,19 @@ async function onEvent(e: NamaDownloadEvent) {
 /* ---------------- queries ---------------- */
 
 export async function listDownloads(): Promise<DownloadRecord[]> {
+  const uk = activeUserKey();
   const rows = (await db.dlitems.toArray()) as unknown as DownloadRecord[];
-  return rows.sort((a, b) => b.createdAt - a.createdAt);
+  // v0.27.0 (DATA-13) — per-account: rows from another account (or legacy
+  // rows stamped by the v5 migration for a DIFFERENT account) never leak
+  return rows
+    .filter((r) => !r.userKey || r.userKey === uk)
+    .sort((a, b) => b.createdAt - a.createdAt);
 }
 
 export async function getDownloadFor(titleId: number, episodeId: number | null): Promise<DownloadRecord | null> {
+  const uk = activeUserKey();
   const all = (await db.dlitems.where("titleId").equals(titleId).toArray()) as unknown as DownloadRecord[];
-  const rows = all.filter((r) => (r.episodeId ?? null) === (episodeId ?? null));
+  const rows = all.filter((r) => (r.episodeId ?? null) === (episodeId ?? null) && (!r.userKey || r.userKey === uk));
   if (!rows.length) return null;
   // completed first, then the most recent attempt
   const rank = (r: DownloadRecord) => (r.status === "completed" ? 2 : 1);
@@ -131,6 +156,7 @@ export async function enqueueDownload(input: {
     total: 0,
     speed: 0,
     createdAt: Date.now(),
+    userKey: activeUserKey(),
   };
   await db.dlitems.put(rec as unknown as Record<string, unknown>);
   // respect MAX_ACTIVE: extras stay queued until a slot frees (the engine
@@ -195,12 +221,13 @@ export async function removeDownload(id: string) {
   broadcast();
 }
 
-/** Kick the queue after boot: resume rows that were mid-flight. */
+/** Kick the queue after boot: resume rows that were mid-flight (THIS account's only). */
 export async function resumeQueueOnBoot() {
   const b = nativeBridge();
   if (!b) return;
   wire();
-  const rows = (await db.dlitems.where("status").anyOf("downloading", "queued").toArray()) as unknown as DownloadRecord[];
+  const uk = activeUserKey();
+  const rows = ((await db.dlitems.where("status").anyOf("downloading", "queued").toArray()) as unknown as DownloadRecord[]).filter((r) => !r.userKey || r.userKey === uk);
   let started = 0;
   for (const r of rows) {
     if (started >= MAX_ACTIVE) break;

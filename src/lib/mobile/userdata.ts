@@ -7,6 +7,7 @@ import { db, episodeId, getEpisodes, getFullTitle, getTitleLiteBySlug, isDesktop
 import { LIST_STATUSES, type ListStatus } from "@/lib/library-shared";
 import type { TitleView } from "./db";
 import { titleHref, watchHref } from "@/lib/links";
+import { recordTombstone, tombstoneNewerThan } from "@/lib/sync-queue";
 
 export { LIST_STATUSES };
 export type { ListStatus };
@@ -56,12 +57,60 @@ function readAcctMap(): Record<string, string> {
   try { return JSON.parse(lsGet(ACCT_MAP) ?? "{}") as Record<string, string>; } catch { return {}; }
 }
 
+/* v0.27.0 (DATA-14) — the space id is a sha-256 of the account id, EXACTLY
+ * like the desktop route ("a" + first 24 hex chars of sha256("frame:"+id)).
+ * The old djb2 hash fit in 32 bits — two accounts could collide and read
+ * each other's library/history. A compact pure-JS sha-256 keeps this working
+ * even where crypto.subtle is unavailable. */
+function sha256Hex(input: string): string {
+  const rr = [
+    0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+    0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+    0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+    0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+    0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+    0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+    0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+    0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+  ];
+  const l = input.length;
+  const withOne = ((l + 9) >> 6) + 1;
+  const words = new Uint32Array(withOne * 16);
+  for (let i = 0; i < l; i++) words[i >> 2] |= input.charCodeAt(i) << ((3 - (i % 4)) * 8);
+  words[l >> 2] |= 0x80 << ((3 - (l % 4)) * 8);
+  words[withOne * 16 - 1] = l * 8;
+  let h0 = 0x6a09e667, h1 = 0xbb67ae85, h2 = 0x3c6ef372, h3 = 0xa54ff53a, h4 = 0x510e527f, h5 = 0x9b05688c, h6 = 0x1f83d9ab, h7 = 0x5be0cd19;
+  const w = new Uint32Array(64);
+  for (let j = 0; j < withOne * 16; j += 16) {
+    for (let i = 0; i < 16; i++) w[i] = words[j + i];
+    for (let i = 16; i < 64; i++) {
+      const s0 = ((w[i - 15] >>> 7) | (w[i - 15] << 25)) ^ ((w[i - 15] >>> 18) | (w[i - 15] << 14)) ^ (w[i - 15] >>> 3);
+      const s1 = ((w[i - 2] >>> 17) | (w[i - 2] << 15)) ^ ((w[i - 2] >>> 19) | (w[i - 2] << 13)) ^ (w[i - 2] >>> 10);
+      w[i] = (w[i - 16] + s0 + w[i - 7] + s1) >>> 0;
+    }
+    let a = h0, b = h1, c = h2, d = h3, e = h4, f = h5, g = h6, h = h7;
+    for (let i = 0; i < 64; i++) {
+      const S1 = ((e >>> 6) | (e << 26)) ^ ((e >>> 11) | (e << 21)) ^ ((e >>> 25) | (e << 7));
+      const ch = (e & f) ^ (~e & g);
+      const t1 = (h + S1 + ch + rr[i] + w[i]) >>> 0;
+      const S0 = ((a >>> 2) | (a << 30)) ^ ((a >>> 13) | (a << 19)) ^ ((a >>> 22) | (a << 10));
+      const mj = (a & b) ^ (a & c) ^ (b & c);
+      const t2 = (S0 + mj) >>> 0;
+      h = g; g = f; f = e; e = (d + t1) >>> 0; d = c; c = b; b = a; a = (t1 + t2) >>> 0;
+    }
+    h0 = (h0 + a) >>> 0; h1 = (h1 + b) >>> 0; h2 = (h2 + c) >>> 0; h3 = (h3 + d) >>> 0;
+    h4 = (h4 + e) >>> 0; h5 = (h5 + f) >>> 0; h6 = (h6 + g) >>> 0; h7 = (h7 + h) >>> 0;
+  }
+  return [h0, h1, h2, h3, h4, h5, h6, h7].map((x) => x.toString(16).padStart(8, "0")).join("");
+}
+
 /** deterministic empty space for a brand-new account on this device */
 function accountSpaceUid(accountId: string): string {
-  let h = 5381;
-  for (let i = 0; i < accountId.length; i++) h = ((h << 5) + h + accountId.charCodeAt(i)) >>> 0;
-  return "a" + h.toString(36) + "x" + accountId.length.toString(36);
+  return "a" + sha256Hex(`frame:${accountId}`).slice(0, 24);
 }
+
+/** the NEW scheme — used to detect legacy djb2 spaces that must migrate */
+const NEW_SPACE_RE = /^a[0-9a-f]{24}$/;
 
 async function spaceHasData(uid: string): Promise<boolean> {
   const [p, prog, wl, fav, rt, cols] = await Promise.all([
@@ -75,13 +124,63 @@ async function spaceHasData(uid: string): Promise<boolean> {
   return Boolean(p || prog || wl || fav || rt || cols);
 }
 
+/** v0.27.0 (DATA-14 migration) — copy one account's rows from the legacy
+ * djb2 space into the new sha-256 space. Only runs when the target is empty. */
+async function migrateAccountSpace(oldUid: string, newUid: string): Promise<void> {
+  if (oldUid === newUid || (await spaceHasData(newUid))) return;
+  const [profs, progs, wls, favs, rats, cols, notifs] = await Promise.all([
+    db.profiles.get(oldUid),
+    db.progress.where("userKey").equals(oldUid).toArray(),
+    db.watchlist.where("userKey").equals(oldUid).toArray(),
+    db.favorites.where("userKey").equals(oldUid).toArray(),
+    db.ratings.where("userKey").equals(oldUid).toArray(),
+    db.ucollections.where("userKey").equals(oldUid).toArray(),
+    db.notificationsRead.where("userKey").equals(oldUid).toArray(),
+  ]);
+  await db.transaction("rw", [db.profiles, db.progress, db.watchlist, db.favorites, db.ratings, db.ucollections, db.ucitems, db.notificationsRead] as never, async () => {
+    if (profs) await db.profiles.put({ ...profs, userKey: newUid });
+    for (const r of progs) await db.progress.put({ ...(r as Record<string, unknown>), id: undefined, userKey: newUid });
+    for (const r of wls) await db.watchlist.put({ ...(r as Record<string, unknown>), id: undefined, userKey: newUid });
+    for (const r of favs) await db.favorites.put({ ...(r as Record<string, unknown>), id: undefined, userKey: newUid });
+    for (const r of rats) await db.ratings.put({ ...(r as Record<string, unknown>), id: undefined, userKey: newUid });
+    for (const c of cols) {
+      const oldColId = Number((c as { id: number }).id);
+      const newColId = Number(await db.ucollections.put({ ...(c as Record<string, unknown>), id: undefined, userKey: newUid }));
+      const items = await db.ucitems.where("collectionId").equals(oldColId).toArray();
+      for (const it of items) await db.ucitems.put({ ...(it as Record<string, unknown>), id: undefined, collectionId: newColId });
+    }
+    for (const n of notifs) await db.notificationsRead.put({ ...n, userKey: newUid });
+  });
+}
+
+/** v0.27.0 (QOL-3) — orphan guest spaces used to pile up forever after every
+ * sign-out. Now the PREVIOUS guest space (unclaimed by any account) is wiped
+ * before a fresh one is minted — same isolation, no litter. */
+async function wipeGuestSpace(uid: string): Promise<void> {
+  const map = readAcctMap();
+  if (Object.values(map).includes(uid)) return; // claimed by an account
+  const cols = await db.ucollections.where("userKey").equals(uid).toArray();
+  for (const c of cols) await db.ucitems.where("collectionId").equals(Number((c as { id: number }).id)).delete();
+  await Promise.all([
+    db.progress.where("userKey").equals(uid).delete(),
+    db.watchlist.where("userKey").equals(uid).delete(),
+    db.favorites.where("userKey").equals(uid).delete(),
+    db.ratings.where("userKey").equals(uid).delete(),
+    db.ucollections.where("userKey").equals(uid).delete(),
+    db.notificationsRead.where("userKey").equals(uid).delete(),
+    db.profiles.delete(uid),
+  ]);
+}
+
 /** Same contract as the desktop POST /api/identity route:
  *  - attach(accountId): known account → its recorded space (data returns on
  *    re-login); first attach + current space unclaimed + has data → ADOPT the
  *    current space (seamless upgrade / guest continuity); otherwise a fresh
  *    empty space so a second account never sees the first account's data.
- *  - reset (sign-out): a fresh guest space, but only when the current space
- *    belongs to a mapped account — signed-out data survives restarts. */
+ *    v0.27.0 — legacy djb2 spaces migrate to the sha-256 scheme (DATA-14).
+ *  - reset (sign-out): the previous guest space is wiped (QOL-3), then a
+ *    fresh guest space — signed-out data survives restarts of the CURRENT
+ *    guest, never leaks into the next one. */
 export async function switchIdentity(accountId: string | null, reset = false): Promise<{ switched: boolean }> {
   const current = getUserKey();
   const map = readAcctMap();
@@ -89,12 +188,22 @@ export async function switchIdentity(accountId: string | null, reset = false): P
 
   if (reset || !accountId) {
     if (!claimed) return { switched: false };
+    await wipeGuestSpace(current);
     const fresh = "guest-" + Math.random().toString(36).slice(2, 10);
     lsSet(ACCT_ACTIVE, fresh);
     return { switched: true };
   }
 
-  const known = map[accountId];
+  let known = map[accountId];
+  if (known && !NEW_SPACE_RE.test(known)) {
+    // legacy djb2 space → migrate the data into the deterministic sha-256 space
+    const target = accountSpaceUid(accountId);
+    await migrateAccountSpace(known, target);
+    map[accountId] = target;
+    known = target;
+    lsSet(ACCT_MAP, JSON.stringify(map));
+    void mirrorAcctMapToDexie();
+  }
   if (known) {
     if (known === current) return { switched: false };
     lsSet(ACCT_ACTIVE, known);
@@ -106,10 +215,36 @@ export async function switchIdentity(accountId: string | null, reset = false): P
   map[accountId] = target;
   lsSet(ACCT_MAP, JSON.stringify(map));
   lsSet(ACCT_ACTIVE, target);
+  void mirrorAcctMapToDexie();
   return { switched: target !== current };
 }
 
+/** v0.27.0 (DATA-14) — the account map survives a wiped localStorage via a
+ * Dexie mirror (localStorage alone lost every space mapping before). */
+async function mirrorAcctMapToDexie(): Promise<void> {
+  try {
+    await db.kv.put({ key: "acct.map", value: readAcctMap() });
+  } catch {
+    /* best-effort */
+  }
+}
+
 const now = () => new Date().toISOString();
+
+/* v0.27.0 (DATA-1/2) — local tombstones for mobile deletions. The cloud push
+ * (pushWatchlist/pushFavorite/…) records its own tombstone when it runs, but
+ * the shim-only paths (MyListManager DELETE /api/watchlist etc.) never call
+ * it — so the LOCAL layer records the tombstone right here, keyed by slug. */
+async function tombstoneForTitle(kind: "favorite" | "watchlist" | "rating" | "progress", titleId: number): Promise<void> {
+  try {
+    const t = (await db.titles.get(Number(titleId))) as { slug?: string } | undefined;
+    if (t?.slug) recordTombstone(kind, t.slug);
+  } catch {
+    /* best-effort */
+  }
+}
+
+const tsOf = (v: unknown): number => (typeof v === "number" ? v : Date.parse(String(v)) || 0);
 
 /* ------------------------------------------------------------------ */
 /* Profile                                                             */
@@ -136,6 +271,8 @@ export type ProfileRow = {
   kidsMode: boolean;
   parentalPin: string;
   language: string;
+  /** v0.27.0 (DATA-10) — synced player-prefs blob (zoom/sub-delay maps…) */
+  playerPrefs?: Record<string, unknown> | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -202,6 +339,15 @@ export async function patchProfile(b: Record<string, unknown>, userKey = getUser
   if (typeof b.playbackSpeed === "number" && SPEEDS.has(b.playbackSpeed)) next.playbackSpeed = b.playbackSpeed;
   if (typeof b.volume === "number") next.volume = Math.max(0, Math.min(100, Math.round(b.volume)));
   if (typeof b.parentalPin === "string" && (b.parentalPin === "" || /^\d{4}$/.test(b.parentalPin))) next.parentalPin = b.parentalPin;
+  // v0.27.0 (DATA-10) — the synced player-prefs blob rides the profile row
+  if (b.playerPrefs && typeof b.playerPrefs === "object") {
+    try {
+      const pp = JSON.stringify(b.playerPrefs);
+      if (pp.length <= 200_000) next.playerPrefs = JSON.parse(pp) as Record<string, unknown>;
+    } catch {
+      /* ignore malformed */
+    }
+  }
   await db.profiles.put({ ...next } as Record<string, unknown>);
   try {
     // v0.12.0 — local profile touch timestamp drives the newer-wins cloud sync
@@ -298,7 +444,10 @@ export async function toggleFavorite(titleId: number, value?: boolean, userKey =
   const user = userKey || "guest";
   const existing = await db.favorites.where("[userKey+titleId]").equals([user, titleId]).first();
   const wanted = typeof value === "boolean" ? value : !existing;
-  if (!wanted && existing) await db.favorites.delete((existing as { id: number }).id);
+  if (!wanted && existing) {
+    await db.favorites.delete((existing as { id: number }).id);
+    void tombstoneForTitle("favorite", titleId);
+  }
   if (wanted && !existing) await db.favorites.add({ userKey: user, titleId, createdAt: now() });
   return wanted;
 }
@@ -322,12 +471,17 @@ export async function removeFavorites(titleIds?: number[], userKey = getUserKey(
   }
   const user = userKey || "guest";
   if (!titleIds?.length) {
+    const rows = await db.favorites.where("userKey").equals(user).toArray();
     await db.favorites.where("userKey").equals(user).delete();
+    for (const r of rows) void tombstoneForTitle("favorite", Number(r.titleId));
     return;
   }
   for (const id of titleIds) {
     const row = await db.favorites.where("[userKey+titleId]").equals([user, id]).first();
-    if (row) await db.favorites.delete((row as { id: number }).id);
+    if (row) {
+      await db.favorites.delete((row as { id: number }).id);
+      void tombstoneForTitle("favorite", id);
+    }
   }
 }
 
@@ -351,7 +505,10 @@ export async function toggleWatchlist(titleId: number, value?: boolean, userKey 
   const user = userKey || "guest";
   const existing = await db.watchlist.where("[userKey+titleId]").equals([user, titleId]).first();
   const wanted = typeof value === "boolean" ? value : !existing;
-  if (!wanted && existing) await db.watchlist.delete((existing as { id: number }).id);
+  if (!wanted && existing) {
+    await db.watchlist.delete((existing as { id: number }).id);
+    void tombstoneForTitle("watchlist", titleId);
+  }
   if (wanted && !existing) await db.watchlist.add({ userKey: user, titleId, status: "planned", note: "", pinned: false, createdAt: now(), updatedAt: now() });
   return wanted;
 }
@@ -382,9 +539,17 @@ export async function removeWatchlist(titleId?: number, userKey = getUserKey()):
     return;
   }
   const user = userKey || "guest";
-  if (!titleId) return;
+  if (!titleId) {
+    const rows = await db.watchlist.where("userKey").equals(user).toArray();
+    for (const r of rows) void tombstoneForTitle("watchlist", Number(r.titleId));
+    await db.watchlist.where("userKey").equals(user).delete();
+    return;
+  }
   const row = await db.watchlist.where("[userKey+titleId]").equals([user, titleId]).first();
-  if (row) await db.watchlist.delete((row as { id: number }).id);
+  if (row) {
+    await db.watchlist.delete((row as { id: number }).id);
+    void tombstoneForTitle("watchlist", titleId);
+  }
 }
 
 export async function isInWatchlist(titleId: number, userKey = getUserKey()): Promise<boolean> {
@@ -415,19 +580,41 @@ export async function upsertProgress(
     return;
   }
   const user = userKey || "guest";
-  const existing = await db.progress.where("[userKey+titleId]").equals([user, b.titleId]).first();
-  const row = { userKey: user, titleId: b.titleId, episodeId: b.episodeId ? Number(b.episodeId) : null, position: b.position, duration: b.duration, updatedAt: now() };
+  const epId = b.episodeId ? Number(b.episodeId) : null;
+  /* v0.27.0 (DATA-7) — ONE ROW PER EPISODE, not per title: finishing S02E01
+   * no longer erases the S01E03 position. Movies (episodeId null) keep one
+   * title-level row. */
+  const existing = await db.progress
+    .where("[userKey+titleId]")
+    .equals([user, b.titleId])
+    .filter((r) => ((r as { episodeId?: number | null }).episodeId ?? null) === epId)
+    .first();
+  const row = { userKey: user, titleId: b.titleId, episodeId: epId, position: b.position, duration: b.duration, updatedAt: now() };
   if (existing) await db.progress.put({ ...row, id: (existing as { id: number }).id });
   else await db.progress.add(row);
 }
 
-export async function getProgressFor(titleId: number, userKey = getUserKey()): Promise<ProgressRow | null> {
-  if (isDesktopRuntime()) return srv<ProgressRow | null>(`/api/x/progress?titleId=${titleId}`);
+/** v0.27.0 (DATA-7) — per-episode aware progress read:
+ *  - WITH episodeId → that episode's own row (fallback: the legacy
+ *    title-level row only when it points at the same episode);
+ *  - WITHOUT episodeId → the most recently touched row of the title (the
+ *    classic «resume» behaviour). */
+export async function getProgressFor(titleId: number, episodeId?: number | null, userKey = getUserKey()): Promise<ProgressRow | null> {
+  if (isDesktopRuntime()) {
+    const q = episodeId ? `&episodeId=${episodeId}` : "";
+    return srv<ProgressRow | null>(`/api/x/progress?titleId=${titleId}${q}`);
+  }
   const user = userKey || "guest";
-  const row = await db.progress.where("[userKey+titleId]").equals([user, titleId]).first();
-  if (!row) return null;
-  const r = row as Record<string, unknown>;
-  return { titleId: Number(r.titleId), episodeId: (r.episodeId as number | null) ?? null, position: Number(r.position), duration: Number(r.duration), updatedAt: String(r.updatedAt) };
+  const rows = (await db.progress.where("[userKey+titleId]").equals([user, titleId]).toArray()) as unknown as { id: number; episodeId: number | null; position: number; duration: number; updatedAt: string }[];
+  if (!rows.length) return null;
+  const toRow = (r: (typeof rows)[number]): ProgressRow => ({ titleId, episodeId: r.episodeId ?? null, position: Number(r.position), duration: Number(r.duration), updatedAt: String(r.updatedAt) });
+  if (episodeId) {
+    const epRow = rows.find((r) => (r.episodeId ?? null) === Number(episodeId));
+    if (epRow) return toRow(epRow);
+    return null;
+  }
+  const latest = [...rows].sort((a, b) => tsOf(b.updatedAt) - tsOf(a.updatedAt))[0];
+  return latest ? toRow(latest) : null;
 }
 
 export async function getProgressMap(titleIds: number[], userKey = getUserKey()): Promise<Map<number, { position: number; duration: number }>> {
@@ -439,7 +626,7 @@ export async function getProgressMap(titleIds: number[], userKey = getUserKey())
   const user = userKey || "guest";
   const out = new Map<number, { position: number; duration: number }>();
   for (const id of titleIds) {
-    const r = await getProgressFor(id, user);
+    const r = await getProgressFor(id, null, user);
     if (r) out.set(id, { position: r.position, duration: r.duration });
   }
   return out;
@@ -456,12 +643,17 @@ export async function removeProgress(titleId?: number | number[], userKey = getU
   if (!ids.length) {
     const all = await db.progress.where("userKey").equals(user).toArray();
     await db.progress.where("userKey").equals(user).delete();
+    recordTombstone("progress", "*");
     return all.length;
   }
   let n = 0;
   for (const id of ids) {
-    const row = await db.progress.where("[userKey+titleId]").equals([user, id]).first();
-    if (row) { await db.progress.delete((row as { id: number }).id); n++; }
+    const rows = (await db.progress.where("[userKey+titleId]").equals([user, id]).toArray()) as unknown as { id: number }[];
+    if (rows.length) {
+      await db.progress.bulkDelete(rows.map((r) => r.id));
+      void tombstoneForTitle("progress", id);
+      n += rows.length;
+    }
   }
   return n;
 }
@@ -477,6 +669,7 @@ export async function setRating(titleId: number, score: number, userKey = getUse
   }
   const user = userKey || "guest";
   if (score === 0) {
+    void tombstoneForTitle("rating", titleId);
     await db.ratings.where("[userKey+titleId]").equals([user, titleId]).delete();
     return null;
   }
@@ -522,7 +715,7 @@ export async function getMyListRows(userKey = getUserKey()): Promise<ListRow[]> 
     if (t) liteById.set(Number(t.id), t as unknown as LiteTitle);
   });
   const [prog, favs, rats] = await Promise.all([
-    Promise.all(ids.map((id) => getProgressFor(id, user))),
+    Promise.all(ids.map((id) => getProgressFor(id, null, user))),
     db.favorites.where("userKey").equals(user).toArray(),
     db.ratings.where("userKey").equals(user).toArray(),
   ]);
@@ -530,7 +723,9 @@ export async function getMyListRows(userKey = getUserKey()): Promise<ListRow[]> 
   prog.forEach((p) => p && pm.set(p.titleId, p));
   const fs = new Set(favs.map((f) => Number(f.titleId)));
   const rm = new Map<number, number>(rats.map((r) => [Number(r.titleId), Number(r.score)]));
-  const sorted = [...rows].sort((a, b) => Number(b.pinned) - Number(a.pinned) || String(b.createdAt).localeCompare(String(a.createdAt)));
+  /* v0.27.0 (QOL-4) — numeric timestamp compare (string compare broke when
+   * cloud-merged rows mixed date formats) */
+  const sorted = [...rows].sort((a, b) => Number(b.pinned) - Number(a.pinned) || tsOf(b.createdAt) - tsOf(a.createdAt));
   return sorted.map((r) => {
     const titleId = Number(r.titleId);
     const t = liteById.get(titleId);
@@ -556,7 +751,7 @@ export async function getFavoriteRows(userKey = getUserKey()): Promise<FavoriteR
   if (isDesktopRuntime()) return srv<FavoriteRow[]>("/api/x/favorites");
   const user = userKey || "guest";
   const rows = await db.favorites.where("userKey").equals(user).toArray();
-  rows.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+  rows.sort((a, b) => tsOf(b.createdAt) - tsOf(a.createdAt));
   const out: FavoriteRow[] = [];
   for (const f of rows) {
     const titleId = Number(f.titleId);
@@ -584,7 +779,7 @@ export async function getHistory(userKey = getUserKey()): Promise<HistoryRow[]> 
   if (isDesktopRuntime()) return srv<HistoryRow[]>("/api/x/history");
   const user = userKey || "guest";
   const rows = await db.progress.where("userKey").equals(user).toArray();
-  rows.sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
+  rows.sort((a, b) => tsOf(b.updatedAt) - tsOf(a.updatedAt));
   const out: HistoryRow[] = [];
   for (const r of rows) {
     const titleId = Number(r.titleId);
@@ -624,12 +819,19 @@ export type ContinueItem = {
 export async function getContinueWatching(limit = 12, userKey = getUserKey()): Promise<ContinueItem[]> {
   if (isDesktopRuntime()) return srv<ContinueItem[]>(`/api/x/continue?limit=${limit}`);
   const rows = await getHistory(userKey);
-  return rows
-    .filter((r) => r.duration > 0 && r.position / r.duration < 0.97)
-    .slice(0, limit)
-    .map(({ title, position, duration, episodeId, episodeName, episodeNumber, season }) => ({
-      title, position, duration, episodeId, episodeName, episodeNumber, season,
-    }));
+  /* v0.27.0 (DATA-7) — progress is now PER-EPISODE: one series can have many
+   * rows. Continue-watching still shows ONE card per title — its most recent
+   * unfinished episode. */
+  const seen = new Set<number>();
+  const out: ContinueItem[] = [];
+  for (const r of rows) {
+    if (seen.has(r.title.id)) continue;
+    if (!(r.duration > 0 && r.position / r.duration < 0.97)) continue;
+    seen.add(r.title.id);
+    out.push({ title: r.title, position: r.position, duration: r.duration, episodeId: r.episodeId, episodeName: r.episodeName, episodeNumber: r.episodeNumber, season: r.season });
+    if (out.length >= limit) break;
+  }
+  return out;
 }
 
 /* ------------------------------------------------------------------ */
@@ -955,10 +1157,11 @@ export async function setCollectionItem(
 
 export type CloudMergeBody = {
   favorites?: { slug?: unknown; title?: unknown }[];
-  watchlist?: { slug?: unknown; title?: unknown; status?: unknown }[];
-  ratings?: { slug?: unknown; title?: unknown; score?: unknown }[];
+  watchlist?: { slug?: unknown; title?: unknown; status?: unknown; updatedAt?: unknown }[];
+  ratings?: { slug?: unknown; title?: unknown; score?: unknown; updatedAt?: unknown }[];
   collections?: { name?: unknown; items?: { slug?: unknown; title?: unknown }[] }[];
   progress?: { slug?: unknown; season?: unknown; episode?: unknown; position?: unknown; duration?: unknown; updatedAt?: unknown }[];
+  deletions?: { kind?: unknown; key?: unknown; at?: unknown; action?: unknown; to?: unknown; slug?: unknown }[];
 };
 
 const slugOf = (r: unknown): string => String((r as { slug?: unknown })?.slug ?? "").trim().slice(0, 140);
@@ -966,14 +1169,19 @@ const slugOf = (r: unknown): string => String((r as { slug?: unknown })?.slug ??
 export async function mergeCloudSnapshot(
   body: CloudMergeBody,
   userKey = getUserKey()
-): Promise<{ favoritesAdded: number; listAdded: number; ratingsAdded: number; collectionsAdded: number; collectionItemsAdded: number; progressApplied: number; skipped: number }> {
+): Promise<{ favoritesAdded: number; listAdded: number; listUpdated: number; ratingsAdded: number; collectionsAdded: number; collectionItemsAdded: number; progressApplied: number; deletionsApplied: number; skipped: number }> {
   const user = userKey || "guest";
   let favoritesAdded = 0;
   let listAdded = 0;
+  let listUpdated = 0;
   let ratingsAdded = 0;
   let collectionsAdded = 0;
   let collectionItemsAdded = 0;
+  let progressApplied = 0;
+  let deletionsApplied = 0;
   let skipped = 0;
+  const nowMs = Date.now();
+  const SKEW_MS = 24 * 60 * 60 * 1000;
 
   // one slug → local id pass for the whole payload
   const allSlugs = [
@@ -982,6 +1190,7 @@ export async function mergeCloudSnapshot(
     ...(body.ratings ?? []),
     ...(body.collections ?? []).flatMap((c) => (c?.items ?? []) as { slug?: unknown }[]),
     ...(body.progress ?? []),
+    ...((body.deletions ?? []).filter((d) => String(d?.kind ?? "") !== "collection").map((d) => ({ slug: (d as Record<string, unknown>)?.key }))) as { slug?: unknown }[],
   ]
     .map(slugOf)
     .filter(Boolean);
@@ -991,10 +1200,89 @@ export async function mergeCloudSnapshot(
     if (t) idBySlug.set(s, t.id);
   }
 
-  // favorites
+  /* ---------- deletions first (other devices' sync_del events) ---------- */
+  const deletedSlugs = new Set<string>();
+  const renamedFrom = new Set<string>();
+  for (const d of (body.deletions ?? []).slice(0, 1_000)) {
+    const kind = String(d?.kind ?? "");
+    const key = String(d?.key ?? "").slice(0, 160);
+    const at = typeof d?.at === "number" ? d.at : Date.parse(String(d?.at ?? "")) || 0;
+    if (!kind || !key || !at) continue;
+    if (kind === "favorite" || kind === "watchlist" || kind === "rating") {
+      const titleId = idBySlug.get(key);
+      if (!titleId) continue;
+      const table = kind === "favorite" ? db.favorites : kind === "watchlist" ? db.watchlist : db.ratings;
+      const row = (await table.where("[userKey+titleId]").equals([user, titleId]).first()) as Record<string, unknown> | undefined;
+      if (!row) continue;
+      const rowTs = tsOf(row.updatedAt) || tsOf(row.createdAt);
+      if (at > rowTs) {
+        await table.delete((row as { id: number }).id);
+        deletionsApplied++;
+        deletedSlugs.add(key);
+      }
+      continue;
+    }
+    if (kind === "progress") {
+      if (key === "*") {
+        const rows = (await db.progress.where("userKey").equals(user).toArray()) as unknown as { id: number; updatedAt: string }[];
+        const stale = rows.filter((r) => at > tsOf(r.updatedAt));
+        await db.progress.bulkDelete(stale.map((r) => r.id));
+        deletionsApplied += stale.length;
+      } else {
+        const titleId = idBySlug.get(key);
+        if (!titleId) continue;
+        const rows = (await db.progress.where("[userKey+titleId]").equals([user, titleId]).toArray()) as unknown as { id: number; updatedAt: string }[];
+        const stale = rows.filter((r) => at > tsOf(r.updatedAt));
+        await db.progress.bulkDelete(stale.map((r) => r.id));
+        deletionsApplied += stale.length;
+        if (stale.length) deletedSlugs.add(key);
+      }
+      continue;
+    }
+    if (kind === "collection") {
+      const row = (await db.ucollections.where("[userKey+name]").equals([user, key]).first()) as Record<string, unknown> | undefined;
+      if (!row) continue;
+      if (String(d?.action ?? "delete") === "rename") {
+        const to = String(d?.to ?? "").slice(0, 60);
+        if (!to) continue;
+        renamedFrom.add(key);
+        const dst = (await db.ucollections.where("[userKey+name]").equals([user, to]).first()) as Record<string, unknown> | undefined;
+        if (at > tsOf(row.updatedAt)) {
+          if (dst) {
+            // both exist → keep the target, drop the stale old-name row
+            await db.ucitems.where("collectionId").equals(Number(row.id)).delete();
+            await db.ucollections.delete(Number(row.id));
+          } else {
+            await db.ucollections.update(Number(row.id), { name: to, updatedAt: now() });
+          }
+          deletionsApplied++;
+        }
+      } else if (at > tsOf(row.updatedAt)) {
+        await db.ucitems.where("collectionId").equals(Number(row.id)).delete();
+        await db.ucollections.delete(Number(row.id));
+        deletionsApplied++;
+      }
+      continue;
+    }
+    if (kind === "collection-item") {
+      const row = (await db.ucollections.where("[userKey+name]").equals([user, key]).first()) as Record<string, unknown> | undefined;
+      if (!row) continue;
+      const itemSlug = String(d?.slug ?? "").slice(0, 140);
+      const titleId = idBySlug.get(itemSlug);
+      if (!titleId) continue;
+      const item = (await db.ucitems.where("[collectionId+titleId]").equals([Number(row.id), titleId]).first()) as Record<string, unknown> | undefined;
+      if (item && at > tsOf(item.addedAt)) {
+        await db.ucitems.delete(Number(item.id));
+        deletionsApplied++;
+      }
+    }
+  }
+
+  // favorites — tombstone-aware (a pending offline delete blocks re-adding)
   for (const r of body.favorites ?? []) {
     const slug = slugOf(r);
-    if (!slug) continue;
+    if (!slug || deletedSlugs.has(slug)) continue;
+    if (tombstoneNewerThan("favorite", slug, 0)) continue;
     const titleId = idBySlug.get(slug);
     if (!titleId) {
       skipped++;
@@ -1007,44 +1295,54 @@ export async function mergeCloudSnapshot(
     }
   }
 
-  // watchlist
+  // watchlist — LWW by updated_at (DATA-5), no more fill-gaps-only
   for (const row of body.watchlist ?? []) {
     const slug = slugOf(row);
     const status = String(row?.status ?? "");
-    if (!slug || !STATUSES.has(status)) continue;
+    if (!slug || !STATUSES.has(status) || deletedSlugs.has(slug)) continue;
     const titleId = idBySlug.get(slug);
     if (!titleId) {
       skipped++;
       continue;
     }
-    const ex = await db.watchlist.where("[userKey+titleId]").equals([user, titleId]).first();
+    const cloudTs = typeof row?.updatedAt === "number" ? row.updatedAt : Date.parse(String(row?.updatedAt ?? "")) || 0;
+    if (tombstoneNewerThan("watchlist", slug, cloudTs || nowMs)) continue;
+    const ex = (await db.watchlist.where("[userKey+titleId]").equals([user, titleId]).first()) as Record<string, unknown> | undefined;
     if (!ex) {
       await db.watchlist.add({ userKey: user, titleId, status, note: "", pinned: false, createdAt: now(), updatedAt: now() });
       listAdded++;
+    } else if (cloudTs > tsOf(ex.updatedAt) + 500) {
+      await db.watchlist.update(Number(ex.id), { status, updatedAt: now() });
+      listUpdated++;
     }
   }
 
-  // ratings (fill gaps only)
+  // ratings — LWW by updated_at
   for (const row of body.ratings ?? []) {
     const slug = slugOf(row);
     const score = Number(row?.score);
-    if (!slug || !Number.isFinite(score) || score < 1 || score > 10) continue;
+    if (!slug || !Number.isFinite(score) || score < 1 || score > 10 || deletedSlugs.has(slug)) continue;
     const titleId = idBySlug.get(slug);
     if (!titleId) {
       skipped++;
       continue;
     }
-    const ex = await db.ratings.where("[userKey+titleId]").equals([user, titleId]).first();
+    const cloudTs = typeof row?.updatedAt === "number" ? row.updatedAt : Date.parse(String(row?.updatedAt ?? "")) || 0;
+    if (tombstoneNewerThan("rating", slug, cloudTs || nowMs)) continue;
+    const ex = (await db.ratings.where("[userKey+titleId]").equals([user, titleId]).first()) as Record<string, unknown> | undefined;
     if (!ex) {
       await db.ratings.add({ userKey: user, titleId, score: Math.round(score), updatedAt: now() });
+      ratingsAdded++;
+    } else if (cloudTs > tsOf(ex.updatedAt) + 500) {
+      await db.ratings.update(Number(ex.id), { score: Math.round(score), updatedAt: now() });
       ratingsAdded++;
     }
   }
 
-  // collections (matched by name)
+  // collections (matched by name; renames arrive as deletion events above)
   for (const col of body.collections ?? []) {
     const name = String(col?.name ?? "").trim().slice(0, 60);
-    if (!name) continue;
+    if (!name || renamedFrom.has(name)) continue;
     let row = await db.ucollections.where("[userKey+name]").equals([user, name]).first();
     if (!row) {
       const id = await db.ucollections.add({ userKey: user, name, createdAt: now(), updatedAt: now() });
@@ -1068,15 +1366,15 @@ export async function mergeCloudSnapshot(
     }
   }
 
-  // watch progress — NEWER WINS per title; episodes resolved the stable way
-  // via the (titleId, season, number) formula instead of the drifting id
-  const toTs = (v: unknown): number => (typeof v === "number" ? v : Date.parse(String(v)) || 0);
-  let progressApplied = 0;
+  // watch progress — NEWER WINS per (title, episode) with the SAME clock-skew
+  // guard as the desktop merge (DATA-8); episodes resolved the stable way via
+  // the (titleId, season, number) formula instead of the drifting id
   for (const row of body.progress ?? []) {
     const slug = slugOf(row);
     const position = Number(row?.position ?? 0);
     const duration = Number(row?.duration ?? 0);
-    if (!slug || !Number.isFinite(position)) continue;
+    if (!slug || !Number.isFinite(position) || deletedSlugs.has(slug)) continue;
+    if (tombstoneNewerThan("progress", slug, 0)) continue;
     const titleId = idBySlug.get(slug);
     if (!titleId) {
       skipped++;
@@ -1085,19 +1383,24 @@ export async function mergeCloudSnapshot(
     const season = Math.max(0, Math.round(Number(row?.season ?? 0)) || 0);
     const number = Math.max(0, Math.round(Number(row?.episode ?? 0)) || 0);
     const epId = season > 0 && number > 0 ? episodeId(titleId, season, number) : null;
-    const incomingTs = toTs(row?.updatedAt) || 0;
-    const ex = await db.progress.where("[userKey+titleId]").equals([user, titleId]).first();
+    let incomingTs = typeof row?.updatedAt === "number" ? row.updatedAt : Date.parse(String(row?.updatedAt ?? "")) || 0;
+    if (incomingTs > nowMs + SKEW_MS) incomingTs = nowMs; // wrong device clock
+    const rows = (await db.progress.where("[userKey+titleId]").equals([user, titleId]).toArray()) as unknown as { id: number; episodeId: number | null; position: number; duration: number; updatedAt: string }[];
+    const ex = rows.find((r) => (r.episodeId ?? null) === epId);
     if (!ex) {
       await db.progress.add({ userKey: user, titleId, episodeId: epId, position, duration, updatedAt: new Date(incomingTs || Date.now()).toISOString() });
       progressApplied++;
     } else {
-      const exRow = ex as unknown as { id: number; updatedAt: string; episodeId: number | null };
-      if (incomingTs > toTs(exRow.updatedAt) + 500) {
-        await db.progress.put({ ...exRow, episodeId: epId ?? exRow.episodeId, position, duration, updatedAt: new Date(incomingTs || Date.now()).toISOString() });
+      const exTs = tsOf(ex.updatedAt);
+      const newer = incomingTs > exTs + 500;
+      const closeCall = Math.abs(incomingTs - exTs) <= 2_000;
+      const further = position > Number(ex.position) + 1;
+      if (newer || (closeCall && further)) {
+        await db.progress.put({ ...ex, position, duration, updatedAt: new Date(incomingTs || Date.now()).toISOString() });
         progressApplied++;
       }
     }
   }
 
-  return { favoritesAdded, listAdded, ratingsAdded, collectionsAdded, collectionItemsAdded, progressApplied, skipped };
+  return { favoritesAdded, listAdded, listUpdated, ratingsAdded, collectionsAdded, collectionItemsAdded, progressApplied, deletionsApplied, skipped };
 }

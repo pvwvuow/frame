@@ -14,6 +14,7 @@ import { isLocale } from "@/lib/i18n";
 import { fileToAvatarDataUrl } from "@/lib/avatar";
 import { IS_MOBILE } from "@/lib/links";
 import { getPlayerEngine, setPlayerEngine, type PlayerEngine } from "@/lib/player-prefs";
+import { useFocusTrap } from "@/lib/focus-trap";
 
 export const AVATARS = [
   "from-brand to-purple-600",
@@ -86,7 +87,7 @@ function Toggle({ checked, onChange, label, hint, disabled }: { checked: boolean
         <span className="block text-sm font-bold text-white">{label}</span>
         {hint && <span className="mt-0.5 block text-[11px] text-zinc-500">{hint}</span>}
       </span>
-      <button type="button" role="switch" aria-checked={checked} disabled={disabled} onClick={() => onChange(!checked)} className={`relative h-6 w-11 shrink-0 rounded-full transition ${checked ? "bg-brand" : "bg-white/15"}`}>
+      <button type="button" role="switch" aria-checked={checked} disabled={disabled} onClick={() => onChange(!checked)} className={`tap-expand relative h-6 w-11 shrink-0 rounded-full transition ${checked ? "bg-brand" : "bg-white/15"}`}>
         <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${checked ? "start-[22px]" : "start-0.5"}`} />
       </button>
     </label>
@@ -156,14 +157,31 @@ export default function SettingsForm({ initial }: { initial: ProfileData }) {
     navigator.storage?.estimate?.().then((e) => setStorage({ used: e.usage ?? 0, quota: e.quota ?? 0 })).catch(() => {});
   }, [electron]);
 
-  // warn on unsaved changes
+  // warn on unsaved changes — v0.27.0 (UI-6): beforeunload alone only covers
+  // close/refresh. In-app link clicks bypassed it silently, so the dirty bar
+  // («تغییرات ذخیره‌نشده دارید») lied. A capture-phase click interceptor now
+  // guards internal navigation too.
   useEffect(() => {
     if (!dirty) return;
     const h = (e: BeforeUnloadEvent) => {
       e.preventDefault();
     };
+    const onCaptureClick = (e: MouseEvent) => {
+      const a = (e.target as HTMLElement)?.closest?.("a");
+      if (!a) return;
+      const href = a.getAttribute("href") ?? "";
+      if (!href || href.startsWith("#") || a.target === "_blank" || e.metaKey || e.ctrlKey || e.shiftKey) return;
+      if (!window.confirm("تغییرات ذخیره‌نشده دارید — بدون ذخیره خارج می‌شوید؟")) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    };
     window.addEventListener("beforeunload", h);
-    return () => window.removeEventListener("beforeunload", h);
+    document.addEventListener("click", onCaptureClick, true);
+    return () => {
+      window.removeEventListener("beforeunload", h);
+      document.removeEventListener("click", onCaptureClick, true);
+    };
   }, [dirty]);
 
   const save = () =>
@@ -616,26 +634,36 @@ export default function SettingsForm({ initial }: { initial: ProfileData }) {
         </div>
       </div>
 
-      {danger && (
-        <div className="fixed inset-0 z-[90] grid place-items-center p-4" style={{ background: "var(--overlay)", backdropFilter: "blur(6px)" }} onMouseDown={(e) => e.target === e.currentTarget && setDanger(null)}>
-          <div role="alertdialog" aria-modal="true" className="glass-strong glass-in w-full max-w-sm rounded-3xl p-6">
-            <h3 className="text-lg font-extrabold text-white">مطمئن هستید؟</h3>
-            <p className="mt-2 text-sm leading-6 text-zinc-300">
-              {danger === "all"
-                ? session
-                  ? "تمام داده‌های حساب — لیست، علاقه‌مندی‌ها، تاریخچه، امتیازها، مجموعه‌ها و نسخه‌ی ابری روی همه‌ی دستگاه‌ها — حذف می‌شود. نام کاربری و اشتراک VIP باقی می‌ماند."
-                  : "تمام داده‌های شما شامل لیست، علاقه‌مندی‌ها، تاریخچه، امتیازها، مجموعه‌ها و پروفایل حذف می‌شود."
-                : "این داده‌ها برای همیشه حذف می‌شوند و قابل بازیابی نیستند."}
-            </p>
-            <div className="mt-6 flex justify-end gap-2">
-              <button type="button" onClick={() => setDanger(null)} className="h-10 rounded-full px-4 text-sm font-bold text-zinc-300 hover:bg-white/10">انصراف</button>
-              <button type="button" onClick={() => wipe(danger)} disabled={pending} className="h-10 rounded-full bg-rose-600 px-5 text-sm font-bold text-white hover:bg-rose-700 disabled:opacity-50">
-                {pending ? "در حال حذف…" : "بله، حذف کن"}
-              </button>
-            </div>
-          </div>
+      {danger && <DangerDialog scope={danger} pending={pending} signedIn={!!session} onClose={() => setDanger(null)} onConfirm={() => wipe(danger)} />}
+    </div>
+  );
+}
+
+/* v0.27.0 (A11Y-3) — the danger alertdialog now carries its accessible name
+ * (aria-labelledby), description, a focus trap, and the initial focus lands
+ * on the SAFE action (انصراف). */
+function DangerDialog({ scope, pending, signedIn, onClose, onConfirm }: { scope: string; pending: boolean; signedIn: boolean; onClose: () => void; onConfirm: () => void }) {
+  const trapRef = useFocusTrap<HTMLDivElement>(true, { onClose });
+  const titleId = "danger-title";
+  const descId = "danger-desc";
+  return (
+    <div className="fixed inset-0 z-[90] grid place-items-center p-4" style={{ background: "var(--overlay)", backdropFilter: "blur(6px)" }} onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <div ref={trapRef} role="alertdialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={descId} className="glass-strong glass-in w-full max-w-sm rounded-3xl p-6">
+        <h3 id={titleId} className="text-lg font-extrabold text-white">مطمئن هستید؟</h3>
+        <p id={descId} className="mt-2 text-sm leading-6 text-zinc-300">
+          {scope === "all"
+            ? signedIn
+              ? "تمام داده‌های حساب — لیست، علاقه‌مندی‌ها، تاریخچه، امتیازها، مجموعه‌ها و نسخه‌ی ابری روی همه‌ی دستگاه‌ها — حذف می‌شود. نام کاربری و اشتراک VIP باقی می‌ماند."
+              : "تمام داده‌های شما شامل لیست، علاقه‌مندی‌ها، تاریخچه، امتیازها، مجموعه‌ها و پروفایل حذف می‌شود."
+            : "این داده‌ها برای همیشه حذف می‌شوند و قابل بازیابی نیستند."}
+        </p>
+        <div className="mt-6 flex justify-end gap-2">
+          <button type="button" onClick={onClose} className="h-10 rounded-full px-4 text-sm font-bold text-zinc-300 hover:bg-white/10">انصراف</button>
+          <button type="button" onClick={onConfirm} disabled={pending} className="h-10 rounded-full bg-rose-600 px-5 text-sm font-bold text-white hover:bg-rose-700 disabled:opacity-50">
+            {pending ? "در حال حذف…" : "بله، حذف کن"}
+          </button>
         </div>
-      )}
+      </div>
     </div>
   );
 }

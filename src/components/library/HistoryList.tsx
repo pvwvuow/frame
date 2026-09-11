@@ -10,6 +10,7 @@ import FavoriteButton from "../FavoriteButton";
 import WatchlistButton from "../WatchlistButton";
 import { PlayIcon, TrashIcon, HistoryIcon, CheckCircleIcon } from "../Icons";
 import TitleName from "@/components/TitleName";
+import { pushProgressDelete } from "@/lib/cloud";
 import { titleHref, watchHref } from "@/lib/mobile-links";
 
 function dayLabel(iso: string) {
@@ -42,6 +43,8 @@ export default function HistoryList({ rows }: { rows: HistoryRow[] }) {
     start(async () => {
       try {
         await fetch("/api/progress", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify(ids ? { titleIds: ids } : {}) });
+        // v0.27.0 (DATA-3) — deletions propagate to the cloud + other devices
+        void pushProgressDelete(ids);
         toast.success(ids ? "از تاریخچه حذف شد" : "تاریخچه پاک شد");
         setConfirm(false);
         router.refresh();

@@ -14,6 +14,8 @@ import StatusSelect from "../StatusSelect";
 import RatingControl from "../RatingControl";
 import { useLibrary } from "./LibraryProvider";
 import { useQuickView } from "../quickview/QuickViewProvider";
+import { pushWatchlist } from "@/lib/cloud";
+import { useFocusTrap } from "@/lib/focus-trap";
 import {
   BookmarkIcon, SearchIcon, CloseIcon, GridIcon, ListIcon, SortIcon, TrashIcon, PinIcon, PlayIcon, StarIcon,
   CheckCircleIcon, SquareIcon, NoteIcon, DownloadIcon, ShuffleIcon, InfoIcon, HeartIcon, ChevronDown,
@@ -180,11 +182,15 @@ export default function MyListManager({ rows }: { rows: ListRow[] }) {
     start(async () => {
       try {
         await api("DELETE", { titleIds: ids });
+        // v0.27.0 (DATA-1/2) — removals MUST reach the cloud (queued while
+        // offline) or the next pull resurrects the rows (union-merge)
+        ids.forEach((id) => void pushWatchlist(id, null));
         toast.success(`${fa(ids.length)} عنوان از لیست حذف شد`, {
           action: {
             label: "بازگردانی",
             onClick: async () => {
               await api("PUT", { titleIds: ids, action: "add" });
+              for (const id of ids) void pushWatchlist(id, "planned");
               await lib.refresh();
               router.refresh();
             },
@@ -200,9 +206,23 @@ export default function MyListManager({ rows }: { rows: ListRow[] }) {
 
   const bulkStatus = (status: ListStatus) =>
     start(async () => {
+      const prev = [...selected].map((id) => ({ id, s: lib.list.get(id) ?? null }));
       try {
         await api("PUT", { titleIds: [...selected], action: "status", status });
-        toast.success(`وضعیت ${fa(selected.size)} عنوان تغییر کرد`);
+        toast.success(`وضعیت ${fa(selected.size)} عنوان تغییر کرد`, {
+          action: {
+            // v0.27.0 (UI-7) — bulk status changes are undoable like removals
+            label: "واگرد",
+            onClick: async () => {
+              for (const { id, s } of prev) {
+                if (!s) continue;
+                await api("PATCH", { titleId: id, status: s });
+              }
+              await lib.refresh();
+              router.refresh();
+            },
+          },
+        });
         await lib.refresh();
         router.refresh();
         exitSelect();
@@ -213,9 +233,20 @@ export default function MyListManager({ rows }: { rows: ListRow[] }) {
 
   const bulkFavorite = () =>
     start(async () => {
+      const ids = [...selected];
       try {
-        await api("PUT", { titleIds: [...selected] }, "/api/favorites");
-        toast.success(`${fa(selected.size)} عنوان به علاقه‌مندی‌ها اضافه شد`);
+        await api("PUT", { titleIds: ids }, "/api/favorites");
+        toast.success(`${fa(ids.length)} عنوان به علاقه‌مندی‌ها اضافه شد`, {
+          action: {
+            // v0.27.0 (UI-7) — bulk favorite is undoable
+            label: "واگرد",
+            onClick: async () => {
+              await api("DELETE", { titleIds: ids }, "/api/favorites");
+              await lib.refresh();
+              router.refresh();
+            },
+          },
+        });
         await lib.refresh();
         router.refresh();
         exitSelect();
@@ -250,6 +281,8 @@ export default function MyListManager({ rows }: { rows: ListRow[] }) {
   const clearAll = () =>
     start(async () => {
       try {
+        // v0.27.0 (DATA-1/2) — every removed row must also leave the cloud
+        [...lib.list.keys()].forEach((id) => void pushWatchlist(id, null));
         await api("DELETE", {});
         toast.success("لیست شما پاک شد");
         setConfirmClear(false);
@@ -504,21 +537,7 @@ export default function MyListManager({ rows }: { rows: ListRow[] }) {
       {noteFor && <NoteDialog row={noteFor} onClose={() => setNoteFor(null)} onSave={(n) => saveNote(noteFor, n)} pending={pending} />}
 
       {/* clear confirm */}
-      {confirmClear && (
-        <div className="fixed inset-0 z-[90] grid place-items-center bg-black/80 p-4 backdrop-blur-sm" onMouseDown={(e) => e.target === e.currentTarget && setConfirmClear(false)}>
-          <div className="glass w-full max-w-sm rounded-3xl p-6 text-center">
-            <span className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-rose-500/15 text-rose-400">
-              <TrashIcon width={26} height={26} />
-            </span>
-            <h3 className="mt-4 text-lg font-black text-white">پاک کردن کل لیست؟</h3>
-            <p className="mt-2 text-sm leading-7 text-zinc-400">{fa(live.length)} عنوان به‌همراه وضعیت و یادداشت‌ها حذف می‌شوند. این عمل قابل بازگشت نیست.</p>
-            <div className="mt-6 flex gap-2">
-              <button type="button" onClick={() => setConfirmClear(false)} className="h-11 flex-1 rounded-full border border-white/15 text-sm font-bold text-white hover:bg-white/10">انصراف</button>
-              <button type="button" onClick={clearAll} disabled={pending} className="h-11 flex-1 rounded-full bg-rose-600 text-sm font-bold text-white hover:bg-rose-700 disabled:opacity-50">بله، پاک کن</button>
-            </div>
-          </div>
-        </div>
-      )}
+      {confirmClear && <ClearConfirmDialog count={live.length} pending={pending} onClose={() => setConfirmClear(false)} onConfirm={clearAll} />}
     </div>
   );
 }
@@ -541,14 +560,17 @@ function GridItem({ r, selectMode, selected, onSelect, onRemove, onPin, onNote }
         </button>
       )}
       {!selectMode && (
-        <div className="absolute start-2 top-2 z-10 flex flex-col gap-1 opacity-0 transition group-hover/list:opacity-100">
-          <button type="button" onClick={onRemove} aria-label="حذف از لیست" title="حذف از لیست" className="grid h-8 w-8 place-items-center rounded-full bg-black/70 text-zinc-300 ring-1 ring-white/15 backdrop-blur hover:bg-brand hover:text-white">
+        /* v0.27.0 (UI-1) — the hover-only action rail was INVISIBLE on touch
+         * devices: no hover = no way to remove/pin/note in the grid view.
+         * `lk-actions` is force-shown on hover-less (touch) screens via CSS. */
+        <div className="lk-actions absolute start-2 top-2 z-10 flex flex-col gap-1 opacity-0 transition group-hover/list:opacity-100">
+          <button type="button" onClick={onRemove} aria-label="حذف از لیست" title="حذف از لیست" className="tap-expand grid h-8 w-8 place-items-center rounded-full bg-black/70 text-zinc-300 ring-1 ring-white/15 backdrop-blur hover:bg-brand hover:text-white">
             <TrashIcon width={14} height={14} />
           </button>
-          <button type="button" onClick={onPin} aria-label="سنجاق" title={r.pinned ? "برداشتن سنجاق" : "سنجاق به بالا"} className={`grid h-8 w-8 place-items-center rounded-full ring-1 ring-white/15 backdrop-blur ${r.pinned ? "bg-amber-400 text-black" : "bg-black/70 text-zinc-300 hover:bg-white hover:text-black"}`}>
+          <button type="button" onClick={onPin} aria-label="سنجاق" title={r.pinned ? "برداشتن سنجاق" : "سنجاق به بالا"} className={`tap-expand grid h-8 w-8 place-items-center rounded-full ring-1 ring-white/15 backdrop-blur ${r.pinned ? "bg-amber-400 text-black" : "bg-black/70 text-zinc-300 hover:bg-white hover:text-black"}`}>
             <PinIcon width={14} height={14} filled={r.pinned} />
           </button>
-          <button type="button" onClick={onNote} aria-label="یادداشت" title="یادداشت" className={`grid h-8 w-8 place-items-center rounded-full ring-1 ring-white/15 backdrop-blur ${r.note ? "bg-sky-500 text-white" : "bg-black/70 text-zinc-300 hover:bg-white hover:text-black"}`}>
+          <button type="button" onClick={onNote} aria-label="یادداشت" title="یادداشت" className={`tap-expand grid h-8 w-8 place-items-center rounded-full ring-1 ring-white/15 backdrop-blur ${r.note ? "bg-sky-500 text-white" : "bg-black/70 text-zinc-300 hover:bg-white hover:text-black"}`}>
             <NoteIcon width={14} height={14} />
           </button>
         </div>
@@ -626,20 +648,23 @@ function ListItem({ r, selectMode, selected, onSelect, onRemove, onPin, onNote, 
 
 function NoteDialog({ row, onClose, onSave, pending }: { row: ListRow; onClose: () => void; onSave: (n: string) => void; pending: boolean }) {
   const [v, setV] = useState(row.note);
+  /* v0.27.0 (A11Y-1/2) — real dialog semantics + focus trap + focus restore */
+  const trapRef = useFocusTrap<HTMLDivElement>(true, { onClose, initialFocus: () => null });
   useEffect(() => {
     const k = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", k);
     return () => window.removeEventListener("keydown", k);
   }, [onClose]);
+  const noteId = "note-dialog-title";
   return (
     <div className="fixed inset-0 z-[90] grid place-items-center bg-black/80 p-4 backdrop-blur-sm" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="glass w-full max-w-md rounded-3xl p-6">
+      <div ref={trapRef} role="dialog" aria-modal="true" aria-labelledby={noteId} className="glass w-full max-w-md rounded-3xl p-6">
         <div className="flex items-center gap-3">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={row.title.poster} alt="" loading="lazy" decoding="async" className="h-16 w-11 rounded-lg object-cover" />
           <div>
             <p className="text-xs text-zinc-400">یادداشت شخصی برای</p>
-            <h3 className="text-lg font-black text-white">{row.title.title}</h3>
+            <h3 id={noteId} className="text-lg font-black text-white">{row.title.title}</h3>
           </div>
           <button type="button" onClick={onClose} className="ms-auto text-zinc-400 hover:text-white" aria-label="بستن"><CloseIcon /></button>
         </div>
@@ -683,6 +708,33 @@ function EmptyState({ hasAny, onReset }: { hasAny: boolean; onReset: () => void 
               <Link href="/series" className="rounded-full border border-white/15 bg-white/5 px-6 py-2.5 text-sm font-bold text-white hover:bg-white/10">مرور سریال‌ها</Link>
             </>
           )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* v0.27.0 (A11Y-2) — the clear-all confirm used to be a bare <div>: no
+ * role, no name, no focus management. It is now a real dialog. */
+function ClearConfirmDialog({ count, pending, onClose, onConfirm }: { count: number; pending: boolean; onClose: () => void; onConfirm: () => void }) {
+  const trapRef = useFocusTrap<HTMLDivElement>(true, {
+    onClose,
+    // focus lands on the SAFE action (cancel) — a stray Enter must not nuke the list
+    initialFocus: () => null,
+  });
+  const titleId = "clear-list-title";
+  const descId = "clear-list-desc";
+  return (
+    <div className="fixed inset-0 z-[90] grid place-items-center bg-black/80 p-4 backdrop-blur-sm" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <div ref={trapRef} role="dialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={descId} className="glass w-full max-w-sm rounded-3xl p-6 text-center">
+        <span className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-rose-500/15 text-rose-400">
+          <TrashIcon width={26} height={26} />
+        </span>
+        <h3 id={titleId} className="mt-4 text-lg font-black text-white">پاک کردن کل لیست؟</h3>
+        <p id={descId} className="mt-2 text-sm leading-7 text-zinc-400">{fa(count)} عنوان به‌همراه وضعیت و یادداشت‌ها حذف می‌شوند. این عمل قابل بازگشت نیست.</p>
+        <div className="mt-6 flex gap-2">
+          <button type="button" onClick={onClose} className="h-11 flex-1 rounded-full border border-white/15 text-sm font-bold text-white hover:bg-white/10">انصراف</button>
+          <button type="button" onClick={onConfirm} disabled={pending} className="h-11 flex-1 rounded-full bg-rose-600 text-sm font-bold text-white hover:bg-rose-700 disabled:opacity-50">بله، پاک کن</button>
         </div>
       </div>
     </div>

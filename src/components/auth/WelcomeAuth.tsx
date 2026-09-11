@@ -20,6 +20,7 @@ import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { useCloudSession } from "@/lib/cloud";
 import { useI18n } from "../i18n/LocaleProvider";
 import { CloseIcon, UserIcon } from "../Icons";
+import { useFocusTrap } from "@/lib/focus-trap";
 
 const SEEN_KEY = "frame.welcome.v1";
 
@@ -84,6 +85,10 @@ export default function WelcomeAuth() {
     return () => document.removeEventListener("keydown", onKey);
   }, [show]);
 
+  /* v0.27.0 (A11Y-1) — focus lands on the primary CTA, Tab cycles inside
+   * the dialog, and closing restores focus to the trigger. */
+  const trapRef = useFocusTrap<HTMLDivElement>(show, { onClose: () => setShow(false) });
+
   const go = useCallback(() => {
     markSeen();
     setShow(false);
@@ -103,6 +108,7 @@ export default function WelcomeAuth() {
           onMouseDown={dismiss}
         >
           <motion.div
+            ref={trapRef}
             role="dialog"
             aria-modal="true"
             aria-label={tx("dialogLabel")}

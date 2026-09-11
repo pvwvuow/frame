@@ -8,7 +8,7 @@
 
 import {
   whenReady, getCatalogPage, search, getFullTitle, getEpisodes, getSimilar,
-  getTitleLiteBySlug, liteById, liteBySlug, isReady, bumpViews,
+  getTitleLiteBySlug, liteById, liteBySlug, isReady, bumpViews, db,
   type LiteTitle,
 } from "./db";
 import {
@@ -51,6 +51,23 @@ const routes: { method: string; pattern: string; handler: Handler }[] = [
   { method: "DELETE", pattern: "/api/watchlist", handler: ({ body }) => removeWatchlist(body.titleId ? Number(body.titleId) : undefined).then(() => ({ ok: true })) },
 
   { method: "POST", pattern: "/api/progress", handler: ({ body }) => upsertProgress({ titleId: Number(body.titleId), episodeId: (body.episodeId as number | null) ?? null, position: Number(body.position ?? 0), duration: Number(body.duration ?? 0) }).then(() => ({ ok: true })) },
+  { method: "GET", pattern: "/api/progress", handler: ({ url }) =>
+      /* v0.27.0 (DATA-7) — per-episode progress map for the episodes sheet /
+       * native manifest (previously 404'd on mobile: ticks were always empty). */
+      db.progress
+        .where("userKey").equals(getUserKey())
+        .toArray()
+        .then((rows) => {
+          const titleId = Number(url.searchParams.get("titleId")) || 0;
+          const list = rows
+            .filter((r) => Number((r as { titleId: number }).titleId) === titleId)
+            .map((r) => ({
+              episodeId: ((r as { episodeId?: number | null }).episodeId ?? null) as number | null,
+              position: Number((r as { position: number }).position),
+              duration: Number((r as { duration: number }).duration),
+            }));
+          return { progress: list };
+        }) },
   { method: "DELETE", pattern: "/api/progress", handler: ({ body }) => removeProgress(body.titleId ? Number(body.titleId) : body.titleIds ? (body.titleIds as unknown[]).map(Number) : undefined).then((removed) => ({ ok: true, removed })) },
 
   { method: "POST", pattern: "/api/rating", handler: ({ body }) => setRating(Number(body.titleId), Math.round(Number(body.score ?? 0))).then((score) => ({ score })) },
@@ -59,9 +76,10 @@ const routes: { method: string; pattern: string; handler: Handler }[] = [
   { method: "PATCH", pattern: "/api/profile", handler: ({ body }) => patchProfile(body) },
   { method: "DELETE", pattern: "/api/profile", handler: ({ body }) => wipeProfile(String(body.scope ?? "all")).then(() => ({ ok: true })) },
 
-  /* v0.10.35 — per-account data spaces (same contract as the desktop route) */
+  /* v0.10.35 — per-account data spaces (same contract as the desktop route);
+   * attached:true = the local rotation succeeded (cloud sync may proceed) */
   { method: "POST", pattern: "/api/identity", handler: ({ body }) =>
-      switchIdentity(typeof body.accountId === "string" && body.accountId ? String(body.accountId) : null, Boolean(body.reset)) },
+      switchIdentity(typeof body.accountId === "string" && body.accountId ? String(body.accountId) : null, Boolean(body.reset)).then((r) => ({ ...r, attached: true })) },
   { method: "GET", pattern: "/api/identity", handler: () => ({ uid: getUserKey(), mobile: true }) },
 
   { method: "GET", pattern: "/api/notifications", handler: async () => getNotifications() },

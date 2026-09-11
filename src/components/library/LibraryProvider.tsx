@@ -7,6 +7,17 @@ import type { ListStatus } from "@/lib/library-shared";
 import { logEvent, pushFavorite, pushRating, pushWatchlist, useCloudSession } from "@/lib/cloud";
 import { attachIdentity } from "@/lib/identity";
 
+/** v0.27.0 (DATA-4) — the local save DID succeed (the local DB is the UI's
+ *  source of truth), but the CLOUD push may be queued while offline. The
+ *  toast must never claim a cloud sync that has not happened yet. */
+function syncAwareToast(success: () => void) {
+  if (typeof navigator !== "undefined" && navigator.onLine === false) {
+    toast.info("ذخیره شد — با وصل‌شدن اینترنت سینک می‌شود");
+  } else {
+    success();
+  }
+}
+
 type Profile = { displayName: string; avatar: number; avatarImage?: string | null; reduceMotion: boolean; kidsMode?: boolean; hasPin?: boolean };
 
 type Ctx = {
@@ -133,9 +144,11 @@ export default function LibraryProvider({ children }: { children: ReactNode }) {
         const d = await call<{ inList: boolean }>("/api/watchlist", "POST", { titleId: id, value: !was });
         pushWatchlist(id, d.inList ? "planned" : null);
         logEvent(d.inList ? "watchlist_add" : "watchlist_remove", { titleId: id, name });
-        toast.success(d.inList ? `«${name ?? "عنوان"}» به لیست شما اضافه شد` : `«${name ?? "عنوان"}» از لیست حذف شد`, {
-          action: d.inList ? { label: "مشاهده لیست", onClick: () => router.push("/my-list") } : undefined,
-        });
+        syncAwareToast(() =>
+          toast.success(d.inList ? `«${name ?? "عنوان"}» به لیست شما اضافه شد` : `«${name ?? "عنوان"}» از لیست حذف شد`, {
+            action: d.inList ? { label: "مشاهده لیست", onClick: () => router.push("/my-list") } : undefined,
+          })
+        );
         softRefresh();
       } catch {
         setList((m) => {
@@ -163,9 +176,11 @@ export default function LibraryProvider({ children }: { children: ReactNode }) {
         const d = await call<{ isFavorite: boolean }>("/api/favorites", "POST", { titleId: id, value: !was });
         pushFavorite(id, d.isFavorite);
         logEvent(d.isFavorite ? "favorite_add" : "favorite_remove", { titleId: id, name });
-        toast.success(d.isFavorite ? `«${name ?? "عنوان"}» به علاقه‌مندی‌ها اضافه شد ❤️` : `«${name ?? "عنوان"}» از علاقه‌مندی‌ها حذف شد`, {
-          action: d.isFavorite ? { label: "علاقه‌مندی‌ها", onClick: () => router.push("/favorites") } : undefined,
-        });
+        syncAwareToast(() =>
+          toast.success(d.isFavorite ? `«${name ?? "عنوان"}» به علاقه‌مندی‌ها اضافه شد ❤️` : `«${name ?? "عنوان"}» از علاقه‌مندی‌ها حذف شد`, {
+            action: d.isFavorite ? { label: "علاقه‌مندی‌ها", onClick: () => router.push("/favorites") } : undefined,
+          })
+        );
         softRefresh();
       } catch {
         setFavorites((s) => {
@@ -215,7 +230,7 @@ export default function LibraryProvider({ children }: { children: ReactNode }) {
         await call("/api/rating", "POST", { titleId: id, score });
         pushRating(id, score > 0 ? score : null);
         logEvent(score > 0 ? "rate_set" : "rate_remove", { titleId: id, score });
-        toast.success(score > 0 ? `امتیاز شما ثبت شد: ${score}/10` : "امتیاز شما حذف شد");
+        syncAwareToast(() => toast.success(score > 0 ? `امتیاز شما ثبت شد: ${score}/10` : "امتیاز شما حذف شد"));
         softRefresh();
       } catch {
         setRatings((m) => {

@@ -99,7 +99,35 @@ const RUNTIME_DDL: string[] = [
   "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 )`,
   `CREATE INDEX IF NOT EXISTS "AccountSpace_uid_idx" ON "AccountSpace"("uid" ASC)`,
+  /* v0.27.0 (DATA-7) — per-EPISODE progress: the title-level WatchProgress
+   * row stays the continue-watching pointer; this table remembers EVERY
+   * episode position. Additive (CREATE IF NOT EXISTS) — existing DBs get it
+   * at boot with zero migration risk. */
+  `CREATE TABLE IF NOT EXISTS "WatchEpisodeProgress" (
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+  "userKey" TEXT NOT NULL,
+  "titleId" INTEGER NOT NULL,
+  "episodeId" INTEGER NOT NULL,
+  "position" REAL NOT NULL DEFAULT 0,
+  "duration" REAL NOT NULL DEFAULT 0,
+  "updatedAt" DATETIME NOT NULL
+)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS "WatchEpisodeProgress_userKey_titleId_episodeId_key" ON "WatchEpisodeProgress"("userKey" ASC, "titleId" ASC, "episodeId" ASC)`,
+  `CREATE INDEX IF NOT EXISTS "WatchEpisodeProgress_userKey_titleId_idx" ON "WatchEpisodeProgress"("userKey" ASC, "titleId" ASC)`,
 ];
+
+/** v0.27.0 (DATA-10) — additive column helper: `ALTER TABLE ADD COLUMN` is
+ * idempotent ONLY when guarded by a pragma check (SQLite has no IF NOT
+ * EXISTS for columns). */
+async function ensureColumn(table: string, column: string, ddl: string): Promise<void> {
+  try {
+    const cols = (await db.$queryRawUnsafe<{ name: string }[]>(`PRAGMA table_info("${table}")`)) as { name: string }[];
+    if (Array.isArray(cols) && cols.some((c) => c.name === column)) return;
+    await db.$executeRawUnsafe(ddl);
+  } catch (e) {
+    console.error("[db] ensureColumn failed:", table + "." + column, e);
+  }
+}
 
 export function ensureRuntimeSchema(): Promise<void> {
   if (!schemaPromise) {
@@ -113,6 +141,8 @@ export function ensureRuntimeSchema(): Promise<void> {
           console.error("[db] runtime schema ensure failed:", sql.slice(0, 48), e);
         }
       }
+      // v0.27.0 (DATA-10) — the synced player-prefs blob on UserProfile
+      await ensureColumn("UserProfile", "playerPrefs", `ALTER TABLE "UserProfile" ADD COLUMN "playerPrefs" TEXT`);
     })();
   }
   return schemaPromise;

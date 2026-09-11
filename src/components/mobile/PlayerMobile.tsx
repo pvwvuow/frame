@@ -37,6 +37,7 @@
  */
 import Link from "next/link";
 import { pushProgressOne } from "@/lib/cloud";
+import { markProfilePlaybackTouched } from "@/lib/cloud";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { formatClock, fa } from "@/lib/format";
@@ -362,7 +363,8 @@ export default function PlayerMobile() {
 
   // restore prefs once — every one degrades gracefully to its default
   useEffect(() => {
-    setSubDelayState(getSubDelay());
+    // v0.27.0 (DATA-11) — per-title subtitle delay (fallback: the global key)
+    setSubDelayState(getSubDelay(slug));
     setSubPosState(getSubPos());
     setOrientLockState(getOrientLock());
     setAutoLockState(getAutoLock());
@@ -2987,7 +2989,8 @@ export default function PlayerMobile() {
                         haptic(8);
                         const nv = d === 0 ? 0 : Math.round((subDelay + d) * 10) / 10;
                         setSubDelayState(nv);
-                        setSubDelay(nv);
+                        setSubDelay(nv, slug);
+                        markProfilePlaybackTouched();
                       }}
                       className={`flex-1 rounded-lg py-2 text-[11px] font-bold transition ${subDelay === 0 && d === 0 ? "bg-white text-black" : "bg-white/5 text-zinc-300 active:bg-white/10"}`}
                     >

@@ -1,4 +1,4 @@
-import { db } from "@/lib/db";
+import { db, ensureRuntimeSchema } from "@/lib/db";
 import { getProfile } from "@/lib/library";
 import { getUserKey } from "@/lib/user";
 import { revalidatePath } from "next/cache";
@@ -17,10 +17,20 @@ const AVATAR_IMAGE_MAX = 400_000; // ~300KB binary — 15× بزرگ‌تر از
 /* C-18 — رمز والدین هرگز از مرز API خارج نمی‌شود (فقط وجود/عدم وجودش) */
 function publicProfile(p: Awaited<ReturnType<typeof getProfile>>) {
   const { parentalPin, ...rest } = p;
-  return { ...rest, hasPin: Boolean(parentalPin) };
+  // v0.27.0 (DATA-10) — the stored JSON blob is served as an OBJECT
+  let playerPrefs: unknown;
+  if (p.playerPrefs) {
+    try {
+      playerPrefs = JSON.parse(p.playerPrefs);
+    } catch {
+      playerPrefs = undefined;
+    }
+  }
+  return { ...rest, ...(playerPrefs !== undefined ? { playerPrefs } : {}), hasPin: Boolean(parentalPin) };
 }
 
 export async function GET() {
+  await ensureRuntimeSchema(); // v0.27.0 — UserProfile.playerPrefs on old DBs
   const userKey = await getUserKey();
   return Response.json(publicProfile(await getProfile(userKey)));
 }
@@ -28,6 +38,7 @@ export async function GET() {
 export async function PATCH(req: Request) {
   const guard = sameOriginOrThrow(req);
   if (guard) return guard;
+  await ensureRuntimeSchema(); // v0.27.0 — UserProfile.playerPrefs on old DBs
   const userKey = await getUserKey();
   const b = (await req.json().catch(() => null)) as Record<string, unknown> | null;
   if (!b) return Response.json({ error: "invalid payload" }, { status: 400 });
@@ -45,6 +56,15 @@ export async function PATCH(req: Request) {
   if (typeof b.playbackSpeed === "number" && SPEEDS.has(b.playbackSpeed)) data.playbackSpeed = b.playbackSpeed;
   if (typeof b.volume === "number") data.volume = Math.max(0, Math.min(100, Math.round(b.volume)));
   if (typeof b.parentalPin === "string" && (b.parentalPin === "" || /^\d{4}$/.test(b.parentalPin))) data.parentalPin = b.parentalPin;
+  // v0.27.0 (DATA-10) — synced player prefs blob (zoom/sub-delay maps…)
+  if (b.playerPrefs && typeof b.playerPrefs === "object") {
+    try {
+      const pp = JSON.stringify(b.playerPrefs);
+      if (pp.length <= 200_000) data.playerPrefs = pp;
+    } catch {
+      /* ignore malformed */
+    }
+  }
 
   await getProfile(userKey);
   const p = await db.userProfile.update({ where: { userKey }, data });

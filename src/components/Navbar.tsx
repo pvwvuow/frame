@@ -16,6 +16,7 @@ import { useI18n } from "./i18n/LocaleProvider";
 import type { TKey } from "@/lib/i18n";
 import { titleHref } from "@/lib/mobile-links";
 import CinemaButton from "./cinema/CinemaButton";
+import { getRecentSearches, rememberSearch, forgetSearch, clearRecentSearches as clearRecent } from "@/lib/search-history";
 
 type Result = {
   id: number;
@@ -73,6 +74,9 @@ export default function Navbar() {
   const [moreOpen, setMoreOpen] = useState(false);
   const [results, setResults] = useState<Result[]>([]);
   const [loading, setLoading] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const [searchNonce, setSearchNonce] = useState(0);
+  const [recent, setRecent] = useState<string[]>([]);
   const [active, setActive] = useState(-1);
   const boxRef = useRef<HTMLDivElement>(null);
   const moreRef = useRef<HTMLDivElement>(null);
@@ -143,22 +147,33 @@ export default function Navbar() {
     if (!dq.trim()) {
       setResults([]);
       setLoading(false);
+      setFailed(false);
       return;
     }
     const ctrl = new AbortController();
     const timer = setTimeout(() => {
       setLoading(true);
+      setFailed(false);
       fetch(`/api/search?q=${encodeURIComponent(dq)}`, { signal: ctrl.signal })
         .then((r) => r.json())
         .then((d: Result[]) => setResults(Array.isArray(d) ? d : []))
-        .catch(() => {})
+        .catch((e: unknown) => {
+          // v0.27.0 (UI-2) — a network error used to be swallowed and the
+          // panel said «چیزی پیدا نشد» — the user blamed the catalog, not
+          // the connection. Show a retryable error instead.
+          if ((e as { name?: string })?.name !== "AbortError") setFailed(true);
+        })
         .finally(() => setLoading(false));
     }, 220);
     return () => {
       clearTimeout(timer);
       ctrl.abort();
     };
-  }, [dq]);
+  }, [dq, searchNonce]);
+
+  useEffect(() => {
+    if (open && !q.trim()) setRecent(getRecentSearches());
+  }, [open, q]);
 
   useEffect(() => {
     const onDoc = (e: MouseEvent) => {
@@ -192,6 +207,7 @@ export default function Navbar() {
 
   const submit = () => {
     if (!q.trim()) return;
+    rememberSearch(q);
     setOpen(false);
     router.push(`/search?q=${encodeURIComponent(q.trim())}`);
   };
@@ -323,6 +339,12 @@ export default function Navbar() {
                   }}
                   placeholder={t("nav.searchPlaceholder")}
                   aria-label={t("nav.search")}
+                  /* v0.27.0 (A11Y-4) — full combobox pattern: the input
+                     announces the open result listbox and the highlighted item */
+                  role="combobox"
+                  aria-expanded={showPanel && (loading || failed || results.length > 0)}
+                  aria-controls="nav-search-listbox"
+                  aria-activedescendant={active >= 0 && results[active] ? `nav-search-opt-${results[active].id}` : undefined}
                   autoComplete="off"
                   className={`min-w-0 flex-1 bg-transparent text-sm text-white placeholder:text-zinc-500 focus:outline-none ${open ? "block" : "hidden sm:block"}`}
                 />
@@ -345,18 +367,70 @@ export default function Navbar() {
                 )}
               </form>
 
+              {/* v0.27.0 (UI-4) — recent searches in the empty panel */}
+              {open && !q.trim() && recent.length > 0 && (
+                <div className="glass-strong glass-in fixed inset-x-2 top-16 z-40 overflow-hidden rounded-2xl p-3 sm:absolute sm:inset-x-auto sm:top-12 sm:end-0 sm:w-[min(420px,calc(100vw-24px))]">
+                  <div className="flex items-center justify-between px-1 pb-2">
+                    <span className="text-[11px] font-bold text-zinc-500">جستجوهای اخیر</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        clearRecent();
+                        setRecent([]);
+                      }}
+                      className="text-[10px] text-zinc-500 hover:text-zinc-300"
+                    >
+                      پاک کردن
+                    </button>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {recent.map((s) => (
+                      <span key={s} className="flex items-center overflow-hidden rounded-full border border-white/10 bg-white/5">
+                        <Link href={`/search?q=${encodeURIComponent(s)}`} className="px-3 py-1.5 text-xs text-zinc-200 hover:text-white" onClick={() => setOpen(false)}>
+                          {s}
+                        </Link>
+                        <button
+                          type="button"
+                          aria-label={`حذف ${s}`}
+                          onClick={() => {
+                            forgetSearch(s);
+                            setRecent(getRecentSearches());
+                          }}
+                          className="grid h-7 w-7 place-items-center text-zinc-500 hover:text-rose-300"
+                        >
+                          <CloseIcon width={11} height={11} />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {showPanel && (
                 <div className="glass-strong glass-in fixed inset-x-2 top-16 z-40 overflow-hidden rounded-2xl sm:absolute sm:inset-x-auto sm:top-12 sm:end-0 sm:w-[min(420px,calc(100vw-24px))]">
                   {loading && results.length === 0 ? (
                     <div className="flex items-center gap-2 p-4 text-sm text-zinc-400">
                       <span className="h-3 w-3 animate-spin rounded-full border-2 border-zinc-500 border-t-transparent" /> {t("common.searching")}
                     </div>
+                  ) : failed && results.length === 0 ? (
+                    /* v0.27.0 (UI-2) — network failure is a distinct state */
+                    <div className="p-4 text-sm">
+                      <p className="font-bold text-rose-300">خطا در جستجو</p>
+                      <p className="mt-1 text-zinc-400">اتصال برقرار نشد — دوباره تلاش کنید.</p>
+                      <button
+                        type="button"
+                        onClick={() => setSearchNonce((n) => n + 1)}
+                        className="mt-2 rounded-full border border-white/15 px-3 py-1 text-xs font-bold text-white hover:bg-white/10"
+                      >
+                        تلاش مجدد
+                      </button>
+                    </div>
                   ) : results.length === 0 ? (
                     <div className="p-4 text-sm text-zinc-400">{t("nav.noResultsFor", { q: q.trim() })}</div>
                   ) : (
-                    <ul className="max-h-[min(420px,60vh)] overflow-y-auto py-2" role="listbox">
+                    <ul id="nav-search-listbox" className="max-h-[min(420px,60vh)] overflow-y-auto py-2" role="listbox">
                       {results.map((r, i) => (
-                        <li key={r.id} role="option" aria-selected={i === active}>
+                        <li key={r.id} id={`nav-search-opt-${r.id}`} role="option" aria-selected={i === active}>
                           <Link
                             href={titleHref(r.slug)}
                             onMouseEnter={() => setActive(i)}

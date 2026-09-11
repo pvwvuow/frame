@@ -38,6 +38,14 @@ const K = {
   rate: "nama-rate",
 };
 
+/* v0.27.0 (DATA-10/11) — per-TITLE subtitle delay. The old global key made
+ * «+۳ ثانیه برای این فیلم» leak into EVERY other film. Now the delay is
+ * keyed by the content key (slug) with the global key as fallback, and the
+ * whole pref set can be collected/applied as one snapshot for cloud sync
+ * (it rides profiles.data.playerPrefs — see cloud.ts). */
+const subDelayKey = (contentKey?: string | number | null) => (contentKey != null && contentKey !== "" ? `nama-sub-delay-${contentKey}` : K.subDelay);
+const SUB_DELAY_MAP_CAP = 120;
+
 function lsGet(key: string): string | null {
   try {
     return localStorage.getItem(key);
@@ -106,12 +114,21 @@ export function setDataSaver(v: boolean): void {
   lsSet(K.dataSaver, v ? "1" : "0");
 }
 
-export function getSubDelay(): number {
-  const v = Number(lsGet(K.subDelay));
-  return Number.isFinite(v) ? Math.max(-30, Math.min(30, v)) : 0;
+export function getSubDelay(contentKey?: string | number | null): number {
+  const read = (key: string): number => {
+    const v = Number(lsGet(key));
+    return Number.isFinite(v) ? Math.max(-30, Math.min(30, v)) : 0;
+  };
+  if (contentKey != null && contentKey !== "") {
+    const perTitle = read(subDelayKey(contentKey));
+    if (perTitle !== 0) return perTitle;
+  }
+  return read(K.subDelay);
 }
-export function setSubDelay(v: number): void {
-  lsSet(K.subDelay, String(Math.max(-30, Math.min(30, v))));
+export function setSubDelay(v: number, contentKey?: string | number | null): void {
+  const clean = Math.max(-30, Math.min(30, v));
+  if (contentKey != null && contentKey !== "") lsSet(subDelayKey(contentKey), String(clean));
+  else lsSet(K.subDelay, String(clean));
 }
 
 export function getSubPos(): number {
@@ -155,7 +172,6 @@ export function nextZoomMode(m: ZoomMode): ZoomMode {
  *  HIGHEST quality ≤ 720 — «sharpest cheap variant». Scanning all entries and
  *  keeping the max (first-wins on ties) also stays correct if a source list
  *  ever arrives unsorted; unparseable labels are treated as expensive. */
-
 export function qNum(q: string | undefined): number {
   const n = parseInt(String(q ?? "").replace(/[^0-9]/g, ""), 10);
   // Real quality labels are ≥ 240 («240p»…«4320p»). Smaller extracts are junk
@@ -205,6 +221,102 @@ export function buildEpisodesManifest(
   });
   const idx = list.findIndex((e) => e.id === currentId);
   return { episodes: list, episodeIndex: idx >= 0 ? idx : 0 };
+}
+
+/* -------------------------------------------------------------------------- */
+/* v0.27.0 (DATA-10) — cloud snapshot of the whole pref set                    */
+/*   localStorage dies with «clear data» / reinstall; the profile cloud row    */
+/*   survives it. collectPlayerPrefs() produces the blob pushed with the       */
+/*   profile; applyPlayerPrefs() merges a cloud blob back into localStorage.   */
+/* -------------------------------------------------------------------------- */
+
+export type PlayerPrefsSnapshot = {
+  engine?: PlayerEngine;
+  seekStep?: number;
+  orientLock?: OrientLock;
+  autoLock?: boolean;
+  keepAwake?: boolean;
+  dataSaver?: boolean;
+  subPos?: number;
+  rate?: number;
+  /** contentKey → zoom mode (per-title) */
+  zoom?: Record<string, string>;
+  /** contentKey → subtitle delay seconds (per-title, DATA-11) */
+  subDelay?: Record<string, number>;
+};
+
+const clampDelay = (v: unknown): number | null => {
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.max(-30, Math.min(30, Math.round(n * 10) / 10)) : null;
+};
+
+export function collectPlayerPrefs(): PlayerPrefsSnapshot {
+  const zoom: Record<string, string> = {};
+  const subDelay: Record<string, number> = {};
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key) continue;
+      if (key.startsWith("nama-zoom-")) {
+        const v = localStorage.getItem(key);
+        if (v === "cover" || v === "fill") zoom[key.slice("nama-zoom-".length)] = v;
+      } else if (key.startsWith("nama-sub-delay-")) {
+        const d = clampDelay(localStorage.getItem(key));
+        if (d) subDelay[key.slice("nama-sub-delay-".length)] = d;
+      }
+    }
+  } catch {
+    /* private mode */
+  }
+  const snap: PlayerPrefsSnapshot = {
+    engine: getPlayerEngine(),
+    seekStep: getSeekStepPref(),
+    orientLock: getOrientLock(),
+    autoLock: getAutoLock(),
+    keepAwake: getKeepAwake(),
+    dataSaver: getDataSaver(),
+    subPos: getSubPos(),
+    rate: getRatePref(),
+  };
+  const zKeys = Object.keys(zoom);
+  if (zKeys.length) snap.zoom = Object.fromEntries(zKeys.slice(0, SUB_DELAY_MAP_CAP * 2).map((k) => [k, zoom[k]]));
+  const dKeys = Object.keys(subDelay);
+  if (dKeys.length) snap.subDelay = Object.fromEntries(dKeys.slice(0, SUB_DELAY_MAP_CAP).map((k) => [k, subDelay[k]]));
+  return snap;
+}
+
+/** Merge a cloud snapshot into localStorage: per-title maps are UNIONED
+ *  (cloud fills missing keys + refreshes known ones), scalars follow the
+ *  cloud only when the playback scope was adopted by the caller. */
+export function applyPlayerPrefs(snap: Record<string, unknown>, scalars = true): void {
+  if (!snap || typeof snap !== "object") return;
+  if (scalars) {
+    if (snap.engine === "auto" || snap.engine === "native") setPlayerEngine(snap.engine);
+    const step = Number(snap.seekStep);
+    if (step === 5 || step === 10 || step === 15 || step === 30) setSeekStepPref(step);
+    if (snap.orientLock === "auto" || snap.orientLock === "portrait" || snap.orientLock === "landscape") setOrientLock(snap.orientLock);
+    if (typeof snap.autoLock === "boolean") setAutoLock(snap.autoLock);
+    if (typeof snap.keepAwake === "boolean") setKeepAwake(snap.keepAwake);
+    if (typeof snap.dataSaver === "boolean") setDataSaver(snap.dataSaver);
+    const pos = Number(snap.subPos);
+    if (Number.isFinite(pos) && pos >= 10 && pos <= 90) setSubPos(pos);
+    const rate = Number(snap.rate);
+    if (Number.isFinite(rate) && rate >= 0.25 && rate <= 3) setRatePref(rate);
+  }
+  const zoom = snap.zoom as Record<string, unknown> | undefined;
+  if (zoom && typeof zoom === "object") {
+    for (const [k, v] of Object.entries(zoom).slice(0, SUB_DELAY_MAP_CAP * 4)) {
+      if ((k.startsWith("tt") || k.length > 3) && (v === "cover" || v === "fill")) setZoomMode(k, v);
+      else if (v === "contain") setZoomMode(k, "contain");
+    }
+  }
+  const subDelay = snap.subDelay as Record<string, unknown> | undefined;
+  if (subDelay && typeof subDelay === "object") {
+    for (const [k, v] of Object.entries(subDelay).slice(0, SUB_DELAY_MAP_CAP * 2)) {
+      const d = clampDelay(v);
+      if (d) setSubDelay(d, k);
+    }
+  }
 }
 
 /** serialize one episode for the intent extra: id␁season␁number␁name␁thumb␁watched␁pct */

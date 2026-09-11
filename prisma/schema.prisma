@@ -155,6 +155,23 @@ model WatchProgress {
   @@index([userKey, updatedAt])
 }
 
+/// v0.27.0 (DATA-7) — ONE ROW PER EPISODE: the title-level WatchProgress row
+/// stays the «continue watching» pointer, while this table remembers EVERY
+/// episode position (finish S02E01 without losing S01E03). Additive on
+/// purpose: existing DBs get it via ensureRuntimeSchema() with zero risk.
+model WatchEpisodeProgress {
+  id        Int      @id @default(autoincrement())
+  userKey   String
+  titleId   Int
+  episodeId Int
+  position  Float    @default(0)
+  duration  Float    @default(0)
+  updatedAt DateTime @updatedAt
+
+  @@unique([userKey, titleId, episodeId])
+  @@index([userKey, titleId])
+}
+
 model Review {
   id        Int      @id @default(autoincrement())
   titleId   Int
@@ -194,6 +211,9 @@ model UserProfile {
   kidsMode      Boolean  @default(false)
   parentalPin   String   @default("")
   language      String   @default("fa") // fa | en
+  /// v0.27.0 (DATA-10) — synced player prefs blob (zoom/sub-delay maps,
+  /// engine, rate…) — JSON text; lives through «clear data» via cloud sync
+  playerPrefs   String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @default(now()) @updatedAt
 }

@@ -183,6 +183,8 @@ function statusLabel(s: DownloadRecord["status"]): string {
 
 export function MobileDownloadsList() {
   const [rows, setRows] = useState<DownloadRecord[]>([]);
+  /* v0.27.0 (UI-3) — canceling an active transfer asks first on Android too */
+  const [confirmId, setConfirmId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!dlSupported()) return;
@@ -228,6 +230,9 @@ export function MobileDownloadsList() {
                         <div className="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-white/10">
                           <div className="h-full rounded-full bg-brand transition-all" style={{ width: `${pct}%` }} />
                         </div>
+                        {confirmId === r.id && (
+                          <p className="mt-1.5 text-[10px] font-bold text-rose-300">دوباره بزنید تا دانلود لغو شود — پیشرفت پاک می‌شود</p>
+                        )}
                       </div>
                       <span className="shrink-0 text-[10px] tabular-nums text-zinc-400">{fa(pct)}٪</span>
                       <div className="flex shrink-0 items-center gap-1">
@@ -241,7 +246,20 @@ export function MobileDownloadsList() {
                             <PlayIcon width={15} height={15} />
                           </button>
                         )}
-                        <button type="button" onClick={() => void cancelDownload(r.id)} aria-label="لغو" className="grid h-9 w-9 place-items-center rounded-full bg-white/5 text-zinc-400">
+                        <button
+                          type="button"
+                          aria-label="لغو"
+                          onClick={() => {
+                            const inFlight = r.status === "downloading" || r.status === "queued" || r.status === "paused";
+                            if (inFlight && confirmId !== r.id) {
+                              setConfirmId(r.id);
+                              return;
+                            }
+                            setConfirmId(null);
+                            void cancelDownload(r.id);
+                          }}
+                          className={`grid h-9 w-9 place-items-center rounded-full ${confirmId === r.id ? "bg-rose-600 text-white" : "bg-white/5 text-zinc-400"}`}
+                        >
                           <CloseIcon width={15} height={15} />
                         </button>
                       </div>

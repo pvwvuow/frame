@@ -497,3 +497,24 @@ html[data-electron="1"][data-platform="darwin"][dir="ltr"] .nav-inner { padding-
   100% { transform: translate(-50%, -50%) scale(1.15); opacity: 0; }
 }
 .ripple-pop { animation: ripple-pop 0.55s ease-out forwards; }
+
+/* ------------------------------------------------------------------ */
+/* v0.27.0 — user-review fixes (UI-1 / A11Y-5)                          */
+/* ------------------------------------------------------------------ */
+
+/* UI-1 — the My-List grid action rail (remove/pin/note) was hover-only, so
+   on touch devices it was INVISIBLE and the actions unreachable. Inside any
+   hover-less environment the rail is always shown instead. */
+@media (hover: none), (pointer: coarse) {
+  .lk-actions { opacity: 1 !important; }
+}
+
+/* A11Y-5 — invisible hit-area expander: keeps the visual control at its
+   designed size while the touch target reaches ≥44px around it. */
+.tap-expand { position: relative; }
+.tap-expand::before {
+  content: "";
+  position: absolute;
+  inset: -9px;
+  border-radius: 9999px;
+}

@@ -7,6 +7,7 @@ import {
   getWatchlistIds,
   getContinueWatching,
   getProgressFor,
+  getEpisodeProgress,
   getProgressMap,
   isInWatchlist,
   getEpisodes,
@@ -232,6 +233,14 @@ async function handleX(req: Request, ctx: { params: Promise<{ path: string[] }> 
 
     case "progress": {
       const titleId = Number(sp.get("titleId")) || 0;
+      const epParam = Number(sp.get("episodeId")) || 0;
+      // v0.27.0 (DATA-7) — ?episodeId= returns THAT episode's position
+      // (per-episode resume); without it the title-level row is returned
+      // (the continue-watching pointer), exactly as before.
+      if (epParam) {
+        const ep = await getEpisodeProgress(userKey, titleId, epParam).catch(() => null);
+        return ok(ep ? { titleId, episodeId: ep.episodeId, position: ep.position, duration: ep.duration, updatedAt: new Date(ep.updatedAt).toISOString() } : null);
+      }
       const r = await getProgressFor(userKey, titleId);
       return ok(r ? { titleId, episodeId: r.episodeId ?? null, position: r.position, duration: r.duration, updatedAt: "" } : null);
     }

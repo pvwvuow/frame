@@ -396,6 +396,15 @@ export async function getProgressFor(userKey: string, titleId: number) {
   return row ?? null;
 }
 
+/** v0.27.0 (DATA-7) — the PER-EPISODE position (falls back to the title-level
+ *  row only when it points at the same episode). */
+export async function getEpisodeProgress(userKey: string, titleId: number, episodeId: number) {
+  const row = await db.watchEpisodeProgress.findUnique({
+    where: { userKey_titleId_episodeId: { userKey, titleId, episodeId } },
+  });
+  return row ?? null;
+}
+
 export async function getProgressMap(userKey: string, titleIds: number[]) {
   if (!titleIds.length) return new Map<number, { position: number; duration: number }>();
   const rows = await db.watchProgress.findMany({
