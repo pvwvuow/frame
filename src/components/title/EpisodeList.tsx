@@ -105,7 +105,7 @@ export default function EpisodeList({
                 }`}
               >
                 <Link href={watchHref(slug, e.id)} className="relative h-[92px] w-[164px] shrink-0 overflow-hidden rounded-xl">
-                  <img src={e.thumbnail} alt={e.name} className="h-full w-full object-cover transition duration-500 group-hover:scale-105" />
+                  <img src={e.thumbnail} alt={e.name} loading="lazy" decoding="async" className="h-full w-full object-cover transition duration-500 group-hover:scale-105" />
                   <div className="absolute inset-0 grid place-items-center bg-black/35 opacity-0 transition group-hover:opacity-100">
                     <span className="grid h-10 w-10 place-items-center rounded-full bg-white text-black">
                       <PlayIcon width={18} height={18} className="ms-0.5" />

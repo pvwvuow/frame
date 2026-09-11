@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { getProfile } from "@/lib/library";
 import { getUserKey } from "@/lib/user";
 import { revalidatePath } from "next/cache";
+import { sameOriginOrThrow } from "@/lib/api-guard";
 
 export const dynamic = "force-dynamic";
 
@@ -13,12 +14,20 @@ const SPEEDS = new Set([0.5, 0.75, 1, 1.25, 1.5, 1.75, 2]);
 const AVATAR_IMAGE_RE = /^data:image\/(?:png|jpe?g|webp);base64,[A-Za-z0-9+/=]+$/;
 const AVATAR_IMAGE_MAX = 400_000; // ~300KB binary — 15× بزرگ‌تر از خروجی معمول کلاینت
 
+/* C-18 — رمز والدین هرگز از مرز API خارج نمی‌شود (فقط وجود/عدم وجودش) */
+function publicProfile(p: Awaited<ReturnType<typeof getProfile>>) {
+  const { parentalPin, ...rest } = p;
+  return { ...rest, hasPin: Boolean(parentalPin) };
+}
+
 export async function GET() {
   const userKey = await getUserKey();
-  return Response.json(await getProfile(userKey));
+  return Response.json(publicProfile(await getProfile(userKey)));
 }
 
 export async function PATCH(req: Request) {
+  const guard = sameOriginOrThrow(req);
+  if (guard) return guard;
   const userKey = await getUserKey();
   const b = (await req.json().catch(() => null)) as Record<string, unknown> | null;
   if (!b) return Response.json({ error: "invalid payload" }, { status: 400 });
@@ -41,11 +50,13 @@ export async function PATCH(req: Request) {
   const p = await db.userProfile.update({ where: { userKey }, data });
   revalidatePath("/profile");
   revalidatePath("/settings");
-  return Response.json(p);
+  return Response.json(publicProfile(p));
 }
 
 /** Danger zone – wipe all personal data. Body: { scope: "all" | "history" | "list" | "favorites" | "ratings" } */
 export async function DELETE(req: Request) {
+  const guard = sameOriginOrThrow(req);
+  if (guard) return guard;
   const userKey = await getUserKey();
   const b = (await req.json().catch(() => null)) as { scope?: string } | null;
   const scope = b?.scope ?? "all";

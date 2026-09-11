@@ -246,6 +246,7 @@ export async function getReviews(titleId: number) {
   return db.review.findMany({
     where: { titleId },
     orderBy: { createdAt: "desc" },
+    take: 200, // C-9 — سقف لیست؛ رتبه‌بندی/صفی‌سازی بعدی
   });
 }
 

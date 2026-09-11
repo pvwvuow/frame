@@ -1,9 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { ChevronLeft, ChevronRight } from "./Icons";
 import { useI18n } from "./i18n/LocaleProvider";
+
+/* SSR-safe layout effect: the mount measurement must run BEFORE the first
+   paint so the scroll arrows never start in a wrong disabled/enabled state. */
+const useIsoLayoutEffect = typeof window !== "undefined" ? useLayoutEffect : useEffect;
 
 export default function Row({
   title,
@@ -21,7 +25,10 @@ export default function Row({
   const rtl = dir === "rtl";
   const [hover, setHover] = useState(false);
   const [canPrev, setCanPrev] = useState(false);
-  const [canNext, setCanNext] = useState(true);
+  // B-26: start FALSE so short rows never flash a dead «next» arrow; the
+  // layout-effect measurement below flips it on for scrollable rows before
+  // the first paint.
+  const [canNext, setCanNext] = useState(false);
 
   // track scroll edges (RTL: scrollLeft goes 0 → negative)
   const update = () => {
@@ -32,7 +39,7 @@ export default function Row({
     setCanPrev(pos > 4);
     setCanNext(pos < max - 4);
   };
-  useEffect(() => {
+  useIsoLayoutEffect(() => {
     update();
     const el = ref.current;
     if (!el) return;

@@ -25,10 +25,10 @@ type Body = {
 };
 
 const numArray = (v: unknown): number[] =>
-  Array.isArray(v) ? v.map(Number).filter((n) => Number.isFinite(n) && n > 0) : [];
+  Array.isArray(v) ? v.map(Number).filter((n) => Number.isFinite(n) && n > 0).slice(0, 500) : [];
 
 const strArray = (v: unknown): string[] =>
-  Array.isArray(v) ? v.map((s) => String(s).trim()).filter(Boolean) : [];
+  Array.isArray(v) ? v.map((s) => String(s).trim()).filter(Boolean).slice(0, 500) : [];
 
 export async function POST(req: Request) {
   const body = (await req.json().catch(() => null)) as Body | null;
@@ -57,11 +57,13 @@ export async function GET(req: Request) {
   const ids = (sp.get("ids") ?? "")
     .split(",")
     .map(Number)
-    .filter((n) => Number.isFinite(n) && n > 0);
+    .filter((n) => Number.isFinite(n) && n > 0)
+    .slice(0, 500);
   const slugs = (sp.get("slugs") ?? "")
     .split(",")
     .map((s) => decodeURIComponent(s).trim())
-    .filter(Boolean);
+    .filter(Boolean)
+    .slice(0, 500);
 
   const or: Prisma.TitleWhereInput[] = [];
   if (ids.length) or.push({ id: { in: [...new Set(ids)] } });

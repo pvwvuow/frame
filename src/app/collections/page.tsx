@@ -2,33 +2,29 @@
 
 import Link from "next/link";
 import { collectionHref } from "@/lib/links";
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 import Row from "@/components/Row";
 import TitleCard from "@/components/TitleCard";
+import LoadErrorCard from "@/components/LoadErrorCard";
 import { getCollections } from "@/lib/mobile/db";
 import { fa } from "@/lib/format";
 import { LayersIcon, ChevronLeft, PlusIcon, TrashIcon, SparkIcon, ShareIcon } from "@/components/Icons";
 import { createCollection, deleteCollection, fetchUserCollections, type UCollection } from "@/lib/collections";
 import { COLLECTION_TEMPLATES, createCollectionFromTemplate, type CollectionTemplate } from "@/lib/collection-templates";
+import { useAsyncData } from "@/lib/use-async-data";
 
 /* ================================================================== */
 /* مجموعه‌های من (شخصی + سینک با اکانت) — v0.10.32                     */
 /* ================================================================== */
 function MyCollectionsSection() {
-  const [cols, setCols] = useState<UCollection[] | null>(null);
+  /* B-2: failures no longer hang on skeletons — retry() doubles as the
+   * post-mutation refetch (create/delete call it after a successful write). */
+  const { data: cols, error, retry } = useAsyncData(() => fetchUserCollections(), []);
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [busyTpl, setBusyTpl] = useState<string | null>(null);
-
-  const load = useCallback(() => {
-    void fetchUserCollections().then((c) => setCols(c));
-  }, []);
-
-  useEffect(() => {
-    load();
-  }, [load]);
 
   async function submit() {
     const clean = name.trim();
@@ -39,7 +35,7 @@ function MyCollectionsSection() {
       setName("");
       setCreating(false);
       toast.success(`مجموعه «${r.name}» ساخته شد`);
-      load();
+      retry();
     } catch {
       toast.error("ساخت مجموعه ناموفق بود");
     } finally {
@@ -52,7 +48,7 @@ function MyCollectionsSection() {
     try {
       await deleteCollection(c.id, c.name);
       toast.success(`مجموعه «${c.name}» حذف شد`);
-      load();
+      retry();
     } catch {
       toast.error("حذف ناموفق بود");
     }
@@ -65,7 +61,7 @@ function MyCollectionsSection() {
     try {
       const r = await createCollectionFromTemplate(tpl);
       toast.success(`مجموعه «${r.name}» با ${fa(r.added)} عنوان ساخته شد`);
-      load();
+      retry();
     } catch {
       toast.error("ساخت از قالب ناموفق بود");
     } finally {
@@ -155,7 +151,9 @@ function MyCollectionsSection() {
           <ChevronLeft width={16} height={16} className="shrink-0 text-zinc-600" />
         </Link>
 
-        {cols === null ? (
+        {error ? (
+          <LoadErrorCard onRetry={retry} />
+        ) : cols === null ? (
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
             {[0, 1, 2, 3].map((i) => (
               <div key={i} className="h-28 animate-pulse rounded-2xl bg-white/5" />
@@ -211,15 +209,17 @@ function MyCollectionsSection() {
 }
 
 export default function CollectionsPage() {
-  const [collections, setCollections] = useState<Awaited<ReturnType<typeof getCollections>> | null>(null);
+  const { data: collections, error, retry } = useAsyncData(() => getCollections(12), []);
 
-  useEffect(() => {
-    let alive = true;
-    getCollections(12).then((c) => alive && setCollections(c));
-    return () => {
-      alive = false;
-    };
-  }, []);
+  if (error) {
+    return (
+      <main className="pb-16">
+        <div className="mx-auto max-w-[1600px] px-4 pt-32 sm:px-8 lg:px-12">
+          <LoadErrorCard onRetry={retry} />
+        </div>
+      </main>
+    );
+  }
 
   if (!collections) {
     return (

@@ -117,7 +117,9 @@ console.log("\n[1] ensureUserDb with corrupt nama.db + stale -wal/-shm");
 fs.writeFileSync(userDb, "THIS IS NOT A DATABASE AT ALL 1234567890");
 fs.writeFileSync(userDb + "-wal", "stale wal garbage");
 fs.writeFileSync(userDb + "-shm", "stale shm garbage");
-sandbox.ensureUserDb();
+/* v0.26.0: sha256File is streaming (async) now — the seed copy + catalog
+ * marker land after the promise settles, so the harness must await. */
+await sandbox.ensureUserDb();
 check("nama.db replaced with a real SQLite seed", isSqlite(userDb) && fs.statSync(userDb).size > 1e6);
 check("no stale -wal left", !fs.existsSync(userDb + "-wal"));
 check("no stale -shm left", !fs.existsSync(userDb + "-shm"));
@@ -129,7 +131,7 @@ check("catalog marker written", fs.existsSync(path.join(userData, "catalog.sha25
 /* ---- Test 2: reseedUserData -------------------------------------- */
 console.log("\n[2] reseedUserData replaces a later-corrupted db");
 fs.writeFileSync(userDb, "CORRUPTED AGAIN");
-const ok = sandbox.reseedUserData();
+const ok = await sandbox.reseedUserData();
 check("reseedUserData returned true", ok === true);
 check("db is valid SQLite again", isSqlite(userDb) && fs.statSync(userDb).size > 1e6);
 const broken2 = fs.readdirSync(userData).filter((f) => f.startsWith("nama.db.broken-"));

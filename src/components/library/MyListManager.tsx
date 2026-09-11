@@ -574,7 +574,7 @@ function ListItem({ r, selectMode, selected, onSelect, onRemove, onPin, onNote, 
       )}
       <button type="button" onClick={onOpen} className="relative h-[120px] w-[80px] shrink-0 overflow-hidden rounded-xl">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={r.title.poster} alt={r.title.title} className="h-full w-full object-cover transition group-hover/list:scale-105" />
+        <img src={r.title.poster} alt={r.title.title} loading="lazy" decoding="async" className="h-full w-full object-cover transition group-hover/list:scale-105" />
         {pct > 0 && (
           <span className="absolute inset-x-0 bottom-0 h-1 bg-white/20">
             <span className="block h-full bg-brand" style={{ width: `${pct}%` }} />
@@ -636,7 +636,7 @@ function NoteDialog({ row, onClose, onSave, pending }: { row: ListRow; onClose: 
       <div className="glass w-full max-w-md rounded-3xl p-6">
         <div className="flex items-center gap-3">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={row.title.poster} alt="" className="h-16 w-11 rounded-lg object-cover" />
+          <img src={row.title.poster} alt="" loading="lazy" decoding="async" className="h-16 w-11 rounded-lg object-cover" />
           <div>
             <p className="text-xs text-zinc-400">یادداشت شخصی برای</p>
             <h3 className="text-lg font-black text-white">{row.title.title}</h3>

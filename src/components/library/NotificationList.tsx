@@ -120,7 +120,7 @@ export default function NotificationList({ items }: { items: Notification[] }) {
                 <Link href={n.href} onClick={() => markRead(n.id)} className="flex min-w-0 flex-1 items-start gap-3">
                   {n.image ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={n.image} alt="" className="h-16 w-16 shrink-0 rounded-xl bg-ink-700 object-cover" />
+                    <img src={n.image} alt="" loading="lazy" decoding="async" className="h-16 w-16 shrink-0 rounded-xl bg-ink-700 object-cover" />
                   ) : (
                     <span className={`grid h-16 w-16 shrink-0 place-items-center rounded-xl ${k.tint}`}>
                       <k.icon width={24} height={24} />

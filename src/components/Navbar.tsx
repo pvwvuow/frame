@@ -362,7 +362,7 @@ export default function Navbar() {
                             onMouseEnter={() => setActive(i)}
                             className={`flex items-center gap-3 px-3 py-2 transition-colors ${i === active ? "bg-white/10" : "hover:bg-white/5"}`}
                           >
-                            <img src={r.poster} alt="" data-ph-title={r.title} className="h-16 w-11 shrink-0 rounded-md bg-ink-700 object-cover" />
+                            <img src={r.poster} alt="" data-ph-title={r.title} loading="lazy" decoding="async" className="h-16 w-11 shrink-0 rounded-md bg-ink-700 object-cover" />
                             <div className="min-w-0 flex-1">
                               <TitleName t={r} primaryClass="text-sm font-semibold text-white" secondaryClass="text-xs text-zinc-400" />
                               <p className="mt-0.5 text-[11px] text-zinc-500">

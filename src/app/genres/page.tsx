@@ -1,23 +1,26 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
 import { getGenreSummaries } from "@/lib/mobile/db";
 import { fa } from "@/lib/format";
+import LoadErrorCard from "@/components/LoadErrorCard";
 import { SparkIcon, StarIcon, FilmIcon, TvIcon, ChevronLeft } from "@/components/Icons";
+import { useAsyncData } from "@/lib/use-async-data";
 
 const HUES = [350, 265, 200, 150, 35, 320, 15, 230, 100, 45, 280, 180, 0, 210];
 
 export default function GenresPage() {
-  const [genres, setGenres] = useState<Awaited<ReturnType<typeof getGenreSummaries>> | null>(null);
+  const { data: genres, error, retry } = useAsyncData(() => getGenreSummaries(), []);
 
-  useEffect(() => {
-    let alive = true;
-    getGenreSummaries().then((g) => alive && setGenres(g));
-    return () => {
-      alive = false;
-    };
-  }, []);
+  if (error) {
+    return (
+      <main className="pb-16">
+        <div className="mx-auto max-w-[1600px] px-4 pt-32 sm:px-8 lg:px-12">
+          <LoadErrorCard onRetry={retry} />
+        </div>
+      </main>
+    );
+  }
 
   if (!genres) {
     return (

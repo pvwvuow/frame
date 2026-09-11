@@ -2,6 +2,7 @@ import type { Title as DbTitle } from "@prisma/client";
 import { db, ensureRuntimeSchema } from "@/lib/db";
 import { getUserKey } from "@/lib/user";
 import { revalidatePath } from "next/cache";
+import { sameOriginOrThrow } from "@/lib/api-guard";
 
 export const dynamic = "force-dynamic";
 
@@ -90,6 +91,8 @@ export async function GET(req: Request) {
 
 /* POST /api/collections/items — add/remove. Body: { collectionId, titleId, value? } */
 export async function POST(req: Request) {
+  const guard = sameOriginOrThrow(req);
+  if (guard) return guard;
   await ensureRuntimeSchema();
   const userKey = await getUserKey();
   const body = (await req.json().catch(() => null)) as { collectionId?: number; titleId?: number; value?: boolean } | null;

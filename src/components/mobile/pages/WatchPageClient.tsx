@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import WatchClient from "@/components/WatchClient";
+import LoadErrorCard from "@/components/LoadErrorCard";
 import { getFullTitle, getEpisodes, bumpViews, getTitleLiteBySlug } from "@/lib/mobile/db";
 import { getProgressFor } from "@/lib/mobile/userdata";
 import { fa } from "@/lib/format";
@@ -11,6 +12,7 @@ import { normalizeSources } from "@/lib/source-fix";
 import { getDownloadFor } from "@/lib/mobile-downloads";
 import { nativeBridge } from "@/lib/native-bridge";
 import { useRouteSlug } from "@/lib/mobile-links";
+import { useAsyncData } from "@/lib/use-async-data";
 
 function parseSources(json: string) {
   try {
@@ -31,70 +33,66 @@ export default function WatchPage() {
   // between devices — the whole reason slugs exist)
   const seasonP = sp.get("season");
   const epnumP = sp.get("epnum");
-  const [st, setSt] = useState<{
-    t: NonNullable<Awaited<ReturnType<typeof getFullTitle>>>;
-    eps: Awaited<ReturnType<typeof getEpisodes>>;
-    episode: Awaited<ReturnType<typeof getEpisodes>>[number] | null;
-    nextEpisode: Awaited<ReturnType<typeof getEpisodes>>[number] | null;
-    startAt: number;
-  } | null>(null);
-  const [missing, setMissing] = useState(false);
-  /* v0.12.0 — a completed offline download replaces the stream URL
-     (hooks hoisted BEFORE any early return — rules-of-hooks) */
-  const [offlineSrc, setOfflineSrc] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!slug) return;
-    let alive = true;
-    (async () => {
-      const lite = await getTitleLiteBySlug(slug);
-      const t = lite ? await getFullTitle(lite.id) : null;
-      if (!t) {
-        if (alive) setMissing(true);
-        return;
-      }
-      bumpViews(t.id);
-      const [eps, progress] = await Promise.all([
-        t.type === "series" ? getEpisodes(t.id) : Promise.resolve([]),
-        getProgressFor(t.id),
-      ]);
+  type Eps = Awaited<ReturnType<typeof getEpisodes>>;
+  type WatchLoad =
+    | { missing: true }
+    | {
+        missing: false;
+        t: NonNullable<Awaited<ReturnType<typeof getFullTitle>>>;
+        eps: Eps;
+        episode: Eps[number] | null;
+        nextEpisode: Eps[number] | null;
+        startAt: number;
+      };
 
-      let episode: (typeof eps)[number] | null = null;
-      if (t.type === "series" && eps.length) {
-        const wanted = ep ? Number(ep) : progress?.episodeId ?? null;
-        const byId = (wanted ? eps.find((e) => e.id === wanted) : null) ?? null;
-        const byNum =
-          seasonP && epnumP
-            ? eps.find((e) => e.season === Number(seasonP) && e.number === Number(epnumP)) ?? null
-            : null;
-        // prefer the requested/progress episode; otherwise the first PLAYABLE one
-        episode = byId ?? byNum ?? eps.find((e) => e.videoUrl) ?? eps[0];
-      }
+  /* B-2: a rejected query used to leave the forever spinner — the hook now
+   * captures the error and the page offers a retry. */
+  const { data, error, retry } = useAsyncData<WatchLoad>(async () => {
+    if (!slug) return { missing: true };
+    const lite = await getTitleLiteBySlug(slug);
+    const t = lite ? await getFullTitle(lite.id) : null;
+    if (!t) return { missing: true };
+    void bumpViews(t.id);
+    const [eps, progress] = await Promise.all([
+      t.type === "series" ? getEpisodes(t.id) : Promise.resolve([]),
+      getProgressFor(t.id),
+    ]);
 
-      const idx = episode ? eps.findIndex((e) => e.id === episode.id) : -1;
-      const nextEpisode = idx >= 0 && idx < eps.length - 1 ? eps[idx + 1] : null;
+    let episode: Eps[number] | null = null;
+    if (t.type === "series" && eps.length) {
+      const wanted = ep ? Number(ep) : progress?.episodeId ?? null;
+      const byId = (wanted ? eps.find((e) => e.id === wanted) : null) ?? null;
+      const byNum =
+        seasonP && epnumP
+          ? eps.find((e) => e.season === Number(seasonP) && e.number === Number(epnumP)) ?? null
+          : null;
+      // prefer the requested/progress episode; otherwise the first PLAYABLE one
+      episode = byId ?? byNum ?? eps.find((e) => e.videoUrl) ?? eps[0];
+    }
 
-      const sameEpisode = episode ? progress?.episodeId === episode.id : !progress?.episodeId;
-      const startAt = progress && sameEpisode && progress.duration > 0 && progress.position / progress.duration < 0.97 ? progress.position : 0;
+    const idx = episode ? eps.findIndex((e) => e.id === episode.id) : -1;
+    const nextEpisode = idx >= 0 && idx < eps.length - 1 ? eps[idx + 1] : null;
 
-      if (alive) setSt({ t, eps, episode, nextEpisode, startAt });
-    })();
-    return () => {
-      alive = false;
-    };
+    const sameEpisode = episode ? progress?.episodeId === episode.id : !progress?.episodeId;
+    const startAt = progress && sameEpisode && progress.duration > 0 && progress.position / progress.duration < 0.97 ? progress.position : 0;
+
+    return { missing: false, t, eps, episode, nextEpisode, startAt };
   }, [slug, ep, seasonP, epnumP]);
+
+  const [offlineSrc, setOfflineSrc] = useState<string | null>(null);
 
   /* v0.12.0 — offline first: a completed download plays from the device with
      zero network; the native player receives the absolute file path */
   useEffect(() => {
     let alive = true;
-    if (!st) {
+    if (!data || data.missing) {
       setOfflineSrc(null);
       return;
     }
-    const wanted = st.episode?.videoUrl ?? st.t.videoUrl;
+    const wanted = data.episode?.videoUrl ?? data.t.videoUrl;
     if (!nativeBridge() || !wanted) return;
-    void getDownloadFor(st.t.id, st.episode ? st.episode.id : null).then(async (dl) => {
+    void getDownloadFor(data.t.id, data.episode ? data.episode.id : null).then(async (dl) => {
       if (!alive || !dl || dl.status !== "completed") return;
       const stat = await nativeBridge()?.fileStat({ path: dl.dest }).catch(() => null);
       if (alive && stat?.exists) setOfflineSrc(`local:${stat.absPath}`);
@@ -102,10 +100,22 @@ export default function WatchPage() {
     return () => {
       alive = false;
     };
-  }, [st]);
+  }, [data]);
 
-  if (missing) notFound();
-  if (!st) {
+  if (data?.missing) notFound();
+
+  if (error) {
+    return (
+      <>
+        <div className="fixed inset-0 -z-10 bg-black" aria-hidden />
+        <div className="fixed inset-0 grid place-items-center px-6" dir="rtl">
+          <LoadErrorCard onRetry={retry} />
+        </div>
+      </>
+    );
+  }
+
+  if (!data) {
     return (
       <>
         <div className="fixed inset-0 -z-10 bg-black" aria-hidden />
@@ -119,7 +129,7 @@ export default function WatchPage() {
     );
   }
 
-  const { t, eps, episode, nextEpisode, startAt } = st;
+  const { t, eps, episode, nextEpisode, startAt } = data;
   const src = offlineSrc ?? episode?.videoUrl ?? t.videoUrl;
   const sources = episode ? parseSources(episode.sources) : parseSources(t.sources);
   const subtitle = episode ? `فصل ${fa(episode.season)} · قسمت ${fa(episode.number)} · ${episode.name}` : `${t.titleEn} · ${fa(t.year)}`;

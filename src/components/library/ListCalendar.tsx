@@ -334,7 +334,7 @@ export default function ListCalendar({ rows, events }: { rows: ListRow[]; events
                   onClick={() => setPlan(r.title.id, selected, r.title.title)}
                   className="flex w-full items-center gap-2.5 rounded-xl border border-white/5 bg-white/[0.03] p-2 text-start transition hover:border-brand/40 hover:bg-brand/10"
                 >
-                  <img src={r.title.poster} alt="" className="h-12 w-8 shrink-0 rounded-md object-cover" />
+                  <img src={r.title.poster} alt="" loading="lazy" decoding="async" className="h-12 w-8 shrink-0 rounded-md object-cover" />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-xs font-bold text-white">{r.title.title}</span>
                     <span className="block text-[10px] text-zinc-500">

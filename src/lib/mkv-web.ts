@@ -931,6 +931,11 @@ export class MkvScanner {
 
 export type RangeResponse = { ok: boolean; status: number; data: Uint8Array; total: number };
 
+/** v0.26.0 — mirror of mobile-playback.isTransientServerStatus, kept local:
+ *  this module is transpiled STANDALONE by scripts/test-mkv-web.mjs and the
+ *  browser E2E (no cross-module imports allowed here). */
+const isTransient5xx = (status: number): boolean => status >= 500 && status <= 599;
+
 type CapHttpLike = {
   get(opts: { url: string; headers?: Record<string, string>; responseType?: string; readTimeout?: number }): Promise<{
     status: number;
@@ -989,6 +994,24 @@ export async function fetchRange(url: string, start: number, endInclusive: numbe
   } catch {
     return { ok: false, status: 0, data: new Uint8Array(0), total: 0 };
   }
+}
+
+const sleepMs = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+/** v0.26.0 — one ranged GET with TRANSIENT-5xx resilience. dls*.aparatchi-
+ *  dlcenter.top (≈100% of the catalog's URLs) answers 503 to non-Iranian IPs
+ *  and under rate limit — the old code treated ANY !ok head as a dead source
+ *  and burned the whole variant ladder on a healthy-but-rate-limited CDN
+ *  (the real root cause of the Breaking Bad / Planet Earth 1 complaints).
+ *  Retries ONLY 5xx (4xx stays an immediate verdict) with the same backoff
+ *  the native player uses (700ms / 1500ms). */
+export async function fetchRangeRetry5xx(url: string, start: number, endInclusive: number): Promise<RangeResponse> {
+  let res = await fetchRange(url, start, endInclusive);
+  for (let attempt = 1; attempt <= 2 && isTransient5xx(res.status); attempt++) {
+    await sleepMs(attempt === 1 ? 700 : 1500);
+    res = await fetchRange(url, start, endInclusive);
+  }
+  return res;
 }
 
 /* ------------------------------------------------------------------ */
@@ -1056,7 +1079,10 @@ const HEAD_BYTES = 384 << 10; // EBML+SeekHead+Info+Tracks live here virtually a
 const probeCache = new Map<string, Promise<MkvProbe>>();
 
 /** Fetch the file head, sniff the container and read track intelligence.
- *  Cached per URL (a source is probed at most once per app session). */
+ *  Cached per URL (a source is probed at most once per app session).
+ *  v0.26.0 — the head fetch retries transient 5xx (fetchRangeRetry5xx) and
+ *  a still-transient verdict (5xx / status 0) is EVICTED from the cache so
+ *  a later preflight re-probes instead of replaying the stale «dead». */
 export function probeMkvHead(url: string, force = false): Promise<MkvProbe> {
   if (!force && probeCache.has(url)) return probeCache.get(url)!;
   const p = (async (): Promise<MkvProbe> => {
@@ -1074,7 +1100,7 @@ export function probeMkvHead(url: string, force = false): Promise<MkvProbe> {
       fileSize: 0,
       mse: null,
     };
-    const r = await fetchRange(url, 0, HEAD_BYTES - 1);
+    const r = await fetchRangeRetry5xx(url, 0, HEAD_BYTES - 1);
     if (!r.ok) return { ...base, status: r.status };
     const store = new MkvCueStore();
     store.matroska = sniffEbml(r.data) >= 0;
@@ -1096,6 +1122,11 @@ export function probeMkvHead(url: string, force = false): Promise<MkvProbe> {
     };
   })();
   if (!force) probeCache.set(url, p);
+  void p.then((probe) => {
+    // v0.26.0 — a transient verdict (5xx / status 0) must NOT poison the
+    // session cache: dlcenter's 503 is rate-limit/geo flakiness, not death.
+    if (isTransient5xx(probe.status) || probe.status === 0) probeCache.delete(url);
+  });
   return p;
 }
 
@@ -1188,11 +1219,14 @@ export class MkvWebScan {
       try {
         if (!this.scannedHead) {
           this.setState("probing");
-          const head = await fetchRange(this.url, 0, HEAD_BYTES - 1);
+          // v0.26.0 — transient-5xx resilient head fetch (was: one 503 and
+          // the source was declared dead for the whole session)
+          const head = await fetchRangeRetry5xx(this.url, 0, HEAD_BYTES - 1);
           if (this.stopped) return;
           if (!head.ok) {
-            // 404 / 403 / 503 geo-block → this source is dead for the WEB
-            // player regardless of codec (the <video> will hit the same wall)
+            // 404 / 403 geo-block → this source is dead for the WEB player
+            // regardless of codec (the <video> will hit the same wall). A
+            // 5xx only lands here after fetchRangeRetry5xx's two retries.
             this.dead = true;
             this.setState("dead");
             return;

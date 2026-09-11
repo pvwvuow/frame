@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { createHash, randomUUID } from "node:crypto";
 import { db, ensureRuntimeSchema } from "@/lib/db";
+import { sameOriginOrThrow } from "@/lib/api-guard";
 
 export const dynamic = "force-dynamic";
 
@@ -36,6 +37,30 @@ const COOKIE = "nama_uid";
 const YEAR = 60 * 60 * 24 * 365;
 const ACCOUNT_ID_RE = /^[A-Za-z0-9_-]{6,128}$/;
 
+/* C-2 — کلید عمومی سابابیس (public-by-design)؛ فقط برای تأیید توکن کاربر
+ * سمت سرور استفاده می‌شود. ثابت‌ها عمداً اینجا تکرار شده‌اند تا زنجیره‌ی
+ * import سرور به ماژول‌های مرورگری (cloud.ts) کشیده نشود. */
+const SUPABASE_URL = "https://emqsegjeiyimoyncbhfn.supabase.co";
+const SUPABASE_PUBLISHABLE_KEY =
+  "sb_publishable_m23eUV8cC-xqhqD-3P6Wsg_U5WsiM3E";
+
+/** C-2 — اثبات مالکیت حساب: توکن دسترسی سابابیس باید به همان accountId
+ * برسد؛ وگرنه هر کسی که یک UUID عمومی را بداند می‌توانست فضای داده‌ی
+ * حساب را تصاحب کند (کوکیِ نام_uid روی فضای قربانی چرخانده می‌شد). */
+async function verifyAccountToken(accessToken: string, accountId: string): Promise<boolean> {
+  try {
+    const r = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+      headers: { Authorization: `Bearer ${accessToken}`, apikey: SUPABASE_PUBLISHABLE_KEY },
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!r.ok) return false;
+    const u = (await r.json()) as { id?: string; sub?: string } | null;
+    return Boolean(u && (u.id === accountId || u.sub === accountId));
+  } catch {
+    return false;
+  }
+}
+
 function accountSpaceUid(accountId: string): string {
   // deterministic per account → re-attaching after a wiped map still lands in
   // the same empty space instead of littering new ones
@@ -55,12 +80,19 @@ async function spaceHasData(uid: string): Promise<boolean> {
 }
 
 export async function GET() {
+  /* C-2/C-3 — خروجی GET دیگر هرگز خودِ uid را برنمی‌گرداند (خواندنِ آن به
+   * کلاینتِ مخرب اجازه‌ی ورود به فضای دیگران را می‌داد). هیچ مصرف‌کننده‌ای
+   * در کلاینت دسکتاپ این فیلد را نمی‌خواند (بررسی شد). */
   const store = await cookies();
-  return Response.json({ uid: store.get(COOKIE)?.value ?? "guest" });
+  const uid = store.get(COOKIE)?.value ?? "guest";
+  return Response.json({ ok: true, space: uid === "guest" ? "guest" : "account" });
 }
 
 export async function POST(req: Request) {
-  const b = (await req.json().catch(() => null)) as { accountId?: unknown; reset?: unknown } | null;
+  const guard = sameOriginOrThrow(req);
+  if (guard) return guard;
+  const b = (await req.json().catch(() => null)) as
+    { accountId?: unknown; reset?: unknown; accessToken?: unknown } | null;
   const store = await cookies();
   const current = store.get(COOKIE)?.value ?? "guest";
   await ensureRuntimeSchema();
@@ -84,6 +116,15 @@ export async function POST(req: Request) {
   const accountId = typeof b?.accountId === "string" ? b.accountId : "";
   if (!ACCOUNT_ID_RE.test(accountId)) {
     return Response.json({ error: "invalid accountId" }, { status: 400 });
+  }
+
+  /* C-2 — چرخاندن فضای داده به یک حساب فقط با اثبات مالکیت: توکن دسترسی
+   * سابابیس باید معتبر باشد و به همین accountId برسد. بدون آن → 403
+   * (وگرنه POST با accountId قربانی، تصاحب کامل پروفایل/تاریخچه/لیست‌ها
+   * بود). reset (خروج) اثبات نمی‌خواهد — چرخش به فضای مهمان نشت نمی‌دهد. */
+  const accessToken = typeof b?.accessToken === "string" ? b.accessToken : "";
+  if (!accessToken || !(await verifyAccountToken(accessToken, accountId))) {
+    return Response.json({ error: "identity_proof_required" }, { status: 403 });
   }
 
   let target: string;

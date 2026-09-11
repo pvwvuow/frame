@@ -112,7 +112,7 @@ export default function LibraryProvider({ children }: { children: ReactNode }) {
     // the user's data. Only an explicit in-run sign-out (prev was an account)
     // rotates to a fresh guest space.
     if (prev === undefined && target === null) return;
-    void attachIdentity(target).then((r) => {
+    void attachIdentity(target, session?.access_token ?? null).then((r) => {
       if (r.switched || prev !== undefined) {
         void refresh();
         softRefresh();

@@ -4,7 +4,9 @@ on:
   push:
     tags: ["v*"]
     # Also run on main: if package.json version was bumped and no tag exists for
-    # it yet, the `prepare` job creates the tag and the release gets built.
+    # it yet, the `prepare` job creates the tag. The tag-push event then triggers
+    # the ONE real build (v0.26.0: the main run itself sets build=false after tag
+    # creation — every release used to be built TWICE, once per trigger).
     branches: [main]
   workflow_dispatch:
     inputs:
@@ -24,6 +26,7 @@ jobs:
   prepare:
     name: Detect version / create tag
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       build: ${{ steps.decide.outputs.build }}
       version: ${{ steps.decide.outputs.version }}
@@ -66,7 +69,9 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git tag -a "$TAG" -m "Release $TAG" "$GITHUB_SHA"
           git push origin "refs/tags/$TAG"
-          echo "build=true" >> "$GITHUB_OUTPUT"
+          # v0.26.0 — the tag push event now triggers the (single) build run.
+          # Building here AND on the tag push raced the same release twice.
+          echo "build=false" >> "$GITHUB_OUTPUT"
 
       # Pre-create the GitHub release so the 3 OS build jobs never race on
       # release creation (electron-builder 422 already_exists → wasted retries)
@@ -87,6 +92,7 @@ jobs:
     needs: prepare
     if: needs.prepare.outputs.build == 'true'
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
@@ -112,9 +118,15 @@ jobs:
           restore-keys: electron-${{ runner.os }}-
 
       - name: Preflight gate
-        run: node scripts/preflight.mjs --quick
+        run: node scripts/preflight.mjs
         env:
           DATABASE_URL: "file:../db/custom.db"
+
+      # F-3 — type gate: next build runs with ignoreBuildErrors:true, so the
+      # release path never checked types. CI-only commits could ship type
+      # regressions inside installers/OTA.
+      - name: Type check
+        run: npx tsc --noEmit
 
       - name: Build Next.js (standalone)
         run: npm run build
@@ -150,13 +162,21 @@ jobs:
             release/*.deb
             release/*.blockmap
             release/latest*.yml
-          if-no-files-found: warn
+          # v0.26.0 — an empty release must FAIL, not upload nothing silently
+          if-no-files-found: error
+
+      - name: Assert electron artifacts exist
+        shell: bash
+        run: |
+          ls release/ | head -20
+          test -n "$(ls release/latest*.yml 2>/dev/null)" || { echo '::error::latest*.yml missing — updater feed would break'; exit 1; }
 
   android:
     name: Build Android APK
     needs: prepare
     if: needs.prepare.outputs.build == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
 
@@ -188,6 +208,18 @@ jobs:
 
       - name: Install dependencies
         run: npm ci --legacy-peer-deps
+        env:
+          # the APK path never touches the Electron binary — skip ~100MB
+          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ hashFiles('android/**/gradle-wrapper.properties', 'android/app/build.gradle') }}
+          restore-keys: gradle-
 
       - name: Build Android APK (static export + cap sync + gradle)
         run: npm run android:apk
@@ -220,6 +252,10 @@ jobs:
           printf '%s\n\n**SHA-256 (`%s`):** `%s`' "$BODY" "Frame-${VERSION}-android.apk" "$SUM" > body.md
           gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file body.md
           echo "APK sha256: $SUM"
+          # v0.26.0 — also attach the hash as a DURABLE asset: hand-written
+          # Persian notes PATCHed after the release were wiping this section.
+          echo "$SUM  Frame-${VERSION}-android.apk" > "Frame-${VERSION}-android.apk.sha256"
+          gh release upload "$TAG" "Frame-${VERSION}-android.apk.sha256" --clobber --repo "$GITHUB_REPOSITORY"
 
       # v0.12.0 — the in-app updater OTA path: the static export as a zip.
       # Name encodes the required native revision (Frame-webbundle-v1.2.3-n2.zip)

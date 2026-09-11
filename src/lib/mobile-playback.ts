@@ -143,13 +143,38 @@ export type PreflightAction =
   | { action: "next" } // proven-dead source — step the ladder NOW
   | { action: "wait" }; // inconclusive — let the element try
 
+/** v0.26.0 — is this HTTP status a TRANSIENT server-side failure? The
+ *  archive's dl hosts (dls*.aparatchi-dlcenter.top — ≈100% of the catalog's
+ *  URLs) answer 503 to non-Iranian IPs and under rate limit; the old code
+ *  read any status ≥ 400 as «source dead for good» and burned the whole
+ *  variant ladder on a healthy-but-rate-limited CDN (the real root cause of
+ *  the Breaking Bad / Planet Earth 1 complaints). 5xx → callers retry with
+ *  backoff BEFORE the verdict; 4xx (403/404/410…) is a property of the URL
+ *  itself → immediate next. Kept PURE (node-testable); the actual retry loop
+ *  lives beside the fetches (mkv-web.fetchRangeRetry5xx) and in the native
+ *  player (PlayerActivity's ERROR_CODE_IO_BAD_HTTP_STATUS handler). */
+export function isTransientServerStatus(status: number): boolean {
+  return status >= 500 && status <= 599;
+}
+
+/** v0.26.0 — backoff before 5xx retry `attempt` (1-based), matching the
+ *  native player's cadence: ~700ms then ~1500ms (2 retries max). */
+export function serverRetryBackoffMs(attempt: number): number {
+  return attempt === 1 ? 700 : 1500;
+}
+
 export function preflightDecision(
   p: PreflightProbe,
   opts: { preferMse: boolean; bridgeOk: boolean | null; engine: "auto" | "native" }
 ): PreflightAction {
   if (!p.reachable) {
-    // 403/404/503 geo-page → dead for the web player AND the element will hit
-    // the same wall; anything else (status 0) is a transport hiccup → wait
+    // 403/404 → dead for the web player AND the element will hit the same
+    // wall (4xx = the URL itself is the problem → immediate next).
+    // v0.26.0 — a 5xx verdict only reaches here AFTER the probe has already
+    // retried twice with backoff (fetchRangeRetry5xx / the native player's
+    // ERROR_CODE_IO_BAD_HTTP_STATUS retries): the server really is refusing
+    // this source right now. Anything else (status 0) is a transport hiccup
+    // → wait.
     return p.status >= 400 ? { action: "next" } : { action: "wait" };
   }
   if (!p.matroska) return { action: "keep" }; // token URL hiding an mp4 → element path

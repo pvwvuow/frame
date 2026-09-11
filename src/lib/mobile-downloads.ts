@@ -155,6 +155,18 @@ export async function resumeDownload(id: string) {
   const rec = (await db.dlitems.get(id)) as unknown as DownloadRecord | undefined;
   const b = nativeBridge();
   if (!rec || !b) return;
+  // v0.26.0 — DOUBLE-START GUARD (the UI half): a resume tap on an ACTIVE row
+  // used to call b.download again with the same id — the native engine then
+  // ran TWO threads into one dest.part with different Range offsets and the
+  // partial file ended up corrupt. An active row only rebinds the progress
+  // listeners and leaves the engine thread alone. (The native side also
+  // refuses a second thread for a live job — alreadyRunning — so boot-resume
+  // and stale rows stay safe either way.)
+  if (rec.status === "downloading") {
+    wire();
+    broadcast();
+    return;
+  }
   const stat = await b.fileStat({ path: rec.dest });
   if (stat.exists) {
     // already fully on disk → mark complete

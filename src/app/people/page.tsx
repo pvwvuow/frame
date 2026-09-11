@@ -5,8 +5,10 @@ import { Suspense, useDeferredValue, useEffect, useMemo, useRef, useState } from
 import { useSearchParams } from "next/navigation";
 import { getPeopleIndex } from "@/lib/mobile/db";
 import { fa } from "@/lib/format";
+import LoadErrorCard from "@/components/LoadErrorCard";
 import { UsersIcon, StarIcon, ClapperIcon, SearchIcon } from "@/components/Icons";
 import { personHref } from "@/lib/links";
+import { useAsyncData } from "@/lib/use-async-data";
 
 const HUES = [350, 265, 200, 150, 35, 320, 15, 230, 100, 45, 280, 180];
 
@@ -31,19 +33,11 @@ function PeopleInner() {
   const sp = useSearchParams();
   const role = sp.get("role") ?? undefined;
   const sort = sp.get("sort") ?? "rating";
-  const [all, setAll] = useState<Awaited<ReturnType<typeof getPeopleIndex>> | null>(null);
+  const { data: all, error, retry } = useAsyncData(() => getPeopleIndex(), []);
   const [rawQ, setRawQ] = useState("");
   const q = useDeferredValue(rawQ).trim();
   const [limit, setLimit] = useState(CHUNK);
   const sentinelRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    let alive = true;
-    getPeopleIndex().then((p) => alive && setAll(p));
-    return () => {
-      alive = false;
-    };
-  }, []);
 
   // new filter/sort/search → back to the first chunk
   useEffect(() => {
@@ -74,6 +68,16 @@ function PeopleInner() {
       sort === "count" ? b.count - a.count || b.avg - a.avg : sort === "name" ? a.name.localeCompare(b.name) : b.avg - a.avg || b.count - a.count
     );
   }, [all, role, sort, q]);
+
+  if (error) {
+    return (
+      <main className="pb-16">
+        <div className="mx-auto max-w-[1600px] px-4 pt-32 sm:px-8 lg:px-12">
+          <LoadErrorCard onRetry={retry} />
+        </div>
+      </main>
+    );
+  }
 
   if (!all) {
     return (

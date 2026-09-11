@@ -9,6 +9,7 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.util.Log;
 import android.view.Gravity;
 import android.view.GestureDetector;
 import android.view.HapticFeedbackConstants;
@@ -41,6 +42,7 @@ import androidx.media3.common.TrackSelectionOverride;
 import androidx.media3.common.TrackSelectionParameters;
 import androidx.media3.common.Tracks;
 import androidx.media3.common.util.UnstableApi;
+import androidx.media3.datasource.HttpDataSource;
 import androidx.media3.datasource.okhttp.OkHttpDataSource;
 import androidx.media3.exoplayer.DefaultRenderersFactory;
 import androidx.media3.exoplayer.ExoPlayer;
@@ -89,6 +91,8 @@ import java.util.Set;
 @OptIn(markerClass = UnstableApi.class)
 public class PlayerActivity extends Activity {
 
+    private static final String TAG = "NamaPlayer";
+
     /** The ONE host family the catalog streams from (dls..dls9 subdomains).
      *  These keep the desktop-parity relaxed TLS; all other hosts are strict. */
     private static final Set<String> RELAXED_TLS_HOSTS = new HashSet<>(
@@ -135,6 +139,13 @@ public class PlayerActivity extends Activity {
     };
     private static final String[] RESIZE_LABELS = {"اندازه", "پرکردن", "کشیده"};
     private final Runnable hideRunnable = this::hideControls;
+
+    // v0.26.0 — transient-server-error (5xx) retries for the SAME source.
+    // dlcenter answers 503 to non-Iranian IPs / under rate limit; that is a
+    // temporary condition, not a dead source. Each retry consumes one count;
+    // a healthy STATE_READY stretch re-arms both.
+    private static final int MAX_HTTP_RETRIES = 2;
+    private int httpRetryCount = 0;
     private final Runnable uiRunnable = new Runnable() {
         @Override
         public void run() {
@@ -366,6 +377,13 @@ public class PlayerActivity extends Activity {
         player.addListener(new Player.Listener() {
             @Override
             public void onPlaybackStateChanged(int state) {
+                if (state == Player.STATE_READY) {
+                    // v0.26.0 — a healthy stretch re-arms the 5xx retries and
+                    // clears any stale error string (a recovered 503 must not
+                    // reach JS as a failure when the session ends cleanly)
+                    httpRetryCount = 0;
+                    sError = "";
+                }
                 if (state == Player.STATE_ENDED) {
                     sEnded = true;
                     if (player != null) {
@@ -427,11 +445,48 @@ public class PlayerActivity extends Activity {
                     }
                 }
 
+                // v0.26.0 — dlcenter 5xx (503 to non-Iranian IPs / rate limit)
+                // is TRANSIENT, not a dead source: re-prepare the SAME media
+                // item up to 2 times with backoff before the toast+finish
+                // ladder. onPlayerError only fires from the terminal error
+                // state (STATE_IDLE), so a fresh prepare() is the correct
+                // re-entry; the per-source counter (re-armed on STATE_READY)
+                // makes an infinite loop impossible. 4xx stays immediate.
+                int httpStatus = httpStatusOf(error);
+                if (error.errorCode == PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS
+                    && httpStatus >= 500 && httpStatus <= 599
+                    && player != null && httpRetryCount < MAX_HTTP_RETRIES) {
+                    httpRetryCount++;
+                    final long delayMs = httpRetryCount == 1 ? 700L : 1500L;
+                    final long resumePos = player.getCurrentPosition();
+                    Toast.makeText(PlayerActivity.this,
+                        "سرور موقتاً در دسترس نیست؛ تلاش مجدد…", Toast.LENGTH_SHORT).show();
+                    tick.postDelayed(() -> {
+                        try {
+                            if (player == null) return;
+                            if (resumePos > 0) player.seekTo(resumePos);
+                            player.prepare();
+                            player.setPlayWhenReady(true);
+                        } catch (Exception e) {
+                            // a failed re-entry lands in the normal error path
+                            Log.w(TAG, "http retry prepare failed", e);
+                            sError = "http-retry-failed: " + e.getClass().getSimpleName();
+                        }
+                    }, delayMs);
+                    return;
+                }
+
                 Toast.makeText(PlayerActivity.this,
                     "پخش این نسخه ممکن نشد", Toast.LENGTH_LONG).show();
                 tick.postDelayed(() -> finish(), 600L);
             }
         });
+
+        // v0.26.0 — bindController() now runs INSIDE the crash shield: an OEM
+        // view exception (a missing id, an inflate quirk) used to escape
+        // onCreate and kill the whole app. The shield degrades it to the
+        // honest «error» result exactly like a player-construction failure.
+        bindController();
         } catch (Exception e) {
             sError = "setup-failed: " + e.getClass().getSimpleName()
                 + (e.getMessage() == null ? "" : (": " + e.getMessage()));
@@ -441,8 +496,6 @@ public class PlayerActivity extends Activity {
 
         tick.post(tickRunner);
         tick.post(uiRunnable);
-
-        bindController();
     }
 
     /* ================= custom controller (v0.17.0) ================= */
@@ -957,6 +1010,20 @@ public class PlayerActivity extends Activity {
         }
     }
 
+    /** v0.26.0 — walk the cause chain for the HTTP status behind
+     *  ERROR_CODE_IO_BAD_HTTP_STATUS (OkHttpDataSource throws
+     *  InvalidResponseCodeException carrying the raw responseCode). */
+    private static int httpStatusOf(PlaybackException error) {
+        Throwable t = error.getCause();
+        for (int i = 0; t != null && i < 8; i++) {
+            if (t instanceof HttpDataSource.InvalidResponseCodeException) {
+                return ((HttpDataSource.InvalidResponseCodeException) t).responseCode;
+            }
+            t = t.getCause();
+        }
+        return 0;
+    }
+
     /** v0.18.0 — episodes sheet picked another episode: hand the choice back
      *  to the JS engine (which re-runs ownership/handoff for that episode). */
     private void finishWithSwitch(int episodeId) {
@@ -1005,6 +1072,59 @@ public class PlayerActivity extends Activity {
         data.putExtra("suppressNext", sleepEndOfEpisode);
         setResult(RESULT_OK, data);
         super.finish();
+    }
+
+    /* ================= v0.26.0 — background/foreground contract =================
+     * There is deliberately NO foreground service (out of scope): backgrounding
+     * the activity now PAUSES playback (the VOD norm — no runaway audio) and
+     * stops the UI tick runnables, instead of letting Android 12+ freeze the
+     * process mid-playback (the «occasional crash» reports). Risky calls are
+     * wrapped in the v0.19.0 crash-shield style. */
+
+    /** remove-then-post keeps this idempotent (onCreate posts the same
+     *  runnables; on a cold start onStart/onResume run right after and
+     *  re-arm them cleanly — never two parallel tick chains). */
+    private void armUiTicks() {
+        try {
+            tick.removeCallbacks(tickRunner);
+            tick.removeCallbacks(uiRunnable);
+            tick.post(tickRunner);
+            tick.post(uiRunnable);
+        } catch (Exception e) {
+            Log.w(TAG, "armUiTicks failed", e);
+        }
+    }
+
+    @Override
+    protected void onStart() {
+        super.onStart();
+        armUiTicks();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        // UI ticks resume here too (idempotent). Playback itself is NOT
+        // auto-resumed — the user's pause choice stands while they answer
+        // something else; they press play when they come back.
+        armUiTicks();
+    }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        try {
+            if (player != null) player.pause();
+        } catch (Exception e) {
+            Log.w(TAG, "onStop pause failed", e);
+        }
+        try {
+            tick.removeCallbacks(tickRunner);
+            tick.removeCallbacks(uiRunnable);
+            tick.removeCallbacks(hideRunnable);
+        } catch (Exception e) {
+            Log.w(TAG, "onStop ticks failed", e);
+        }
     }
 
     @Override

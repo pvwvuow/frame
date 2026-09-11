@@ -1,22 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
 import FavoritesGrid from "@/components/library/FavoritesGrid";
+import LoadErrorCard from "@/components/LoadErrorCard";
 import { HeartIcon, BookmarkIcon, StarIcon, FilmIcon, TvIcon } from "@/components/Icons";
-import { getFavoriteRows, type FavoriteRow } from "@/lib/mobile/userdata";
+import { getFavoriteRows } from "@/lib/mobile/userdata";
 import { fa } from "@/lib/format";
+import { useAsyncData } from "@/lib/use-async-data";
 
 export default function FavoritesPage() {
-  const [rows, setRows] = useState<FavoriteRow[] | null>(null);
-
-  useEffect(() => {
-    let alive = true;
-    getFavoriteRows().then((r) => alive && setRows(r));
-    return () => {
-      alive = false;
-    };
-  }, []);
+  const { data: rows, error, retry } = useAsyncData(() => getFavoriteRows(), []);
 
   const movies = rows?.filter((r) => r.title.type === "movie").length ?? 0;
   const avg = rows && rows.length ? (rows.reduce((a, r) => a + r.title.rating, 0) / rows.length).toFixed(1) : "—";
@@ -62,7 +55,7 @@ export default function FavoritesPage() {
         </div>
       </section>
       <div className="mx-auto max-w-[1600px] px-4 sm:px-8 lg:px-12">
-        {rows ? <FavoritesGrid rows={rows} /> : <GridSkeleton />}
+        {error ? <LoadErrorCard onRetry={retry} /> : rows ? <FavoritesGrid rows={rows} /> : <GridSkeleton />}
       </div>
     </main>
   );

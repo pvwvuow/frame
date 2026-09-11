@@ -1,6 +1,7 @@
 import { db, ensureRuntimeSchema } from "@/lib/db";
 import { getUserKey } from "@/lib/user";
 import { revalidatePath } from "next/cache";
+import { sameOriginOrThrow } from "@/lib/api-guard";
 
 export const dynamic = "force-dynamic";
 
@@ -51,6 +52,8 @@ export async function GET() {
 
 /* POST /api/collections — create. Body: { name } → { id, name } */
 export async function POST(req: Request) {
+  const guard = sameOriginOrThrow(req);
+  if (guard) return guard;
   await ensureRuntimeSchema();
   const userKey = await getUserKey();
   const body = (await req.json().catch(() => null)) as { name?: string } | null;
@@ -65,6 +68,8 @@ export async function POST(req: Request) {
 
 /* PATCH /api/collections — rename. Body: { id, name } */
 export async function PATCH(req: Request) {
+  const guard = sameOriginOrThrow(req);
+  if (guard) return guard;
   await ensureRuntimeSchema();
   const userKey = await getUserKey();
   const body = (await req.json().catch(() => null)) as { id?: number; name?: string } | null;
@@ -82,6 +87,8 @@ export async function PATCH(req: Request) {
 
 /* DELETE /api/collections — Body/query: { id } */
 export async function DELETE(req: Request) {
+  const guard = sameOriginOrThrow(req);
+  if (guard) return guard;
   await ensureRuntimeSchema();
   const userKey = await getUserKey();
   let id = Number(new URL(req.url).searchParams.get("id"));

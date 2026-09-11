@@ -406,12 +406,16 @@ export default function PlayerMobile() {
     };
   }, [open, slug]);
 
-  // restore volume preference — muted is deliberately NOT restored (desktop
-  // parity: a stale muted flag was the «the movie has no sound» bug)
+  // restore volume preference — including a deliberate 0 (B-10: the old
+  // `v > 0` guard discarded an explicit «میکس روی صفر»). muted is deliberately
+  // NOT restored (desktop parity: a stale muted flag was the
+  // «the movie has no sound» bug)
   useEffect(() => {
     try {
-      const v = Number(localStorage.getItem(VOL_KEY));
-      if (Number.isFinite(v) && v > 0) setVolume(Math.min(1, v));
+      const raw = localStorage.getItem(VOL_KEY);
+      if (raw === null) return; // never set — keep the default 1
+      const v = Number(raw);
+      if (Number.isFinite(v) && v >= 0) setVolume(Math.min(1, v));
     } catch {
       /* ignore */
     }
@@ -425,6 +429,13 @@ export default function PlayerMobile() {
       /* ignore */
     }
   }, [volume, muted]);
+
+  /* B-10: unmuting while volume === 0 kept the film silent — restore a
+   * sensible level whenever that combination unmutes. */
+  const toggleMute = useCallback(() => {
+    if (muted && volume === 0) setVolume(0.6);
+    setMuted((m) => !m);
+  }, [muted, volume]);
 
   // default variant: pip hint → user quality pick → remembered variant taste →
   // hardsub → dub → catalog order + the AUDIO GUARD (undecodable DTS/AC3 audio
@@ -1508,11 +1519,15 @@ export default function PlayerMobile() {
     haptic();
     bumpUi();
     const ok = await enterFullscreen(wrapRef.current);
-    if (!ok) return;
+    if (!ok) {
+      // B-9: a refusal must not be silent — the helpers swallow the rejection
+      showNotice("حالت تمام‌صفحه در دسترس نیست");
+      return;
+    }
     // v0.18.0 — the «قفل جهت» setting governs the fullscreen orientation
     if (orientLock === "portrait") void lockPortrait();
     else void lockLandscape(); // auto (sensor landscape) + forced landscape
-  }, [bumpUi, orientLock]);
+  }, [bumpUi, orientLock, showNotice]);
 
   const exitToPortrait = useCallback(async () => {
     haptic();
@@ -2395,7 +2410,7 @@ export default function PlayerMobile() {
                   </button>
                 )}
                 <div className="flex items-center gap-1 rounded-full border border-white/20 bg-white/10 px-2" dir="ltr">
-                  <button type="button" onClick={() => setMuted((m) => !m)} className="grid h-9 w-8 place-items-center text-white" aria-label="صدا">
+                  <button type="button" onClick={toggleMute} className="grid h-9 w-8 place-items-center text-white" aria-label="صدا">
                     {muted || volume === 0 ? <MuteIcon width={18} height={18} /> : <VolumeIcon width={18} height={18} />}
                   </button>
                   <input

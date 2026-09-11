@@ -15,11 +15,11 @@ import HideOnPip from "@/components/HideOnPip";
 import GlobalPlayer from "@/components/GlobalPlayer";
 import CatalogGate from "@/components/mobile/CatalogGate";
 import { makeT, LOCALE_META, dirOf, DEFAULT_LOCALE } from "@/lib/i18n";
+import { getLocale } from "@/lib/i18n/server";
 import "./globals.css";
 
-/* ANDROID BUILD (static export): no request-scope APIs here. Locale is
-   pinned to the default (fa) — LocaleProvider still lets the user switch,
-   it just hydrates from localStorage on the client. */
+/* Metadata stays module-scope (static default); the per-request locale that
+ * now drives <html lang/dir> + LocaleProvider is resolved in RootLayout. */
 const t = makeT(DEFAULT_LOCALE);
 
 export const metadata: Metadata = {
@@ -121,8 +121,13 @@ const AUDIO_UNLOCK_SCRIPT = String.raw`(function(){
   });
 })();`;
 
-export default function RootLayout({ children }: { children: ReactNode }) {
-  const locale = DEFAULT_LOCALE;
+/* B-3: the locale was pinned to the default forever — the persisted choice
+ * never reached the server render. getLocale() reads the nama_locale cookie
+ * (validate + fallback to fa; on the ANDROID static export cookies() is
+ * outside request scope and the try/catch inside getLocale falls back to fa,
+ * exactly as before). This makes the root layout dynamic — accepted. */
+export default async function RootLayout({ children }: { children: ReactNode }) {
+  const locale = await getLocale();
   return (
     <html lang={LOCALE_META[locale].htmlLang} dir={dirOf(locale)} data-locale={locale} data-scroll-behavior="smooth" suppressHydrationWarning>
       <body className="min-h-screen bg-ink text-zinc-100 antialiased">

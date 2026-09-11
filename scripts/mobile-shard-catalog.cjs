@@ -90,12 +90,19 @@ function main() {
    * remote.version, so a constant (the old format-version 1) made Android
    * keep the previous catalog forever after an update. The index payload's
    * sha256 (from version.json, written by export-catalog.mjs) is the
-   * content identity — its prefix is unique per content change. */
-  let version = "unknown";
+   * content identity — its prefix is unique per content change.
+   * A-23 — a MISSING/unreadable version.json must fail the step, not
+   * silently become the stable "unknown" (which would make db.ts treat
+   * every future republish as same-version and skip re-import forever). */
+  let version;
   try {
     const vj = JSON.parse(fs.readFileSync(path.join(ROOT, "public", "catalog", "version.json"), "utf8"));
-    version = String(vj.sha256 || vj.version || "unknown").slice(0, 12);
+    version = String(vj.sha256 || vj.version || "").slice(0, 12);
   } catch {}
+  if (!version) {
+    console.error("FATAL: public/catalog/version.json missing or has no sha256 — run export-catalog.mjs first. Refusing to stamp shards with an unstable version.");
+    process.exit(1);
+  }
 
   const manifest = {
     format: "nama-catalog-mobile-lite",

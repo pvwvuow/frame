@@ -362,7 +362,7 @@ export default function DarkroomApp({
                       }}
                       className={`flex w-full items-center gap-3 px-3 py-2.5 text-start transition hover:bg-white/[0.05] ${sel?.id === r.id ? "bg-white/[0.06]" : ""}`}
                     >
-                      <img src={r.poster} alt="" className="h-14 w-10 shrink-0 rounded object-cover" />
+                      <img src={r.poster} alt="" loading="lazy" decoding="async" className="h-14 w-10 shrink-0 rounded object-cover" />
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-sm font-bold text-white">{locale === "en" && r.titleEn ? r.titleEn : r.title}</span>
                         <span className="num mt-0.5 block text-[11px] text-zinc-500">
@@ -385,7 +385,7 @@ export default function DarkroomApp({
                     className={`group w-[68px] shrink-0 text-start ${sel?.id === r.id ? "" : "opacity-75 hover:opacity-100"}`}
                   >
                     <span className={`block overflow-hidden rounded-md transition ${sel?.id === r.id ? "ring-2 ring-brand" : "ring-1 ring-white/10 group-hover:ring-white/30"}`}>
-                      <img src={r.poster} alt="" className="aspect-[2/3] w-full object-cover" />
+                      <img src={r.poster} alt="" loading="lazy" decoding="async" className="aspect-[2/3] w-full object-cover" />
                     </span>
                     <span className="mt-1.5 block truncate text-[10px] text-zinc-500">{locale === "en" ? r.titleEn || r.title : r.title}</span>
                   </button>

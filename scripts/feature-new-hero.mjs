@@ -38,9 +38,16 @@ const require2 = createRequire(import.meta.url);
 const { PrismaClient } = require2(path.join(ROOT, "node_modules", "@prisma", "client"));
 
 /* ---- knobs ------------------------------------------------------------ */
-const COUNT = Number(process.env.HERO_COUNT ?? 8);
-const MIN_RATING = Number(process.env.HERO_MIN_RATING ?? 8.5);
-const WAVE_WINDOW_H = Number(process.env.HERO_WAVE_WINDOW_H ?? 72);
+/* A-24 — env numbers are sanitized: a typo like HERO_COUNT=eight must not
+ * produce `LIMIT NaN` (SQL syntax error) and kill the whole publish
+ * pipeline; fall back to the documented defaults instead. */
+const envNum = (v, fallback) => {
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+};
+const COUNT = envNum(process.env.HERO_COUNT, 8);
+const MIN_RATING = envNum(process.env.HERO_MIN_RATING, 8.5);
+const WAVE_WINDOW_H = envNum(process.env.HERO_WAVE_WINDOW_H, 72);
 
 /* Manual pin (checked first). Empty = full auto. tt-ids only. */
 const HERO_TT = [

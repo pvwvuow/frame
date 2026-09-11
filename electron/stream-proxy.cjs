@@ -16,6 +16,30 @@
  *   GET /probe?u=<url>                   one-shot header intelligence
  *   GET /ping                            liveness + stats
  *
+ * v0.25.x – NOT AN OPEN RELAY ANYMORE. The proxy only ever listened on
+ * 127.0.0.1, but that still let ANY local web page (and any local process)
+ * use it as an unauthenticated CORS-* relay: fetch arbitrary URLs through it
+ * (SSRF via the user's browser) and READ the responses. Every DATA endpoint
+ * (/stream /probe /subs) therefore requires this boot's per-session token
+ * (crypto.randomBytes(16).toString("hex")), accepted three ways:
+ *
+ *   /k/<token>/stream?u=…        path prefix — main.cjs embeds it in the
+ *                                base URL it hands the renderer over IPC
+ *                                (nama:proxy-url), so every renderer
+ *                                consumer's `${proxyBase}/stream?u=…`
+ *                                concatenation carries it untouched
+ *   /stream?u=…&k=<token>        ?k= query param
+ *   x-nama-proxy-token: <token>  header (preflight allows it)
+ *
+ * /ping stays token-free on purpose (liveness stats, no user-supplied URL).
+ * CORS answers the EXACT renderer origin passed by main.cjs (allowedOrigin,
+ * string or per-request getter) instead of "*"; OPTIONS preflights get the
+ * same echo plus Access-Control-Allow-Headers for the token header.
+ * Tests/CI: startStreamProxy() WITHOUT opts keeps the legacy open behavior
+ * (scripts/test-stream-proxy.mjs drives it directly); production main.cjs
+ * opts in with { requireToken: true }. NAMA_PROXY_DISABLE_TOKEN=1 or
+ * { disableToken: true } force the open mode anywhere.
+ *
  * v0.10.18 – COMPLETE REWRITE of the extraction pipeline. The passive
  * scanner of v0.10.5–0.10.17 had four structural failure modes that kept
  * producing the «زیرنویس پخش نمی‌شود» reports no matter how many patches
@@ -879,6 +903,15 @@ function isMatroska(url, contentType) {
   return /\.mkv|\.mk3d|\.webm(\?|$)/i.test(url || "");
 }
 
+/** Constant-time string compare for the proxy token (length mismatch and
+ *  empty values fail closed). */
+function tokenSafeEqual(a, b) {
+  const A = Buffer.from(String(a || ""), "utf8");
+  const B = Buffer.from(String(b || ""), "utf8");
+  if (!A.length || A.length !== B.length) return false;
+  return crypto.timingSafeEqual(A, B);
+}
+
 /** Capture the file size out of a content-range header value. */
 function noteFileSize(store, contentRange) {
   const m = /\/(\d+)\s*$/.exec(String(contentRange || ""));
@@ -943,7 +976,37 @@ function maybeBackfill(store, target, posSec, durSec, onUp) {
 
 function startStreamProxy(log, opts = {}) {
   const stores = new StoreCache(30);
-  const stats = { streams: 0, errors: 0, cues: 0, backfills: 0 };
+  const stats = { streams: 0, errors: 0, cues: 0, backfills: 0, rejected: 0 };
+
+  /* v0.25.x – per-session token (see the header comment). Generated at proxy
+   * startup; enforcement turns on with { requireToken: true } or an explicit
+   * opts.token (production main.cjs) and stays OFF for bare test/CI callers.
+   * NAMA_PROXY_DISABLE_TOKEN=1 / { disableToken: true } force it off. */
+  const token =
+    typeof opts.token === "string" && opts.token.length > 0
+      ? opts.token
+      : crypto.randomBytes(16).toString("hex");
+  const enforce =
+    (opts.requireToken === true || (typeof opts.token === "string" && opts.token.length > 0)) &&
+    opts.disableToken !== true &&
+    process.env.NAMA_PROXY_DISABLE_TOKEN !== "1";
+  /** CORS: echo the EXACT renderer origin (string or per-request getter) —
+   *  never "*". Unknown origin → the header is omitted and the browser
+   *  blocks the cross-origin read (fail closed). */
+  const corsOrigin = () => {
+    try {
+      const o = typeof opts.allowedOrigin === "function" ? opts.allowedOrigin() : opts.allowedOrigin;
+      return typeof o === "string" && o ? o : "";
+    } catch {
+      return "";
+    }
+  };
+  const corsHeaders = () => {
+    const h = { vary: "origin" };
+    const o = corsOrigin();
+    if (o) h["access-control-allow-origin"] = o;
+    return h;
+  };
 
   const server = http.createServer((req, res) => {
     const peer = req.socket.remoteAddress || "";
@@ -959,13 +1022,48 @@ function startStreamProxy(log, opts = {}) {
       return;
     }
 
-    if (u.pathname === "/subs" || u.pathname === "/ping") {
+    /* Token carriers, in priority order: x-nama-proxy-token header, ?k=
+       query param, /k/<token> path prefix (the form main.cjs embeds in the
+       base URL so renderer `${proxyBase}/endpoint` concatenation keeps
+       working without a src/ change). /ping is deliberately token-free. */
+    let endpoint = u.pathname;
+    const hdrToken = req.headers["x-nama-proxy-token"];
+    let given = (Array.isArray(hdrToken) ? hdrToken[0] : hdrToken) || u.searchParams.get("k") || "";
+    if (!given) {
+      const m = /^\/k\/([0-9a-f]{16,64})(\/.*)?$/i.exec(u.pathname);
+      if (m) {
+        given = m[1];
+        endpoint = m[2] || "/";
+      }
+    }
+    const needsToken = endpoint === "/stream" || endpoint === "/probe" || endpoint === "/subs";
+
+    // CORS preflight — same origin echo, token header allowed
+    if (req.method === "OPTIONS") {
+      res.writeHead(204, {
+        ...corsHeaders(),
+        "access-control-allow-methods": "GET, OPTIONS",
+        "access-control-allow-headers": "x-nama-proxy-token, range, content-type",
+        "access-control-max-age": "600",
+      });
+      res.end();
+      return;
+    }
+
+    if (enforce && needsToken && !tokenSafeEqual(given, token)) {
+      stats.rejected += 1;
+      res.writeHead(403, { "content-type": "text/plain; charset=utf-8", ...corsHeaders() });
+      res.end("forbidden");
+      return;
+    }
+
+    if (endpoint === "/subs" || endpoint === "/ping") {
       res.writeHead(200, {
         "content-type": "application/json; charset=utf-8",
-        "access-control-allow-origin": "*",
+        ...corsHeaders(),
         "cache-control": "no-store",
       });
-      if (u.pathname === "/ping") return res.end(JSON.stringify({ ok: true, stats }));
+      if (endpoint === "/ping") return res.end(JSON.stringify({ ok: true, stats }));
       const target = u.searchParams.get("u") || "";
       const store = stores.get(target);
       const posSec = Number(u.searchParams.get("pos") || 0) || 0;
@@ -1086,15 +1184,15 @@ function startStreamProxy(log, opts = {}) {
      * every release) runs through the same scanner; results land in the
      * shared per-URL store, so a later /stream pass keeps accumulating cues
      * without redoing the work. Responds as soon as Tracks is parsed. */
-    if (u.pathname === "/probe") {
+    if (endpoint === "/probe") {
       const target = u.searchParams.get("u") || "";
       if (!/^https?:\/\//i.test(target)) {
-        res.writeHead(400, { "content-type": "application/json" }).end(JSON.stringify({ error: "bad url" }));
+        res.writeHead(400, { "content-type": "application/json", ...corsHeaders() }).end(JSON.stringify({ error: "bad url" }));
         return;
       }
       res.writeHead(200, {
         "content-type": "application/json; charset=utf-8",
-        "access-control-allow-origin": "*",
+        ...corsHeaders(),
         "cache-control": "no-store",
       });
       const store = stores.get(target);
@@ -1192,14 +1290,14 @@ function startStreamProxy(log, opts = {}) {
       return;
     }
 
-    if (u.pathname !== "/stream") {
-      res.writeHead(404).end();
+    if (endpoint !== "/stream") {
+      res.writeHead(404, { ...corsHeaders() }).end();
       return;
     }
 
     const target = u.searchParams.get("u") || "";
     if (!/^https?:\/\//i.test(target)) {
-      res.writeHead(400, { "content-type": "text/plain; charset=utf-8" }).end("bad url");
+      res.writeHead(400, { "content-type": "text/plain; charset=utf-8", ...corsHeaders() }).end("bad url");
       return;
     }
 
@@ -1263,7 +1361,7 @@ function startStreamProxy(log, opts = {}) {
         for (const h of PASS_HEADERS) {
           if (up.headers[h] !== undefined) headers[h] = up.headers[h];
         }
-        headers["access-control-allow-origin"] = "*";
+        Object.assign(headers, corsHeaders()); // exact renderer origin, never "*"
         headers["cache-control"] = "no-store";
         res.writeHead(up.statusCode, headers);
 
@@ -1315,7 +1413,7 @@ function startStreamProxy(log, opts = {}) {
       .catch((err) => {
         stats.errors += 1;
         if (!res.headersSent) {
-          res.writeHead(502, { "content-type": "text/plain; charset=utf-8", "access-control-allow-origin": "*" });
+          res.writeHead(502, { "content-type": "text/plain; charset=utf-8", ...corsHeaders() });
           res.end(`proxy error: ${err && err.message ? err.message : err}`);
         } else res.destroy();
       });
@@ -1331,6 +1429,7 @@ function startStreamProxy(log, opts = {}) {
       const { port } = server.address();
       resolve({
         base: `http://127.0.0.1:${port}`,
+        token, // renderer reaches it via base + "/k/" + token (see main.cjs)
         close: () => server.close(),
         stats: () => stats,
       });

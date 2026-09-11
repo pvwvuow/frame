@@ -97,7 +97,7 @@ export default function SubOverlay({
       aria-live="polite"
       style={vPos != null ? { bottom: `${100 - vPos}%` } : undefined}
     >
-      <div className="sub-overlay__text" dir="rtl">
+      <div className="sub-overlay__text" dir="auto">
         {text}
       </div>
     </div>

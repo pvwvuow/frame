@@ -1,9 +1,12 @@
 import { db } from "@/lib/db";
 import { revalidatePath } from "next/cache";
+import { sameOriginOrThrow } from "@/lib/api-guard";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
+  const guard = sameOriginOrThrow(req);
+  if (guard) return guard;
   const body = (await req.json().catch(() => null)) as {
     titleId?: number;
     slug?: string;

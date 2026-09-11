@@ -40,10 +40,11 @@ import {
 export default function DownloadsClient() {
   const { t } = useI18n();
   const electron = useIsElectron();
-  // v0.12.0 — on Android the native download engine + its own page body
-  if (!electron && dlSupported()) return <MobileDownloadsList />;
   const [state, setState] = useState<{ dir: string | null; items: DownloadItem[] }>({ dir: null, items: [] });
 
+  /* ALL hooks live ABOVE the mobile-branch return — declaring them after an
+   * early return broke rules-of-hooks and crashed the page whenever the
+   * branch flipped between renders (B-6). */
   useDownloadState((s) => setState({ dir: s.dir, items: s.items ?? [] }));
 
   // keep polling in case an event burst was missed
@@ -54,6 +55,9 @@ export default function DownloadsClient() {
     }, 3000);
     return () => clearInterval(id);
   }, [electron]);
+
+  // v0.12.0 — on Android the native download engine + its own page body
+  if (!electron && dlSupported()) return <MobileDownloadsList />;
 
   const g = groupItems(state.items || []);
   const total = state.items?.length ?? 0;

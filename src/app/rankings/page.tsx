@@ -1,13 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { Suspense, useEffect, useState } from "react";
+import { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { getRankings } from "@/lib/mobile/db";
 import { fa, formatViews, typeLabel } from "@/lib/format";
 import TitleName from "@/components/TitleName";
+import LoadErrorCard from "@/components/LoadErrorCard";
 import { StarIcon, FilmIcon, TvIcon, SparklesIcon, EyeIcon } from "@/components/Icons";
 import { titleHref } from "@/lib/mobile-links";
+import { useAsyncData } from "@/lib/use-async-data";
 
 const TABS = [
   { v: undefined, label: "همه", icon: SparklesIcon },
@@ -25,16 +27,17 @@ function RankingsInner() {
   const sp = useSearchParams();
   const typeParam = sp.get("type");
   const valid = typeParam === "movie" || typeParam === "series" ? (typeParam as "movie" | "series") : undefined;
-  const [rows, setRows] = useState<Awaited<ReturnType<typeof getRankings>> | null>(null);
+  const { data: rows, error, retry } = useAsyncData(() => getRankings(valid, 100), [valid]);
 
-  useEffect(() => {
-    let alive = true;
-    setRows(null);
-    getRankings(valid, 100).then((r) => alive && setRows(r));
-    return () => {
-      alive = false;
-    };
-  }, [valid]);
+  if (error) {
+    return (
+      <main className="pb-16">
+        <div className="mx-auto max-w-[1600px] px-4 pt-32 sm:px-8 lg:px-12">
+          <LoadErrorCard onRetry={retry} />
+        </div>
+      </main>
+    );
+  }
 
   if (!rows) {
     return (

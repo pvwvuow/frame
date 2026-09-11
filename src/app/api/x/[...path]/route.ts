@@ -1,4 +1,5 @@
 import type { Title as DbTitle } from "@prisma/client";
+import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { ensureSeeded } from "@/db/seed";
 import { getUserKey } from "@/lib/user";
@@ -89,7 +90,48 @@ const noStore = { "Cache-Control": "no-store" };
 const ok = (data: unknown) => Response.json(data, { headers: noStore });
 const num = (v: string | null): number => Math.max(0, Number(v ?? 0) || 0);
 
+/* A-3 — فقط ستون‌های سبکِ lite از DB خوانده می‌شوند؛ description/sources/cast
+ * (چند-KB برای هر ردیف × ۱۴,۸۷۴) روی سیم نمی‌روند که بعداً دور ریخته شوند.
+ * خروجی از ~۱۲-۱۴MB به ~۵-۷MB و پارس/serialize هم سبک‌تر می‌شود. */
+const LITE_SELECT = {
+  id: true,
+  slug: true,
+  title: true,
+  titleEn: true,
+  type: true,
+  year: true,
+  rating: true,
+  duration: true,
+  genres: true,
+  poster: true,
+  backdrop: true,
+  quality: true,
+  country: true,
+  ageRating: true,
+  views: true,
+  featured: true,
+  trendingScore: true,
+  director: true,
+  cast: true,
+  createdAt: true,
+} satisfies Record<string, true>;
+type LiteRow = { [K in keyof typeof LITE_SELECT]: unknown } & { createdAt: Date | string };
+const liteOfRow = (t: LiteRow) =>
+  liteOf(t as unknown as DbTitle);
+
+/** A-16 — wrapper خطا: هر پرتاب‌شدگی (DB قفل‌شده، merge در جریان، ورودی خراب…)
+ *  به‌جای صفحه‌ی HTML 500 که res.json() کلاینت را می‌شکند، با JSON ۵۰۳ پاس
+ *  داده می‌شود؛ جزئیات فقط در لاگ سرور می‌ماند. */
 export async function GET(req: Request, ctx: { params: Promise<{ path: string[] }> }) {
+  try {
+    return await handleX(req, ctx);
+  } catch (e) {
+    console.error("[api/x] request failed:", e instanceof Error ? e.message : e);
+    return NextResponse.json({ error: "catalog_unavailable" }, { status: 503 });
+  }
+}
+
+async function handleX(req: Request, ctx: { params: Promise<{ path: string[] }> }) {
   await ensureSeeded();
   const { path } = await ctx.params;
   const [head, arg] = path;
@@ -99,7 +141,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ path: string[] 
   switch (head) {
     /* in-memory lite index — the desktop counterpart of the shard catalog */
     case "lite": {
-      const rows = await db.title.findMany({ orderBy: { id: "asc" } });
+      const rows = await db.title.findMany({ orderBy: { id: "asc" }, select: LITE_SELECT });
       const movies = rows.filter((r) => r.type !== "series").length;
       /* v0.25.0 — real per-title episode/season counts (one groupBy; feeds
        * the hero's zero-episode rule + list badges on desktop too) */
@@ -114,7 +156,12 @@ export async function GET(req: Request, ctx: { params: Promise<{ path: string[] 
       return ok({
         manifest: {
           format: "frame-lite",
-          version: `db-${rows.length}`,
+          // A-25 — length alone collides between different catalogs; the
+          // newest add-date adds a cheap identity dimension.
+          version: `db-${rows.length}-${Math.max(...rows.map((r) => {
+            const ms = r.createdAt instanceof Date ? r.createdAt.getTime() : Date.parse(String(r.createdAt ?? ""));
+            return Number.isFinite(ms) ? ms : 0;
+          }), 0)}`,
           generatedAt: new Date().toISOString(),
           counts: { titles: rows.length, movies, series: rows.length - movies, episodes: 0 },
           shardSize: 0,
@@ -122,7 +169,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ path: string[] 
         },
         titles: rows.map((r) => {
           const c = epCount.get(r.id);
-          return { ...liteOf(r), episodeCount: c?.ep ?? 0, seasonCount: c?.se ?? 0 };
+          return { ...liteOfRow(r), episodeCount: c?.ep ?? 0, seasonCount: c?.se ?? 0 };
         }),
       });
     }

@@ -28,6 +28,11 @@ const COVERS_REV_KEY = "frame.covers.rev";
 /* v0.25.0 — cover packs are OPT-IN: images stream from metahub per-<img> by
  * default (the user's call: «ن ک بره کل تصاویر و دیتا هارو یکجا دانلود کنه»). */
 const COVERS_AUTO_KEY = "frame.covers.auto";
+/* v0.26.0 — the applied OTA tag, mirrored in BOTH places that survive a
+ * mid-apply kill: the native applyBundle persists its own `otaVersion` pref
+ * (Java, before the swap reload), and this localStorage mirror keeps the JS
+ * decision working even when getInstallInfo is unavailable. */
+const OTA_TAG_KEY = "nama.ota.version";
 const partsKey = (rev: number) => `frame.covers.parts.r${rev}`;
 
 /** Whether the user opted into downloading/keeping the offline cover packs. */
@@ -85,6 +90,37 @@ function isNewer(a: string, b: string): boolean {
   const [a1, a2, a3] = versionTuple(a);
   const [b1, b2, b3] = versionTuple(b);
   return a1 !== b1 ? a1 > b1 : a2 !== b2 ? a2 > b2 : a3 > b3;
+}
+
+/** The OTA tag this install has already applied (JS mirror; the native
+ *  applyBundle also persists `otaVersion` in its own prefs). */
+function storedOtaTag(): string {
+  try {
+    return localStorage.getItem(OTA_TAG_KEY) || "";
+  } catch {
+    return "";
+  }
+}
+
+function markOtaApplied(tag: string) {
+  try {
+    localStorage.setItem(OTA_TAG_KEY, tag);
+  } catch {
+    /* ignore */
+  }
+}
+
+/** v0.26.0 — the version this install EFFECTIVELY runs: max(APK versionName,
+ *  applied OTA tag). After a successful in-place OTA the APK versionName
+ *  never changes — the old code compared the release tag against versionName
+ *  only, so the SAME bundle was re-offered every 24h and a re-apply DELETED
+ *  the live web root mid-swap (white screen until manual reinstall). */
+export function effectiveVersion(infoVersion: string, otaVersion?: string): string {
+  let best = infoVersion || "0.0.0";
+  for (const cand of [storedOtaTag(), otaVersion || ""]) {
+    if (cand && isNewer(cand, best)) best = cand;
+  }
+  return best;
 }
 
 type Asset = { name: string; browser_download_url: string; size: number };
@@ -158,7 +194,11 @@ export async function checkForUpdate(): Promise<UpdateCheck | null> {
     }
     for (const list of packs.values()) list.sort((x, y) => x.part - y.part);
 
-    const newer = isNewer(tag, info.versionName);
+    // v0.26.0 — compare against the EFFECTIVE current version (APK versionName
+    // vs the applied OTA tag, whichever is newer): an already-applied tag is
+    // never re-offered, so a re-apply can never delete the live web root.
+    const current = effectiveVersion(info.versionName, info.otaVersion);
+    const newer = isNewer(tag, current);
     const bundleRev = bundle?.nativeRev ?? info.nativeRev + 1;
     const apkNeeded = newer && bundleRev > info.nativeRev;
     const otaNeeded = newer && !!bundle && !apkNeeded;
@@ -181,7 +221,7 @@ export async function checkForUpdate(): Promise<UpdateCheck | null> {
     if (!newer && !coversNeeded) {
       return done({
         version: tag,
-        current: info.versionName,
+        current,
         ota: false,
         apk: false,
         releaseNativeRev: bundle?.nativeRev ?? info.nativeRev,
@@ -193,7 +233,7 @@ export async function checkForUpdate(): Promise<UpdateCheck | null> {
 
     return done({
       version: tag,
-      current: info.versionName,
+      current,
       ota: otaNeeded,
       apk: apkNeeded,
       bundleUrl: bundle?.url,
@@ -250,7 +290,60 @@ function wireEvents() {
   });
 }
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+/** v0.26.0 — actually WAIT for a native download. The plugin's downloadFile
+ *  only STARTS a background thread and resolves ok immediately; the old fixed
+ *  sleeps (600ms / 400ms) raced every real connection — a ~20MB bundle never
+ *  landed in 600ms and applyBundle died on «bundle zip missing». Registers
+ *  the per-id `namaDownload` listener BEFORE the request (no event can slip
+ *  past), resolves on its done event, rejects on error/cancel or the timeout,
+ *  then verifies the file really landed on disk (exists + size > 0).
+ *  Progress fan-out stays with the existing wireEvents listener (same id). */
+async function awaitDownloadedFile(
+  id: string,
+  url: string,
+  dest: string,
+  timeoutMs = 15 * 60_000
+): Promise<void> {
+  const b = nativeBridge();
+  if (!b) throw new Error("no-bridge");
+  await new Promise<void>((resolve, reject) => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let settled = false;
+    let removeListener: (() => void) | null = null;
+    const settle = (err?: Error) => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      try {
+        removeListener?.();
+      } catch {
+        /* ignore */
+      }
+      if (err) reject(err);
+      else resolve();
+    };
+    timer = setTimeout(() => settle(new Error("download-timeout")), timeoutMs);
+    void b
+      .addListener("namaDownload", (e: NamaDownloadEvent) => {
+        if (e.id !== id) return;
+        if (e.type === "done") settle();
+        else if (e.type === "error") settle(new Error("download-failed"));
+        else if (e.type === "canceled") settle(new Error("download-canceled"));
+      })
+      .then((h) => {
+        removeListener = () => h.remove();
+        if (settled) removeListener(); // done fired before the handle landed
+      })
+      .catch(() => settle(new Error("listener-failed")));
+  });
+  await b.downloadFile({ id, url, dest });
+  try {
+    const stat = await b.fileStat({ path: dest });
+    if (!stat || !stat.exists || stat.size <= 0) throw new Error("download-missing");
+  } catch (err) {
+    throw err instanceof Error ? err : new Error("download-missing");
+  }
+}
 
 /** Apply the CODE bundle (hot OTA). Returns true when applied. */
 async function applyCodeBundle(check: UpdateCheck): Promise<boolean> {
@@ -258,11 +351,15 @@ async function applyCodeBundle(check: UpdateCheck): Promise<boolean> {
   if (!b || !check.bundleUrl) return false;
   const zipName = `ota/${check.version}-bundle.zip`;
   emit({ phase: "download", received: 0, total: check.bundleSize });
-  await b.downloadFile({ id: "frame-update", url: check.bundleUrl, dest: zipName });
-  await sleep(600);
+  // v0.26.0 — await the download for real (was: fixed 600ms sleep + pray)
+  await awaitDownloadedFile("frame-update", check.bundleUrl, zipName);
   emit({ phase: "apply" });
   const r = await b.applyBundle({ zipPath: zipName, version: check.version });
   if (!r.ok) throw new Error("apply failed");
+  // v0.26.0 — record the applied tag ONLY after applyBundle returned ok.
+  // The native side also persists otaVersion before the swap reloads us, so
+  // the marker survives even a kill between the swap and this line.
+  markOtaApplied(check.version);
   // setServerBasePath reloads the WebView in place — «بدون نصب مجدد»
   return true;
 }
@@ -278,8 +375,8 @@ async function applyCoverPacks(check: UpdateCheck): Promise<number> {
     const nn = String(p.part).padStart(2, "0");
     const zipName = `covers-pack/r${check.packRev}-p${nn}.zip`;
     emit({ phase: "covers", received: 0, total: p.size, message: `بستهٔ کاور ${p.part} از ${check.packParts.length}` });
-    await b.downloadFile({ id: "frame-update", url: p.url, dest: zipName });
-    await sleep(400);
+    // v0.26.0 — await the download for real (was: fixed 400ms sleep + pray)
+    await awaitDownloadedFile("frame-update", p.url, zipName);
     try {
       await b.applyCoverPack({ zipPath: zipName, rev: check.packRev });
     } catch (err) {

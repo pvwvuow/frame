@@ -153,13 +153,17 @@ export default function Player() {
   const guestLock = cin.status === "joined";
   const [showCinema, setShowCinema] = useState(false);
 
-  // restore volume preference. NOTE: the muted flag is deliberately NOT
-  // restored — a stale muted=1 from an old session was one cause of the
-  // «the movie has no sound» report; every fresh open starts unmuted.
+  // restore volume preference — including a deliberate 0 (B-10: the old `v > 0`
+  // guard threw away an explicit «میکس روی صفر» and came back at full blast).
+  // NOTE: the muted flag is deliberately NOT restored — a stale muted=1 from an
+  // old session was one cause of the «the movie has no sound» report; every
+  // fresh open starts unmuted.
   useEffect(() => {
     try {
-      const v = Number(localStorage.getItem(VOL_KEY));
-      if (Number.isFinite(v) && v > 0) setVolume(Math.min(1, v));
+      const raw = localStorage.getItem(VOL_KEY);
+      if (raw === null) return; // never set — keep the default 1
+      const v = Number(raw);
+      if (Number.isFinite(v) && v >= 0) setVolume(Math.min(1, v));
     } catch {
       /* ignore */
     }
@@ -174,6 +178,13 @@ export default function Player() {
       /* ignore */
     }
   }, [volume, muted]);
+
+  /* B-10: unmuting while volume === 0 kept the film silent (mute icon, no
+   * sound) — restore a sensible level whenever that combination unmutes. */
+  const toggleMute = useCallback(() => {
+    if (muted && volume === 0) setVolume(0.6);
+    setMuted((m) => !m);
+  }, [muted, volume]);
 
   // default variant: pip's pick (srcHint) → the user's quality pick →
   // remembered variant taste → hardsub → dub → catalog order. Re-applied when
@@ -312,9 +323,14 @@ export default function Player() {
   const toggleFs = useCallback(() => {
     const el = wrapRef.current;
     if (!el) return;
-    if (document.fullscreenElement) void document.exitFullscreen();
-    else void el.requestFullscreen?.();
-  }, []);
+    // B-9: the fullscreen promises were fire-and-forget — a refusal (sandboxed
+    // iframe, PIP, denied permission) surfaced as an unhandled rejection.
+    if (document.fullscreenElement) {
+      document.exitFullscreen?.().catch(() => showNotice("حالت تمام‌صفحه در دسترس نیست"));
+    } else {
+      el.requestFullscreen?.().catch(() => showNotice("حالت تمام‌صفحه در دسترس نیست"));
+    }
+  }, [showNotice]);
 
   const goBackToTitle = useCallback(() => {
     const v = videoRef.current;
@@ -718,6 +734,9 @@ export default function Player() {
           togglePlay();
           break;
         case "Escape":
+          // B-8: while fullscreen, Escape must ONLY leave fullscreen (the
+          // browser default) — previously it ALSO closed the player.
+          if (document.fullscreenElement) return;
           goBackToTitle();
           break;
         case "i":
@@ -733,7 +752,7 @@ export default function Player() {
           toggleFs();
           break;
         case "m":
-          setMuted((m) => !m);
+          toggleMute();
           break;
         case "c":
           setSubOn((s) => {
@@ -754,7 +773,7 @@ export default function Player() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open, togglePlay, seek, toggleFs, bumpUi, goBackToTitle, floatToPip, store]);
+  }, [open, togglePlay, seek, toggleFs, bumpUi, goBackToTitle, floatToPip, store, toggleMute]);
 
   useEffect(() => {
     const v = videoRef.current;
@@ -1210,7 +1229,7 @@ export default function Player() {
               </button>
 
               <div className="group/vol flex items-center gap-2">
-                <button type="button" onClick={() => setMuted((m) => !m)} className="grid h-11 w-11 place-items-center rounded-full text-white hover:bg-white/10" aria-label="صدا">
+                <button type="button" onClick={toggleMute} className="grid h-11 w-11 place-items-center rounded-full text-white hover:bg-white/10" aria-label="صدا">
                   {muted || volume === 0 ? <MuteIcon width={22} height={22} /> : <VolumeIcon width={22} height={22} />}
                 </button>
                 <input

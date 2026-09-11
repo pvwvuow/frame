@@ -108,15 +108,52 @@ function userDbPath() {
 let freshSeedCopy = false;
 function toFileUrl(p) {
   // Prisma sqlite accepts `file:` + absolute path; use forward slashes on Windows.
+  // v0.25.x — percent-encode the path (encodeURI): a Persian Windows username
+  // makes %APPDATA% non-ASCII, and the raw «file:C:/Users/کاربر/…» URL fails
+  // to OPEN in the query engine ("Error code 14" — the v0.10.7 bug). Mirrors
+  // openSeedClient() in src/lib/catalog-refresh.ts: encoded URL first, raw
+  // path fallback (see the DB_OPEN_FAIL_RE retry in startServer).
+  const fwd = p.replace(/\\/g, "/");
+  return "file:" + encodeURI(fwd);
+}
+
+/** Un-encoded companion of toFileUrl — the one-attempt fallback when a Prisma
+ *  engine build still chokes on the percent-encoded form. */
+function toFileUrlRaw(p) {
   return "file:" + p.replace(/\\/g, "/");
+}
+
+/* v0.25.x — the ONLY schemes the OS may ever open (external IPC, window.open
+ * targets, will-navigate). A remote-controlled catalog page could otherwise
+ * inject <a target="_blank"> with file:/ms-msdt:/search-ms: style URLs that
+ * land on the OS shell. ONE regex + ONE helper shared by all three call
+ * sites (window-open handler, will-navigate, nama:open-external IPC) so
+ * they can never drift apart. Anything else is silently dropped. */
+const OPEN_EXTERNAL_RE = /^(https?:\/\/|mailto:|tel:)/i;
+function openExternalIfSafe(url) {
+  if (typeof url === "string" && OPEN_EXTERNAL_RE.test(url)) {
+    shell.openExternal(url);
+    return true;
+  }
+  return false;
 }
 
 function catalogMarkerPath() {
   return path.join(app.getPath("userData"), "catalog.sha256");
 }
 
+/** sha256 of a file, hashed STREAMING in chunks: the ~94.5MB bundled seed
+ *  used to be readFileSync'd whole on every boot — a long event-loop stall
+ *  plus a 94.5MB Buffer spike in the MAIN process. Async now (call sites
+ *  await it); memory stays flat and the loop can interleave between chunks. */
 function sha256File(p) {
-  return crypto.createHash("sha256").update(fs.readFileSync(p)).digest("hex");
+  return new Promise((resolve, reject) => {
+    const hash = crypto.createHash("sha256");
+    const stream = fs.createReadStream(p);
+    stream.on("data", (chunk) => hash.update(chunk));
+    stream.on("error", reject);
+    stream.on("end", () => resolve(hash.digest("hex")));
+  });
 }
 
 /** Records which bundled seed version the user database currently reflects. */
@@ -167,7 +204,7 @@ function migrateLegacyDb(dst) {
   }
 }
 
-function ensureUserDb() {
+async function ensureUserDb() {
   const dst = userDbPath();
   fs.mkdirSync(path.dirname(dst), { recursive: true });
   migrateLegacyDb(dst);
@@ -200,7 +237,7 @@ function ensureUserDb() {
       // the fresh copy already reflects the bundled catalog → remember it so
       // the boot-time comparison below does not schedule a needless refresh
       try {
-        writeCatalogMarker(sha256File(src));
+        writeCatalogMarker(await sha256File(src));
       } catch (e) {
         log.warn("seed hash failed after first-run copy:", e);
       }
@@ -519,7 +556,7 @@ async function startServer() {
   if (!fs.existsSync(entry)) throw new Error(`standalone server not found: ${entry}\nRun "npm run build" first.`);
 
   cleanupStaleServer();
-  const dbPath = ensureUserDb();
+  const dbPath = await ensureUserDb();
 
   /* Catalog freshness: if the bundled seed differs from the version the user
      database was installed from, let the server merge the new catalog in
@@ -532,7 +569,7 @@ async function startServer() {
   const seed = seedDbPath();
   if (fs.existsSync(seed)) {
     try {
-      seedHash = sha256File(seed);
+      seedHash = await sha256File(seed);
       needsCatalogRefresh = seedHash !== readCatalogMarker();
     } catch (e) {
       log.warn("catalog seed hash failed:", e);
@@ -621,20 +658,25 @@ async function startServer() {
      fresh port before surfacing an error. v0.10.14: the FIRST attempt uses
      the previous run's port when free – a stable origin is what keeps the
      user logged in across restarts (localStorage is keyed by origin). */
-  for (let attempt = 1; ; attempt++) {
-    // eslint-disable-next-line no-await-in-loop
-    const port = attempt === 1 ? await pickPreferredPort() : await freePort();
+  /** Spawns the standalone server on `port` and waits for /api/health.
+   *  Shared by the startup retry loop and the raw-file-URL DB fallback. */
+  const spawnAndWait = async (port) => {
     env.PORT = String(port);
     serverProc = spawn(process.execPath, [entry], { cwd: dir, env, stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
     writeServerPid(serverProc.pid);
     attachServerLogging(serverProc);
     serverUrl = `http://127.0.0.1:${env.PORT}`;
+    // /api/health answers in milliseconds since v0.10.2 – the catalog
+    // merge moved to a background job (runStartupSync) and no longer
+    // blocks the startup gate
+    await waitFor(serverUrl, 90000);
+    saveServerPort(port); // remember for the next launch (stable origin)
+  };
+  for (let attempt = 1; ; attempt++) {
+    // eslint-disable-next-line no-await-in-loop
+    const port = attempt === 1 ? await pickPreferredPort() : await freePort();
     try {
-      // /api/health answers in milliseconds since v0.10.2 – the catalog
-      // merge moved to a background job (runStartupSync) and no longer
-      // blocks the startup gate
-      await waitFor(serverUrl, 90000);
-      saveServerPort(port); // remember for the next launch (stable origin)
+      await spawnAndWait(port);
       break;
     } catch (e) {
       const diedEarly = !serverProc;
@@ -651,6 +693,32 @@ async function startServer() {
     }
   }
   await probeDatabase(serverUrl);
+
+  /* v0.25.x – RAW-PATH FALLBACK (the boot-side twin of openSeedClient in
+     src/lib/catalog-refresh.ts): toFileUrl() percent-encodes the database
+     path so a Persian Windows username in %APPDATA% survives the URL
+     parser. If THIS engine build still cannot open the encoded URL, retry
+     ONCE with the raw path — and log both forms clearly either way so a
+     support log always shows exactly which URL failed. */
+  if (dbProbeError && DB_OPEN_FAIL_RE.test(dbProbeError)) {
+    const encodedUrl = env.DATABASE_URL;
+    const rawUrl = toFileUrlRaw(dbPath);
+    if (rawUrl !== encodedUrl) {
+      log.error("database file could not be opened through the encoded file URL – retrying once with the raw path", {
+        encoded: encodedUrl,
+        raw: rawUrl,
+        error: dbProbeError,
+      });
+      stopServer();
+      env.DATABASE_URL = rawUrl;
+      await spawnAndWait(await freePort());
+      await probeDatabase(serverUrl);
+      if (dbProbeError) log.error("database STILL unreachable with the raw path – error:", dbProbeError, "file URL:", rawUrl);
+      else log.info("database opened with the RAW file URL after the encoded form failed:", rawUrl);
+    } else {
+      log.error("database file could not be opened – file URL:", encodedUrl, "error:", dbProbeError);
+    }
+  }
   if (seedHash) {
     if (!needsCatalogRefresh) {
       writeCatalogMarker(seedHash);
@@ -772,16 +840,18 @@ function createWindow() {
     }
   });
 
-  // external links → system browser
+  // external links → system browser (http/https/mailto/tel ONLY — see
+  // OPEN_EXTERNAL_RE): a remote-controlled catalog page could otherwise push
+  // file:/ms-msdt:/search-ms: style target=_blank links at the OS
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (serverUrl && url.startsWith(serverUrl)) return { action: "allow" };
-    shell.openExternal(url);
+    openExternalIfSafe(url);
     return { action: "deny" };
   });
   win.webContents.on("will-navigate", (e, url) => {
     if (serverUrl && url.startsWith(serverUrl)) return;
     e.preventDefault();
-    shell.openExternal(url);
+    openExternalIfSafe(url); // non-http(s)/mailto/tel schemes are dropped
   });
 
   win.loadURL(serverUrl);
@@ -800,10 +870,14 @@ function showError(err) {
 const FATAL_DB_RE =
   /(malformed|not a database|corrupt|disk image|database (table )?is locked|unable to open|database file|SQLITE_(BUSY|CORRUPT|CANTOPEN|IOERR))/i;
 
+/** Prisma "Error code 14: Unable to open the database file" (and friends) —
+ *  triggers the raw-file-URL boot fallback in startServer. */
+const DB_OPEN_FAIL_RE = /(unable to open|error code 14|cantopen)/i;
+
 /** Moves a broken database (and its WAL/SHM journals) aside, then restores a
  *  pristine copy of the bundled seed. The broken files stay next to the
  *  original as nama.db.broken-<stamp> for support. */
-function reseedUserData() {
+async function reseedUserData() {
   const dst = userDbPath();
   const src = seedDbPath();
   if (!fs.existsSync(src)) return false;
@@ -826,7 +900,7 @@ function reseedUserData() {
     fs.renameSync(tmp, dst);
     freshSeedCopy = true;
     try { fs.rmSync(catalogMarkerPath(), { force: true }); } catch { /* ignore */ }
-    try { writeCatalogMarker(sha256File(src)); } catch { /* ignore */ }
+    try { writeCatalogMarker(await sha256File(src)); } catch { /* ignore */ }
     log.warn("database reseeded; previous files kept with suffix .broken-" + stamp);
     return true;
   } catch (e) {
@@ -857,7 +931,7 @@ async function offerRepair(kind, detail) {
       noLink: true,
     });
     if (canRepair && r.response === 0) {
-      if (!reseedUserData()) throw new Error("بازسازی دیتابیس ناموفق بود (فایل seed در دسترس نیست).");
+      if (!(await reseedUserData())) throw new Error("بازسازی دیتابیس ناموفق بود (فایل seed در دسترس نیست).");
       if (mainWindow) {
         try { mainWindow.destroy(); } catch { /* ignore */ }
         mainWindow = null;
@@ -987,7 +1061,7 @@ ipcMain.handle("nama:install-update", () => {
 });
 ipcMain.handle("nama:open-data-dir", () => shell.openPath(app.getPath("userData")));
 ipcMain.handle("nama:open-external", (_e, url) => {
-  if (typeof url === "string" && /^(https?:\/\/|mailto:|tel:)/i.test(url)) return shell.openExternal(url);
+  openExternalIfSafe(url); // same allowlist as window-open/will-navigate
 });
 ipcMain.handle("nama:is-maximized", () => !!mainWindow?.isMaximized());
 ipcMain.on("nama:win", (_e, action) => {
@@ -1044,6 +1118,10 @@ if (!gotLock) {
 } else {
   app.on("second-instance", () => {
     if (mainWindow) {
+      // a window hidden behind a live PiP float (close→hide) or minimized is
+      // still "open" — restore()+focus() alone do nothing for it; show it
+      // first (the user launched the app again — they want it in front)
+      if (!mainWindow.isVisible()) mainWindow.show();
       if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.focus();
     }
@@ -1053,15 +1131,30 @@ if (!gotLock) {
 
   app.whenReady().then(async () => {
     try {
-      // tighten permissions – no camera/mic/geolocation prompts
-      session.defaultSession.setPermissionRequestHandler((_wc, permission, cb) => cb(["fullscreen", "media", "notifications"].includes(permission)));
+      // tighten permissions — ONLY fullscreen & notifications are granted;
+      // media (= camera/mic via getUserMedia), geolocation and everything
+      // else are denied silently (no prompt)
+      session.defaultSession.setPermissionRequestHandler((_wc, permission, cb) => cb(["fullscreen", "notifications"].includes(permission)));
       // local stream proxy: pass-through streaming + live MKV subtitle
       // extraction (the archive's «زیرنویس چسبیده» files carry the Persian
       // SRT muxed inside the Matroska container – Chromium ignores it)
       try {
-        streamProxy = await startStreamProxy(log);
-        proxyBase = streamProxy.base;
-        log.info("stream proxy ready at", proxyBase);
+        // v0.25.x — the proxy is no longer an open CORS-* relay: every data
+        // endpoint requires this boot's token, and CORS answers ONLY our own
+        // renderer origin. Tests/CI can boot it open via
+        // NAMA_PROXY_DISABLE_TOKEN=1 (see stream-proxy.cjs).
+        streamProxy = await startStreamProxy(log, {
+          requireToken: true,
+          allowedOrigin: () => serverUrl, // per-request: set before the window loads
+        });
+        // The token rides INSIDE the base as a /k/<token> path prefix — every
+        // renderer consumer builds URLs by concatenation
+        // (`${proxyBase}/stream?u=…`, subsUrl/probeUrl/mediaSrc in
+        // src/lib/video-url.ts), so the prefix reaches the proxy on all of
+        // them without touching src/. (?k= and x-nama-proxy-token are also
+        // accepted; a "?k=" appended to the base would BREAK that template.)
+        proxyBase = `${streamProxy.base}/k/${streamProxy.token}`;
+        log.info("stream proxy ready at", streamProxy.base);
       } catch (e) {
         log.warn("stream proxy unavailable – videos play directly without embedded subs:", e);
       }
@@ -1100,6 +1193,12 @@ if (!gotLock) {
       }
       app.on("activate", () => {
         if (BrowserWindow.getAllWindows().length === 0) mainWindow = createWindow();
+        else if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isVisible()) {
+          // hidden behind a live PiP float → same expectation as
+          // second-instance: dock click brings the app back in front
+          mainWindow.show();
+          mainWindow.focus();
+        }
       });
     } catch (e) {
       // startup failure → repair dialog instead of a dead-end error box

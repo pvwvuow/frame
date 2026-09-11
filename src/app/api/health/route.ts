@@ -42,7 +42,9 @@ export async function GET() {
     titles = await db.title.count();
   } catch (e) {
     dbOk = false;
-    dbError = e instanceof Error ? e.message : String(e);
+    /* C-14 — متن خطای داخلی (مسیر DB/SQL پرisma) به بیرون نمی‌رود؛ فقط لاگ */
+    console.error("[health] db probe failed:", e instanceof Error ? e.message : e);
+    dbError = "database_error";
   }
   // flattened convenience fields (ok/titles/error) keep the Settings card and
   // the Electron poller simple; `status`/`phase` carry the live progress

@@ -5,9 +5,16 @@ on:
     branches: [main, master]
   pull_request:
 
+# v0.26.0 — rapid pushes used to stack parallel CI runs, each checking out
+# the ~1.2GB repo; newer runs now supersede older in-progress ones.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -25,6 +32,14 @@ jobs:
         env:
           DATABASE_URL: "file:../db/custom.db"
       - run: npx tsc --noEmit
+      # v0.26.0 — the self-contained suites of the newest subsystems are now
+      # gated here too (they used to run only on dev machines):
+      - name: Catalog split/on-demand integrity
+        run: node scripts/test-ondemand.mjs
+      - name: Hero pick rules
+        run: node scripts/test-hero-pick.mjs
+      - name: Catalog offline repair (real SQLite)
+        run: node scripts/test-catalog-repair.mjs
       - name: Startup regression tests (nama.db / orphan server)
         run: node scripts/test-startup-fixes.mjs
       - name: Stream proxy / MKV subtitle tests
@@ -33,3 +48,55 @@ jobs:
         env:
           DATABASE_URL: "file:../db/custom.db"
           NEXT_TELEMETRY_DISABLED: "1"
+
+  # v0.26.0 — Android native code used to compile for the first time on
+  # release day (4 release-day APK failures — e.g. the v0.21.1
+  # PlayerActivity "cannot find symbol" regression). Compile it here.
+  android-compile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - run: npm ci --legacy-peer-deps
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ hashFiles('android/**/gradle-wrapper.properties', 'android/app/build.gradle') }}
+          restore-keys: gradle-
+      - name: Static export + Capacitor sync
+        run: npm run android:sync
+        env:
+          DATABASE_URL: "file:../db/custom.db"
+          NEXT_TELEMETRY_DISABLED: "1"
+      - name: Compile Android Java (release)
+        run: cd android && ./gradlew compileReleaseJavaWithJavac
+
+      # v0.26.0 — advisory dependency scan (non-blocking for now; flips to
+      # blocking once the current sharp/js-yaml chain is fully bumped).
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --legacy-peer-deps
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+      - run: npm audit --omit=dev --audit-level=high

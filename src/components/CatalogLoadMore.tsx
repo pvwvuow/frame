@@ -6,7 +6,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import TitleCard, { type TitleCardData } from "@/components/TitleCard";
 import { fa } from "@/lib/format";
-import { ChevronLeft } from "./Icons";
+import { ChevronLeft, RefreshIcon } from "./Icons";
 
 export default function CatalogLoadMore({
   filters,
@@ -24,13 +24,22 @@ export default function CatalogLoadMore({
   const [items, setItems] = useState<TitleCardData[]>([]);
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(false);
+  // B-13: a failed page used to silently DELETE the load-more UI (`catch →
+  // setDone(true)`) — the rest of the catalog became unreachable. It is now
+  // an explicit error state with a retry.
+  const [failed, setFailed] = useState(false);
   const [auto, setAuto] = useState(false);
   const sentinel = useRef<HTMLDivElement>(null);
-  const offsetRef = useRef(offset);
+  /* B-13: offset lives in STATE now — the old ref was mutated inside the
+   * setItems updater (impure: double-incremented under StrictMode) and was
+   * read during render (the eslint:102 complaint). State keeps render pure
+   * and the next offset unambiguous. */
+  const [nextOffset, setNextOffset] = useState(offset);
 
   const loadMore = useCallback(async () => {
     if (loading || done) return;
     setLoading(true);
+    setFailed(false);
     try {
       const qs = new URLSearchParams();
       qs.set("type", filters.type);
@@ -38,30 +47,31 @@ export default function CatalogLoadMore({
       if (filters.sort) qs.set("sort", filters.sort);
       if (filters.year) qs.set("year", String(filters.year));
       if (filters.minRating) qs.set("rating", String(filters.minRating));
-      qs.set("offset", String(offsetRef.current));
+      qs.set("offset", String(nextOffset));
       qs.set("limit", String(pageSize));
       const res = await fetch(`/api/catalog?${qs.toString()}`);
       if (!res.ok) throw new Error(String(res.status));
       const data = (await res.json()) as { items: TitleCardData[]; progress: Record<string, { position: number; duration: number }> };
       const fetched = data.items ?? [];
-      setItems((prev) => {
-        const seen = new Set(prev.map((t) => t.id));
-        const fresh = fetched.filter((t) => !seen.has(t.id));
-        offsetRef.current += fresh.length;
-        return [...prev, ...fresh];
-      });
+      // dedupe against what is already mounted, advance ONLY by unique rows
+      // (same semantics as the old in-updater mutation, now side-effect free)
+      const seen = new Set(items.map((t) => t.id));
+      const fresh = fetched.filter((t) => !seen.has(t.id));
+      const advanced = nextOffset + fresh.length;
+      setItems([...items, ...fresh]);
+      setNextOffset(advanced);
       window.__namaProgress = { ...window.__namaProgress, ...data.progress };
-      if (!fetched.length || offsetRef.current >= total) setDone(true);
+      if (!fetched.length || advanced >= total) setDone(true);
       else setAuto(true); // first manual click → subsequent pages auto-load on scroll
     } catch {
-      setDone(true);
+      setFailed(true);
     } finally {
       setLoading(false);
     }
-  }, [filters, loading, done, total, pageSize]);
+  }, [filters, loading, done, total, pageSize, items, nextOffset]);
 
   useEffect(() => {
-    if (!auto || done) return;
+    if (!auto || done || failed) return;
     const el = sentinel.current;
     if (!el) return;
     const io = new IntersectionObserver(
@@ -72,7 +82,9 @@ export default function CatalogLoadMore({
     );
     io.observe(el);
     return () => io.disconnect();
-  }, [auto, done, loadMore]);
+  }, [auto, done, failed, loadMore]);
+
+  const remaining = Math.max(0, total - nextOffset);
 
   return (
     <>
@@ -86,22 +98,36 @@ export default function CatalogLoadMore({
 
       <div ref={sentinel} />
 
-      {!done && (
-        <div className="mt-8 flex justify-center">
+      {failed ? (
+        <div className="mt-8 flex flex-col items-center gap-3 text-center">
+          <p className="text-sm font-bold text-white" dir="rtl">بارگیری ادامه‌ی فهرست ناموفق بود</p>
           <button
             type="button"
             onClick={() => void loadMore()}
-            disabled={loading}
-            className="flex h-12 items-center gap-2 rounded-full border border-white/15 bg-white/5 px-8 text-sm font-bold text-white transition hover:bg-white/10 disabled:opacity-60"
+            className="flex h-11 items-center gap-2 rounded-full border border-white/15 bg-white/5 px-6 text-sm font-bold text-white transition hover:bg-white/10"
+            dir="rtl"
           >
-            {loading ? (
-              <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-            ) : (
-              <ChevronLeft width={16} height={16} />
-            )}
-            {loading ? "در حال بارگذاری…" : `نمایش بیشتر (${fa(Math.max(0, total - offsetRef.current))} عنوان دیگر)`}
+            <RefreshIcon width={15} height={15} /> تلاش دوباره
           </button>
         </div>
+      ) : (
+        !done && (
+          <div className="mt-8 flex justify-center">
+            <button
+              type="button"
+              onClick={() => void loadMore()}
+              disabled={loading}
+              className="flex h-12 items-center gap-2 rounded-full border border-white/15 bg-white/5 px-8 text-sm font-bold text-white transition hover:bg-white/10 disabled:opacity-60"
+            >
+              {loading ? (
+                <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+              ) : (
+                <ChevronLeft width={16} height={16} />
+              )}
+              {loading ? "در حال بارگذاری…" : `نمایش بیشتر (${fa(remaining)} عنوان دیگر)`}
+            </button>
+          </div>
+        )
       )}
     </>
   );

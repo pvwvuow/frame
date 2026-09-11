@@ -355,6 +355,22 @@ function isFullRecord(rec: CatalogTitle | undefined | null): boolean {
 /** In-flight dedupe so a title opened from two surfaces costs ONE fetch. */
 const fullMemo = new Map<string, Promise<CatalogTitle | null>>();
 
+/** A-5 — کش منفی نشست (فقط حافظه): اسلاگ‌هایی که واکشی کامل‌شان ۴۰۴ یا
+ *  تایم‌اوت خورده تا ۵ دقیقه دوباره به شبکه زده نمی‌شوند (روی رکورد Dexie
+ *  کش‌شده اثری ندارد). از لوپ بی‌پایانِ «لیست با رکورد ناقص → تلاش شبکه →
+ *  شکست → همان لیست» جلوگیری می‌کند. */
+const fullMissUntil = new Map<string, number>();
+const FULL_MISS_TTL_MS = 5 * 60_000;
+function fullMissCached(slug: string): boolean {
+  const until = fullMissUntil.get(slug);
+  if (until === undefined) return false;
+  if (Date.now() > until) {
+    fullMissUntil.delete(slug);
+    return false;
+  }
+  return true;
+}
+
 /** Fetch ONE title's full record (description + episodes + sources) from the
  * remote per-title catalog, caching it in IndexedDB (`fulls`, version-stamped).
  * Cache → network; failures are NOT cached (an offline first open retries the
@@ -367,20 +383,39 @@ function loadFullRecord(slug: string, fallbackId: number): Promise<CatalogTitle 
     try {
       const cached = (await db.fulls.get(slug)) as ({ __v?: string } & Record<string, unknown>) | undefined;
       if (cached && cached.__v === manifest?.version) return cached as unknown as CatalogTitle;
+      // A-5 — قبل از هر تلاش شبکه: ۴۰۴/تایم‌اوت اخیر → همین حالا ناکام برو
+      if (fullMissCached(slug)) return null;
       for (const base of fullBases()) {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 12_000);
         try {
-          const ctrl = new AbortController();
-          const timer = setTimeout(() => ctrl.abort(), 12_000);
           const res = await fetch(`${base}/titles/${encodeURIComponent(slug.slice(0, 2))}/${encodeURIComponent(slug)}.json`, {
             signal: ctrl.signal,
           });
-          clearTimeout(timer);
-          if (!res.ok) continue;
+          if (!res.ok) {
+            // A-5 — ۴۰۴ (عنوانی که در کاتالوگ ریموت نیست) → کش منفی نشست
+            if (res.status === 404) fullMissUntil.set(slug, Date.now() + FULL_MISS_TTL_MS);
+            continue;
+          }
           const rec = sanitizeTitle((await res.json()) as Record<string, unknown>, fallbackId);
-          await db.fulls.put({ ...(rec as unknown as Record<string, unknown>), __v: manifest?.version ?? "" });
+          try {
+            await db.fulls.put({ ...(rec as unknown as Record<string, unknown>), __v: manifest?.version ?? "" });
+          } catch (e) {
+            // A-5 — خطای نوشتن (مثلاً سهمیه‌ی IndexedDB) نباید رکوردِ با موفقیت
+            // واکشی‌شده را دور بریزد؛ فقط لاگ می‌کنیم و رکورد را برمی‌گردانیم.
+            console.warn("[mobile] fulls.put failed (record kept in memory):", slug, e);
+          }
+          fullMissUntil.delete(slug);
           return rec;
-        } catch {
+        } catch (e) {
+          // A-5 — تایم‌اوت/abort → کش منفی نشست تا همین لیست چند بار پشت‌سرهم
+          // منتظر ۱۲ ثانیه‌ی کامل نماند؛ خطاهای دیگر (شبکه‌ی لحظه‌ای) کش نمی‌شوند.
+          if ((e as { name?: string } | null)?.name === "AbortError") {
+            fullMissUntil.set(slug, Date.now() + FULL_MISS_TTL_MS);
+          }
           /* next base */
+        } finally {
+          clearTimeout(timer); // A-5 — تایمر هیچ‌وقت نشت نمی‌کند
         }
       }
       return null;

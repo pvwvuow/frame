@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
 import TitleCard from "@/components/TitleCard";
 import ContinueCard from "@/components/library/ContinueCard";
+import LoadErrorCard from "@/components/LoadErrorCard";
 import { AVATARS } from "@/components/library/SettingsForm";
 import CloudIdentityBadge from "@/components/auth/CloudIdentityBadge";
 import SubscriptionBadge from "@/components/auth/SubscriptionBadge";
@@ -11,25 +11,26 @@ import { ProfileName, ProfileAvatarLetter } from "@/components/auth/ProfileIdent
 import { BookmarkIcon, HeartIcon, HistoryIcon, SettingsIcon, StarIcon, ClockIcon, CheckCircleIcon, ChevronLeft } from "@/components/Icons";
 import { getProfile, getUserStats, getFavoriteRows, getMyListRows, getContinueWatching } from "@/lib/mobile/userdata";
 import { fa, formatDuration } from "@/lib/format";
+import { useAsyncData } from "@/lib/use-async-data";
 
 export default function ProfilePage() {
-  const [st, setSt] = useState<{
-    p: Awaited<ReturnType<typeof getProfile>>;
-    stats: Awaited<ReturnType<typeof getUserStats>>;
-    favs: Awaited<ReturnType<typeof getFavoriteRows>>;
-    list: Awaited<ReturnType<typeof getMyListRows>>;
-    cont: Awaited<ReturnType<typeof getContinueWatching>>;
-  } | null>(null);
+  const { data: st, error, retry } = useAsyncData(
+    () =>
+      Promise.all([getProfile(), getUserStats(), getFavoriteRows(), getMyListRows(), getContinueWatching(3)]).then(
+        ([p, stats, favs, list, cont]) => ({ p, stats, favs, list, cont })
+      ),
+    []
+  );
 
-  useEffect(() => {
-    let alive = true;
-    Promise.all([getProfile(), getUserStats(), getFavoriteRows(), getMyListRows(), getContinueWatching(3)]).then(
-      ([p, stats, favs, list, cont]) => alive && setSt({ p, stats, favs, list, cont })
+  if (error) {
+    return (
+      <main className="pb-16">
+        <div className="mx-auto max-w-[1600px] px-4 pt-32 sm:px-8">
+          <LoadErrorCard onRetry={retry} />
+        </div>
+      </main>
     );
-    return () => {
-      alive = false;
-    };
-  }, []);
+  }
 
   if (!st) {
     return (

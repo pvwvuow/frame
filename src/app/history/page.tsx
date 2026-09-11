@@ -1,21 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import HistoryList from "@/components/library/HistoryList";
+import LoadErrorCard from "@/components/LoadErrorCard";
 import { HistoryIcon, ClockIcon, CheckCircleIcon, PlayIcon } from "@/components/Icons";
-import { getHistory, type HistoryRow } from "@/lib/mobile/userdata";
+import { getHistory } from "@/lib/mobile/userdata";
 import { fa, formatDuration } from "@/lib/format";
+import { useAsyncData } from "@/lib/use-async-data";
 
 export default function HistoryPage() {
-  const [rows, setRows] = useState<HistoryRow[] | null>(null);
-
-  useEffect(() => {
-    let alive = true;
-    getHistory().then((r) => alive && setRows(r));
-    return () => {
-      alive = false;
-    };
-  }, []);
+  const { data: rows, error, retry } = useAsyncData(() => getHistory(), []);
 
   const minutes = rows ? Math.round(rows.reduce((a, r) => a + r.position, 0) / 60) : 0;
   const finished = rows?.filter((r) => r.finished).length ?? 0;
@@ -54,7 +47,13 @@ export default function HistoryPage() {
         </div>
       </section>
       <div className="mx-auto max-w-[1600px] px-4 sm:px-8 lg:px-12">
-        {rows ? <HistoryList rows={rows} /> : <div className="py-16 text-center text-sm text-zinc-500">در حال بارگذاری تاریخچه…</div>}
+        {error ? (
+          <LoadErrorCard onRetry={retry} />
+        ) : rows ? (
+          <HistoryList rows={rows} />
+        ) : (
+          <div className="py-16 text-center text-sm text-zinc-500">در حال بارگذاری تاریخچه…</div>
+        )}
       </div>
     </main>
   );

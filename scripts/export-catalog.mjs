@@ -77,10 +77,19 @@ async function main() {
     };
   });
 
+  /* A-4 — قطعی‌سازی خروجی: generatedAt از خودِ داده مشتق می‌شود (جدیدترین
+   * createdAt)، نه از ساعتِ سیستم. با صفر تغییرِ داده، خروجیِ دوباره بایت‌به‌بایت
+   * یکی است و هش تغییر نمی‌کند ⇒ هیچ دستگاهی دانلود/ادغامِ بی‌دلیل نمی‌کند. */
+  const latestAddedMs = out.reduce((acc, t) => {
+    const ms = t.addedAt ? Date.parse(t.addedAt) : 0;
+    return Number.isFinite(ms) && ms > acc ? ms : acc;
+  }, 0);
   const payload = {
     format: "nama-catalog",
     version: 1,
-    generatedAt: new Date().toISOString(),
+    generatedAt: latestAddedMs
+      ? new Date(latestAddedMs).toISOString()
+      : "1970-01-01T00:00:00.000Z",
     counts: {
       titles: out.length,
       movies: out.filter((t) => t.type === "movie").length,

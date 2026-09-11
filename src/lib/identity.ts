@@ -12,12 +12,21 @@
  * (src/lib/mobile/shim.ts → switchIdentity in userdata.ts), so all platforms
  * share the exact same client orchestration. */
 
-export async function attachIdentity(accountId: string | null): Promise<{ switched: boolean }> {
+export async function attachIdentity(
+  accountId: string | null,
+  accessToken?: string | null,
+): Promise<{ switched: boolean }> {
   try {
+    /* C-2 — توکن دسترسی سابابیس همراه attach ارسال می‌شود؛ سرور قبل از
+     * چرخاندن فضای داده، مالکیت حساب را با همان توکن تأیید می‌کند. */
     const r = await fetch("/api/identity", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(accountId ? { accountId } : { reset: true }),
+      body: JSON.stringify(
+        accountId
+          ? { accountId, ...(accessToken ? { accessToken } : {}) }
+          : { reset: true },
+      ),
     });
     if (!r.ok) return { switched: false };
     const d = (await r.json()) as { switched?: boolean };

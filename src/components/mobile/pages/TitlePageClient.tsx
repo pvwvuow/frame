@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Row from "@/components/Row";
 import TitleCard from "@/components/TitleCard";
 import WatchlistButton from "@/components/WatchlistButton";
 import FavoriteButton from "@/components/FavoriteButton";
 import CollectionPicker from "@/components/library/CollectionPicker";
+import LoadErrorCard from "@/components/LoadErrorCard";
 import RatingControl from "@/components/RatingControl";
 import StatusSelect from "@/components/StatusSelect";
 import ReviewForm from "@/components/ReviewForm";
@@ -49,6 +50,7 @@ import { posterSrc, backdropSrc } from "@/lib/covers";
 import { titleNames } from "@/lib/title-name";
 import { normalizeSources } from "@/lib/source-fix";
 import { titleHref, watchHref, personHref , useRouteSlug } from "@/lib/mobile-links";
+import { useAsyncData } from "@/lib/use-async-data";
 
 const AVATAR_GRADIENTS = [
   "from-rose-500 to-orange-400",
@@ -74,45 +76,52 @@ const TIERS_ORD: Record<string, number> = { "4K": 5, "1080p": 4, "720p": 3, "540
 export default function TitlePage() {
   const slug = useRouteSlug("slug");
   const [picker, setPicker] = useState(false);
-  const [st, setSt] = useState<{
-    t: NonNullable<Awaited<ReturnType<typeof getFullTitle>>>;
-    eps: Awaited<ReturnType<typeof getEpisodes>>;
-    similar: Awaited<ReturnType<typeof getSimilar>>;
-    revs: ReviewRow[];
-    inList: boolean;
-    progress: ProgressRow | null;
-    byDirector: Awaited<ReturnType<typeof getByDirector>>;
-  } | null>(null);
-  const [missing, setMissing] = useState(false);
 
-  useEffect(() => {
-    if (!slug) return;
-    let alive = true;
-    setSt(null);
-    (async () => {
-      const lite = await getTitleLiteBySlug(slug);
-      const t = lite ? await getFullTitle(lite.id) : null;
-      if (!t) {
-        if (alive) setMissing(true);
-        return;
-      }
-      const [eps, similar, revs, inList, progress, byDirector] = await Promise.all([
-        t.type === "series" ? getEpisodes(t.id) : Promise.resolve([]),
-        getSimilar(t),
-        getReviews(t.id),
-        isInWatchlist(t.id),
-        getProgressFor(t.id),
-        getByDirector(t.director, t.id),
-      ]);
-      if (alive) setSt({ t, eps, similar, revs, inList, progress, byDirector });
-    })();
-    return () => {
-      alive = false;
-    };
+  type Eps = Awaited<ReturnType<typeof getEpisodes>>;
+  type TitleLoad =
+    | { missing: true }
+    | {
+        missing: false;
+        t: NonNullable<Awaited<ReturnType<typeof getFullTitle>>>;
+        eps: Eps;
+        similar: Awaited<ReturnType<typeof getSimilar>>;
+        revs: ReviewRow[];
+        inList: boolean;
+        progress: ProgressRow | null;
+        byDirector: Awaited<ReturnType<typeof getByDirector>>;
+      };
+
+  /* B-2: a rejected query used to hang the hero skeleton forever — the hook
+   * captures the error and the page offers a retry. */
+  const { data, error, retry } = useAsyncData<TitleLoad>(async () => {
+    if (!slug) return { missing: true };
+    const lite = await getTitleLiteBySlug(slug);
+    const t = lite ? await getFullTitle(lite.id) : null;
+    if (!t) return { missing: true };
+    const [eps, similar, revs, inList, progress, byDirector] = await Promise.all([
+      t.type === "series" ? getEpisodes(t.id) : Promise.resolve([]),
+      getSimilar(t),
+      getReviews(t.id),
+      isInWatchlist(t.id),
+      getProgressFor(t.id),
+      getByDirector(t.director, t.id),
+    ]);
+    return { missing: false, t, eps, similar, revs, inList, progress, byDirector };
   }, [slug]);
 
-  if (missing) notFound();
-  if (!st) {
+  if (data?.missing) notFound();
+
+  if (error) {
+    return (
+      <main className="pb-16">
+        <div className="mx-auto max-w-[1600px] px-4 pt-40 sm:px-8 lg:px-12">
+          <LoadErrorCard onRetry={retry} />
+        </div>
+      </main>
+    );
+  }
+
+  if (!data) {
     return (
       <main className="pb-16">
         <div className="relative min-h-[88vh] overflow-hidden">
@@ -126,7 +135,7 @@ export default function TitlePage() {
     );
   }
 
-  const { t, eps, similar, revs, inList, progress, byDirector } = st;
+  const { t, eps, similar, revs, inList, progress, byDirector } = data;
   const names = titleNames(t);
 
   const avgUser = revs.length ? revs.reduce((a, r) => a + r.rating, 0) / revs.length : null;

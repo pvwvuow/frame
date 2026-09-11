@@ -9,7 +9,9 @@
  *      skip, no churn, no proof (the remote sync owns that delta);
  *   D. same-count-but-mixed-featured (the exact frozen hero) → repaired;
  *   E. the release-hash fast path (NAMA_CATALOG_SEED_VERSION_HASH) → skip
- *      without touching data.
+ *      without touching data;
+ *   F. a remote-ahead DB (HASH_KEY holds a NEWER remote catalog hash) offered
+ *      an OLDER bundled seed → skip entirely, no downgrade, no data loss.
  *
  * The module under test imports "@/lib/db" + "@/db/seed" aliases, so — like
  * test-mobile-playback.mjs — the REAL source is transpiled in-process with
@@ -240,6 +242,33 @@ console.log("\n[E] release-hash fast path (HASH_KEY == seed version) → skip wi
   } finally {
     delete process.env.NAMA_CATALOG_SEED_VERSION_HASH;
   }
+  await c.$disconnect();
+}
+
+console.log("\n[F] remote-ahead DB (newer remote hash) + older seed → skip, no data loss");
+{
+  const live = freshDb("live-f.db");
+  const c = client(live);
+  // the device already synced to a NEWER remote catalog: two extra titles,
+  // a user row attached to one of them, and HASH_KEY holding the REMOTE
+  // catalog hash (≠ this seed's release hash)
+  await makeCatalog(c, [...RELEASE, { s: "new1", featured: false }, { s: "new2" }]);
+  const remoteHash = "b".repeat(64);
+  await c.syncState.create({ data: { key: "catalog.hash", value: remoteHash } });
+  await c.favorite.create({ data: { userKey: "u1", titleId: (await c.title.findFirst({ where: { slug: slugOf("new2") } })).id } });
+  const seedPath = await makeSeedFile();
+  const m = await loadModule(live);
+  const r = await m.refreshCatalogOnce(seedPath);
+  check(
+    "older seed skipped (remote ahead), newer titles + user rows survive, no proof written",
+    r.ok === true &&
+      r.skipped === true &&
+      (await c.title.count()) === 10 &&
+      (await proofOf(c)) === null &&
+      (await c.favorite.count({ where: { userKey: "u1" } })) === 1 &&
+      (await c.syncState.findUnique({ where: { key: "catalog.hash" } }))?.value === remoteHash,
+    JSON.stringify(r)
+  );
   await c.$disconnect();
 }
 

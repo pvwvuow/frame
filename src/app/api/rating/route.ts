@@ -1,10 +1,13 @@
 import { db } from "@/lib/db";
 import { getUserKey } from "@/lib/user";
+import { sameOriginOrThrow } from "@/lib/api-guard";
 
 export const dynamic = "force-dynamic";
 
 /** Set personal score. Body: { titleId, score: 0-10 } (0 removes) */
 export async function POST(req: Request) {
+  const guard = sameOriginOrThrow(req);
+  if (guard) return guard;
   const userKey = await getUserKey();
   const body = (await req.json().catch(() => null)) as { titleId?: number; score?: number } | null;
   const titleId = Number(body?.titleId);

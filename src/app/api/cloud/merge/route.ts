@@ -1,5 +1,6 @@
 import { db, ensureRuntimeSchema } from "@/lib/db";
 import { getUserKey } from "@/lib/user";
+import { sameOriginOrThrow } from "@/lib/api-guard";
 
 export const dynamic = "force-dynamic";
 
@@ -40,7 +41,17 @@ const toTs = (v: unknown): number => (typeof v === "number" ? v : Date.parse(Str
 const slugOf = (r: Ref): string => String(r?.slug ?? "").trim().slice(0, 140);
 const titleOf = (r: Ref): string => String(r?.title ?? "").slice(0, 220);
 
+/* C-7/C-8 — سقف‌های بدنه: آرایه‌ی غیرآرایه‌ای یا بی‌سقف نباید سرور را بکشد
+ * (اسکالر به‌جای آرایه قبلاً 500 می‌داد؛ ۱۰۰k ردیف هم رم و قفل SQLite را
+ * می‌گرفت). هر سکشن با سقفِ سختمان دارد. */
+const MAX_ROWS = 5_000;
+function arr<T>(v: unknown, cap = MAX_ROWS): T[] {
+  return Array.isArray(v) ? (v as T[]).slice(0, cap) : [];
+}
+
 export async function POST(req: Request) {
+  const guard = sameOriginOrThrow(req);
+  if (guard) return guard;
   await ensureRuntimeSchema();
   const userKey = await getUserKey();
   const body = (await req.json().catch(() => null)) as Body | null;
@@ -50,11 +61,11 @@ export async function POST(req: Request) {
 
   // one slug → id pass for the whole payload
   const allSlugs = [
-    ...(body.favorites ?? []),
-    ...(body.watchlist ?? []),
-    ...(body.ratings ?? []),
-    ...(body.collections ?? []).flatMap((c) => c.items ?? []),
-    ...(body.progress ?? []),
+    ...arr<Ref>(body.favorites),
+    ...arr<Ref>(body.watchlist),
+    ...arr<Ref>(body.ratings),
+    ...arr<{ items?: Ref[] }>(body.collections).flatMap((c) => arr<Ref>(c?.items)),
+    ...arr<Ref>(body.progress),
   ]
     .map(slugOf)
     .filter(Boolean);
@@ -71,7 +82,7 @@ export async function POST(req: Request) {
 
   // favorites
   let favoritesAdded = 0;
-  const favPairs = (body.favorites ?? [])
+  const favPairs = arr<Ref>(body.favorites)
     .map((r) => ({ slug: slugOf(r), title: titleOf(r) }))
     .filter((r) => r.slug)
     .map((r) => ({ ...r, id: idBySlug.get(r.slug) ?? 0 }))
@@ -95,7 +106,7 @@ export async function POST(req: Request) {
 
   // watchlist
   let listAdded = 0;
-  for (const row of body.watchlist ?? []) {
+  for (const row of arr<Ref & { status?: unknown }>(body.watchlist)) {
     const slug = slugOf(row);
     const status = String(row?.status ?? "");
     if (!slug || !VALID_STATUSES.has(status)) continue;
@@ -114,7 +125,7 @@ export async function POST(req: Request) {
 
   // ratings (only fill gaps — never overwrite a local score)
   let ratingsAdded = 0;
-  for (const row of body.ratings ?? []) {
+  for (const row of arr<Ref & { score?: unknown }>(body.ratings)) {
     const slug = slugOf(row);
     const score = Number(row?.score);
     if (!slug || !Number.isFinite(score) || score < 1 || score > 10) continue;
@@ -133,7 +144,7 @@ export async function POST(req: Request) {
   // collections (matched by NAME; items resolved slug → id)
   let collectionsAdded = 0;
   let collectionItemsAdded = 0;
-  for (const col of body.collections ?? []) {
+  for (const col of arr<{ name?: unknown; items?: Ref[] }>(body.collections)) {
     const name = String(col?.name ?? "").trim().slice(0, 60);
     if (!name) continue;
     let row = await db.userCollection.findUnique({ where: { userKey_name: { userKey, name } } });
@@ -167,7 +178,14 @@ export async function POST(req: Request) {
   // the correct one). Episodes are resolved the stable way: (titleId, season,
   // number) instead of the drifting episode id.
   let progressApplied = 0;
-  for (const row of body.progress ?? []) {
+  for (const row of arr<{
+    slug?: unknown;
+    season?: unknown;
+    episode?: unknown;
+    position?: unknown;
+    duration?: unknown;
+    updatedAt?: unknown;
+  }>(body.progress)) {
     const slug = slugOf(row);
     const position = Number(row?.position ?? 0);
     const duration = Number(row?.duration ?? 0);

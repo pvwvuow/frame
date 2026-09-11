@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
 import SettingsForm from "@/components/library/SettingsForm";
+import LoadErrorCard from "@/components/LoadErrorCard";
 import SourceSyncCard from "@/components/settings/SourceSyncCard";
 import CatalogUpdateCard from "@/components/settings/CatalogUpdateCard";
 import AppUpdateCard from "@/components/settings/AppUpdateCard";
@@ -10,17 +10,20 @@ import { MobileUpdateCard } from "@/components/mobile/MobileUpdater";
 import CoverPackCard from "@/components/settings/CoverPackCard";
 import { SettingsIcon, HelpIcon, ShieldIcon, KeyboardIcon, InfoIcon, MailIcon } from "@/components/Icons";
 import { getProfile } from "@/lib/mobile/userdata";
+import { useAsyncData } from "@/lib/use-async-data";
 
 export default function SettingsPage() {
-  const [p, setP] = useState<Awaited<ReturnType<typeof getProfile>> | null>(null);
+  const { data: p, error, retry } = useAsyncData(() => getProfile(), []);
 
-  useEffect(() => {
-    let alive = true;
-    getProfile().then((r) => alive && setP(r));
-    return () => {
-      alive = false;
-    };
-  }, []);
+  if (error) {
+    return (
+      <main className="pb-16">
+        <div className="mx-auto max-w-6xl px-4 pt-32 sm:px-8">
+          <LoadErrorCard onRetry={retry} />
+        </div>
+      </main>
+    );
+  }
 
   if (!p) {
     return (

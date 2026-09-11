@@ -381,6 +381,25 @@ async function refreshCatalog(seedPath: string): Promise<CatalogRefreshResult> {
      *    A mismatch is exactly the half-applied-merge state (or a genuinely
      *    older DB) that must fall through to the full merge below. */
     const [seedCount, dbCount] = [await seed.title.count(), await db.title.count()];
+
+    /* 3a) A-2 — remote-ahead guard. اگر HASH_KEY در دیتابیس هست (یعنی این
+     *     دستگاه قبلاً کاتالوگ ریموت را اعمال کرده) و با هشِ انتشارِ این
+     *     seed یکی نیست و تعداد عنوان‌ها هم از seed کمتر نیست، این seed
+     *     قدیمی‌تر از محتوای فعلی دستگاه است؛ ادغام کامل آن، عنوان‌ها و
+     *     ردیف‌های کاربرِ گرفته‌شده از ریموت را حذف می‌کرد. پس ادغام را کلاً
+     *     رد می‌کنیم — و چون «رد شدن تأییدشده» است، هیچ اثر اتمام
+     *     (SEED_PROOF_KEY) ثبت نمی‌کنیم تا ترمیم‌های مشروع بعدی (سناریوی
+     *     نیمه‌کاره) گرسنه نمانند. دیتابیس تازه (بدون HASH_KEY) و سناریوی
+     *     نیمه‌کاره‌ی واقعی (بدون HASH_KEY، تعداد برابر، فلگ‌های قاطی) مثل
+     *     قبل به merge کامل می‌رسند. */
+    const appliedHash = await db.syncState.findUnique({ where: { key: HASH_KEY } });
+    if (appliedHash?.value && dbCount >= seedCount && appliedHash.value !== versionHash) {
+      console.info(
+        `[catalog] seed merge skipped: DB already carries a different (likely newer) remote catalog ` +
+          `(hash=${appliedHash.value.slice(0, 12)}…, titles=${dbCount} >= seed ${seedCount}) — no downgrade, no proof written`
+      );
+      return { ok: true, skipped: true, titles: dbCount, episodes: 0, created: 0, updated: 0, removed: 0 };
+    }
     const featuredSlugs = (client: PrismaClient) =>
       client.title.findMany({ where: { featured: true }, select: { slug: true }, orderBy: { slug: "asc" } });
     const [seedFeatured, dbFeatured] = await Promise.all([featuredSlugs(seed), featuredSlugs(db)]);
@@ -678,6 +697,9 @@ async function applyCatalog(items: CatalogItem[]): Promise<CatalogRefreshResult>
   // 2. upsert the catalog, slug is the stable identity across versions
   let episodeTotal = 0;
   for (const t of items) {
+    // A-14 — addedAt ممکن است در کاتالوگ ریموت خراب/نامعتبر باشد؛ یک تاریخ
+    // بد نباید کل ادغام را با خطا متوقف کند یا ردیف Invalid Date بسازد.
+    const addedAt = safeDate(t.addedAt);
     const data = {
       title: t.title,
       titleEn: t.titleEn,
@@ -703,8 +725,8 @@ async function applyCatalog(items: CatalogItem[]): Promise<CatalogRefreshResult>
       source: t.source,
       // v0.23.0 — preserve the real add-date across desktop re-syncs so the
       // «جدیدترین‌ها» row keeps its meaning on Electron too (idempotent:
-      // the same hosted date is written every time; empty → untouched)
-      ...(t.addedAt ? { createdAt: new Date(t.addedAt) } : {}),
+      // the same hosted date is written every time; empty/invalid → untouched)
+      ...(addedAt ? { createdAt: addedAt } : {}),
     };
     const eps = t.episodes;
     episodeTotal += eps.length;
@@ -717,21 +739,7 @@ async function applyCatalog(items: CatalogItem[]): Promise<CatalogRefreshResult>
     }
 
     await db.title.update({ where: { id: existingId }, data });
-    if (await episodesDiffer(existingId, eps)) {
-      await db.episode.deleteMany({ where: { titleId: existingId } });
-      if (eps.length) {
-        await db.episode.createMany({ data: eps.map((e) => ({ ...e, titleId: existingId })) });
-      }
-      // episode ids changed → drop progress rows that point at removed
-      // episodes (ON DELETE CASCADE normally handles this; this also cleans
-      // up databases created before the FK carried a cascade clause)
-      await db.$executeRawUnsafe(
-        `DELETE FROM "WatchProgress" WHERE "titleId" = ? AND "episodeId" IS NOT NULL
-         AND "episodeId" NOT IN (SELECT id FROM "Episode" WHERE "titleId" = ?)`,
-        existingId,
-        existingId
-      );
-    }
+    await mergeEpisodes(existingId, eps);
     stats.updated++;
   }
 
@@ -743,31 +751,75 @@ async function applyCatalog(items: CatalogItem[]): Promise<CatalogRefreshResult>
   return { ok: true, titles: items.length, episodes: episodeTotal, ...stats };
 }
 
-/** True when the stored episode rows no longer match the given rows. */
-async function episodesDiffer(
-  titleId: number,
-  eps: CatalogItem["episodes"]
-): Promise<boolean> {
-  const rows = await db.episode.findMany({
-    where: { titleId },
-    orderBy: [{ season: "asc" }, { number: "asc" }],
-  });
-  if (rows.length !== eps.length) return true;
-  for (let i = 0; i < eps.length; i++) {
-    const a = rows[i];
-    const b = eps[i];
-    if (
-      a.season !== b.season ||
-      a.number !== b.number ||
-      a.name !== b.name ||
-      a.synopsis !== b.synopsis ||
-      a.duration !== b.duration ||
-      a.videoUrl !== b.videoUrl ||
-      a.sources !== b.sources ||
-      a.thumbnail !== b.thumbnail
-    ) {
-      return true;
+/** A-14 — تبدیل امن تاریخ: مقدار خالی/نامعتبر → undefined به‌جای Invalid Date
+ *  (یک addedAt خراب در کاتالوگ نباید کل ادغام را با خطا بکشد). */
+function safeDate(v: unknown): Date | undefined {
+  if (!v) return undefined;
+  const t = Date.parse(String(v));
+  return Number.isFinite(t) ? new Date(t) : undefined;
+}
+
+/**
+ * A-1 — ادغام اپیزودهای یک عنوان با کلید پایدار «فصل:شماره».
+ *
+ * پیش‌تر همه‌ی اپیزودها با deleteMany + createMany از نو ساخته می‌شدند؛ چون
+ * id اپیزود autoincrement است، با هر انتشار محتوای جدید همه‌ی شناسه‌ها عوض
+ * می‌شد و ردیف‌های WatchProgress («ادامه‌ی تماشا») که با episodeId وصل‌اند و
+ * onDelete: Cascade دارند، همراهشان نابود می‌شد.
+ *
+ * حالا: اپیزود موجود → فقط فیلدهای واقعاً تغییریافته update می‌شود و شناسه‌ی
+ * قبلی حفظ می‌شود (بنابراین پیشرفت تماشای کاربر سر جایش می‌ماند)؛ اپیزود
+ * تازه → create؛ اپیزودهایی که واقعاً از کاتالوگ حذف شده‌اند → فقط همان‌ها
+ * delete (کاسکید فقط برای همین عده اتفاق می‌افتد). مقایسه‌ی فیلدها همان
+ * منطق قبلی (episodesDiffer) است، فقط به‌تفکیک هر اپیزود اعمال می‌شود.
+ */
+async function mergeEpisodes(titleId: number, eps: CatalogItem["episodes"]): Promise<void> {
+  const rows = await db.episode.findMany({ where: { titleId } });
+  const byKey = new Map(rows.map((r) => [`${r.season}:${r.number}`, r]));
+  const seenKeys = new Set<string>();
+
+  for (const e of eps) {
+    const key = `${e.season}:${e.number}`;
+    // کلید تکراری در ورودی مثل قبل به‌صورت ردیف جدید ساخته می‌شود (رفتار قدیمی)
+    const existing = seenKeys.has(key) ? undefined : byKey.get(key);
+    seenKeys.add(key);
+    if (existing) {
+      const changed: {
+        name?: string;
+        synopsis?: string;
+        duration?: number;
+        videoUrl?: string;
+        sources?: string;
+        thumbnail?: string;
+      } = {};
+      if (existing.name !== e.name) changed.name = e.name;
+      if (existing.synopsis !== e.synopsis) changed.synopsis = e.synopsis;
+      if (existing.duration !== e.duration) changed.duration = e.duration;
+      if (existing.videoUrl !== e.videoUrl) changed.videoUrl = e.videoUrl;
+      if (existing.sources !== e.sources) changed.sources = e.sources;
+      if (existing.thumbnail !== e.thumbnail) changed.thumbnail = e.thumbnail;
+      if (Object.keys(changed).length) {
+        // شناسه‌ی اپیزود عوض نمی‌شود → ردیف‌های WatchProgress زنده می‌مانند
+        await db.episode.update({ where: { id: existing.id }, data: changed });
+      }
+    } else {
+      await db.episode.create({ data: { ...e, titleId } });
     }
   }
-  return false;
+
+  const goneIds = rows
+    .filter((r) => !seenKeys.has(`${r.season}:${r.number}`))
+    .map((r) => r.id);
+  if (goneIds.length) {
+    await db.episode.deleteMany({ where: { id: { in: goneIds }, titleId } });
+    // پیشرفت‌های چسبیده به اپیزودهای واقعاً حذف‌شده پاک می‌شوند (این پاک‌سازی
+    // برای دیتابیس‌های قدیمی‌تر از بند Cascade هم هست؛ وقتی چیزی حذف نشده
+    // اجرا نمی‌شود)
+    await db.$executeRawUnsafe(
+      `DELETE FROM "WatchProgress" WHERE "titleId" = ? AND "episodeId" IS NOT NULL
+       AND "episodeId" NOT IN (SELECT id FROM "Episode" WHERE "titleId" = ?)`,
+      titleId,
+      titleId
+    );
+  }
 }

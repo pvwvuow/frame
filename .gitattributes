@@ -1,0 +1,9 @@
+# .gitattributes — v0.26.0 (F-17)
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.webp binary
+*.ico binary
+*.db binary
+*.apk binary
+*.woff2 binary

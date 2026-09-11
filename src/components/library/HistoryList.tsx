@@ -91,7 +91,7 @@ export default function HistoryList({ rows }: { rows: HistoryRow[] }) {
                   <div key={`${r.title.id}-${r.episodeId}`} className="group flex items-center gap-4 rounded-2xl border border-white/5 bg-ink-700/40 p-2.5 transition hover:border-white/15">
                     <Link href={href} className="relative h-[68px] w-[120px] shrink-0 overflow-hidden rounded-lg">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={r.title.backdrop} alt="" className="h-full w-full object-cover" />
+                      <img src={r.title.backdrop} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />
                       <span className="absolute inset-0 grid place-items-center bg-black/30 opacity-0 transition group-hover:opacity-100"><PlayIcon width={22} height={22} className="text-white" /></span>
                       <span className="absolute inset-x-0 bottom-0 h-1 bg-white/20"><span className={`block h-full ${r.finished ? "bg-emerald-500" : "bg-brand"}`} style={{ width: `${pct}%` }} /></span>
                     </Link>

@@ -1,42 +1,38 @@
 "use client";
 
 import Link from "next/link";
-import { Suspense, useCallback, useEffect, useState } from "react";
+import { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import TitleCard from "@/components/TitleCard";
+import LoadErrorCard from "@/components/LoadErrorCard";
 import { fa } from "@/lib/format";
 import { LayersIcon, ChevronLeft, TrashIcon } from "@/components/Icons";
 import { fetchCollectionItems, fetchUserCollections, setCollectionItem } from "@/lib/collections";
 import type { LiteTitle } from "@/lib/mobile/db";
 import type { UCollection } from "@/lib/collections";
+import { useAsyncData } from "@/lib/use-async-data";
 
 function UCollectionInner() {
   const sp = useSearchParams();
   const cid = Number(sp.get("c")) || 0;
 
-  const [col, setCol] = useState<UCollection | null>(null);
-  const [items, setItems] = useState<LiteTitle[] | null>(null);
-
-  const load = useCallback(() => {
-    if (!cid) return;
-    void (async () => {
-      const [list, rows] = await Promise.all([fetchUserCollections(), fetchCollectionItems(cid)]);
-      setCol(list.find((c) => c.id === cid) ?? null);
-      setItems(rows);
-    })();
+  /* one run = the collection header + its items; retry() re-runs after a
+   * removal so the grid stays honest (B-2: failures surface instead of hang) */
+  const { data, error, retry } = useAsyncData<{ col: UCollection | null; items: LiteTitle[] }>(async () => {
+    if (!cid) return { col: null, items: [] };
+    const [list, rows] = await Promise.all([fetchUserCollections(), fetchCollectionItems(cid)]);
+    return { col: list.find((c) => c.id === cid) ?? null, items: rows };
   }, [cid]);
-
-  useEffect(() => {
-    load();
-  }, [load]);
+  const col = data?.col ?? null;
+  const items = data?.items ?? null;
 
   async function removeItem(titleId: number) {
     if (!col) return;
     try {
       await setCollectionItem(col.id, col.name, titleId, false);
       toast.success("از مجموعه حذف شد");
-      load();
+      retry();
     } catch {
       toast.error("حذف ناموفق بود");
     }
@@ -75,7 +71,11 @@ function UCollectionInner() {
           </div>
         </div>
 
-        {items === null ? (
+        {error ? (
+          <div className="mt-8">
+            <LoadErrorCard onRetry={retry} />
+          </div>
+        ) : items === null ? (
           <div className="mt-8 grid grid-cols-2 gap-4 sm:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8">
             {Array.from({ length: 8 }).map((_, i) => (
               <div key={i} className="aspect-[2/3] animate-pulse rounded-xl bg-white/5" />

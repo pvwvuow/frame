@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { getUserKey } from "@/lib/user";
+import { sameOriginOrThrow } from "@/lib/api-guard";
 import { revalidatePath } from "next/cache";
 
 export const dynamic = "force-dynamic";
@@ -12,6 +13,8 @@ const bust = () => {
 
 /** Toggle favorite. Body: { titleId } → { isFavorite } */
 export async function POST(req: Request) {
+  const forbidden = sameOriginOrThrow(req);
+  if (forbidden) return forbidden;
   const userKey = await getUserKey();
   const body = (await req.json().catch(() => null)) as { titleId?: number; value?: boolean } | null;
   const titleId = Number(body?.titleId);
@@ -34,8 +37,14 @@ export async function POST(req: Request) {
 
 /** Bulk add. Body: { titleIds: number[] } */
 export async function PUT(req: Request) {
+  const forbidden = sameOriginOrThrow(req);
+  if (forbidden) return forbidden;
   const userKey = await getUserKey();
   const body = (await req.json().catch(() => null)) as { titleIds?: number[] } | null;
+  // C-8 — type-confusion: بدنه‌ی غیرآرایه‌ای نباید سرور را با ۵۰۰ بخواباند
+  if (body?.titleIds !== undefined && !Array.isArray(body.titleIds)) {
+    return Response.json({ error: "bad_request" }, { status: 400 });
+  }
   const ids = (body?.titleIds ?? []).map(Number).filter(Boolean);
   if (!ids.length) return Response.json({ error: "titleIds required" }, { status: 400 });
   await Promise.all(
@@ -47,8 +56,13 @@ export async function PUT(req: Request) {
 
 /** Remove many / clear all. Body: { titleIds?: number[] } (omit → clear all) */
 export async function DELETE(req: Request) {
+  const forbidden = sameOriginOrThrow(req);
+  if (forbidden) return forbidden;
   const userKey = await getUserKey();
   const body = (await req.json().catch(() => null)) as { titleIds?: number[] } | null;
+  if (body?.titleIds !== undefined && !Array.isArray(body.titleIds)) {
+    return Response.json({ error: "bad_request" }, { status: 400 });
+  }
   const ids = body?.titleIds?.map(Number).filter(Boolean);
   const r = await db.favorite.deleteMany({ where: { userKey, ...(ids?.length ? { titleId: { in: ids } } : {}) } });
   bust();

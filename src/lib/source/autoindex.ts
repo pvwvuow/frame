@@ -1,4 +1,5 @@
 import { IMAGE_EXT, IGNORE_EXT, VIDEO_EXT } from "./parser";
+import { isPublicHttpUrl } from "@/lib/api-guard";
 
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126 Safari/537.36";
 
@@ -42,6 +43,9 @@ export function extOf(name: string): string {
  * خروجی فقط شامل پوشه‌ها و فایل‌های مدیا/تصویر مرتبط است.
  */
 export async function fetchListing(url: string, timeoutMs = 20000): Promise<Listing> {
+  /* C-1 — هر صفحه (و هر مقصدِ ریدایرکت‌شده) باید میزبان عمومی باشد؛
+   * وگرنه آن شاخه کنار گذاشته می‌شود، نه اینکه خطا بدهد. */
+  if (!isPublicHttpUrl(url)) return { url, dirs: [], videos: [], images: [] };
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
@@ -50,6 +54,10 @@ export async function fetchListing(url: string, timeoutMs = 20000): Promise<List
       headers: { "user-agent": UA, accept: "text/html,*/*" },
       redirect: "follow",
     });
+    if (!isPublicHttpUrl(res.url || url)) {
+      // ریدایرکت به شبکه داخلی/loopback = همان حمله SSRF؛ صفحه دور ریخته می‌شود
+      return { url, dirs: [], videos: [], images: [] };
+    }
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const ctype = res.headers.get("content-type") || "";
     if (!ctype.includes("text/html") && !ctype.includes("text/plain")) {

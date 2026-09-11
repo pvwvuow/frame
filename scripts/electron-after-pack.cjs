@@ -32,7 +32,12 @@ exports.default = async function afterPack(context) {
   const skip = (src) =>
     /\.map$/.test(src) ||
     /[\\/]\.next[\\/]cache([\\/]|$)/.test(src) ||
-    /[\\/]public[\\/](covers|catalog)([\\/]|$)/.test(src);
+    /[\\/]public[\\/](covers|catalog)([\\/]|$)/.test(src) ||
+    // D-10 — the seed DB used to ship TWICE (standalone/db/custom.db AND
+    // seed.db). The packaged app always passes an absolute DATABASE_URL, so
+    // the standalone/db copy is dead weight (~94.5MB per installer); only
+    // schema.sql (the runtime self-heal DDL) is needed there.
+    /[\\/]db[\\/]custom\.db(?:-[a-z0-9-]+)?(?:\.(?:wal|shm))?$/.test(src);
   for (const entry of STANDALONE_ENTRIES) {
     const src = path.join(standalone, entry);
     if (!fs.existsSync(src)) {
@@ -50,6 +55,20 @@ exports.default = async function afterPack(context) {
 
   const ddl = path.join(dest, "standalone", "db", "schema.sql");
   if (!fs.existsSync(ddl)) throw new Error("standalone/db/schema.sql missing – postbuild.cjs did not run? (needed for runtime schema self-heal)");
+
+  /* D-20 safety net — the packaged app has no bunx/prepare-standalone path:
+   * the Prisma query engine must be inside the traced node_modules. A Next
+   * upgrade that stops tracing it would brick every install with "Query
+   * engine not found"; fail the build here instead. */
+  const engineDir = path.join(dest, "standalone", "node_modules", ".prisma", "client");
+  try {
+    const engines = fs
+      .readdirSync(engineDir)
+      .filter((f) => /libquery_engine|query_engine|\.node$/.test(f));
+    if (!engines.length) throw new Error("no engine files found");
+  } catch {
+    throw new Error(`Prisma query engine missing from ${engineDir} — packaged app would fail to boot`);
+  }
 
   /* Companion hash of the catalog this seed.db was exported from (written by
      export-catalog.mjs). The server pre-stores it in SyncState on fresh

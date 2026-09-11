@@ -31,7 +31,7 @@ const emit = (rel, outName, rewrite) => {
 };
 emit("src/lib/video-url.ts", "video-url.mjs");
 emit("src/lib/mobile-playback.ts", "mobile-playback.mjs", true);
-const { resolveOwner, shouldLadderAdvance, isLadderExhausted, isDuplicateNotice, metaWatchdogMs, preflightDecision, nextWebIdxSkippingNative } = await import(
+const { resolveOwner, shouldLadderAdvance, isLadderExhausted, isDuplicateNotice, metaWatchdogMs, preflightDecision, nextWebIdxSkippingNative, isTransientServerStatus, serverRetryBackoffMs } = await import(
   pathToFileURL(join(TMP, "mobile-playback.mjs")).href
 );
 const { classifyUrl, needsNativePlayer } = await import(
@@ -105,6 +105,18 @@ ok("engine native: cinema still rides the web <video>", resolveOwner({ hasBridge
 ok("engine auto (explicit): mkv → web (same as default)", resolveOwner({ hasBridge: true, cinemaActive: false, proxyReady: true, url: "https://x/a.mkv", engine: "auto" }) === "web");
 ok("engine auto (explicit): mp4 → web", resolveOwner({ hasBridge: true, cinemaActive: false, proxyReady: true, url: "https://x/a.mp4", engine: "auto" }) === "web");
 ok("engine auto (explicit): probing + mp4 → web", resolveOwner({ hasBridge: null, cinemaActive: false, proxyReady: true, url: "https://x/a.mp4", engine: "auto" }) === "web");
+
+/* ---- v0.26.0 — isTransientServerStatus (dlcenter 503 is TRANSIENT) --------
+ * ~100% of the catalog's URLs live on dls*.aparatchi-dlcenter.top, which
+ * answers 503 to non-Iranian IPs / under rate limit. 5xx → retry with
+ * backoff before any «dead» verdict; 4xx (URL property) → immediate next. */
+ok("5xx: 500 is transient", isTransientServerStatus(500) === true);
+ok("5xx: the dlcenter 503 is transient", isTransientServerStatus(503) === true);
+ok("5xx: 599 is transient", isTransientServerStatus(599) === true);
+ok("5xx: 403/404 are NOT (URL is dead for good)", isTransientServerStatus(403) === false && isTransientServerStatus(404) === false);
+ok("5xx: 200/3xx are NOT", isTransientServerStatus(200) === false && isTransientServerStatus(302) === false);
+ok("5xx: 0 (transport hiccup) and 600 are NOT", isTransientServerStatus(0) === false && isTransientServerStatus(600) === false);
+ok("5xx: backoff cadence is 700ms then 1500ms", serverRetryBackoffMs(1) === 700 && serverRetryBackoffMs(2) === 1500);
 
 /* ---- v0.21.1 — preflightDecision (the byte-preflight verdict) --------------
  * Every candidate source gets ONE pure verdict BEFORE the <video> mounts:

@@ -2,10 +2,10 @@
 
 import Link from "next/link";
 import { watchHref, titleHref } from "@/lib/links";
-import { useEffect, useState } from "react";
 import Hero from "@/components/Hero";
 import Row from "@/components/Row";
 import TitleCard from "@/components/TitleCard";
+import LoadErrorCard from "@/components/LoadErrorCard";
 import { PlayIcon } from "@/components/Icons";
 import { useI18n } from "@/components/i18n/LocaleProvider";
 import {
@@ -30,6 +30,7 @@ import {
 import { formatClock, episodeLabel } from "@/lib/format";
 import { backdropSrc } from "@/lib/covers";
 import TitleName from "@/components/TitleName";
+import { useAsyncData } from "@/lib/use-async-data";
 
 type HomeData = {
   featured: TitleView[];
@@ -47,34 +48,65 @@ type HomeData = {
 
 export default function HomePage() {
   const { t: tr, locale } = useI18n();
-  const [d, setD] = useState<HomeData | null>(null);
 
-  useEffect(() => {
-    let alive = true;
-    (async () => {
-      const [featured, trending, newest, topRated, series, action, scifi, watchlistIds, continueItems] = await Promise.all([
-        getFeatured(),
-        getTrending(),
-        getNewest(),
-        getTopRated(),
-        getByType("series", { limit: 24 }),
-        getByGenre("هیجان‌انگیز"),
-        getByGenre("علمی‌تخیلی"),
-        getWatchlistIds(),
-        getContinueWatching(),
-      ]);
-      const [favRows, listRows] = await Promise.all([getFavoriteRows(), getMyListRows()]);
-      const progressMap = await getProgressMap(
+  /* B-2/B-3: the whole home feed is one useAsyncData run — but a single row
+   * failing (e.g. one mobile/db query) must NOT blank the page. Each promise
+   * degrades to an empty fallback; only when EVERY catalog row fails does the
+   * loader reject and the error card render. */
+  const { data: d, error, retry } = useAsyncData<HomeData>(async () => {
+    const settled = await Promise.allSettled([
+      getFeatured(),
+      getTrending(),
+      getNewest(),
+      getTopRated(),
+      getByType("series", { limit: 24 }),
+      getByGenre("هیجان‌انگیز"),
+      getByGenre("علمی‌تخیلی"),
+      getWatchlistIds(),
+      getContinueWatching(),
+    ]);
+    const ok = <T,>(i: number, fb: T): T =>
+      settled[i].status === "fulfilled" ? (settled[i] as PromiseFulfilledResult<T>).value : fb;
+    const failed = settled.filter((s) => s.status === "rejected").length;
+    if (failed === settled.length) {
+      // nothing answered — surface a retry instead of an empty shell
+      throw new Error("home feed unavailable");
+    }
+    const featured = ok(0, [] as TitleView[]);
+    const trending = ok(1, [] as TitleView[]);
+    const newest = ok(2, [] as TitleView[]);
+    const topRated = ok(3, [] as TitleView[]);
+    const series = ok(4, [] as TitleView[]);
+    const action = ok(5, [] as TitleView[]);
+    const scifi = ok(6, [] as TitleView[]);
+    const watchlistIds = ok(7, [] as number[]);
+    const continueItems = ok(8, [] as ContinueItem[]);
+
+    // user rows + progress degrade to empty fallbacks — they only shape
+    // optional shelves, so a failure here must not blank the page either
+    const [favRows, listRows, progressMap] = await Promise.all([
+      getFavoriteRows().catch(() => [] as FavoriteRow[]),
+      getMyListRows().catch(() => [] as ListRow[]),
+      getProgressMap(
         Array.from(new Set([...trending, ...newest, ...topRated, ...series].map((t) => t.id)))
-      );
-      if (!alive) return;
-      setD({ featured, trending, newest, topRated, series, action, scifi, watchlistIds, continueItems, favRows, listRows });
-      window.__namaProgress = { ...window.__namaProgress, ...Object.fromEntries(Array.from(progressMap.entries()).map(([k, v]) => [String(k), v])) };
-    })();
-    return () => {
-      alive = false;
+      ).catch(() => new Map<number, { position: number; duration: number }>()),
+    ]);
+    window.__namaProgress = {
+      ...window.__namaProgress,
+      ...Object.fromEntries(Array.from(progressMap.entries()).map(([k, v]) => [String(k), v])),
     };
+    return { featured, trending, newest, topRated, series, action, scifi, watchlistIds, continueItems, favRows, listRows };
   }, []);
+
+  if (error) {
+    return (
+      <main className="pb-10">
+        <div className="pt-40">
+          <LoadErrorCard onRetry={retry} />
+        </div>
+      </main>
+    );
+  }
 
   if (!d) return <HomeSkeleton />;
 

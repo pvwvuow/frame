@@ -1,12 +1,13 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import {
   LOCALE_COOKIE,
   LOCALE_META,
   LOCALE_STORAGE_KEY,
   dirOf,
+  isLocale,
   makeT,
   setActiveLocale,
   type Locale,
@@ -45,12 +46,39 @@ function persist(l: Locale) {
 export default function LocaleProvider({ initial, children }: { initial: Locale; children: ReactNode }) {
   const router = useRouter();
   const [locale, setLocaleState] = useState<Locale>(initial);
+  /* the persist-on-change effect must not fire for the render that hydrates —
+     otherwise it would clobber the user's stored choice before the drift
+     check below gets to read it (B-3: the value was ERASED every reload). */
+  const firstPersist = useRef(true);
 
   // keep the module-level locale (used by lib/format digits) in sync – during render
   // so the very first client render already formats numbers correctly.
   setActiveLocale(locale);
 
+  /* B-3 mount reconciliation: the cookie is what the server rendered with, but
+     localStorage holds the user's LAST EXPLICIT choice. If they drifted
+     (cookie blocked / cleared / stale), localStorage WINS — re-persist so the
+     cookie catches up and the next server render matches. */
   useEffect(() => {
+    try {
+      const stored = localStorage.getItem(LOCALE_STORAGE_KEY);
+      if (isLocale(stored) && stored !== initial) {
+        setActiveLocale(stored);
+        setLocaleState(stored);
+        persist(stored); // writes BOTH localStorage + nama_locale cookie
+      }
+    } catch {
+      /* private mode */
+    }
+    // mount-only by design (initial is the server-resolved locale)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (firstPersist.current) {
+      firstPersist.current = false;
+      return;
+    }
     persist(locale);
   }, [locale]);
 

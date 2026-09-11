@@ -10,7 +10,7 @@
  * - renders the app only when queries can be answered
  */
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { installMobileShim } from "@/lib/mobile/shim";
 import { initCatalog, isDesktopRuntime, type ImportProgress } from "@/lib/mobile/db";
 
@@ -25,6 +25,12 @@ const PHASE_TEXT: Record<ImportProgress["phase"], string> = {
   done: "آماده است",
 };
 
+/* B-7: initCatalog failures used to be swallowed on desktop (raw initCatalog
+ * error text on mobile). Now: the error is stored, retried ONCE after 3s
+ * (transient offline blips self-heal), and if the gate truly ends in the
+ * error screen the user gets a friendly Persian message — never exception
+ * text. On desktop the gate stays non-blocking (queries degrade + surface
+ * their own error cards via useAsyncData pages). */
 export default function CatalogGate({ children }: { children: React.ReactNode }) {
   const [progress, setProgress] = useState<ImportProgress | null>(null);
   const [ready, setReady] = useState(false);
@@ -36,30 +42,32 @@ export default function CatalogGate({ children }: { children: React.ReactNode })
    * index from the local API in the background; queries await it transparently
    * (see ensureReady in lib/mobile/db). */
   const [desktop, setDesktop] = useState(false);
+  const retriedRef = useRef(false);
+
+  const run = useCallback(() => {
+    setError(null);
+    const p = isDesktopRuntime()
+      ? initCatalog()
+      : initCatalog((prog) => setProgress(prog));
+    p.then(() => {
+      setReady(true);
+      setProgress(null);
+      setError(null);
+    }).catch(() => {
+      setError("catalog-init-failed");
+      if (!retriedRef.current) {
+        retriedRef.current = true;
+        setTimeout(() => {
+          void run();
+        }, 3000);
+      }
+    });
+  }, []);
 
   useEffect(() => {
-    if (isDesktopRuntime()) {
-      setDesktop(true);
-      void initCatalog().catch(() => {});
-      return;
-    }
-    let alive = true;
-    const first = initCatalog((p) => {
-      if (alive) setProgress(p);
-    });
-    first
-      .then(() => {
-        if (!alive) return;
-        setReady(true);
-        setProgress(null);
-      })
-      .catch((e) => {
-        if (alive) setError(e instanceof Error ? e.message : String(e));
-      });
-    return () => {
-      alive = false;
-    };
-  }, []);
+    if (isDesktopRuntime()) setDesktop(true);
+    void run();
+  }, [run]);
 
   if (desktop) return <>{children}</>;
 
@@ -68,7 +76,7 @@ export default function CatalogGate({ children }: { children: React.ReactNode })
       <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center gap-4 bg-[#070709] px-8 text-center" dir="rtl">
         <img src="/app-icon.png" alt="فریم" className="h-14 w-14 select-none rounded-2xl opacity-80" draggable={false} />
         <p className="text-base font-bold text-white">خطا در آماده‌سازی آرشیو</p>
-        <p className="max-w-sm text-sm leading-7 text-white/50">{error}</p>
+        <p className="max-w-sm text-sm leading-7 text-white/50">بارگیری کاتالوگ ممکن نشد؛ اتصال اینترنت را بررسی کنید.</p>
         <button
           onClick={() => window.location.reload()}
           className="mt-2 rounded-full border border-white/15 px-6 py-2 text-sm font-bold text-white/90 transition hover:bg-white/10"

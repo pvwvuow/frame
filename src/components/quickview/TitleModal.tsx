@@ -49,21 +49,28 @@ export default function TitleModal({
 }) {
   const { t: tr, locale } = useI18n();
   const [detail, setDetail] = useState<Detail | null>(null);
+  // B-12: a failed detail fetch used to leave the episode skeletons forever
+  const [detailError, setDetailError] = useState(false);
   const [muted, setMuted] = useState(true);
   const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
     if (!title) {
       setDetail(null);
+      setDetailError(false);
       return;
     }
     let alive = true;
     setDetail(null);
+    setDetailError(false);
     setMuted(true);
     fetch(`/api/title/${title.slug}`)
-      .then((r) => r.json())
+      .then((r) => {
+        if (!r.ok) throw new Error(`detail ${r.status}`);
+        return r.json();
+      })
       .then((d: Detail) => alive && setDetail(d))
-      .catch(() => {});
+      .catch(() => alive && setDetailError(true));
     return () => {
       alive = false;
     };
@@ -214,7 +221,11 @@ export default function TitleModal({
               {/* episodes teaser */}
               {t.type === "series" && (
                 <div className="mt-4">
-                  {!detail ? (
+                  {detailError ? (
+                    <p className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-3 text-xs leading-6 text-zinc-400" dir="rtl">
+                      بارگیری جزئیات ناتمام ماند؛ برای دیدن قسمت‌ها صفحه‌ی کامل اثر را باز کنید.
+                    </p>
+                  ) : !detail ? (
                     <div className="space-y-2">
                       {[0, 1].map((i) => (
                         <div key={i} className="skeleton h-14 rounded-xl" />

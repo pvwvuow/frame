@@ -60,7 +60,7 @@ export default function ReviewForm({ titleId, slug }: { titleId: number; slug: s
               <StarIcon width={18} height={18} />
             </button>
           ))}
-          <span className="ml-auto text-sm font-bold text-amber-400">{fa(hover ?? rating)}/۱۰</span>
+          <span className="ms-auto text-sm font-bold text-amber-400">{fa(hover ?? rating)}/۱۰</span>
         </div>
       </div>
       <textarea

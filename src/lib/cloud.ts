@@ -326,6 +326,18 @@ async function currentUserId(): Promise<string | null> {
   }
 }
 
+/** C-2 — access token فعلی سشن برای اثبات مالکیت در /api/identity. */
+async function currentAccessToken(): Promise<string | null> {
+  const sb = getSupabase();
+  if (!sb) return null;
+  try {
+    const { data } = await sb.auth.getSession();
+    return data.session?.access_token ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /* ------------------------------------------------------------------ */
 /* v0.12.0 — FULL user sync: profile (name/avatar/settings) + history   */
 /* ------------------------------------------------------------------ */
@@ -782,7 +794,7 @@ export function fullSync(): Promise<MergeResult> {
 
 async function runFullSync(): Promise<MergeResult> {
   const uid = await currentUserId();
-  if (uid) await attachIdentity(uid);
+  if (uid) await attachIdentity(uid, await currentAccessToken());
   const merged = await syncCloudToLocal();
   if (merged.ok) {
     // profile: cloud → local (if newer), then local → cloud

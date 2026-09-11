@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { getUserKey } from "@/lib/user";
+import { sameOriginOrThrow } from "@/lib/api-guard";
 
 export const dynamic = "force-dynamic";
 
@@ -25,6 +26,8 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
+  const guard = sameOriginOrThrow(req);
+  if (guard) return guard;
   const userKey = await getUserKey();
   const body = (await req.json().catch(() => null)) as {
     titleId?: number;
@@ -40,11 +43,20 @@ export async function POST(req: Request) {
   if (!titleId || !Number.isFinite(position) || !Number.isFinite(duration)) {
     return Response.json({ error: "invalid payload" }, { status: 400 });
   }
+  /* C-20 — سقف منطقی مقادیر (۱e308 قبلاً پاس می‌شد) + اتصال episodeId به
+   * titleId: اپیزودِ حساب دیگری نباید در ادامه‌ی تماشای این عنوان بنشیند. */
+  const pos = Math.max(0, Math.min(position, 86_400 * 20));
+  const dur = Math.max(0, Math.min(duration, 86_400 * 20));
+  let epId: number | null = null;
+  if (episodeId) {
+    const ep = await db.episode.findFirst({ where: { id: episodeId, titleId }, select: { id: true } });
+    epId = ep?.id ?? null;
+  }
 
   await db.watchProgress.upsert({
     where: { userKey_titleId: { userKey, titleId } },
-    update: { position, duration, episodeId },
-    create: { userKey, titleId, episodeId, position, duration },
+    update: { position: pos, duration: dur, episodeId: epId },
+    create: { userKey, titleId, episodeId: epId, position: pos, duration: dur },
   });
 
   return Response.json({ ok: true });
@@ -52,9 +64,15 @@ export async function POST(req: Request) {
 
 /** Remove one entry from history or clear everything. Body: { titleId?: number } */
 export async function DELETE(req: Request) {
+  const guard = sameOriginOrThrow(req);
+  if (guard) return guard;
   const userKey = await getUserKey();
   const body = (await req.json().catch(() => null)) as { titleId?: number; titleIds?: number[] } | null;
-  const ids = body?.titleIds?.map(Number).filter(Boolean) ?? (body?.titleId ? [Number(body.titleId)] : []);
+  const ids = Array.isArray(body?.titleIds)
+    ? body.titleIds.map(Number).filter(Boolean).slice(0, 1000)
+    : body?.titleId
+      ? [Number(body.titleId)]
+      : [];
   const r = await db.watchProgress.deleteMany({ where: { userKey, ...(ids.length ? { titleId: { in: ids } } : {}) } });
   return Response.json({ ok: true, removed: r.count });
 }
