@@ -14,7 +14,7 @@ import { UserIcon, CrownIcon, CheckCircleIcon, SparkIcon } from "@/components/Ic
 import { useI18n } from "@/components/i18n/LocaleProvider";
 import { useCloudSession } from "@/lib/cloud";
 import { PLAN_LABELS, activationErrorText, useSubscription, type Plan } from "@/lib/subscription";
-import { posterSrc } from "@/lib/covers";
+import { backdropSrc } from "@/lib/covers";
 import { fa } from "@/lib/format";
 
 type PlanDef = { key: Plan; title: string; note: string; noteEn: string; hot?: boolean };
@@ -42,20 +42,24 @@ const PLANS: PlanDef[] = [
   { key: "life", title: "مادام‌العمر", note: "برای همیشه، بدون انقضا", noteEn: "Forever, never expires" },
 ];
 
-/* ── VIP ambient backdrop (v0.30.4) ───────────────────────────────────
- * Real covers of top-rated titles drift in and out of the blackness
- * around the page: matte (low opacity, slight blur, radial mask → edges
- * dissolved into the dark), one surfacing top-start, the next bottom-end,
- * never all at once, forever changing. GPU-only opacity/transform
- * animation; the poster swaps at the invisible 0-opacity boundary of each
- * cycle; reduced-motion users get a calm static page. */
+/* ── VIP ambient backdrop (v0.30.4, re-tuned v0.30.7) ─────────────────
+ * WIDE COVERS (backdrops, not posters) of top titles drift in and out of
+ * the blackness around the page: matte (low opacity, slight blur, radial
+ * mask → edges dissolved), big (300–430px), fast cycles (9–15s), TEN
+ * staggered slots so something is always surfacing while something else
+ * dissolves. GPU-only opacity/transform animation; the cover swaps at the
+ * invisible 0-opacity boundary of each cycle. */
 const AMBIENT_SLOTS = [
-  { left: "3%", top: "9%", w: 230, dur: 19, delay: -2, o: 0.3, blur: 2, tilt: "-4deg" },
-  { left: "74%", top: "5%", w: 205, dur: 24, delay: -13, o: 0.24, blur: 3, tilt: "3deg" },
-  { left: "7%", top: "56%", w: 195, dur: 27, delay: -19, o: 0.22, blur: 3, tilt: "5deg" },
-  { left: "79%", top: "46%", w: 240, dur: 18, delay: -8, o: 0.28, blur: 2, tilt: "-3deg" },
-  { left: "28%", top: "80%", w: 185, dur: 26, delay: -22, o: 0.2, blur: 4, tilt: "4deg" },
-  { left: "52%", top: "24%", w: 175, dur: 30, delay: -16, o: 0.15, blur: 5, tilt: "-5deg" },
+  { left: "2%",  top: "7%",  w: 430, dur: 10, delay: -2,  o: 0.26, blur: 2, tilt: "-3deg" },
+  { left: "66%", top: "12%", w: 390, dur: 12, delay: -7,  o: 0.22, blur: 3, tilt: "2deg" },
+  { left: "10%", top: "32%", w: 350, dur: 13, delay: -11, o: 0.17, blur: 3, tilt: "3deg" },
+  { left: "58%", top: "40%", w: 410, dur: 9,  delay: -4,  o: 0.23, blur: 2, tilt: "-2deg" },
+  { left: "3%",  top: "58%", w: 370, dur: 14, delay: -9,  o: 0.2,  blur: 3, tilt: "4deg" },
+  { left: "70%", top: "66%", w: 430, dur: 11, delay: -6,  o: 0.26, blur: 2, tilt: "-3deg" },
+  { left: "24%", top: "82%", w: 390, dur: 12, delay: -3,  o: 0.2,  blur: 4, tilt: "2deg" },
+  { left: "42%", top: "18%", w: 340, dur: 15, delay: -12, o: 0.14, blur: 4, tilt: "-4deg" },
+  { left: "38%", top: "72%", w: 360, dur: 10, delay: -8,  o: 0.16, blur: 4, tilt: "3deg" },
+  { left: "84%", top: "30%", w: 310, dur: 13, delay: -5,  o: 0.18, blur: 3, tilt: "-2deg" },
 ];
 
 function AmbientSlot({
@@ -82,9 +86,9 @@ function AmbientSlot({
         left: slot.left,
         top: slot.top,
         width: slot.w,
-        maxWidth: "32vw",
-        aspectRatio: "2 / 3",
-        borderRadius: 18,
+        maxWidth: "42vw",
+        aspectRatio: "16 / 9",
+        borderRadius: 16,
         opacity: 0,
         filter: `blur(${slot.blur}px) saturate(0.65) brightness(0.6)`,
         WebkitMaskImage: "radial-gradient(90% 90% at 50% 50%, #000 30%, transparent 72%)",
@@ -113,14 +117,14 @@ function VipAmbient() {
       .then(([m, s]) => {
         if (!alive) return;
         const pool = [ ...(m.items ?? []), ...(s.items ?? []) ]
-          .map((t: { poster?: string | null; posterUrl?: string | null }) => posterSrc(t))
+          .map((t: { backdrop?: string | null; backdropUrl?: string | null }) => backdropSrc(t))
           .filter(Boolean);
         /* shuffle so every visit surfaces different covers */
         for (let i = pool.length - 1; i > 0; i--) {
           const j = Math.floor(Math.random() * (i + 1));
           [pool[i], pool[j]] = [pool[j], pool[i]];
         }
-        setPosters(pool.slice(0, 24));
+        setPosters(pool.slice(0, 30));
       })
       .catch(() => {});
     return () => {

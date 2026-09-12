@@ -1004,6 +1004,51 @@ function buildMenu() {
 /* ------------------------------------------------------------------ */
 /* auto-update (GitHub Releases)                                      */
 /* ------------------------------------------------------------------ */
+
+/* v0.30.7 — a release PUBLISHES IN STAGES on GitHub: the tag + the release
+ * object become visible BEFORE every asset (latest.yml among them) has
+ * finished uploading. An update check landing in that window dies with a
+ * 404 and electron-updater stuffs the whole raw HttpError dump (headers,
+ * stack, everything) into e.message — the user got an incomprehensible
+ * wall of text. Handle it at the source: recognize the mid-publish race,
+ * retry QUIETLY a few times with a growing gap, and whatever the failure,
+ * never forward raw error text to the renderer — one short Persian line
+ * instead; the detail goes to the log. */
+const RELEASE_PENDING_RE = /Cannot find (?:latest|latest-mac|latest-linux)\.yml/i;
+
+function updateErrText(e) {
+  return String((e && e.message) || e || "");
+}
+function isReleasePublishing(e) {
+  const m = updateErrText(e);
+  return RELEASE_PENDING_RE.test(m) && /\b40[34]\b/.test(m);
+}
+function friendlyUpdateError(e) {
+  const m = updateErrText(e);
+  if (isReleasePublishing(e)) return "انتشار نسخه‌ی تازه هنوز کامل نشده؛ چند دقیقه‌ی دیگر دوباره بررسی کن.";
+  if (/ENOTFOUND|ETIMEDOUT|ECONNRESET|ECONNREFUSED|net::|ERR_|\b50[23]\b/i.test(m))
+    return "اتصال به سرور به‌روزرسانی برقرار نشد؛ اتصال اینترنت را بررسی کن.";
+  return "بررسی به‌روزرسانی ناموفق بود؛ بعداً دوباره تلاش کن.";
+}
+
+let updateSend = () => {};
+let updateRetryCount = 0;
+let updateRetryTimer = null;
+
+function scheduleUpdateRetry() {
+  if (!autoUpdater || updateRetryCount >= 3) return;
+  updateRetryCount += 1;
+  const wait = 20000 * updateRetryCount; // 20s → 40s → 60s
+  log.warn(`release looks mid-publish — update check retry #${updateRetryCount} in ${wait}ms`);
+  if (updateRetryTimer) clearTimeout(updateRetryTimer);
+  updateRetryTimer = setTimeout(() => {
+    void autoUpdater.checkForUpdates().catch((e) => {
+      if (isReleasePublishing(e)) scheduleUpdateRetry();
+      else updateSend({ status: "error", message: friendlyUpdateError(e) });
+    });
+  }, wait);
+}
+
 function setupUpdater() {
   if (!app.isPackaged) return;
   try {
@@ -1011,12 +1056,16 @@ function setupUpdater() {
     autoUpdater.logger = log;
     autoUpdater.autoDownload = true;
     autoUpdater.autoInstallOnAppQuit = true;
-    const send = (payload) => mainWindow?.webContents.send("nama:update-status", payload);
-    autoUpdater.on("update-available", (i) => send({ status: "available", version: i.version }));
-    autoUpdater.on("update-not-available", () => send({ status: "not-available" }));
-    autoUpdater.on("download-progress", (p) => send({ status: "downloading", percent: p.percent }));
-    autoUpdater.on("update-downloaded", (i) => send({ status: "downloaded", version: i.version }));
-    autoUpdater.on("error", (e) => send({ status: "error", message: e?.message }));
+    updateSend = (payload) => mainWindow?.webContents.send("nama:update-status", payload);
+    autoUpdater.on("update-available", (i) => { updateRetryCount = 0; updateSend({ status: "available", version: i.version }); });
+    autoUpdater.on("update-not-available", () => { updateRetryCount = 0; updateSend({ status: "not-available" }); });
+    autoUpdater.on("download-progress", (p) => updateSend({ status: "downloading", percent: p.percent }));
+    autoUpdater.on("update-downloaded", (i) => updateSend({ status: "downloaded", version: i.version }));
+    autoUpdater.on("error", (e) => {
+      // mid-publish race → self-heal in the background, no user-facing error
+      if (isReleasePublishing(e)) { scheduleUpdateRetry(); return; }
+      updateSend({ status: "error", message: friendlyUpdateError(e) });
+    });
     setTimeout(() => autoUpdater.checkForUpdates().catch((e) => log.warn("update check failed", e)), 8000);
   } catch (e) {
     log.warn("electron-updater unavailable", e);
@@ -1035,7 +1084,8 @@ async function checkForUpdates(interactive = false) {
     if (interactive && !available) dialog.showMessageBox({ type: "info", title: APP_NAME, message: "شما آخرین نسخه را دارید." });
     return available ? { status: "available", version: latest } : { status: "not-available" };
   } catch (e) {
-    return { status: "error", message: e?.message ?? String(e) };
+    if (isReleasePublishing(e)) scheduleUpdateRetry();
+    return { status: "error", message: friendlyUpdateError(e) };
   }
 }
 
