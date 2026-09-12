@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import type { TitleCardData } from "@/components/TitleCard";
@@ -13,6 +14,7 @@ import { useI18n } from "../i18n/LocaleProvider";
 import { stopMediaEl } from "@/lib/media";
 import { MobileDownloadButton } from "../download/MobileDownloads";
 import { titleHref, watchHref } from "@/lib/mobile-links";
+import { GlassButton, GlassCard } from "../ui/glass";
 
 type Episode = {
   id: number;
@@ -48,6 +50,7 @@ export default function TitleModal({
   onSwitch: (t: TitleCardData) => void;
 }) {
   const { t: tr, locale } = useI18n();
+  const router = useRouter();
   const [detail, setDetail] = useState<Detail | null>(null);
   // B-12: a failed detail fetch used to leave the episode skeletons forever
   const [detailError, setDetailError] = useState(false);
@@ -127,8 +130,16 @@ export default function TitleModal({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 20, scale: 0.97 }}
             transition={{ type: "spring", stiffness: 300, damping: 28 }}
-            className="glass-strong no-scrollbar relative max-h-[calc(100dvh-1.5rem)] w-full max-w-[560px] overflow-y-auto overscroll-contain rounded-[28px] sheet-safe-bottom"
+            className="w-full max-w-[560px]"
           >
+            {/* v0.30.0 — the quick-view surface is a real liquid-glass card
+                (the Card Example of rdev/liquid-glass-react). The scroll
+                lives INSIDE the glass so the refraction stays put while the
+                content moves; a dark veil keeps text readable. */}
+            <GlassCard radius={28} blurAmount={0.15} displacementScale={64} className="w-full">
+              <div className="relative">
+                <div className="absolute inset-0 rounded-[28px] bg-black/25" />
+                <div className="no-scrollbar relative max-h-[calc(100dvh-1.5rem)] overflow-y-auto overscroll-contain sheet-safe-bottom">
             {/* ── media strip (always dark, like a film cell) ─────────── */}
             <div className="force-dark relative z-0 h-[150px] w-full overflow-hidden sm:h-[170px]">
               { }
@@ -282,19 +293,18 @@ export default function TitleModal({
                 </div>
               )}
 
-              {/* actions */}
+              {/* actions — liquid-glass pills (the Button Example) */}
               <div className="mt-5 flex items-center gap-2">
-                <Link
-                  href={resumeHref}
-                  className="flex h-11 flex-1 items-center justify-center gap-2 rounded-full bg-white px-5 text-sm font-extrabold text-black transition hover:scale-[1.02]"
-                >
-                  <PlayIcon width={18} height={18} />
-                  {hasProgress && progress
-                    ? `${tr("common.resume")} · ${formatClock(progress.position)}`
-                    : t.type === "series"
-                      ? locale === "en" ? "Play episode 1" : "پخش قسمت اول"
-                      : tr("common.play")}
-                </Link>
+                <GlassButton onClick={() => router.push(resumeHref)} className="flex-1">
+                  <span className="flex h-11 w-full items-center justify-center gap-2 px-5 text-sm font-extrabold text-white">
+                    <PlayIcon width={18} height={18} />
+                    {hasProgress && progress
+                      ? `${tr("common.resume")} · ${formatClock(progress.position)}`
+                      : t.type === "series"
+                        ? locale === "en" ? "Play episode 1" : "پخش قسمت اول"
+                        : tr("common.play")}
+                  </span>
+                </GlassButton>
                 <WatchlistButton titleId={t.id} name={t.title} initial={detail?.inList ?? false} variant="icon" className="!h-11 !w-11" />
                 <FavoriteButton titleId={t.id} name={t.title} variant="icon" className="!h-11 !w-11" />
                 {t.type !== "series" && (
@@ -308,14 +318,16 @@ export default function TitleModal({
                 )}
               </div>
 
-              <Link
-                href={titleHref(t.slug)}
-                className="glass-btn mt-2.5 flex h-11 items-center justify-center gap-1.5 rounded-full text-sm font-bold text-white"
-              >
-                {tr("modal.continueInDetails")}
-                <ChevronLeft width={16} height={16} className="rtl-flip" />
-              </Link>
+              <GlassButton onClick={() => router.push(titleHref(t.slug))}>
+                <span className="mt-2.5 flex h-11 items-center justify-center gap-1.5 px-6 text-sm font-bold text-white/85">
+                  {tr("modal.continueInDetails")}
+                  <ChevronLeft width={16} height={16} className="rtl-flip" />
+                </span>
+              </GlassButton>
             </div>
+                </div>
+              </div>
+            </GlassCard>
           </motion.div>
         </motion.div>
       )}

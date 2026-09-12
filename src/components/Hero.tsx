@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import type { TitleView } from "@/lib/mobile/db";
 import { fa, formatDuration, typeLabel } from "@/lib/format";
@@ -12,8 +12,10 @@ import { titleNames } from "@/lib/title-name";
 import { titleHref, watchHref } from "@/lib/mobile-links";
 import { posterSrc, backdropSrc } from "@/lib/covers";
 import { useLibrary } from "./library/LibraryProvider";
+import { GlassButton } from "./ui/glass";
 
 export default function Hero({ items, watchlistIds }: { items: TitleView[]; watchlistIds: number[] }) {
+  const router = useRouter();
   const [idx, setIdx] = useState(0);
   const [paused, setPaused] = useState(false);
   /* v0.27.0 (UI-5) — manual pause via the new play/pause button */
@@ -110,20 +112,19 @@ export default function Hero({ items, watchlistIds }: { items: TitleView[]; watc
           </p>
 
           <div className="mt-7 flex flex-wrap items-center gap-3">
-            <Link
-              href={watchHref(cur.slug)}
-              className="flex h-12 items-center gap-2 rounded-full bg-white px-7 text-sm font-extrabold text-black shadow-[0_10px_40px_rgba(255,255,255,0.15)] transition hover:scale-[1.03] hover:bg-zinc-200"
-            >
-              <PlayIcon width={20} height={20} />
-              {tr("common.play")}
-            </Link>
-            <Link
-              href={titleHref(cur.slug)}
-              className="flex h-12 items-center gap-2 rounded-full border border-white/20 bg-white/10 px-6 text-sm font-bold text-white backdrop-blur transition hover:bg-white/20"
-            >
-              <InfoIcon />
-              {tr("common.moreDetails")}
-            </Link>
+            {/* v0.30.0 — hero CTAs are liquid-glass pills (Button Example) */}
+            <GlassButton onClick={() => router.push(watchHref(cur.slug))}>
+              <span className="flex h-12 items-center gap-2 px-7 text-sm font-extrabold text-white">
+                <PlayIcon width={20} height={20} />
+                {tr("common.play")}
+              </span>
+            </GlassButton>
+            <GlassButton onClick={() => router.push(titleHref(cur.slug))}>
+              <span className="flex h-12 items-center gap-2 px-6 text-sm font-bold text-white/85">
+                <InfoIcon />
+                {tr("common.moreDetails")}
+              </span>
+            </GlassButton>
             <WatchlistButton titleId={cur.id} name={names.primary} initial={watchlistIds.includes(cur.id)} variant="icon" />
             <FavoriteButton titleId={cur.id} name={names.primary} variant="icon" />
           </div>

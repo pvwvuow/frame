@@ -17,6 +17,7 @@ import type { TKey } from "@/lib/i18n";
 import { titleHref } from "@/lib/mobile-links";
 import CinemaButton from "./cinema/CinemaButton";
 import { getRecentSearches, rememberSearch, forgetSearch, clearRecentSearches as clearRecent } from "@/lib/search-history";
+import { GlassBar } from "./ui/glass";
 
 type Result = {
   id: number;
@@ -490,33 +491,40 @@ export default function Navbar() {
       </header>
 
       {/* mobile bottom nav – rendered outside the header so the header's
-          backdrop-filter never becomes its containing block */}
+          backdrop-filter never becomes its containing block.
+          v0.30.0 — the surface is now a real liquid-glass bar
+          (rdev/liquid-glass-react) with a dark veil for text readability. */}
       <nav
         aria-label={t("nav.mobileNav")}
-        className={`glass-strong fixed inset-x-3 bottom-3 z-50 flex items-center justify-around rounded-2xl py-2 transition-all duration-300 lg:hidden ${
+        className={`fixed inset-x-3 bottom-3 z-50 transition-all duration-300 lg:hidden ${
           navHidden ? "pointer-events-none translate-y-[140%] opacity-0" : "translate-y-0 opacity-100"
         }`}
         data-nav-hidden={navHidden ? "1" : "0"}
-        style={{ paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))" }}
+        style={{ paddingBottom: "max(0.25rem, env(safe-area-inset-bottom))" }}
       >
-        {mobileLinks.map((l) => {
-          const Icon = l.icon;
-          const on =
-            l.href === "/profile"
-              ? ["/profile", "/my-list", "/favorites", "/history", "/settings", "/notifications"].some((p) => pathname?.startsWith(p))
-              : isActive(l.href);
-          return (
-            <Link
-              key={l.href}
-              href={l.href}
-              aria-current={on ? "page" : undefined}
-              className={`flex flex-col items-center gap-1 px-3 py-1 text-[11px] transition-colors ${on ? "text-brand" : "text-zinc-400 hover:text-white"}`}
-            >
-              <Icon width={20} height={20} />
-              {t(l.key)}
-            </Link>
-          );
-        })}
+        <GlassBar radius={26}>
+          <div className="relative flex items-center justify-around px-1 py-2">
+            <div className="absolute inset-0 rounded-[26px] bg-black/20" />
+            {mobileLinks.map((l) => {
+              const Icon = l.icon;
+              const on =
+                l.href === "/profile"
+                  ? ["/profile", "/my-list", "/favorites", "/history", "/settings", "/notifications"].some((p) => pathname?.startsWith(p))
+                  : isActive(l.href);
+              return (
+                <Link
+                  key={l.href}
+                  href={l.href}
+                  aria-current={on ? "page" : undefined}
+                  className={`relative flex flex-col items-center gap-1 px-3 py-1 text-[11px] transition-colors ${on ? "text-brand" : "text-zinc-400 hover:text-white"}`}
+                >
+                  <Icon width={20} height={20} />
+                  {t(l.key)}
+                </Link>
+              );
+            })}
+          </div>
+        </GlassBar>
       </nav>
     </>
   );

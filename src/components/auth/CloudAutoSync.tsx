@@ -8,16 +8,17 @@
  *            (slow re-attach / VPN): the sync ran signed-out and silently
  *            no-oped — data never appeared on the second device. Now the
  *            Supabase auth stream itself drives the sync (SIGNED_IN /
- *            INITIAL_SESSION / TOKEN_REFRESHED, deduped per uid), an
- *            `online` event retries after a failed pass, and a pulled
- *            profile/history change shows a small toast so cross-device
- *            sync is VISIBLE instead of silent.
+ *            INITIAL_SESSION / TOKEN_REFRESHED, deduped per uid) and an
+ *            `online` event retries after a failed pass.
+ * v0.30.0  — the «همگام‌سازی ابری» toast is GONE (user request: the popup
+ *            kept appearing over everything and annoyed them). Sync stays
+ *            fully automatic and silent; router.refresh() still pulls the
+ *            fresh data into the UI without any toast.
  */
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { fullSync, getSupabase } from "@/lib/cloud";
-import { toast } from "sonner";
 
 /** latest success per uid inside 60s → skip duplicate triggers */
 const lastSyncByUid = new Map<string, number>();
@@ -33,11 +34,7 @@ export default function CloudAutoSync() {
       void fullSync().then((r) => {
         if (!alive) return;
         if (r.ok) {
-          if ((r.favoritesAdded ?? 0) + (r.listAdded ?? 0) + (r.ratingsAdded ?? 0) + (r.progressApplied ?? 0) > 0) {
-            toast.message("همگام‌سازی ابری", {
-              description: "اطلاعات حساب شما (علاقه‌مندی‌ها، تاریخچه و پروفایل) به‌روز شد.",
-            });
-          }
+          // v0.30.0 — silent by design: no toast. The data simply appears.
           try {
             router.refresh();
           } catch {
