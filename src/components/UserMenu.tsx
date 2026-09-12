@@ -1,6 +1,25 @@
 "use client";
 
-/* v0.30.12 — the avatar menu is now a MERGED FEATHERED VEIL.
+/* v0.30.14 — two refinements on the veil:
+ *
+ * 1. OPEN SPEED: the spring (stiffness 320, mass 0.9) starts from rest,
+ *    so the first ~100ms barely moved and the opening read as LAGGY
+ *    («یکم لگ و با تاخیر باز میشه»); the heavy backdrop-blur-2xl over a
+ *    full-height masked strip re-blurred every frame of the slide. Now a
+ *    220ms expo-out tween (max velocity at t=0 → instant response) and
+ *    the veil is a plain gradient layer — no backdrop-filter, no mask,
+ *    nothing to re-rasterize per frame.
+ *
+ * 2. TEXT SIDE: the rows used to pack toward the content-facing edge,
+ *    leaving the text stranded away from the anchored screen edge
+ *    («توی حالت انگلیسی نوشته‌ها باید به سمت راست بچسبن ولی برعکس اومدن
+ *    به سمت چپ، و برعکس تو فارسی»). Every row is mirrored now
+ *    (flex-row-reverse + text-end): the icon parks AT the anchored edge,
+ *    the label hugs it, and the free space moves to the content side —
+ *    in ENGLISH the text sticks RIGHT, in PERSIAN it sticks LEFT, both
+ *    toward the solid hold of the veil where it never sits on the melt.
+ *
+ * v0.30.12 — the avatar menu is now a MERGED FEATHERED VEIL.
  *
  * v0.30.10 made it a centered slab that PUSHED the app shell aside
  * (html[data-udrawer] + .nama-shell). The user withdrew both: «طراحی‌ش
@@ -11,9 +30,10 @@
  * the page toward the content — «سمت چپ تیره باشه و به فضای نرم‌افزار
  * که نزدیک میشه فید همرنگ پس‌زمینه بشه». No border, no rounded slab, no
  * shadow (any of them would re-draw the rectangle), no scrim, no push.
- * The veil's gradient AND its backdrop-blur are dir-aware and feather
- * out via a mask, so the panel melts into whatever is behind it. The
- * content column lives pinned at the anchored edge, OUTSIDE the fade
+ * The veil's gradient is dir-aware and melts into whatever is behind it
+ * (v0.30.14 dropped the backdrop-blur + mask — the melt reads cleaner
+ * sharp and the open is frame-cheap). The content column lives pinned at
+ * the anchored edge, OUTSIDE the fade
  * zone, so text never sits on the translucent part. Still minimal,
  * monochrome (ONLY the VIP entry keeps gold), still closes itself
  * smartly (outside pointerdown — the un-masked fade zone is
@@ -81,15 +101,17 @@ function Item({
       <Link
         href={href}
         role="menuitem"
-        className={`flex items-center gap-3 rounded-2xl px-3.5 py-2.5 text-sm transition ${
+        /* v0.30.14: mirrored row — icon parks at the anchored screen edge,
+           the label hugs it (text-end); badge sits between icon and label. */
+        className={`flex flex-row-reverse items-center gap-3 rounded-2xl px-3.5 py-2.5 text-sm transition ${
           active ? "bg-white/[0.1] text-white" : "text-zinc-300 hover:bg-white/[0.06] hover:text-white"
         }`}
       >
-        <Icon width={17} height={17} className={active ? "text-white" : "text-zinc-400"} />
-        <span className="flex-1">{label}</span>
+        <Icon width={17} height={17} className={`shrink-0 ${active ? "text-white" : "text-zinc-400"}`} />
         {count != null && count > 0 && (
-          <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-bold text-zinc-200 num">{fa(count)}</span>
+          <span className="shrink-0 rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-bold text-zinc-200 num">{fa(count)}</span>
         )}
+        <span className="flex-1 text-end">{label}</span>
       </Link>
     </li>
   );
@@ -205,18 +227,16 @@ export default function UserMenu() {
      (inline-end = the avatar corner): LTR → from the right, RTL → from the left */
   const offX = dir === "rtl" ? -520 : 520;
   /* the feather: opaque app-ink at the anchored screen edge, dissolving
-     into the page toward the content (dir-aware direction). Everything is
-     PERCENTAGE-LOCKED to the panel width so the content column (72%) sits
-     ENTIRELY inside the opaque hold (74%): at the content's inner edge the
-     veil is still fully solid — solid melts into solid, no seam — and the
-     visible melt-tail is the last ~26%. The MASK additionally feathers
-     the backdrop-blur so the melt zone has no boundary of its own. */
+     into the page toward the content (dir-aware direction). The gradient
+     alone owns the melt (v0.30.14 removed the backdrop-blur + mask — the
+     blur re-rasterized every frame of the slide and read as opening lag;
+     sharp it also reads cleaner). The content column (72%) sits ENTIRELY
+     inside the opaque hold (74%): at the content's inner edge the veil is
+     still fully solid — solid melts into solid, no seam — and the visible
+     melt-tail is the last ~26%. */
   const veilBg = dir === "rtl"
     ? "linear-gradient(to right, var(--color-ink) 0%, var(--color-ink) 74%, transparent 100%)"
     : "linear-gradient(to left, var(--color-ink) 0%, var(--color-ink) 74%, transparent 100%)";
-  const veilMask = dir === "rtl"
-    ? "linear-gradient(to right, #000 0%, #000 72%, transparent 98%)"
-    : "linear-gradient(to left, #000 0%, #000 72%, transparent 98%)";
 
   return (
     <div className="relative">
@@ -259,21 +279,20 @@ export default function UserMenu() {
                 initial={reduce ? { opacity: 0 } : { opacity: 0, x: offX }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={reduce ? { opacity: 0 } : { opacity: 0, x: offX }}
-                transition={{ type: "spring", stiffness: 320, damping: 34, mass: 0.9 }}
+                /* v0.30.14: expo-out tween instead of the spring — max
+                   velocity at t=0 kills the perceived opening delay */
+                transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
                 style={{ insetInlineEnd: 0, willChange: "transform, opacity", pointerEvents: "none" }}
                 className="fixed inset-y-0 z-[95] w-[min(500px,100vw)]"
               >
                 {/* the FEATHERED VEIL — opaque app-ink hugging the anchored
                     screen edge, dissolving into the page toward the content
-                    (dir-aware gradient + mask; the mask feathers the
-                    backdrop-blur too, so the melt has no boundary of its
-                    own). pointer-events pass through it, so tapping the
-                    faded zone closes the drawer like tapping outside. */}
-                <div
-                  aria-hidden="true"
-                  className="absolute inset-0 backdrop-blur-2xl backdrop-saturate-150"
-                  style={{ background: veilBg, WebkitMaskImage: veilMask, maskImage: veilMask }}
-                />
+                    (dir-aware gradient only since v0.30.14: no
+                    backdrop-filter, no mask — the slide is frame-cheap and
+                    the melt has no boundary of its own).
+                    pointer-events pass through it, so tapping the faded
+                    zone closes the drawer like tapping outside. */}
+                <div aria-hidden="true" className="absolute inset-0" style={{ background: veilBg }} />
                 {/* content column — pinned to the anchored edge, OUTSIDE the
                     fade zone, so text never sits on the translucent part */}
                 <div
@@ -284,14 +303,16 @@ export default function UserMenu() {
                     paddingBottom: "env(safe-area-inset-bottom, 0px)",
                   }}
                 >
-                {/* header — identity only, NO email (moved to Settings) */}
-                <div className="flex items-center gap-3 p-5 pb-3">
+                {/* header — identity only, NO email (moved to Settings).
+                    v0.30.14: mirrored so the identity hugs the anchored
+                    edge and the close lands on the content side. */}
+                <div className="flex flex-row-reverse items-center gap-3 p-5 pb-3">
                   {profile.avatarImage ? (
                     <img src={profile.avatarImage} alt="" className="h-11 w-11 shrink-0 rounded-full object-cover" />
                   ) : (
                     <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-full bg-gradient-to-br text-base font-black text-white shadow-lg ${grad}`}>{initial}</span>
                   )}
-                  <div className="min-w-0 flex-1">
+                  <div className="min-w-0 flex-1 text-end">
                     <p className="truncate text-sm font-extrabold text-white">{shownName}</p>
                     <p className="mt-0.5 text-[11px] text-zinc-500">{session ? tr("user.account") : tr("user.guest")}</p>
                   </div>
@@ -314,14 +335,14 @@ export default function UserMenu() {
                         href="/vip"
                         role="menuitem"
                         data-autofocus
-                        className={`flex items-center gap-3 rounded-2xl px-3.5 py-2.5 text-sm transition ${
+                        className={`flex flex-row-reverse items-center gap-3 rounded-2xl px-3.5 py-2.5 text-sm transition ${
                           isActive("/vip")
                             ? "bg-amber-400/20 text-amber-100"
                             : "text-amber-300/90 hover:bg-amber-400/10 hover:text-amber-200"
                         }`}
                       >
-                        <CrownIcon width={17} height={17} />
-                        <span className="flex-1">{locale === "en" ? "VIP subscription" : "اشتراک ویژه (VIP)"}</span>
+                        <CrownIcon width={17} height={17} className="shrink-0" />
+                        <span className="flex-1 text-end">{locale === "en" ? "VIP subscription" : "اشتراک ویژه (VIP)"}</span>
                       </Link>
                     </li>
                     {!session && (
@@ -363,14 +384,14 @@ export default function UserMenu() {
                         toast.success(locale === "en" ? "Signed out." : "از حساب خارج شدی.");
                         router.refresh();
                       }}
-                      className={`mt-1 flex w-full items-center gap-3 rounded-2xl px-3.5 py-2.5 text-sm transition ${
+                      className={`mt-1 flex flex-row-reverse items-center gap-3 rounded-2xl px-3.5 py-2.5 text-sm transition ${
                         confirmArmed
                           ? "bg-white/15 font-bold text-white"
                           : "text-zinc-400 hover:bg-white/[0.06] hover:text-white"
                       }`}
                     >
-                      <LogoutIcon width={17} height={17} />
-                      <span className="flex-1 text-start">
+                      <LogoutIcon width={17} height={17} className="shrink-0" />
+                      <span className="flex-1 text-end">
                         {confirmArmed
                           ? locale === "en"
                             ? "Tap again — guest data on this device will be erased"
@@ -386,7 +407,7 @@ export default function UserMenu() {
                 {/* footer — version/update (desktop) or about (web) */}
                 <div className="px-5 pb-4 pt-2 text-[11px] text-zinc-500">
                   {electron ? (
-                    <div className="flex items-center justify-between gap-2">
+                    <div className="flex flex-row-reverse items-center justify-between gap-2">
                       <span dir="ltr">{tr("app.name")} · v{bridge()?.version ?? "1.0.0"}</span>
                       <button
                         type="button"
@@ -398,7 +419,7 @@ export default function UserMenu() {
                       </button>
                     </div>
                   ) : (
-                    <div className="flex items-center justify-between gap-2">
+                    <div className="flex flex-row-reverse items-center justify-between gap-2">
                       <span>{tr("app.name")} · {tr("app.tagline")}</span>
                       <Link href="/about" className="transition hover:text-white">
                         {tr("footer.aboutUs")}

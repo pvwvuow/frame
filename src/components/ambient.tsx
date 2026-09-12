@@ -7,18 +7,24 @@
  * arrays; whole doc series sit at 9.2–9.4 and would otherwise own the
  * rating sort) and unknown-genre ("نامشخص") entries filtered out.
  *
- * v0.30.12 — the oval fade now COVERS THE FRAME: the user said the old
- * 72%-stop ellipse ate too much of the cover ("فید کوتاهه، بیشتر تصویر
- * باید خودش رو نشون بده"). The solid core grows 32%→48% of the half-axes
- * (≈2.2× the fully-visible area) and the feather runs all the way to
- * 100% — the inscribed ellipse — so the fade lands EXACTLY on the cover
- * frame (edge midpoints) and everything beyond it (corners) is already
- * fully transparent. That is his "فید بیرون از کادر" idea rendered the
- * only way a rectangle can take it: the fade reaches the frame, the
- * frame itself can never show. Ghosts also enter ONE BY ONE now (each
- * slot gets a random reveal delay — useGhostDelays — instead of the
- * whole layer popping in as a block; the home complaint that they were
- * not random and did not arrive one after another).
+ * v0.30.12 — the oval fade now COVERS THE FRAME: the feather runs all the
+ * way to 100% — the inscribed ellipse — so the fade lands EXACTLY on the
+ * cover frame (edge midpoints) and everything beyond it (corners) is
+ * already fully transparent; the rectangle can never show.
+ *
+ * v0.30.14 — the fade now CONSTITUTES THE COVER: he said the solid core
+ * still owned too much of the image («هنوزم اون فید می‌تونه بهتر و بیشترم
+ * باشه... می‌خوام خیلی بیشتر تو حتی نزدیک به لبه‌ی کاور برسه») — the
+ * reverse of the v0.30.12 reading: the SOLID CORE shrinks 48%→20% of the
+ * half-axes (≈6× less fully-visible area) and the feather becomes a long
+ * multi-stop ease that starts near the center and only hits zero at the
+ * inscribed ellipse. Most of the cover is now mid-fade at any moment;
+ * the fade reaches near the frame and the frame still never shows.
+ *
+ * GHOSTS enter ONE BY ONE (v0.30.12): each slot gets a random reveal
+ * delay — useGhostDelays — instead of the whole layer popping in as a
+ * block (the home complaint that they were not random and did not arrive
+ * one after another).
  *
  * OVAL COVERS (16/9 backdrops — the user flipped back to the wide cover
  * form) shaped as soft ELLIPSES. The image swap happens only after the
@@ -44,13 +50,15 @@ export type GhostSlot = {
 
 export type GhostShape = "oval" | "poster";
 
-/* OVAL: radial ellipse with a BIG solid core (48%) and a long feather that
- * hits zero exactly AT the inscribed ellipse (= the box edge midpoints):
- * the fade reaches the cover frame, the rectangle can never show.
+/* OVAL: radial ellipse with a SMALL solid core (20%) and a LONG multi-stop
+ * feather (v0.30.14) that starts near the center and hits zero exactly AT
+ * the inscribed ellipse (= the box edge midpoints): the fade constitutes
+ * most of the cover and still reaches the frame, so the rectangle can
+ * never show.
  * POSTER: intersect of two linear feathers, each hitting transparent
  * exactly AT the edge (kept for the 2/3 variant). */
 export const OVAL_MASK =
-  "radial-gradient(50% 50% at 50% 50%, #000 48%, rgba(0,0,0,0.82) 66%, rgba(0,0,0,0.45) 82%, rgba(0,0,0,0.12) 93%, transparent 100%)";
+  "radial-gradient(50% 50% at 50% 50%, #000 20%, rgba(0,0,0,0.9) 38%, rgba(0,0,0,0.72) 55%, rgba(0,0,0,0.48) 70%, rgba(0,0,0,0.26) 83%, rgba(0,0,0,0.1) 93%, transparent 100%)";
 export const GHOST_MASK_X = "linear-gradient(to right, transparent 0%, #000 25%, #000 75%, transparent 100%)";
 export const GHOST_MASK_Y = "linear-gradient(to bottom, transparent 0%, #000 28%, #000 72%, transparent 100%)";
 export const GHOST_MASK = `${GHOST_MASK_X}, ${GHOST_MASK_Y}`;
