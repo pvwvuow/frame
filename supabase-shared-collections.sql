@@ -54,6 +54,12 @@ alter table public.shared_collections enable row level security;
 -- unshare).
 drop policy if exists "shared collections public read" on public.shared_collections;
 drop policy if exists "shared collections owner read" on public.shared_collections;
+-- v0.29.1 - the LIVE database named these policies with UNDERSCORES, so the
+-- spaced drops above never matched and the world-readable policy survived
+-- the v0.29.0 hardening (confirmed live via a pg_policies dump). Drop BOTH
+-- spellings plus the redundant FOR ALL owner policy.
+drop policy if exists "shared_collections_public_read" on public.shared_collections;
+drop policy if exists "shared_collections_owner_all"   on public.shared_collections;
 create policy "shared collections owner read" on public.shared_collections
   for select to authenticated
   using (auth.uid() = owner_id);

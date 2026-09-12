@@ -80,9 +80,13 @@ create policy "cinema rooms delete" on public.cinema_rooms
 -- ============================================================
 -- v0.14.2 — cinema_profiles: who you are in the member list
 --   display_name + avatar_image are the ONLY public profile fields.
---   The client upserts its own row on every profile save / sync and
---   reads the rows of the users present in the room. avatar_image is a
---   small data URL (client downsizes to 320×320 JPEG, ≤ ~300KB).
+--   The client upserts its own row on every profile save / sync.
+--   avatar_image is a small data URL (client downsizes to 320×320
+--   JPEG, ≤ ~300KB).
+-- v0.29.1 — the base table is OWN-ROW ONLY. Other members' identities
+--   are fetched through the scoped cinema_member_profiles RPC below;
+--   the old «using (true)» SELECT let any account harvest every
+--   user's uuid + name + avatar (confirmed live via pg_policies dump).
 -- ============================================================
 
 create table if not exists public.cinema_profiles (
@@ -97,7 +101,7 @@ alter table public.cinema_profiles enable row level security;
 drop policy if exists "cinema profiles read" on public.cinema_profiles;
 create policy "cinema profiles read" on public.cinema_profiles
   for select to authenticated
-  using (true);
+  using (auth.uid() = user_id);
 
 drop policy if exists "cinema profiles insert" on public.cinema_profiles;
 create policy "cinema profiles insert" on public.cinema_profiles
@@ -109,6 +113,29 @@ create policy "cinema profiles update" on public.cinema_profiles
   for update to authenticated
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
+
+-- v0.29.1 - scoped identity lookup for cinema member lists.
+-- The caller must ALREADY know the uuids (they arrive via realtime
+-- presence), so this is not a harvesting oracle: it can never LIST
+-- profiles. It only fetches explicitly-requested ids, capped at 30.
+-- SECURITY DEFINER bypasses the own-row RLS on purpose; the base
+-- table itself stays locked to own-row reads.
+create or replace function public.cinema_member_profiles(p_uids uuid[])
+returns table (user_id uuid, display_name text, avatar_image text)
+language sql
+stable
+security definer
+set search_path = public
+as $fn$
+  select cp.user_id, cp.display_name, cp.avatar_image
+  from public.cinema_profiles cp
+  where cardinality(p_uids) <= 30
+    and cp.user_id = any (p_uids)
+  limit 30;
+$fn$;
+
+revoke execute on function public.cinema_member_profiles(uuid[]) from anon, public;
+grant  execute on function public.cinema_member_profiles(uuid[]) to authenticated;
 
 -- verify (both rows must be true)
 select 'cinema_rooms ready'  as step, to_regclass('public.cinema_rooms')  is not null as ok

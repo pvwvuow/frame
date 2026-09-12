@@ -171,8 +171,15 @@ export async function shareCollectionToWall(
     // wall never needs to read OTHER users' cinema_profiles rows.
     let ownerAvatar = "";
     try {
-      const { data: prof } = await sb.from("cinema_profiles").select("avatar").eq("uid", uid).maybeSingle();
-      ownerAvatar = String((prof as { avatar?: unknown } | null)?.avatar ?? "").slice(0, 400);
+      // v0.29.1 fix: the columns are avatar_image/user_id; the old
+      // avatar/uid names always errored, so the snapshot silently stayed ""
+      // since v0.29.0 (own-row read -> allowed by the tightened RLS).
+      const { data: prof } = await sb
+        .from("cinema_profiles")
+        .select("avatar_image")
+        .eq("user_id", uid)
+        .maybeSingle();
+      ownerAvatar = String((prof as { avatar_image?: unknown } | null)?.avatar_image ?? "").slice(0, 400);
     } catch {
       /* best-effort */
     }

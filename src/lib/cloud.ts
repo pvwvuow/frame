@@ -547,17 +547,19 @@ export async function pushCinemaProfile(profileData?: Record<string, unknown>): 
 
 export type CinemaProfileRow = { uid: string; name: string; avatar: string };
 
-/** Name + avatar of OTHER users (for the cinema member list). RLS exposes
- *  ONLY these two fields — everything else in a profile stays private. */
+/** Name + avatar of OTHER users (for the cinema member list). v0.29.1: the
+ *  base table is own-row-only (anti-harvesting hardening), so identities
+ *  come from the scoped SECURITY DEFINER RPC `cinema_member_profiles` - it
+ *  can never LIST profiles, only fetch the explicit ids (cap 30) that
+ *  realtime presence already revealed. Everything else in a profile stays
+ *  private. On a project where the hardening SQL is not applied yet the RPC
+ *  is missing and this silently degrades to initial-letter circles. */
 export async function fetchCinemaProfiles(uids: string[]): Promise<CinemaProfileRow[]> {
   const sb = getSupabase();
-  const clean = [...new Set(uids.filter(Boolean))];
+  const clean = [...new Set(uids.filter(Boolean))].slice(0, 30);
   if (!sb || !clean.length) return [];
   try {
-    const { data, error } = await sb
-      .from("cinema_profiles")
-      .select("user_id,display_name,avatar_image")
-      .in("user_id", clean);
+    const { data, error } = await sb.rpc("cinema_member_profiles", { p_uids: clean });
     if (error || !data) return [];
     return (data as { user_id: string; display_name: string | null; avatar_image: string | null }[]).map((r) => ({
       uid: r.user_id,

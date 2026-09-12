@@ -83,9 +83,13 @@ begin
      set status = 'used', used_by = auth.uid(), used_at = now()
    where code = c.code;
 
+  -- v0.29.1 - lock the entitlement row too: two DIFFERENT codes redeemed in
+  -- parallel by the same user would otherwise both read the same cur_exp and
+  -- one extension would silently be lost.
   select plan, expires_at into cur_plan, cur_exp
   from public.subscriptions
-  where user_id = auth.uid();
+  where user_id = auth.uid()
+  for update;
 
   -- already lifetime → nothing can extend it further
   if found and cur_exp is null then
