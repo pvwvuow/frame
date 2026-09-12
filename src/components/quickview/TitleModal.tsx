@@ -37,9 +37,21 @@ type Detail = {
 };
 
 /**
- * Compact quick-view: a small liquid-glass card with a short teaser
- * (poster, meta, 3-line synopsis, 2 episodes for series) and a clear
- * "ادامه در جزئیات" call-to-action that opens the full title page.
+ * Quick-view, reworked in v0.30.2 — one disciplined vertical rhythm:
+ *
+ *   ┌ media header (full-bleed, close/mute, badges at the far end) ┐
+ *   │ poster overlaps the header on the START side                 │
+ *   │ identity column — EVERYTHING start-aligned (no more mixed    │
+ *   │   left/right alignment): title, names, one meta row, chips   │
+ *   │ synopsis                                                     │
+ *   │ episodes — thumb + two tidy lines (name / season·ep·time)    │
+ *   │ actions — row 1: one full-width brand CTA; row 2: details    │
+ *   │   pill + the icon toggles, all the same height               │
+ *   └──────────────────────────────────────────────────────────────┘
+ *
+ * The surface is the v0.30.2 GlassCard slab (light tint + deep blur +
+ * specular edges) over a LIGHTER backdrop scrim (0.42 + blur 16) so the
+ * glass finally reads as glass instead of an opaque card.
  */
 export default function TitleModal({
   title,
@@ -105,6 +117,7 @@ export default function TitleModal({
   // episodes teaser: the one in progress + the next, otherwise the first two
   const startIdx = progress?.episodeId ? Math.max(0, eps.findIndex((e) => e.id === progress.episodeId)) : 0;
   const teaserEps = eps.slice(startIdx, startIdx + 2);
+  const isSeries = t?.type === "series";
 
   return (
     <AnimatePresence>
@@ -116,7 +129,7 @@ export default function TitleModal({
           exit={{ opacity: 0 }}
           transition={{ duration: 0.18 }}
           className="fixed inset-0 z-[90] flex items-end justify-center p-3 sm:items-center sm:p-6"
-          style={{ background: "var(--overlay)", backdropFilter: "blur(6px)" }}
+          style={{ background: "rgba(8, 8, 13, 0.42)", backdropFilter: "blur(16px)", WebkitBackdropFilter: "blur(16px)" }}
           onMouseDown={(e) => {
             if (e.target === e.currentTarget) onClose();
           }}
@@ -132,199 +145,228 @@ export default function TitleModal({
             transition={{ type: "spring", stiffness: 300, damping: 28 }}
             className="w-full max-w-[560px]"
           >
-            {/* v0.30.0 — the quick-view surface is a real liquid-glass card
-                (the Card Example of rdev/liquid-glass-react). The scroll
-                lives INSIDE the glass so the refraction stays put while the
-                content moves; a dark veil keeps text readable. */}
-            <GlassCard radius={28} blurAmount={0.15} displacementScale={64} className="w-full">
-              <div className="relative">
-                <div className="absolute inset-0 rounded-[28px] bg-black/25" />
-                <div className="no-scrollbar relative max-h-[calc(100dvh-1.5rem)] overflow-y-auto overscroll-contain sheet-safe-bottom">
-            {/* ── media strip (always dark, like a film cell) ─────────── */}
-            <div className="force-dark relative z-0 h-[150px] w-full overflow-hidden sm:h-[170px]">
-              { }
-              <img src={t.backdrop} alt="" className="absolute inset-0 h-full w-full object-cover" />
-              <video
-                ref={videoRef}
-                src={t.videoUrl}
-                poster={t.backdrop}
-                muted={muted}
-                autoPlay
-                loop
-                playsInline
-                preload="metadata"
-                className="absolute inset-0 h-full w-full object-cover opacity-0 transition-opacity duration-700"
-                onPlaying={(e) => {
-                  e.currentTarget.style.opacity = "1";
-                }}
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-black/10" />
+            <GlassCard radius={28} className="w-full">
+              <div className="no-scrollbar sheet-safe-bottom relative max-h-[calc(100dvh-1.5rem)] overflow-y-auto overscroll-contain">
+                {/* ── media header ──────────────────────────────────── */}
+                <div className="force-dark relative z-0 h-[170px] w-full overflow-hidden sm:h-[190px]">
+                  <img src={t.backdrop} alt="" className="absolute inset-0 h-full w-full object-cover" />
+                  <video
+                    ref={videoRef}
+                    src={t.videoUrl}
+                    poster={t.backdrop}
+                    muted={muted}
+                    autoPlay
+                    loop
+                    playsInline
+                    preload="metadata"
+                    className="absolute inset-0 h-full w-full object-cover opacity-0 transition-opacity duration-700"
+                    onPlaying={(e) => {
+                      e.currentTarget.style.opacity = "1";
+                    }}
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/25 to-black/10" />
+                  <div className="absolute inset-x-0 top-0 h-12 bg-gradient-to-b from-black/45 to-transparent" />
 
-              <div className="absolute inset-x-0 top-0 flex items-center justify-between p-3">
-                <button
-                  type="button"
-                  onClick={onClose}
-                  aria-label={tr("common.close")}
-                  className="glass-btn grid h-9 w-9 place-items-center rounded-full text-white"
-                >
-                  <CloseIcon width={16} height={16} />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setMuted((m) => !m)}
-                  aria-label={muted ? tr("common.unmute") : tr("common.mute")}
-                  className="glass-btn grid h-9 w-9 place-items-center rounded-full text-white"
-                >
-                  {muted ? <MuteIcon width={16} height={16} /> : <VolumeIcon width={16} height={16} />}
-                </button>
-              </div>
-
-              {/* badges sit on the END side; the poster overlaps the strip on the START side (-mt-14) */}
-              <div className="absolute inset-x-0 bottom-0 z-10 flex items-center justify-end gap-2 p-4 ps-[120px] text-[10px] font-bold">
-                <span className="rounded-md bg-brand px-2 py-0.5 text-white shadow-[0_0_14px_var(--color-brand-glow)]">{typeLabel(t.type)}</span>
-                <span className="rounded-md border border-white/25 bg-black/40 px-2 py-0.5 text-white backdrop-blur">{t.quality}</span>
-                <span className="rounded-md border border-white/25 bg-black/40 px-2 py-0.5 text-white backdrop-blur">{t.ageRating}</span>
-              </div>
-
-              {hasProgress && (
-                <div className="absolute inset-x-0 bottom-0 h-[3px] bg-white/20">
-                  <div className="h-full bg-brand" style={{ width: `${pct}%` }} />
-                </div>
-              )}
-            </div>
-
-            {/* ── body ───────────────────────────────────────────────── */}
-            <div className="relative z-10 p-4 sm:p-5">
-              <div className="flex items-start gap-4">
-                { }
-                <img
-                  src={t.poster}
-                  alt={t.title}
-                  data-ph-title={t.title}
-                  className="relative z-20 -mt-14 h-[120px] w-[82px] shrink-0 rounded-xl bg-ink-700 object-cover shadow-[0_12px_30px_rgb(var(--shadow-color)/0.45)] ring-1 ring-white/20"
-                />
-                <div className="min-w-0 flex-1 pt-1">
-                  <TitleName t={t} as="h2" primaryClass="text-xl font-black text-white" secondaryClass="text-[11px] text-zinc-500" />
-                  <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-zinc-300">
-                    <span className="flex items-center gap-1 font-extrabold text-amber-400">
-                      <StarIcon width={13} height={13} /> {fa(t.rating)}
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <CalendarIcon width={13} height={13} className="text-zinc-500" /> {fa(t.year)}
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <ClockIcon width={13} height={13} className="text-zinc-500" />
-                      {t.type === "series" ? (eps.length ? `${fa(eps.length)} ${tr("common.episodes")}` : typeLabel(t.type)) : formatDuration(t.duration)}
-                    </span>
+                  <div className="absolute inset-x-0 top-0 flex items-center justify-between p-3">
+                    <button
+                      type="button"
+                      onClick={onClose}
+                      aria-label={tr("common.close")}
+                      className="glass-btn grid h-9 w-9 place-items-center rounded-full text-white"
+                    >
+                      <CloseIcon width={16} height={16} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setMuted((m) => !m)}
+                      aria-label={muted ? tr("common.unmute") : tr("common.mute")}
+                      className="glass-btn grid h-9 w-9 place-items-center rounded-full text-white"
+                    >
+                      {muted ? <MuteIcon width={16} height={16} /> : <VolumeIcon width={16} height={16} />}
+                    </button>
                   </div>
-                  <div className="mt-2 flex flex-wrap gap-1.5">
-                    {t.genres.slice(0, 3).map((g) => (
-                      <span key={g} className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] text-zinc-300">
-                        {g}
-                      </span>
-                    ))}
+
+                  {/* badges pinned to the far END corner, clear of the poster */}
+                  <div className="absolute bottom-0 end-0 z-10 flex items-center gap-2 p-4 text-[10px] font-bold">
+                    <span className="rounded-md bg-brand px-2 py-0.5 text-white shadow-[0_0_14px_var(--color-brand-glow)]">{typeLabel(t.type)}</span>
+                    <span className="rounded-md border border-white/25 bg-black/40 px-2 py-0.5 text-white backdrop-blur">{t.quality}</span>
+                    <span className="rounded-md border border-white/25 bg-black/40 px-2 py-0.5 text-white backdrop-blur">{t.ageRating}</span>
                   </div>
-                </div>
-              </div>
 
-              <p className="mt-4 line-clamp-3 text-[13px] leading-6 text-zinc-300">{t.description}</p>
-
-              {/* episodes teaser */}
-              {t.type === "series" && (
-                <div className="mt-4">
-                  {detailError ? (
-                    <p className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-3 text-xs leading-6 text-zinc-400" dir="rtl">
-                      بارگیری جزئیات ناتمام ماند؛ برای دیدن قسمت‌ها صفحه‌ی کامل اثر را باز کنید.
-                    </p>
-                  ) : !detail ? (
-                    <div className="space-y-2">
-                      {[0, 1].map((i) => (
-                        <div key={i} className="skeleton h-14 rounded-xl" />
-                      ))}
+                  {hasProgress && (
+                    <div className="absolute inset-x-0 bottom-0 h-[3px] bg-white/20">
+                      <div className="h-full bg-brand" style={{ width: `${pct}%` }} />
                     </div>
-                  ) : (
-                    <ul className="space-y-1.5">
-                      {teaserEps.map((e) => {
-                        const active = progress?.episodeId === e.id;
-                        return (
-                          <li key={e.id}>
-                            <Link
-                              href={watchHref(t.slug, e.id)}
-                              className={`group flex items-center gap-3 rounded-xl border p-1.5 pe-3 transition ${
-                                active ? "border-brand/40 bg-brand/10" : "border-white/5 bg-white/[0.03] hover:bg-white/[0.07]"
-                              }`}
-                            >
-                              <div className="relative h-11 w-[76px] shrink-0 overflow-hidden rounded-lg">
-                                { }
-                                <img src={e.thumbnail} alt="" className="h-full w-full object-cover" />
-                                <span className="absolute inset-0 grid place-items-center bg-black/30 text-white opacity-0 transition group-hover:opacity-100">
-                                  <PlayIcon width={18} height={18} />
-                                </span>
-                              </div>
-                              <div className="min-w-0 flex-1">
-                                <p className="truncate text-xs font-bold text-white">
-                                  <span className="text-zinc-500" dir="ltr">S{fa(e.season)}·E{fa(e.number)} · </span>
-                                  {e.name}
-                                </p>
-                                <p className="truncate text-[11px] text-zinc-500">{e.synopsis}</p>
-                              </div>
-                              <span className="shrink-0 text-[10px] text-zinc-500">{fa(e.duration)}′</span>
-                              <span className="shrink-0">
-                                <MobileDownloadButton
-                                  titleId={t.id}
-                                  slug={t.slug}
-                                  title={t.title}
-                                  poster={t.poster}
-                                  type="series"
-                                  episodeId={e.id}
-                                  episodeLabel={`فصل ${fa(e.season)} · قسمت ${fa(e.number)}`}
-                                  size={34}
-                                />
-                              </span>
-                            </Link>
-                          </li>
-                        );
-                      })}
-                      {eps.length > teaserEps.length && (
-                        <li className="px-1 pt-0.5 text-[11px] text-zinc-500">{locale === "en" ? `+${eps.length - teaserEps.length} more episodes…` : `و ${fa(eps.length - teaserEps.length)} قسمت دیگر…`}</li>
-                      )}
-                    </ul>
                   )}
                 </div>
-              )}
 
-              {/* actions — liquid-glass pills (the Button Example) */}
-              <div className="mt-5 flex items-center gap-2">
-                <GlassButton onClick={() => router.push(resumeHref)} className="flex-1">
-                  <span className="flex h-11 w-full items-center justify-center gap-2 px-5 text-sm font-extrabold text-white">
-                    <PlayIcon width={18} height={18} />
-                    {hasProgress && progress
-                      ? `${tr("common.resume")} · ${formatClock(progress.position)}`
-                      : t.type === "series"
-                        ? locale === "en" ? "Play episode 1" : "پخش قسمت اول"
-                        : tr("common.play")}
-                  </span>
-                </GlassButton>
-                <WatchlistButton titleId={t.id} name={t.title} initial={detail?.inList ?? false} variant="icon" className="!h-11 !w-11" />
-                <FavoriteButton titleId={t.id} name={t.title} variant="icon" className="!h-11 !w-11" />
-                {t.type !== "series" && (
-                  <MobileDownloadButton
-                    titleId={t.id}
-                    slug={t.slug}
-                    title={t.title}
-                    poster={t.poster}
-                    type="movie"
-                  />
-                )}
-              </div>
+                {/* ── body ──────────────────────────────────────────── */}
+                <div className="relative z-10 p-4 sm:p-5">
+                  {/* identity: poster overlaps the header, all text start-aligned */}
+                  <div className="flex items-start gap-4">
+                    <img
+                      src={t.poster}
+                      alt={t.title}
+                      data-ph-title={t.title}
+                      className="relative z-20 -mt-16 h-[124px] w-[84px] shrink-0 rounded-xl bg-ink-700 object-cover shadow-[0_16px_40px_rgb(var(--shadow-color)/0.55)] ring-1 ring-white/25"
+                    />
+                    <div className="min-w-0 flex-1 pt-1">
+                      <TitleName
+                        t={t}
+                        as="h2"
+                        /* match-parent: an English primary name (dir=ltr) must
+                         * still ALIGN with the RTL column — start would resolve
+                         * against the span's own direction and jump left */
+                        primaryClass="[text-align:match-parent] text-xl font-black text-white"
+                        secondaryClass="[text-align:match-parent] mt-0.5 block text-[11px] text-zinc-400"
+                      />
+                      <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-zinc-300">
+                        <span className="flex items-center gap-1 font-extrabold text-amber-400">
+                          <StarIcon width={13} height={13} /> {fa(t.rating)}
+                        </span>
+                        <span className="text-zinc-600">·</span>
+                        <span className="flex items-center gap-1">
+                          <CalendarIcon width={13} height={13} className="text-zinc-500" /> {fa(t.year)}
+                        </span>
+                        <span className="text-zinc-600">·</span>
+                        <span className="flex items-center gap-1">
+                          <ClockIcon width={13} height={13} className="text-zinc-500" />
+                          {isSeries ? (eps.length ? `${fa(eps.length)} ${tr("common.episodes")}` : typeLabel(t.type)) : formatDuration(t.duration)}
+                        </span>
+                      </div>
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {t.genres.slice(0, 3).map((g) => (
+                          <span key={g} className="rounded-full border border-white/10 bg-white/[0.06] px-2 py-0.5 text-[10px] text-zinc-300">
+                            {g}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
 
-              <GlassButton onClick={() => router.push(titleHref(t.slug))}>
-                <span className="mt-2.5 flex h-11 items-center justify-center gap-1.5 px-6 text-sm font-bold text-white/85">
-                  {tr("modal.continueInDetails")}
-                  <ChevronLeft width={16} height={16} className="rtl-flip" />
-                </span>
-              </GlassButton>
-            </div>
+                  <p className="mt-4 line-clamp-3 text-start text-[13px] leading-6 text-zinc-300">{t.description}</p>
+
+                  {/* ── episodes teaser ──────────────────────────────── */}
+                  {isSeries && (
+                    <div className="mt-4">
+                      {detailError ? (
+                        <p className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-3 text-xs leading-6 text-zinc-400" dir="rtl">
+                          بارگیری جزئیات ناتمام ماند؛ برای دیدن قسمت‌ها صفحه‌ی کامل اثر را باز کنید.
+                        </p>
+                      ) : !detail ? (
+                        <div className="space-y-2">
+                          {[0, 1].map((i) => (
+                            <div key={i} className="skeleton h-14 rounded-2xl" />
+                          ))}
+                        </div>
+                      ) : (
+                        <ul className="space-y-2">
+                          {teaserEps.map((e) => {
+                            const active = progress?.episodeId === e.id;
+                            return (
+                              <li key={e.id} className="relative">
+                                <Link
+                                  href={watchHref(t.slug, e.id)}
+                                  className={`group flex items-center gap-3 rounded-2xl border p-1.5 pe-2.5 transition ${
+                                    active ? "border-brand/40 bg-brand/10" : "border-white/[0.07] bg-white/[0.04] hover:bg-white/[0.08]"
+                                  }`}
+                                >
+                                  <div className="relative h-12 w-[84px] shrink-0 overflow-hidden rounded-lg">
+                                    <img src={e.thumbnail} alt="" className="h-full w-full object-cover" />
+                                    <span className="absolute inset-0 grid place-items-center bg-black/30 text-white opacity-0 transition group-hover:opacity-100">
+                                      <PlayIcon width={18} height={18} />
+                                    </span>
+                                  </div>
+                                  <div className="min-w-0 flex-1 text-start">
+                                    <p className="truncate text-xs font-bold text-white">
+                                      <span dir="auto">{e.name || `قسمت ${fa(e.number)}`}</span>
+                                    </p>
+                                    <p className="mt-0.5 truncate text-[11px] text-zinc-500">
+                                      فصل {fa(e.season)} · قسمت {fa(e.number)} · {fa(e.duration)} دقیقه
+                                    </p>
+                                  </div>
+                                  <span className="shrink-0">
+                                    <MobileDownloadButton
+                                      titleId={t.id}
+                                      slug={t.slug}
+                                      title={t.title}
+                                      poster={t.poster}
+                                      type="series"
+                                      episodeId={e.id}
+                                      episodeLabel={`فصل ${fa(e.season)} · قسمت ${fa(e.number)}`}
+                                      size={34}
+                                    />
+                                  </span>
+                                </Link>
+                                {active && hasProgress && (
+                                  <div className="absolute inset-x-2.5 bottom-0 h-[3px] overflow-hidden rounded-full bg-white/10">
+                                    <div className="h-full rounded-full bg-brand" style={{ width: `${pct}%` }} />
+                                  </div>
+                                )}
+                              </li>
+                            );
+                          })}
+                          {eps.length > teaserEps.length && (
+                            <li>
+                              <Link
+                                href={titleHref(t.slug)}
+                                className="flex items-center gap-1 px-1 pt-0.5 text-[11px] font-bold text-zinc-400 transition hover:text-white"
+                              >
+                                {locale === "en" ? `+${eps.length - teaserEps.length} more episodes` : `و ${fa(eps.length - teaserEps.length)} قسمت دیگر`}
+                                <ChevronLeft width={12} height={12} className="rtl-flip" />
+                              </Link>
+                            </li>
+                          )}
+                        </ul>
+                      )}
+                    </div>
+                  )}
+
+                  {/* ── actions: one disciplined CTA, one tidy tool row ── */}
+                  <div className="mt-5 space-y-2">
+                    {/* row 1 — the ONE primary action, full width */}
+                    <GlassButton
+                      onClick={() => router.push(resumeHref)}
+                      className="w-full"
+                      style={{
+                        background: "linear-gradient(180deg, rgba(229, 9, 20, 0.92), rgba(196, 8, 18, 0.92))",
+                        borderColor: "rgba(255, 255, 255, 0.25)",
+                        boxShadow: "0 14px 36px var(--color-brand-glow), inset 0 1.5px 0 rgba(255, 255, 255, 0.25)",
+                      }}
+                    >
+                      <span className="flex h-12 w-full items-center justify-center gap-2 px-5 text-sm font-extrabold text-white">
+                        <PlayIcon width={18} height={18} />
+                        {hasProgress && progress
+                          ? `${tr("common.resume")} · ${formatClock(progress.position)}`
+                          : isSeries
+                            ? locale === "en"
+                              ? "Play episode 1"
+                              : "پخش قسمت اول"
+                            : tr("common.play")}
+                      </span>
+                    </GlassButton>
+
+                    {/* row 2 — details + the toggles, one consistent height */}
+                    <div className="flex items-center gap-2">
+                      <GlassButton onClick={() => router.push(titleHref(t.slug))} className="min-w-0 flex-1">
+                        <span className="flex h-11 w-full items-center justify-center gap-1.5 px-4 text-sm font-bold text-white/85">
+                          {tr("modal.continueInDetails")}
+                          <ChevronLeft width={16} height={16} className="rtl-flip shrink-0" />
+                        </span>
+                      </GlassButton>
+                      <WatchlistButton titleId={t.id} name={t.title} initial={detail?.inList ?? false} variant="icon" className="!h-11 !w-11" />
+                      <FavoriteButton titleId={t.id} name={t.title} variant="icon" className="!h-11 !w-11" />
+                      {!isSeries && (
+                        <MobileDownloadButton
+                          titleId={t.id}
+                          slug={t.slug}
+                          title={t.title}
+                          poster={t.poster}
+                          type="movie"
+                        />
+                      )}
+                    </div>
+                  </div>
                 </div>
               </div>
             </GlassCard>

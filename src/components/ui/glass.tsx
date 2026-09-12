@@ -109,7 +109,14 @@ export function GlassBar({
   );
 }
 
-/* ── cards: popups & modals (the Card Example look) ── */
+/* ── cards: popups & modals (the Card Example look) ──
+ * v0.30.2 — the material finally READS as glass: the old flat
+ * rgba(20,20,28,.58) over an already-dark page rendered as a plain solid
+ * card. Now the slab is a layered surface — diagonal light wash, deeper
+ * blur, strong saturation, bright top/side inner edges, chromatic rim —
+ * over a LIGHTER tint so the blurred color behind actually comes through.
+ * Call sites sit over a dimmed+blurred page backdrop; readability is kept
+ * by the tint, not by an opaque slab. */
 export function GlassCard({
   children,
   radius = 28,
@@ -126,11 +133,13 @@ export function GlassCard({
       className={`relative isolate overflow-hidden ${className}`}
       style={{
         borderRadius: radius,
-        background: "var(--glass-bg)",
-        WebkitBackdropFilter: "blur(30px) saturate(180%) brightness(1.05)",
-        backdropFilter: "blur(30px) saturate(180%) brightness(1.05)",
-        border: "1px solid var(--glass-border)",
-        boxShadow: "0 24px 60px rgba(0, 0, 0, 0.55), 0 2px 8px rgba(0, 0, 0, 0.35)",
+        background:
+          "linear-gradient(160deg, rgba(255,255,255,0.13) 0%, rgba(255,255,255,0.04) 26%, rgba(255,255,255,0.0) 55%, rgba(255,255,255,0.05) 100%), rgba(12,12,18,0.46)",
+        WebkitBackdropFilter: "blur(44px) saturate(190%) brightness(1.14)",
+        backdropFilter: "blur(44px) saturate(190%) brightness(1.14)",
+        border: "1px solid rgba(255,255,255,0.16)",
+        boxShadow:
+          "0 30px 90px rgba(0, 0, 0, 0.6), 0 4px 18px rgba(0, 0, 0, 0.35), inset 0 1.5px 0 rgba(255, 255, 255, 0.28), inset 0 -1px 0 rgba(255, 255, 255, 0.07), inset 1.5px 0 0 rgba(255, 255, 255, 0.05), inset -1.5px 0 0 rgba(255, 255, 255, 0.05)",
         ...style,
       }}
     >
