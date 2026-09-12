@@ -1,6 +1,6 @@
 {
   "name": "frame",
-  "version": "0.30.10",
+  "version": "0.30.11",
   "private": true,
   "scripts": {
     "dev": "next dev -p 3000",
@@ -121,7 +121,7 @@
     "tw-animate-css": "^1.3.5",
     "typescript": "^5"
   },
-  "description": "فریم (Frame) — سینمای خانگی | ویندوز، مک، لینوکس و اندروید",
+  "description": "Frame - home cinema for Windows, macOS, Linux and Android",
   "author": "Nama",
   "main": "electron/dist/main.cjs",
   "homepage": "https://github.com/pvwvuow/frame",

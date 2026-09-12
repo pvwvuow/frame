@@ -50,6 +50,10 @@ nsis:
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: always
   shortcutName: Frame
+  # v0.30.11: custom link creation (build/installer.nsh) — the stock one could
+  # fail with "The parameter is incorrect" on some Win11 24H2 setups (stale
+  # Frame.lnk + Persian description passed as the shortcut description).
+  include: build/installer.nsh
   # NSIS bundled with electron-builder has no Persian .nlf – installer UI is English,
   # the app itself is fully Persian.
   installerLanguages: [en_US]
