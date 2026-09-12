@@ -148,23 +148,36 @@ export default function TitleModal({
             <GlassCard radius={28} className="w-full">
               <div className="no-scrollbar sheet-safe-bottom relative max-h-[calc(100dvh-1.5rem)] overflow-y-auto overscroll-contain">
                 {/* ── media header ──────────────────────────────────── */}
-                <div className="force-dark relative z-0 h-[170px] w-full overflow-hidden sm:h-[190px]">
-                  <img src={t.backdrop} alt="" className="absolute inset-0 h-full w-full object-cover" />
-                  <video
-                    ref={videoRef}
-                    src={t.videoUrl}
-                    poster={t.backdrop}
-                    muted={muted}
-                    autoPlay
-                    loop
-                    playsInline
-                    preload="metadata"
-                    className="absolute inset-0 h-full w-full object-cover opacity-0 transition-opacity duration-700"
-                    onPlaying={(e) => {
-                      e.currentTarget.style.opacity = "1";
+                {/* v0.30.3 — no hard seam: the artwork extends 40px PAST the
+                    strip into the body and dissolves there through a mask,
+                    so the fade lands on the MODAL side while the cover
+                    itself stays ~80% untouched; the reveal target is the
+                    same glass slab that continues below → no tone jump */}
+                <div className="force-dark relative z-0 h-[170px] w-full sm:h-[190px]">
+                  <div
+                    className="absolute inset-x-0 top-0 h-[calc(100%+40px)]"
+                    style={{
+                      WebkitMaskImage: "linear-gradient(to bottom, #000 0%, #000 70%, transparent 100%)",
+                      maskImage: "linear-gradient(to bottom, #000 0%, #000 70%, transparent 100%)",
                     }}
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/25 to-black/10" />
+                  >
+                    <img src={t.backdrop} alt="" className="absolute inset-0 h-full w-full object-cover" />
+                    <video
+                      ref={videoRef}
+                      src={t.videoUrl}
+                      poster={t.backdrop}
+                      muted={muted}
+                      autoPlay
+                      loop
+                      playsInline
+                      preload="metadata"
+                      className="absolute inset-0 h-full w-full object-cover opacity-0 transition-opacity duration-700"
+                      onPlaying={(e) => {
+                        e.currentTarget.style.opacity = "1";
+                      }}
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-black/10" />
+                  </div>
                   <div className="absolute inset-x-0 top-0 h-12 bg-gradient-to-b from-black/45 to-transparent" />
 
                   <div className="absolute inset-x-0 top-0 flex items-center justify-between p-3">
