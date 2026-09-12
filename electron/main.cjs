@@ -1077,8 +1077,53 @@ function seedUpdaterCache(info) {
   }
 }
 
+/* v0.30.15 — belt-and-braces so the differential chain can NEVER stay broken.
+ * The seed above only runs AFTER an update finishes downloading, which is one
+ * hop too late the first time: a machine that reached 0.30.14 from 0.30.13
+ * still pulled the full setup because its cache had no installer.exe when the
+ * check fired (the 0.30.13 installer was downloaded by the pre-seeding
+ * 0.30.12 app and nothing wrote it into the cache root). On startup, if
+ * installer.exe is missing, recover it from <cacheDir>/pending — the setup
+ * the PREVIOUS in-app update downloaded, which after installing IS this
+ * version's installer (strict version match on the filename, never guess).
+ * 0.30.14→0.30.15 was measured at 99.0% identical blocks (1.5MB of 147MB),
+ * so once this file exists the updater only fetches changed blocks. */
+function seedUpdaterCacheFromPending() {
+  try {
+    if (process.platform !== "win32") return;
+    const fsp = require("node:fs");
+    const path = require("node:path");
+    const os = require("node:os");
+    const cacheDir = path.join(
+      process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local"),
+      "frame-updater"
+    );
+    const installer = path.join(cacheDir, "installer.exe");
+    if (fsp.existsSync(installer)) {
+      log.info("updater cache already seeded — differential updates armed");
+      return;
+    }
+    const pendingDir = path.join(cacheDir, "pending");
+    const want = `-${app.getVersion()}-`;
+    const hit = fsp
+      .readdirSync(pendingDir)
+      .filter((f) => f.endsWith(".exe") && f.includes(want))
+      .sort()
+      .pop();
+    if (!hit) {
+      log.info("updater cache not seeded yet — the next update is one full download, delta afterwards");
+      return;
+    }
+    fsp.copyFileSync(path.join(pendingDir, hit), installer);
+    log.info(`updater cache seeded from pending (${hit}) — next update downloads differentially`);
+  } catch (e) {
+    log.warn("updater pending-seed skipped:", e?.message || e);
+  }
+}
+
 function setupUpdater() {
   if (!app.isPackaged) return;
+  seedUpdaterCacheFromPending();
   try {
     ({ autoUpdater } = require("electron-updater"));
     autoUpdater.logger = log;

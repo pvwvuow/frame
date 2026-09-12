@@ -1,6 +1,19 @@
 "use client";
 
-/* v0.30.14 — two refinements on the veil:
+/* v0.30.15 — the residual OPEN LAG is killed structurally: even the
+ * v0.30.14 tween remounted the whole panel inside the click frame (portal
+ * + React mount + animation start + first raster of a 500px layer, all in
+ * one go). The panel is now ALWAYS mounted (hidden via visibility) and
+ * opening is a single class flip — one opacity-only CSS transition, zero
+ * mount work, zero per-frame raster; framer-motion is gone from this
+ * file. Measured bonus: the veil now literally FADES in — the exact
+ * behaviour he asked for originally («یک حالت فیددار باشه»). Main-process
+ * companion fix in the same release: differential updates self-heal via
+ * seedUpdaterCacheFromPending (his 0.30.13→0.30.14 update was still a
+ * full 147MB because the old installer was never in the cache when the
+ * check fired).
+ *
+ * v0.30.14 — two refinements on the veil:
  *
  * 1. OPEN SPEED: the spring (stiffness 320, mass 0.9) starts from rest,
  *    so the first ~100ms barely moved and the opening read as LAGGY
@@ -46,7 +59,6 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { createPortal } from "react-dom";
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { useLibrary } from "./library/LibraryProvider";
 import { AVATARS } from "./library/SettingsForm";
 import {
@@ -123,7 +135,6 @@ export default function UserMenu() {
   const router = useRouter();
   const { t: tr, locale, dir } = useI18n();
   const electron = useIsElectron();
-  const reduce = useReducedMotion();
   const [mounted, setMounted] = useState(false);
   const [open, setOpen] = useState(false);
   const [checking, setChecking] = useState(false);
@@ -223,9 +234,6 @@ export default function UserMenu() {
 
   const countOf = (e: Entry) => (e.key === "fav" ? favorites.size : e.key === "notif" ? unread : null);
 
-  /* the veil slides in from the SAME physical side it lives on
-     (inline-end = the avatar corner): LTR → from the right, RTL → from the left */
-  const offX = dir === "rtl" ? -520 : 520;
   /* the feather: opaque app-ink at the anchored screen edge, dissolving
      into the page toward the content (dir-aware direction). The gradient
      alone owns the melt (v0.30.14 removed the backdrop-blur + mask — the
@@ -269,27 +277,20 @@ export default function UserMenu() {
 
       {mounted &&
         createPortal(
-          <AnimatePresence>
-            {open && (
-              <motion.div
-                ref={panelRef}
-                role="dialog"
-                aria-label={tr("user.openMenu")}
-                dir={dir}
-                initial={reduce ? { opacity: 0 } : { opacity: 0, x: offX }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={reduce ? { opacity: 0 } : { opacity: 0, x: offX }}
-                /* v0.30.14: expo-out tween instead of the spring — max
-                   velocity at t=0 kills the perceived opening delay */
-                transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
-                style={{ insetInlineEnd: 0, willChange: "transform, opacity", pointerEvents: "none" }}
-                className="fixed inset-y-0 z-[95] w-[min(500px,100vw)]"
-              >
+          <div
+            ref={panelRef}
+            role="dialog"
+            aria-label={tr("user.openMenu")}
+            aria-hidden={!open}
+            dir={dir}
+            data-open={open}
+            style={{ insetInlineEnd: 0, pointerEvents: "none" }}
+            className="u-veil fixed inset-y-0 z-[95] w-[min(500px,100vw)]"
+          >
                 {/* the FEATHERED VEIL — opaque app-ink hugging the anchored
                     screen edge, dissolving into the page toward the content
                     (dir-aware gradient only since v0.30.14: no
-                    backdrop-filter, no mask — the slide is frame-cheap and
-                    the melt has no boundary of its own).
+                    backdrop-filter, no mask).
                     pointer-events pass through it, so tapping the faded
                     zone closes the drawer like tapping outside. */}
                 <div aria-hidden="true" className="absolute inset-0" style={{ background: veilBg }} />
@@ -428,9 +429,7 @@ export default function UserMenu() {
                   )}
                 </div>
                 </div>
-              </motion.div>
-            )}
-          </AnimatePresence>,
+          </div>,
           document.body
         )}
     </div>
