@@ -1,59 +1,88 @@
 "use client";
 
-/* v0.30.0 — the liquid-glass family (rdev/liquid-glass-react).
+/* v0.30.1 — the liquid-glass family, REBUILT without liquid-glass-react.
  *
- * ONE client-only wrapper around the library plus three tuned presets, so
- * every floating surface in Frame speaks the same Apple-style liquid-glass
- * language:
+ * v0.30.0 shipped a wrapper around rdev/liquid-glass-react and it demolished
+ * the layout. That library renders 5–8 SIBLING layers per surface (two
+ * shadow divs, the glass container, two rim spans, three hover-glow layers
+ * when onClick is set) and every one of them is
+ * `position: relative; top: 50%; left: 50%; translate(-50%,-50%)` —
+ * a construction that only works when the pill floats ALONE, absolutely
+ * centered over a huge demo backdrop. Inside real app flow:
  *
- *   GlassBar    — rigid bars: the mobile bottom nav and its siblings
- *   GlassCard   — popups / modals: the library's "Card Example"
- *   GlassButton — pill buttons: the library's "Button Example"
+ *   • all siblings stay in normal flow → every surface became a 5–8× tall
+ *     stack of boxes (bottom nav, hero CTAs, quick-view modal, updater
+ *     popup),
+ *   • each layer is displaced by ½ parent size minus ½ own size → every
+ *     layer landed somewhere else, off-screen or over other UI,
+ *   • the content box forced `font: 500 20px/1 system-ui` + `padding:
+ *     24px 32px` → Persian typography and metrics broke even where it
+ *     happened to be visible.
  *
- * dynamic(ssr:false) because the library measures the DOM and tracks the
- * mouse on mount. Touch / coarse pointers and narrow viewports get a softer
- * displacement, lower aberration and NO elasticity — the liquid wobble is a
- * mouse affordance; on phones it would only burn GPU and smear text.
+ * This rebuild keeps the SAME three-component API and the same visual
+ * language (deep blur + saturation, specular chromatic rim, sheen, inner
+ * highlight — the CSS tokens live in globals.css), but on boring, proven,
+ * in-flow DOM: one positioned surface + pointer-events-none decoration
+ * layers. Nothing here can explode a layout, and every effect degrades to
+ * plain dark glass on weak webviews (backdrop-filter is progressive by
+ * nature — when it is unsupported the translucent background still reads).
  *
- * The library renders `overflow:hidden` + its own border-radius, so
- * full-bleed children (modal media strips) clip correctly. A subtle dark
- * veil is added INSIDE each surface by the call sites (first child) to keep
- * text readable over bright posters — the raw glass alone is too clear for
- * UI text.
+ * Library-specific props (blurAmount, displacementScale, …) are accepted
+ * and ignored so the v0.30.0 call sites stay untouched.
  */
 
-import dynamic from "next/dynamic";
-import type { CSSProperties, ComponentProps, ReactNode } from "react";
-import type LiquidGlass from "liquid-glass-react";
+import type { CSSProperties, ReactNode } from "react";
 
-type LGProps = ComponentProps<typeof LiquidGlass>;
+type LegacyGlassProps = {
+  blurAmount?: number;
+  displacementScale?: number;
+  aberrationIntensity?: number;
+  saturation?: number;
+  elasticity?: number;
+  cornerRadius?: number;
+  mode?: string;
+  overLight?: boolean;
+};
 
-const LiquidGlassClient = dynamic(() => import("liquid-glass-react"), { ssr: false });
-
-/* touch/small screens: calmer glass (perf + readability) */
-function tune(props: LGProps): LGProps {
-  if (typeof window === "undefined") return props;
-  const coarse = window.matchMedia?.("(pointer: coarse)")?.matches ?? false;
-  const small = window.matchMedia?.("(max-width: 1023px)")?.matches ?? false;
-  if (!coarse && !small) return props;
-  return {
-    ...props,
-    displacementScale: Math.min(props.displacementScale ?? 64, 32),
-    aberrationIntensity: Math.min(props.aberrationIntensity ?? 2, 1),
-    elasticity: 0,
-  };
+/* The shared decoration: a masked specular rim with faint chromatic
+ * fringes + a diagonal sheen + the top inner highlight. Absolutely
+ * positioned, pointer-events-none, clipped to the surface radius. */
+function GlassDecor({ radius }: { radius: number }) {
+  const mask =
+    "linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)";
+  return (
+    <>
+      <span
+        aria-hidden
+        className="pointer-events-none absolute inset-0"
+        style={{
+          borderRadius: radius,
+          padding: "1.5px",
+          background: "var(--glass-rim)",
+          WebkitMask: mask,
+          WebkitMaskComposite: "xor",
+          mask,
+          maskComposite: "exclude",
+        }}
+      />
+      <span
+        aria-hidden
+        className="pointer-events-none absolute inset-0"
+        style={{
+          borderRadius: radius,
+          background: "var(--glass-sheen)",
+          boxShadow: "inset 0 1px 0 var(--glass-hl)",
+        }}
+      />
+    </>
+  );
 }
 
-export function GlassSurface(props: LGProps) {
-  const tuned = tune(props);
-  return <LiquidGlassClient {...tuned}>{tuned.children}</LiquidGlassClient>;
-}
-
-/* ── bars: the bottom-nav family. Rigid (no wobble), wide, quiet glass. ── */
+/* ── bars: the bottom-nav family. Rigid, wide, quiet glass. ── */
 export function GlassBar({
   children,
   radius = 26,
-  className,
+  className = "",
   style,
 }: {
   children: ReactNode;
@@ -62,52 +91,61 @@ export function GlassBar({
   style?: CSSProperties;
 }) {
   return (
-    <GlassSurface
-      displacementScale={40}
-      blurAmount={0.1}
-      saturation={130}
-      aberrationIntensity={1.2}
-      elasticity={0}
-      cornerRadius={radius}
-      className={className}
-      style={{ width: "100%", ...style }}
+    <div
+      className={`relative isolate ${className}`}
+      style={{
+        borderRadius: radius,
+        background: "var(--glass-bg)",
+        WebkitBackdropFilter: "blur(22px) saturate(170%) brightness(1.04)",
+        backdropFilter: "blur(22px) saturate(170%) brightness(1.04)",
+        border: "1px solid var(--glass-border)",
+        boxShadow: "0 18px 50px rgba(0, 0, 0, 0.45)",
+        ...style,
+      }}
     >
+      <GlassDecor radius={radius} />
       {children}
-    </GlassSurface>
+    </div>
   );
 }
 
-/* ── cards: popups & modals (the Card Example) ── */
+/* ── cards: popups & modals (the Card Example look) ── */
 export function GlassCard({
   children,
   radius = 28,
-  className,
+  className = "",
   style,
-  ...rest
-}: LGProps & { radius?: number }) {
+}: {
+  children: ReactNode;
+  radius?: number;
+  className?: string;
+  style?: CSSProperties;
+} & LegacyGlassProps) {
   return (
-    <GlassSurface
-      displacementScale={64}
-      blurAmount={0.14}
-      saturation={140}
-      aberrationIntensity={2}
-      elasticity={0}
-      cornerRadius={radius}
-      className={className}
-      style={style}
-      {...rest}
+    <div
+      className={`relative isolate overflow-hidden ${className}`}
+      style={{
+        borderRadius: radius,
+        background: "var(--glass-bg)",
+        WebkitBackdropFilter: "blur(30px) saturate(180%) brightness(1.05)",
+        backdropFilter: "blur(30px) saturate(180%) brightness(1.05)",
+        border: "1px solid var(--glass-border)",
+        boxShadow: "0 24px 60px rgba(0, 0, 0, 0.55), 0 2px 8px rgba(0, 0, 0, 0.35)",
+        ...style,
+      }}
     >
+      <GlassDecor radius={radius} />
       {children}
-    </GlassSurface>
+    </div>
   );
 }
 
-/* ── buttons: the Button Example — a liquid pill with press wobble ── */
+/* ── buttons: the Button Example — a liquid pill with press feedback ── */
 export function GlassButton({
   children,
   onClick,
   radius = 999,
-  className,
+  className = "",
   style,
 }: {
   children: ReactNode;
@@ -115,20 +153,25 @@ export function GlassButton({
   radius?: number;
   className?: string;
   style?: CSSProperties;
-}) {
+} & LegacyGlassProps) {
   return (
-    <GlassSurface
+    <button
+      type="button"
       onClick={onClick}
-      displacementScale={48}
-      blurAmount={0.1}
-      saturation={130}
-      aberrationIntensity={1.5}
-      elasticity={0.2}
-      cornerRadius={radius}
-      className={className}
-      style={{ cursor: "pointer", ...style }}
+      className={`relative isolate inline-flex select-none items-center justify-center transition-[transform,filter] duration-150 hover:brightness-110 active:scale-[0.96] ${className}`}
+      style={{
+        borderRadius: radius,
+        background: "var(--glass-bg)",
+        WebkitBackdropFilter: "blur(18px) saturate(170%)",
+        backdropFilter: "blur(18px) saturate(170%)",
+        border: "1px solid var(--glass-border)",
+        boxShadow: "0 10px 30px rgba(0, 0, 0, 0.35)",
+        cursor: "pointer",
+        ...style,
+      }}
     >
+      <GlassDecor radius={radius} />
       {children}
-    </GlassSurface>
+    </button>
   );
 }
