@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import type { TitleView } from "@/lib/mobile/db";
 import { fa, formatDuration, typeLabel } from "@/lib/format";
 import { InfoIcon, PlayIcon, StarIcon } from "./Icons";
@@ -34,13 +35,24 @@ export default function TitleCard({
   progress,
   size = "md",
   rank,
+  hover = "default",
 }: {
   t: TitleCardData;
   progress?: { position: number; duration: number } | null;
   size?: "sm" | "md" | "lg";
   rank?: number;
+  /* v0.30.16 — the watchlist grid read as SIX stacked buttons per poster
+   * (info overlay + fav + list + play fab + the manager's own 3-button
+   * rail) — the user: «دکمه‌هایی که روی پوستر فیلم میاد به شدت زیاد و
+   * شلوغه». hover="play" strips the card to ONE affordance: a centered
+   * play circle and the whole poster clicks straight through to the
+   * player (details stay reachable in the list view + the quick actions
+   * rail remains for manage). Default keeps the old full hover everywhere
+   * else. */
+  hover?: "default" | "play";
 }) {
   const { open } = useQuickView();
+  const router = useRouter();
   const { isFavorite, inList } = useLibrary();
   const { t: tr, locale } = useI18n();
   const names = titleNames(t, locale);
@@ -53,8 +65,8 @@ export default function TitleCard({
     <div className={`group relative block shrink-0 ${w} snap-start`}>
       <button
         type="button"
-        onClick={() => open(t)}
-        aria-label={tr("card.details", { name: names.label })}
+        onClick={hover === "play" ? () => router.push(watchHref(t.slug)) : () => open(t)}
+        aria-label={hover === "play" ? tr("card.play", { name: names.label }) : tr("card.details", { name: names.label })}
         className="relative block w-full text-start focus:outline-none"
       >
         <div className="relative aspect-[2/3] overflow-hidden rounded-xl bg-ink-700 ring-1 ring-white/5 transition-all duration-300 group-hover:-translate-y-1.5 group-hover:shadow-[0_20px_50px_rgba(0,0,0,0.6),0_0_0_1px_rgba(255,255,255,0.14)] group-focus-visible:ring-2 group-focus-visible:ring-brand">
@@ -93,13 +105,22 @@ export default function TitleCard({
             </span>
           </div>
 
-          {/* hover overlay */}
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 opacity-0 transition-opacity duration-300 group-hover:opacity-100">
-            <span className="grid h-12 w-12 place-items-center rounded-full bg-white/15 text-white ring-1 ring-white/30 backdrop-blur transition-transform group-hover:scale-110">
-              <InfoIcon width={22} height={22} />
-            </span>
-            <span className="text-[11px] font-bold text-white/90">{tr("common.viewDetails")}</span>
-          </div>
+          {/* hover overlay — v0.30.16: watchlist variant is a single play
+              circle; the default stays info + caption */}
+          {hover === "play" ? (
+            <div className="absolute inset-0 flex items-center justify-center opacity-0 transition-opacity duration-300 group-hover:opacity-100">
+              <span className="grid h-14 w-14 place-items-center rounded-full bg-white/90 text-black shadow-[0_10px_30px_rgba(0,0,0,0.5)] transition-transform group-hover:scale-110">
+                <PlayIcon width={24} height={24} className="ms-1" />
+              </span>
+            </div>
+          ) : (
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 opacity-0 transition-opacity duration-300 group-hover:opacity-100">
+              <span className="grid h-12 w-12 place-items-center rounded-full bg-white/15 text-white ring-1 ring-white/30 backdrop-blur transition-transform group-hover:scale-110">
+                <InfoIcon width={22} height={22} />
+              </span>
+              <span className="text-[11px] font-bold text-white/90">{tr("common.viewDetails")}</span>
+            </div>
+          )}
 
           {/* caption */}
           <div className="absolute inset-x-0 bottom-0 p-3">
@@ -131,21 +152,27 @@ export default function TitleCard({
 
       {/* quick actions: favorite + list (outside the modal trigger).
           v0.11.0: on touch there is no hover — the .card-quick-actions CSS
-          keeps these permanently visible on phones. */}
-      <div className="card-quick-actions absolute bottom-[76px] start-2 flex translate-y-2 items-center gap-1.5 opacity-0 transition-all duration-300 group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:translate-y-0 group-focus-within:opacity-100">
-        <FavoriteButton titleId={t.id} name={names.primary} variant="mini" />
-        <WatchlistButton titleId={t.id} name={names.primary} variant="mini" />
-      </div>
+          keeps these permanently visible on phones.
+          v0.30.16: suppressed on hover="play" (watchlist) — the poster
+          carries ONE action there, not a toolbar. */}
+      {hover === "default" && (
+        <>
+          <div className="card-quick-actions absolute bottom-[76px] start-2 flex translate-y-2 items-center gap-1.5 opacity-0 transition-all duration-300 group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:translate-y-0 group-focus-within:opacity-100">
+            <FavoriteButton titleId={t.id} name={names.primary} variant="mini" />
+            <WatchlistButton titleId={t.id} name={names.primary} variant="mini" />
+          </div>
 
-      {/* direct play button (outside the modal trigger) */}
-      <Link
-        href={watchHref(t.slug)}
-        aria-label={tr("card.play", { name: names.label })}
-        onClick={(e) => e.stopPropagation()}
-        className="card-play-fab absolute bottom-[76px] end-2 grid h-9 w-9 translate-y-2 place-items-center rounded-full bg-white text-black opacity-0 shadow-lg transition-all duration-300 hover:scale-110 hover:bg-brand hover:text-white group-hover:translate-y-0 group-hover:opacity-100"
-      >
-        <PlayIcon width={16} height={16} className="ms-0.5" />
-      </Link>
+          {/* direct play button (outside the modal trigger) */}
+          <Link
+            href={watchHref(t.slug)}
+            aria-label={tr("card.play", { name: names.label })}
+            onClick={(e) => e.stopPropagation()}
+            className="card-play-fab absolute bottom-[76px] end-2 grid h-9 w-9 translate-y-2 place-items-center rounded-full bg-white text-black opacity-0 shadow-lg transition-all duration-300 hover:scale-110 hover:bg-brand hover:text-white group-hover:translate-y-0 group-hover:opacity-100"
+          >
+            <PlayIcon width={16} height={16} className="ms-0.5" />
+          </Link>
+        </>
+      )}
     </div>
   );
 }

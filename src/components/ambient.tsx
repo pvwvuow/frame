@@ -32,7 +32,16 @@
  * painting the old bitmap until the new one arrives and the poster
  * visibly changes mid-fade (the user-reported bug). GPU-only
  * opacity/transform via the vip-ambient keyframes; the swap lands on
- * the invisible 0-opacity boundary of each cycle. */
+ * the invisible 0-opacity boundary of each cycle.
+ *
+ * v0.30.16 — every ghost gets its own PERSONALITY («حالت نرمال کاورها
+ * گوست باشه.. بعضیاشون فید خیلی بیشتری بگیرن.. بعضیا خیلی تیره باشن..
+ * رندوم باشه»): useGhostVariants deals each slot a random resting look —
+ * standard soft, EXTRA-FADED (OVAL_MASK_FAINT: even the centre is only
+ * ~0.72 opaque so the whole cover reads as half-dissolved), VERY DARK
+ * (brightness pulled to ~0.4–0.55) or faded+dark — reshuffled every
+ * mount. The entrance is slower too (2.6s ghost-in) matching the slower
+ * vip-ambient ramps. */
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { posterSrc, backdropSrc } from "@/lib/covers";
@@ -46,6 +55,11 @@ export type GhostSlot = {
   o: number;
   blur: number;
   tilt: string;
+  /* v0.30.16 — per-slot resting personality (see useGhostVariants):
+   * b = brightness multiplier (default 0.85), faint = the extra-faded
+   * mask. Optional, so the VIP table keeps its exact current look. */
+  b?: number;
+  faint?: boolean;
 };
 
 export type GhostShape = "oval" | "poster";
@@ -59,6 +73,13 @@ export type GhostShape = "oval" | "poster";
  * exactly AT the edge (kept for the 2/3 variant). */
 export const OVAL_MASK =
   "radial-gradient(50% 50% at 50% 50%, #000 20%, rgba(0,0,0,0.9) 38%, rgba(0,0,0,0.72) 55%, rgba(0,0,0,0.48) 70%, rgba(0,0,0,0.26) 83%, rgba(0,0,0,0.1) 93%, transparent 100%)";
+/* v0.30.16 — the EXTRA-FADED variant: even the centre never reaches full
+ * opacity (≈0.72) and the whole ramp sits lower, so a cover wearing this
+ * mask reads as half-dissolved at its resting peak — the «فید خیلی
+ * بیشتری بگیرن» end of the random spectrum. Still zero exactly AT the
+ * inscribed ellipse, so the rectangle can never show. */
+export const OVAL_MASK_FAINT =
+  "radial-gradient(50% 50% at 50% 50%, rgba(0,0,0,0.72) 10%, rgba(0,0,0,0.52) 32%, rgba(0,0,0,0.32) 54%, rgba(0,0,0,0.16) 74%, rgba(0,0,0,0.05) 90%, transparent 100%)";
 export const GHOST_MASK_X = "linear-gradient(to right, transparent 0%, #000 25%, #000 75%, transparent 100%)";
 export const GHOST_MASK_Y = "linear-gradient(to bottom, transparent 0%, #000 28%, #000 72%, transparent 100%)";
 export const GHOST_MASK = `${GHOST_MASK_X}, ${GHOST_MASK_Y}`;
@@ -115,6 +136,28 @@ export function useGhostDelays(count: number, spread = 6): number[] {
     setDelays(Array.from({ length: count }, () => Math.random() * spread));
   }, [count, spread]);
   return delays;
+}
+
+export type GhostVariant = { faint: boolean; b: number; oMul: number };
+
+/** Random per-slot RESTING PERSONALITY (v0.30.16): some ghosts stay
+ *  standard-soft, some take much more fade (faint mask), some sink very
+ *  dark (low brightness), some both — dealt fresh on every mount so the
+ *  wall never repeats the same composition («رندوم باشه»). oMul scales
+ *  the slot's peak opacity so faded ones also breathe lower. */
+export function useGhostVariants(count: number): GhostVariant[] {
+  const [vs, setVs] = useState<GhostVariant[]>([]);
+  useEffect(() => {
+    const pick = (): GhostVariant => {
+      const r = Math.random();
+      if (r < 0.3) return { faint: false, b: 0.76 + Math.random() * 0.12, oMul: 1 }; // standard soft
+      if (r < 0.55) return { faint: true, b: 0.78 + Math.random() * 0.1, oMul: 0.75 }; // extra faded
+      if (r < 0.8) return { faint: false, b: 0.38 + Math.random() * 0.17, oMul: 1.15 }; // very dark
+      return { faint: true, b: 0.42 + Math.random() * 0.15, oMul: 0.9 }; // faded + dark
+    };
+    setVs(Array.from({ length: count }, pick));
+  }, [count]);
+  return vs;
 }
 
 /** One floating ghost cover. `advance` = the host's total slot count, so
@@ -180,7 +223,9 @@ export function AmbientGhost({
         maxWidth,
         aspectRatio: oval ? "16 / 9" : "2 / 3",
         opacity: 0,
-        animation: `ghost-in 1600ms ease ${revealDelay}s both`,
+        /* v0.30.16: 2600ms — the reveal itself is slower now («یواش تر
+           ظاهر بشن»); the random per-slot delay staggers them. */
+        animation: `ghost-in 2600ms ease ${revealDelay}s both`,
       }}
     >
       <img
@@ -194,9 +239,12 @@ export function AmbientGhost({
         style={{
           borderRadius: oval ? 0 : 18,
           opacity: 0,
-          filter: `blur(${slot.blur}px) saturate(0.9) brightness(0.85)`,
-          WebkitMaskImage: oval ? OVAL_MASK : GHOST_MASK,
-          maskImage: oval ? OVAL_MASK : GHOST_MASK,
+          /* v0.30.16: brightness is per-slot (useGhostVariants) — some
+             ghosts rest very dark, others near-natural; faint slots wear
+             the extra-faded mask so even their core is half-dissolved. */
+          filter: `blur(${slot.blur}px) saturate(0.9) brightness(${slot.b ?? 0.85})`,
+          WebkitMaskImage: slot.faint ? OVAL_MASK_FAINT : oval ? OVAL_MASK : GHOST_MASK,
+          maskImage: slot.faint ? OVAL_MASK_FAINT : oval ? OVAL_MASK : GHOST_MASK,
           ...(oval ? {} : { WebkitMaskComposite: "source-in", maskComposite: "intersect" }),
           "--vip-o": slot.o,
           "--vip-tilt": slot.tilt,

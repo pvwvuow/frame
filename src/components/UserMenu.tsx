@@ -1,6 +1,25 @@
 "use client";
 
-/* v0.30.15 — the residual OPEN LAG is killed structurally: even the
+/* v0.30.16 — two more passes on the same drawer:
+ *
+ * 1. THE SIGN-OUT IS A LIST ITEM NOW («دکمه خروج هنوز جای قبلشه، نیومده
+ *    کنار بقیه دکمه‌های لیست»): it used to render as a separate button
+ *    AFTER the <ul>; it now lives INSIDE the list as its last <li> with
+ *    the exact row anatomy of the other entries (icon at the anchored
+ *    edge, label hugging it, same paddings, same hover) — same rhythm,
+ *    same place, no more detached-looking row. The v0.29.0 two-tap
+ *    confirm survives untouched.
+ *
+ * 2. MUCH BIGGER VEIL FADE («فید منوی کشویی رو میتونی خیلی بیشتر کنی»):
+ *    the opaque hold shrinks 74% → 42% and the melt becomes a long
+ *    4-stop feather (0.84@58% → 0.52@74% → 0.22@88% → 0@100%), so the
+ *    visible dissolve now owns ~58% of the panel instead of ~26%. The
+ *    content column narrows 72% → 64% to stay inside the solid zone; its
+ *    inner edge still meets ≈0.7-alpha ink — solid melts into near-solid.
+ *    The open/close itself got the «نرم و سبک» pass: open 220ms expo-out,
+ *    close 150ms ease-in (see .u-veil in globals.css).
+ *
+ * v0.30.15 — the residual OPEN LAG is killed structurally: even the
  * v0.30.14 tween remounted the whole panel inside the click frame (portal
  * + React mount + animation start + first raster of a 500px layer, all in
  * one go). The panel is now ALWAYS mounted (hidden via visibility) and
@@ -235,16 +254,17 @@ export default function UserMenu() {
   const countOf = (e: Entry) => (e.key === "fav" ? favorites.size : e.key === "notif" ? unread : null);
 
   /* the feather: opaque app-ink at the anchored screen edge, dissolving
-     into the page toward the content (dir-aware direction). The gradient
-     alone owns the melt (v0.30.14 removed the backdrop-blur + mask — the
-     blur re-rasterized every frame of the slide and read as opening lag;
-     sharp it also reads cleaner). The content column (72%) sits ENTIRELY
-     inside the opaque hold (74%): at the content's inner edge the veil is
-     still fully solid — solid melts into solid, no seam — and the visible
-     melt-tail is the last ~26%. */
+     into the page toward the content (dir-aware direction). v0.30.16: the
+     hold shrunk to 42% and the fade now owns ~58% of the panel in a long
+     4-stop feather (color-mix keeps the theme-aware ink at each stop).
+     The content column (64%) still sits inside the near-solid hold: at
+     its inner edge the veil is ≈0.7 ink — text lives on solid, the melt
+     is what you SEE. No backdrop-filter, no mask, nothing re-rasterized
+     per frame. */
+  const inkA = (p: number) => `color-mix(in srgb, var(--color-ink) ${p}%, transparent)`;
   const veilBg = dir === "rtl"
-    ? "linear-gradient(to right, var(--color-ink) 0%, var(--color-ink) 74%, transparent 100%)"
-    : "linear-gradient(to left, var(--color-ink) 0%, var(--color-ink) 74%, transparent 100%)";
+    ? `linear-gradient(to right, var(--color-ink) 0%, var(--color-ink) 42%, ${inkA(84)} 58%, ${inkA(52)} 74%, ${inkA(22)} 88%, transparent 100%)`
+    : `linear-gradient(to left, var(--color-ink) 0%, var(--color-ink) 42%, ${inkA(84)} 58%, ${inkA(52)} 74%, ${inkA(22)} 88%, transparent 100%)`;
 
   return (
     <div className="relative">
@@ -294,10 +314,12 @@ export default function UserMenu() {
                     pointer-events pass through it, so tapping the faded
                     zone closes the drawer like tapping outside. */}
                 <div aria-hidden="true" className="absolute inset-0" style={{ background: veilBg }} />
-                {/* content column — pinned to the anchored edge, OUTSIDE the
-                    fade zone, so text never sits on the translucent part */}
+                {/* content column — pinned to the anchored edge, inside the
+                    near-solid hold of the feather (64% of the panel; at its
+                    inner edge the veil is still ≈0.7 ink, so text never
+                    sits on the visible melt) */}
                 <div
-                  className="pointer-events-auto absolute inset-y-0 flex w-[72%] flex-col"
+                  className="pointer-events-auto absolute inset-y-0 flex w-[64%] flex-col"
                   style={{
                     insetInlineEnd: 0,
                     paddingTop: "env(safe-area-inset-top, 0px)",
@@ -359,50 +381,54 @@ export default function UserMenu() {
                       />
                     ))}
                     <Item {...SETTINGS_ENTRY} icon={SettingsIcon} label={tr(SETTINGS_ENTRY.label)} active={isActive("/settings")} />
-                  </ul>
 
-                  {/* sign out — monochrome; the two-tap destructive confirm
-                      (v0.29.0) survives restyle */}
-                  {session && (
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        if (!confirmArmed) {
-                          try {
-                            const { guestDataAtRisk } = await import("@/lib/mobile/userdata");
-                            if (await guestDataAtRisk()) {
-                              setConfirmArmed(true);
-                              setTimeout(() => setConfirmArmed(false), 5000);
-                              return;
+                    {/* v0.30.16: sign-out lives IN the list as its last item —
+                        same <li> + row anatomy as everything above («نیومده
+                        کنار بقیه دکمه‌های لیست»). The two-tap destructive
+                        confirm (v0.29.0) survives. */}
+                    {session && (
+                      <li>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (!confirmArmed) {
+                              try {
+                                const { guestDataAtRisk } = await import("@/lib/mobile/userdata");
+                                if (await guestDataAtRisk()) {
+                                  setConfirmArmed(true);
+                                  setTimeout(() => setConfirmArmed(false), 5000);
+                                  return;
+                                }
+                              } catch {
+                                /* helper unavailable → sign out as before */
+                              }
                             }
-                          } catch {
-                            /* helper unavailable → sign out as before */
-                          }
-                        }
-                        setConfirmArmed(false);
-                        setOpen(false);
-                        void explicitSignOut();
-                        toast.success(locale === "en" ? "Signed out." : "از حساب خارج شدی.");
-                        router.refresh();
-                      }}
-                      className={`mt-1 flex flex-row-reverse items-center gap-3 rounded-2xl px-3.5 py-2.5 text-sm transition ${
-                        confirmArmed
-                          ? "bg-white/15 font-bold text-white"
-                          : "text-zinc-400 hover:bg-white/[0.06] hover:text-white"
-                      }`}
-                    >
-                      <LogoutIcon width={17} height={17} className="shrink-0" />
-                      <span className="flex-1 text-end">
-                        {confirmArmed
-                          ? locale === "en"
-                            ? "Tap again — guest data on this device will be erased"
-                            : "دوباره بزنید — داده‌های مهمان این دستگاه پاک می‌شود"
-                          : locale === "en"
-                            ? "Sign out"
-                            : "خروج از حساب"}
-                      </span>
-                    </button>
-                  )}
+                            setConfirmArmed(false);
+                            setOpen(false);
+                            void explicitSignOut();
+                            toast.success(locale === "en" ? "Signed out." : "از حساب خارج شدی.");
+                            router.refresh();
+                          }}
+                          className={`flex w-full flex-row-reverse items-center gap-3 rounded-2xl px-3.5 py-2.5 text-sm transition ${
+                            confirmArmed
+                              ? "bg-white/15 font-bold text-white"
+                              : "text-zinc-300 hover:bg-white/[0.06] hover:text-white"
+                          }`}
+                        >
+                          <LogoutIcon width={17} height={17} className="shrink-0" />
+                          <span className="flex-1 text-end">
+                            {confirmArmed
+                              ? locale === "en"
+                                ? "Tap again — guest data on this device will be erased"
+                                : "دوباره بزنید — داده‌های مهمان این دستگاه پاک می‌شود"
+                              : locale === "en"
+                                ? "Sign out"
+                                : "خروج از حساب"}
+                          </span>
+                        </button>
+                      </li>
+                    )}
+                  </ul>
                 </div>
 
                 {/* footer — version/update (desktop) or about (web) */}

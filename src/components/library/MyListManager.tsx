@@ -549,8 +549,14 @@ function GridItem({ r, selectMode, selected, onSelect, onRemove, onPin, onNote }
   const st = LIST_STATUSES.find((s) => s.value === r.status)!;
   return (
     <div className={`group/list relative rounded-xl transition ${selected ? "ring-2 ring-brand ring-offset-2 ring-offset-ink" : ""}`}>
+      {/* v0.30.16 — the poster used to stack SIX controls on hover (info
+          overlay + fav + watchlist + play fab from TitleCard, PLUS this
+          component's own 3-button rail) — the user: «به شدت زیاد و شلوغه».
+          hover="play" reduces TitleCard to a single centered play circle
+          and the whole poster clicks through to the player; only the
+          compact manage rail (remove/pin/note) remains alongside it. */}
       <div className={`[&>div]:w-full ${selectMode ? "pointer-events-none" : ""}`}>
-        <TitleCard t={r.title} progress={r.progress} />
+        <TitleCard t={r.title} progress={r.progress} hover="play" />
       </div>
       {selectMode && (
         <button type="button" onClick={onSelect} aria-pressed={selected} className="absolute inset-0 z-10 rounded-xl bg-black/30">

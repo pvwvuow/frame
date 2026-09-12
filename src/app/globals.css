@@ -314,6 +314,14 @@ h1, h2, h3, .font-display { font-family: var(--font-display); letter-spacing: -0
 /* ---- Focus & selection ---- */
 ::selection { background: rgba(229, 9, 20, 0.45); color: #fff; }
 :focus-visible { outline: 2px solid var(--color-brand); outline-offset: 2px; border-radius: 6px; }
+/* v0.30.16 — the RED BORDER on the search bar («با کلیک روی نوار جستجو یک
+ * بوردر قرمز میاد»): Chromium matches :focus-visible for text fields on
+ * EVERY focus — mouse clicks included — so the brand-red keyboard ring
+ * flashed on the search input, the collection-name field, every textarea.
+ * Text fields self-indicate focus (caret + their own border states), so
+ * they are exempt from the keyboard ring; buttons/links keep it. */
+input:focus-visible,
+textarea:focus-visible { outline: none; }
 
 /* ---- Reduced motion (user setting or OS) ---- */
 html[data-reduce-motion="1"] *, html[data-reduce-motion="1"] *::before, html[data-reduce-motion="1"] *::after {
@@ -528,12 +536,21 @@ html[data-electron="1"][data-platform="darwin"][dir="ltr"] .nav-inner { padding-
  * VIP page: matte (low opacity + blur + radial mask = dissolved edges),
  * each slot fading in, holding, dissolving, resting dark while the next
  * poster swaps in at the invisible boundary. Pure opacity/transform →
- * GPU-only, zero layout work. */
+ * GPU-only, zero layout work.
+ *
+ * v0.30.16 — slower breath («می‌خوام یکم یواش‌تر ظاهر بشن و غیب بشن»):
+ * the ramps were 16%/22% of the cycle (≈1.5–3.8s) and the next cover
+ * started climbing right after the previous one bottomed out, which read
+ * as covers popping in back-to-back («کاورها خیلی سریع پشت سر هم ظاهر
+ * میشن»). Fade-in now owns 22% of the cycle, the hold is 40%, the
+ * dissolve 28%, and 10% of dead air at zero separates one cover from the
+ * next — every appearance and disappearance is a long exhalation, and
+ * there is real silence between covers. */
 @keyframes vip-ambient {
   0% { opacity: 0; transform: scale(1.03) rotate(var(--vip-tilt, 0deg)); }
-  16% { opacity: var(--vip-o, 0.26); }
-  58% { opacity: var(--vip-o, 0.26); }
-  80% { opacity: 0; transform: scale(1.1) rotate(var(--vip-tilt, 0deg)); }
+  22% { opacity: var(--vip-o, 0.26); }
+  62% { opacity: var(--vip-o, 0.26); }
+  90% { opacity: 0; transform: scale(1.1) rotate(var(--vip-tilt, 0deg)); }
   100% { opacity: 0; transform: scale(1.1) rotate(var(--vip-tilt, 0deg)); }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -573,16 +590,21 @@ html[data-electron="1"][data-platform="darwin"][dir="ltr"] .nav-inner { padding-
  * also the design he asked for («یک حالت فیددار باشه»). visibility flips on
  * a 0s delay when closing so the fade-out finishes before it unparents from
  * hit-testing/focus. */
+/* v0.30.16 — softer, lighter open/close («یک انیمیشن نرم و سبک برای باز
+ * و بسته شدن منو بزار»): the open breathes in over 220ms expo-out (max
+ * velocity at t=0, so it still answers instantly); the close is a shorter
+ * 150ms ease-in so dismissal never lingers. Still one opacity-only
+ * transition on an always-mounted layer — zero mount cost. */
 .u-veil {
   opacity: 0;
   visibility: hidden;
   will-change: opacity;
-  transition: opacity 160ms cubic-bezier(0.22, 1, 0.36, 1), visibility 0s linear 190ms;
+  transition: opacity 150ms ease-in, visibility 0s linear 170ms;
 }
 .u-veil[data-open="true"] {
   opacity: 1;
   visibility: visible;
-  transition: opacity 160ms cubic-bezier(0.22, 1, 0.36, 1);
+  transition: opacity 220ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 @media (prefers-reduced-motion: reduce) {
   .u-veil { transition: none; }

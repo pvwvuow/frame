@@ -31,7 +31,7 @@ import { formatClock, episodeLabel } from "@/lib/format";
 import { backdropSrc } from "@/lib/covers";
 import TitleName from "@/components/TitleName";
 import { useAsyncData } from "@/lib/use-async-data";
-import { AmbientGhost, useFamousPosterPool, useGhostDelays, type GhostSlot } from "@/components/ambient";
+import { AmbientGhost, useFamousPosterPool, useGhostDelays, useGhostVariants, type GhostSlot } from "@/components/ambient";
 import { useEffect, useState } from "react";
 
 type HomeData = {
@@ -66,7 +66,14 @@ type HomeData = {
  * one in scattered order; (2) the cycle durations were near-duplicates
  * so swaps clustered — the table now uses fourteen DISTINCT durations
  * (11–24s), so covers retire and return asynchronously, never in a
- * chorus line. */
+ * chorus line.
+ *
+ * v0.30.16: the reveal is SLOWER (13s spread + 2.6s entrance — «یواش تر
+ * ظاهر بشن») and every slot is dealt a random resting PERSONALITY via
+ * useGhostVariants — some extra-faded, some very dark, some soft
+ * («بعضیاشون فید خیلی بیشتری بگیرن.. بعضیا خیلی تیره باشن.. رندوم
+ * باشه») — so the wall reads as a scatter of ghost covers, no two
+ * sessions alike. */
 const HOME_GHOST_SLOTS: GhostSlot[] = [
   { left: "3%",  top: "6%",  w: 340, dur: 13, delay: -3,  o: 0.12, blur: 3, tilt: "-3deg" },
   { left: "78%", top: "4%",  w: 300, dur: 18, delay: -9,  o: 0.1,  blur: 4, tilt: "2deg" },
@@ -87,8 +94,11 @@ const HOME_GHOST_SLOTS: GhostSlot[] = [
 function HomeGhosts() {
   const covers = useFamousPosterPool(42, "backdrop");
   const [on, setOn] = useState(false);
-  /* random per-slot entrance — the covers surface ONE BY ONE (v0.30.12) */
-  const reveal = useGhostDelays(HOME_GHOST_SLOTS.length, 7);
+  /* random per-slot entrance — the covers surface ONE BY ONE (v0.30.12);
+   * v0.30.16: spread 13s — a slower, sparser arrival */
+  const reveal = useGhostDelays(HOME_GHOST_SLOTS.length, 13);
+  /* v0.30.16: random per-slot resting personality — faint / dark / soft */
+  const variants = useGhostVariants(HOME_GHOST_SLOTS.length);
 
   /* gate = the sentinel right after the hero: ghosts fade in once it
    * climbs above 70% of the viewport (i.e. the user has scrolled into
@@ -113,25 +123,31 @@ function HomeGhosts() {
     };
   }, []);
 
-  if (covers.length < HOME_GHOST_SLOTS.length) return null;
+  if (covers.length < HOME_GHOST_SLOTS.length || variants.length < HOME_GHOST_SLOTS.length) return null;
   return (
     <div
       className="pointer-events-none fixed inset-0 -z-10 overflow-hidden"
       aria-hidden="true"
       style={{ opacity: on ? 1 : 0, transition: "opacity 1100ms ease" }}
     >
-      {HOME_GHOST_SLOTS.map((slot, i) => (
-        <AmbientGhost
-          key={i}
-          slot={slot}
-          covers={covers}
-          startIndex={i * 3}
-          advance={HOME_GHOST_SLOTS.length}
-          maxWidth="36vw"
-          shape="oval"
-          revealDelay={reveal[i] ?? 0}
-        />
-      ))}
+      {HOME_GHOST_SLOTS.map((slot, i) => {
+        const v = variants[i];
+        const s: GhostSlot = v
+          ? { ...slot, o: Math.round(slot.o * v.oMul * 1000) / 1000, b: v.b, faint: v.faint }
+          : slot;
+        return (
+          <AmbientGhost
+            key={i}
+            slot={s}
+            covers={covers}
+            startIndex={i * 3}
+            advance={HOME_GHOST_SLOTS.length}
+            maxWidth="36vw"
+            shape="oval"
+            revealDelay={reveal[i] ?? 0}
+          />
+        );
+      })}
       {/* gently sink the layer edges into the ink so ghosts never cut hard
           against the viewport border (they sit BEHIND z-10 content) */}
       <div
