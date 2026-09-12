@@ -537,5 +537,9 @@ html[data-electron="1"][data-platform="darwin"][dir="ltr"] .nav-inner { padding-
   100% { opacity: 0; transform: scale(1.1) rotate(var(--vip-tilt, 0deg)); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .vip-ambient-img { animation: none !important; }
+  /* static matte instead of invisible: the keyframes DRIVE the opacity, so
+     switching the animation off leaves the inline opacity:0 — the whole
+     backdrop would vanish for reduced-motion users. Pin each cover at its
+     slot opacity and skip only the drift/swap. */
+  .vip-ambient-img { animation: none !important; opacity: var(--vip-o, 0.26) !important; }
 }

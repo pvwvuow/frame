@@ -14,7 +14,7 @@ import { useI18n } from "../i18n/LocaleProvider";
 import { stopMediaEl } from "@/lib/media";
 import { MobileDownloadButton } from "../download/MobileDownloads";
 import { titleHref, watchHref } from "@/lib/mobile-links";
-import { GlassButton } from "../ui/glass";
+import { GlassButton, GlassCard } from "../ui/glass";
 
 type Episode = {
   id: number;
@@ -49,43 +49,10 @@ type Detail = {
  *   │   pill + the icon toggles, all the same height               │
  *   └──────────────────────────────────────────────────────────────┘
  *
- * v0.30.5 — the modal has NO body at all anymore. The v0.30.2 glass slab
- * (a bordered rounded-rect) is replaced by a melt AURA: two layers that
- * extend FAR past the content (≈208px on the sides, ≈64–80px vertically
- * on desktop — the zone the user circled) and dissolve into the page:
- *
- *   1. a feathered backdrop-blur + darken halo (the page sinks into
- *      blur/darkness as it approaches the modal),
- *   2. a radial dark veil (the “ink cloud” the content floats on).
- *
- * Both are masked with an intersect of two linear gradients so there is
- * no edge, no border, no corner anywhere — opacity reaches 0 far beyond
- * the content box. The artwork melts the same way on ALL FOUR sides
- * (top/side fades added to the v0.30.3 bottom seam melt), so cover and
- * modal are one continuous cloud of image and ink over the page.
- *
- * Clicks in the aura zone fall through to the backdrop (pointer-events:
- * none) and close — the aura IS background.
+ * The surface is the v0.30.2 GlassCard slab (light tint + deep blur +
+ * specular edges) over a LIGHTER backdrop scrim (0.42 + blur 16) so the
+ * glass finally reads as glass instead of an opaque card.
  */
-
-/* the aura fade: two gradient masks composited with “intersect” → a soft
- * rectangle whose edges dissolve over ~96px (x) / ~44px (y). The long
- * radial tail of the veil below already thins the layers near the rim —
- * the mask only finishes the job, so no perceptible boundary anywhere.
- * Feathers must stay ≤ the negative insets (96/48/56px on mobile). */
-const AURA_MASK = [
-  "linear-gradient(to right, transparent 0%, #000 96px, #000 calc(100% - 96px), transparent 100%)",
-  "linear-gradient(to bottom, transparent 0%, #000 44px, #000 calc(100% - 44px), transparent 100%)",
-].join(", ");
-
-/* artwork melt on all four sides: fades in over the top ~9%, stays solid
- * through the body of the still, then dissolves toward the identity zone
- * (keeps the v0.30.3 seam melt) and on both flanks. */
-const COVER_MASK = [
-  "linear-gradient(to bottom, transparent 0%, #000 9%, #000 64%, transparent 97%)",
-  "linear-gradient(to right, transparent 0%, #000 14%, #000 86%, transparent 100%)",
-].join(", ");
-
 export default function TitleModal({
   title,
   onClose,
@@ -176,56 +143,22 @@ export default function TitleModal({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 20, scale: 0.97 }}
             transition={{ type: "spring", stiffness: 300, damping: 28 }}
-            className="relative w-full max-w-[560px]"
+            className="w-full max-w-[560px]"
           >
-            {/* ── the melt aura — replaces the bordered glass slab ──── */}
-            {/* extends well past the content (the circled zone) and
-                dissolves into the page; pointer-events-none so a click
-                anywhere in the melt falls through and closes */}
-            <div
-              aria-hidden
-              className="pointer-events-none absolute -inset-x-24 -top-12 -bottom-14 sm:-inset-x-52 sm:-top-16 sm:-bottom-20"
-              style={{
-                WebkitMaskImage: AURA_MASK,
-                maskImage: AURA_MASK,
-                WebkitMaskComposite: "source-in",
-                maskComposite: "intersect",
-              }}
-            >
-              {/* 1) the page sinks into blur + darkness near the modal */}
-              <div
-                className="absolute inset-0"
-                style={{
-                  backdropFilter: "blur(26px) brightness(0.75) saturate(150%)",
-                  WebkitBackdropFilter: "blur(26px) brightness(0.75) saturate(150%)",
-                }}
-              />
-              {/* 2) the radial ink veil the content floats on — a long tail
-                  so it thins gradually and the mask never cuts a rim */}
-              <div
-                className="absolute inset-0"
-                style={{
-                  background:
-                    "radial-gradient(120% 88% at 50% 42%, rgba(9, 9, 14, 0.92) 30%, rgba(9, 9, 14, 0.6) 60%, rgba(9, 9, 14, 0.16) 85%, rgba(9, 9, 14, 0) 98%)",
-                }}
-              />
-            </div>
-
-            <div className="no-scrollbar sheet-safe-bottom relative z-10 max-h-[calc(100dvh-1.5rem)] overflow-y-auto overscroll-contain">
+            <GlassCard radius={28} className="w-full">
+              <div className="no-scrollbar sheet-safe-bottom relative max-h-[calc(100dvh-1.5rem)] overflow-y-auto overscroll-contain">
                 {/* ── media header ──────────────────────────────────── */}
-                {/* no hard seam anywhere (v0.30.3 + v0.30.5): the artwork
-                    extends 40px PAST the strip into the body and dissolves
-                    there; COVER_MASK melts it on ALL FOUR sides — top, both
-                    flanks, and the old seam — so the still emerges from the
-                    aura's ink veil with no edge and no tone jump */}
+                {/* v0.30.3 — no hard seam: the artwork extends 40px PAST the
+                    strip into the body and dissolves there through a mask,
+                    so the fade lands on the MODAL side while the cover
+                    itself stays ~80% untouched; the reveal target is the
+                    same glass slab that continues below → no tone jump */}
                 <div className="force-dark relative z-0 h-[170px] w-full sm:h-[190px]">
                   <div
                     className="absolute inset-x-0 top-0 h-[calc(100%+40px)]"
                     style={{
-                      WebkitMaskImage: COVER_MASK,
-                      maskImage: COVER_MASK,
-                      WebkitMaskComposite: "source-in",
-                      maskComposite: "intersect",
+                      WebkitMaskImage: "linear-gradient(to bottom, #000 0%, #000 70%, transparent 100%)",
+                      maskImage: "linear-gradient(to bottom, #000 0%, #000 70%, transparent 100%)",
                     }}
                   >
                     <img src={t.backdrop} alt="" className="absolute inset-0 h-full w-full object-cover" />
@@ -245,6 +178,7 @@ export default function TitleModal({
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-black/10" />
                   </div>
+                  <div className="absolute inset-x-0 top-0 h-12 bg-gradient-to-b from-black/45 to-transparent" />
 
                   <div className="absolute inset-x-0 top-0 flex items-center justify-between p-3">
                     <button
@@ -273,8 +207,8 @@ export default function TitleModal({
                   </div>
 
                   {hasProgress && (
-                    <div className="absolute inset-x-4 bottom-1.5 h-[3px] overflow-hidden rounded-full bg-white/15">
-                      <div className="h-full rounded-full bg-brand" style={{ width: `${pct}%` }} />
+                    <div className="absolute inset-x-0 bottom-0 h-[3px] bg-white/20">
+                      <div className="h-full bg-brand" style={{ width: `${pct}%` }} />
                     </div>
                   )}
                 </div>
@@ -448,6 +382,7 @@ export default function TitleModal({
                   </div>
                 </div>
               </div>
+            </GlassCard>
           </motion.div>
         </motion.div>
       )}

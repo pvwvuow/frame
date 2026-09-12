@@ -1,6 +1,6 @@
 {
   "name": "frame",
-  "version": "0.30.5",
+  "version": "0.30.6",
   "private": true,
   "scripts": {
     "dev": "next dev -p 3000",

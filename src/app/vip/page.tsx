@@ -102,7 +102,9 @@ function VipAmbient() {
   const [posters, setPosters] = useState<string[]>([]);
 
   useEffect(() => {
-    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+    /* NOTE: no prefers-reduced-motion early-return here — reduced-motion
+     * users still get the covers (static matte, via CSS below); skipping
+     * the fetch left them a plain black page. */
     let alive = true;
     Promise.all([
       fetch("/api/catalog?type=movie&sort=rating&limit=40").then((r) => (r.ok ? r.json() : { items: [] })),
@@ -213,7 +215,13 @@ export default function VipPage() {
 
   /* ---------------- main VIP page ---------------- */
   return (
-    <main dir={dir} className="mx-auto w-full max-w-3xl px-4 pb-16 pt-28 sm:px-8 lg:pt-32">
+    /* isolate: WITHOUT a stacking context on <main>, the ambient’s -z-10
+     * resolves against the ROOT context and paints BELOW <body>’s opaque
+     * bg-ink (html sets its own background, so body’s never propagates to
+     * the canvas) → the whole effect stayed invisible behind the black.
+     * Isolating <main> contains the negative-z layer inside it: above the
+     * body background, below the page content — what v0.30.4 intended. */
+    <main dir={dir} className="isolate mx-auto w-full max-w-3xl px-4 pb-16 pt-28 sm:px-8 lg:pt-32">
       {/* v0.30.4 — covers of top titles surfacing & dissolving in the dark */}
       <VipAmbient />
 
