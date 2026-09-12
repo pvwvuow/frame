@@ -14,7 +14,7 @@ import { UserIcon, CrownIcon, CheckCircleIcon, SparkIcon } from "@/components/Ic
 import { useI18n } from "@/components/i18n/LocaleProvider";
 import { useCloudSession } from "@/lib/cloud";
 import { PLAN_LABELS, activationErrorText, useSubscription, type Plan } from "@/lib/subscription";
-import { AmbientGhost, useFamousPosterPool, type GhostSlot } from "@/components/ambient";
+import { AmbientGhost, useFamousPosterPool, useGhostDelays, type GhostSlot } from "@/components/ambient";
 import { fa } from "@/lib/format";
 
 type PlanDef = { key: Plan; title: string; note: string; noteEn: string; hot?: boolean };
@@ -65,22 +65,27 @@ function AmbientSlot({
   slot,
   covers,
   startIndex,
+  revealDelay,
 }: {
   slot: GhostSlot;
   covers: string[];
   startIndex: number;
+  revealDelay: number;
 }) {
-  return <AmbientGhost slot={slot} covers={covers} startIndex={startIndex} advance={AMBIENT_SLOTS.length} maxWidth="46vw" shape="oval" />;
+  return <AmbientGhost slot={slot} covers={covers} startIndex={startIndex} advance={AMBIENT_SLOTS.length} maxWidth="46vw" shape="oval" revealDelay={revealDelay} />;
 }
 
 function VipAmbient() {
   const covers = useFamousPosterPool(42, "backdrop");
+  /* v0.30.12: a soft random entrance — the ten covers no longer surface
+   * as one simultaneous block, they drift in one after another (0–2.4s) */
+  const reveal = useGhostDelays(AMBIENT_SLOTS.length, 2.4);
 
   if (covers.length < AMBIENT_SLOTS.length) return null;
   return (
     <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden" aria-hidden="true">
       {AMBIENT_SLOTS.map((slot, i) => (
-        <AmbientSlot key={i} slot={slot} covers={covers} startIndex={i * 4} />
+        <AmbientSlot key={i} slot={slot} covers={covers} startIndex={i * 4} revealDelay={reveal[i] ?? 0} />
       ))}
       {/* sink everything into the blackness at the edges */}
       <div

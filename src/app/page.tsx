@@ -31,7 +31,7 @@ import { formatClock, episodeLabel } from "@/lib/format";
 import { backdropSrc } from "@/lib/covers";
 import TitleName from "@/components/TitleName";
 import { useAsyncData } from "@/lib/use-async-data";
-import { AmbientGhost, useFamousPosterPool, type GhostSlot } from "@/components/ambient";
+import { AmbientGhost, useFamousPosterPool, useGhostDelays, type GhostSlot } from "@/components/ambient";
 import { useEffect, useState } from "react";
 
 type HomeData = {
@@ -56,27 +56,39 @@ type HomeData = {
  * and the hero scroll OVER the fixed layer. It only exists BELOW the
  * hero: a sentinel right after <Hero> gates it (scroll-past → fade in,
  * scroll back → fade out); the ghosts themselves never scroll — they
- * are fixed, the content glides over them. */
+ * are fixed, the content glides over them.
+ *
+ * v0.30.12: the user said they do not appear properly — not random and
+ * not arriving one after another ("انگار رندم نیستند و پشت سر نمیان").
+ * Two causes fixed: (1) the whole layer popped in as ONE block (a single
+ * wrapper opacity transition) — now every slot has its own RANDOM reveal
+ * delay (useGhostDelays) and a 1.6s entrance, so covers surface one by
+ * one in scattered order; (2) the cycle durations were near-duplicates
+ * so swaps clustered — the table now uses fourteen DISTINCT durations
+ * (11–24s), so covers retire and return asynchronously, never in a
+ * chorus line. */
 const HOME_GHOST_SLOTS: GhostSlot[] = [
-  { left: "3%",  top: "6%",  w: 340, dur: 14, delay: -3,  o: 0.12, blur: 3, tilt: "-3deg" },
-  { left: "78%", top: "4%",  w: 300, dur: 16, delay: -9,  o: 0.1,  blur: 4, tilt: "2deg" },
-  { left: "40%", top: "10%", w: 260, dur: 18, delay: -14, o: 0.08, blur: 5, tilt: "3deg" },
-  { left: "62%", top: "22%", w: 360, dur: 13, delay: -6,  o: 0.14, blur: 3, tilt: "-2deg" },
+  { left: "3%",  top: "6%",  w: 340, dur: 13, delay: -3,  o: 0.12, blur: 3, tilt: "-3deg" },
+  { left: "78%", top: "4%",  w: 300, dur: 18, delay: -9,  o: 0.1,  blur: 4, tilt: "2deg" },
+  { left: "40%", top: "10%", w: 260, dur: 11, delay: -14, o: 0.08, blur: 5, tilt: "3deg" },
+  { left: "62%", top: "22%", w: 360, dur: 21, delay: -6,  o: 0.14, blur: 3, tilt: "-2deg" },
   { left: "12%", top: "30%", w: 380, dur: 15, delay: -11, o: 0.15, blur: 3, tilt: "4deg" },
-  { left: "85%", top: "34%", w: 320, dur: 17, delay: -2,  o: 0.11, blur: 4, tilt: "-3deg" },
-  { left: "34%", top: "42%", w: 280, dur: 19, delay: -8,  o: 0.09, blur: 5, tilt: "2deg" },
-  { left: "55%", top: "52%", w: 370, dur: 14, delay: -13, o: 0.13, blur: 3, tilt: "-4deg" },
-  { left: "5%",  top: "58%", w: 300, dur: 16, delay: -5,  o: 0.11, blur: 4, tilt: "3deg" },
-  { left: "80%", top: "64%", w: 400, dur: 12, delay: -10, o: 0.16, blur: 3, tilt: "-2deg" },
-  { left: "28%", top: "72%", w: 340, dur: 20, delay: -16, o: 0.1,  blur: 5, tilt: "2deg" },
-  { left: "60%", top: "80%", w: 280, dur: 15, delay: -7,  o: 0.12, blur: 4, tilt: "-3deg" },
-  { left: "10%", top: "86%", w: 370, dur: 18, delay: -12, o: 0.14, blur: 3, tilt: "3deg" },
+  { left: "85%", top: "34%", w: 320, dur: 23, delay: -2,  o: 0.11, blur: 4, tilt: "-3deg" },
+  { left: "34%", top: "42%", w: 280, dur: 12, delay: -8,  o: 0.09, blur: 5, tilt: "2deg" },
+  { left: "55%", top: "52%", w: 370, dur: 19, delay: -13, o: 0.13, blur: 3, tilt: "-4deg" },
+  { left: "5%",  top: "58%", w: 300, dur: 14, delay: -5,  o: 0.11, blur: 4, tilt: "3deg" },
+  { left: "80%", top: "64%", w: 400, dur: 22, delay: -10, o: 0.16, blur: 3, tilt: "-2deg" },
+  { left: "28%", top: "72%", w: 340, dur: 16, delay: -16, o: 0.1,  blur: 5, tilt: "2deg" },
+  { left: "60%", top: "80%", w: 280, dur: 20, delay: -7,  o: 0.12, blur: 4, tilt: "-3deg" },
+  { left: "10%", top: "86%", w: 370, dur: 24, delay: -12, o: 0.14, blur: 3, tilt: "3deg" },
   { left: "88%", top: "88%", w: 270, dur: 17, delay: -4,  o: 0.09, blur: 5, tilt: "-2deg" },
 ];
 
 function HomeGhosts() {
   const covers = useFamousPosterPool(42, "backdrop");
   const [on, setOn] = useState(false);
+  /* random per-slot entrance — the covers surface ONE BY ONE (v0.30.12) */
+  const reveal = useGhostDelays(HOME_GHOST_SLOTS.length, 7);
 
   /* gate = the sentinel right after the hero: ghosts fade in once it
    * climbs above 70% of the viewport (i.e. the user has scrolled into
@@ -117,6 +129,7 @@ function HomeGhosts() {
           advance={HOME_GHOST_SLOTS.length}
           maxWidth="36vw"
           shape="oval"
+          revealDelay={reveal[i] ?? 0}
         />
       ))}
       {/* gently sink the layer edges into the ink so ghosts never cut hard

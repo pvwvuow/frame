@@ -540,23 +540,25 @@ html[data-electron="1"][data-platform="darwin"][dir="ltr"] .nav-inner { padding-
   /* static matte instead of invisible: the keyframes DRIVE the opacity, so
      switching the animation off leaves the inline opacity:0 — the whole
      backdrop would vanish for reduced-motion users. Pin each cover at its
-     slot opacity and skip only the drift/swap. */
+     slot opacity and skip only the drift/swap; the WRAPPER's ghost-in
+     reveal completes instantly so the matte is still visible. */
   .vip-ambient-img { animation: none !important; opacity: var(--vip-o, 0.26) !important; }
+  .ghost-in { animation-duration: 1ms !important; animation-delay: 0ms !important; }
 }
 
-/* ---------- User drawer PUSH (v0.30.10) ----------
- * The avatar drawer is a side panel that takes physical space: while it
- * is open (html[data-udrawer="1"], set by UserMenu) the app shell and
- * the footer slide toward the START edge — the drawer «هول می‌دهد» the
- * app a bit and occupies its own room. Fixed chrome (navbar) stays put;
- * the panel is portaled to <body> so the header's backdrop-filter can
- * never become its containing block. */
-.nama-shell {
-  transition: transform 520ms cubic-bezier(0.32, 0.72, 0.28, 1);
-  will-change: transform;
+/* ghost-in: staggered per-slot entrance for the ambient ghosts (v0.30.12)
+ * — each slot gets a random delay (useGhostDelays) so the covers surface
+ * ONE BY ONE instead of the whole layer popping in as a block. */
+@keyframes ghost-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
-html[data-udrawer="1"] .nama-shell { transform: translateX(calc(-1 * min(300px, 24vw))); }
-html[dir="rtl"][data-udrawer="1"] .nama-shell { transform: translateX(min(300px, 24vw)); }
-@media (prefers-reduced-motion: reduce) {
-  .nama-shell { transition: none; }
-}
+
+/* ---------- User drawer (v0.30.12) ----------
+ * The v0.30.10 shell PUSH is GONE (the user withdrew it: «نرم‌افزار هول
+ * داده نشه»). The drawer is now a MERGED FEATHERED VEIL: a full-height
+ * layer anchored at the avatar edge whose background is opaque app-ink
+ * at the screen edge and FADES INTO THE PAGE toward the content (the
+ * user: «سمت چپ تیره باشه و به فضای نرم‌افزار که نزدیک میشه فید همرنگ
+ * پس‌زمینه بشه»). The gradient + mask live INLINE in UserMenu (they are
+ * dir-aware), so no CSS is needed here any more. */

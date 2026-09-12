@@ -1,16 +1,26 @@
 "use client";
 
-/* v0.30.10 — the avatar menu is now a MINIMAL SIDE DRAWER.
+/* v0.30.12 — the avatar menu is now a MERGED FEATHERED VEIL.
  *
- * The old dropdown card (email header, theme picker, colored entries)
- * is gone. The user asked for: minimal, monochrome (ONLY the VIP entry
- * keeps its gold), few elements, a drawer that slides in from the SIDE
- * and is vertically CENTERED, one that PUSHES the app content aside
- * (html[data-udrawer] + .nama-shell in globals.css) and closes itself
- * smartly on any interaction with the app (outside pointerdown, scroll,
- * navigation, Escape). Removed at the user's request: the «لیست من»
- * entry, the quick theme switcher, and the account email — the email
- * now lives in Settings (account/sync card). */
+ * v0.30.10 made it a centered slab that PUSHED the app shell aside
+ * (html[data-udrawer] + .nama-shell). The user withdrew both: «طراحی‌ش
+ * خوب نیس... هول دادن رو کلاً حذف کن» and asked for the drawer to MERGE
+ * with the page instead: a full-height layer anchored at the avatar
+ * edge (inline-end → LEFT in the RTL app, exactly «از سمت چپ باز میشه»)
+ * whose background is OPAQUE app-ink at the screen edge and FADES into
+ * the page toward the content — «سمت چپ تیره باشه و به فضای نرم‌افزار
+ * که نزدیک میشه فید همرنگ پس‌زمینه بشه». No border, no rounded slab, no
+ * shadow (any of them would re-draw the rectangle), no scrim, no push.
+ * The veil's gradient AND its backdrop-blur are dir-aware and feather
+ * out via a mask, so the panel melts into whatever is behind it. The
+ * content column lives pinned at the anchored edge, OUTSIDE the fade
+ * zone, so text never sits on the translucent part. Still minimal,
+ * monochrome (ONLY the VIP entry keeps gold), still closes itself
+ * smartly (outside pointerdown — the un-masked fade zone is
+ * pointer-events: none, so taps there fall through and close — wheel,
+ * navigation, Escape). Removed at the user's request in v0.30.10 and
+ * kept removed: «لیست من», the quick theme switcher, the account email
+ * (email lives in Settings, sync account). */
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -105,17 +115,6 @@ export default function UserMenu() {
   useEffect(() => setMounted(true), []);
   useEffect(() => setOpen(false), [pathname]);
 
-  /* the PUSH: while the drawer is open the app shell slides aside —
-   * see .nama-shell rules in globals.css (dir-aware translate). */
-  useEffect(() => {
-    const html = document.documentElement;
-    if (open) html.dataset.udrawer = "1";
-    else delete html.dataset.udrawer;
-    return () => {
-      delete html.dataset.udrawer;
-    };
-  }, [open]);
-
   // unread notifications badge (refreshes on route change + every 2 min)
   const loadUnread = useCallback(() => {
     const load = (k: string): Set<string> => {
@@ -202,9 +201,22 @@ export default function UserMenu() {
 
   const countOf = (e: Entry) => (e.key === "fav" ? favorites.size : e.key === "notif" ? unread : null);
 
-  /* the drawer slides in from the SAME physical side it lives on
+  /* the veil slides in from the SAME physical side it lives on
      (inline-end = the avatar corner): LTR → from the right, RTL → from the left */
-  const offX = dir === "rtl" ? -380 : 380;
+  const offX = dir === "rtl" ? -520 : 520;
+  /* the feather: opaque app-ink at the anchored screen edge, dissolving
+     into the page toward the content (dir-aware direction). Everything is
+     PERCENTAGE-LOCKED to the panel width so the content column (72%) sits
+     ENTIRELY inside the opaque hold (74%): at the content's inner edge the
+     veil is still fully solid — solid melts into solid, no seam — and the
+     visible melt-tail is the last ~26%. The MASK additionally feathers
+     the backdrop-blur so the melt zone has no boundary of its own. */
+  const veilBg = dir === "rtl"
+    ? "linear-gradient(to right, var(--color-ink) 0%, var(--color-ink) 74%, transparent 100%)"
+    : "linear-gradient(to left, var(--color-ink) 0%, var(--color-ink) 74%, transparent 100%)";
+  const veilMask = dir === "rtl"
+    ? "linear-gradient(to right, #000 0%, #000 72%, transparent 98%)"
+    : "linear-gradient(to left, #000 0%, #000 72%, transparent 98%)";
 
   return (
     <div className="relative">
@@ -244,15 +256,36 @@ export default function UserMenu() {
                 role="dialog"
                 aria-label={tr("user.openMenu")}
                 dir={dir}
-                initial={reduce ? { opacity: 0, y: "-50%" } : { opacity: 0, x: offX, y: "-50%" }}
-                animate={{ opacity: 1, x: 0, y: "-50%" }}
-                exit={reduce ? { opacity: 0, y: "-50%" } : { opacity: 0, x: offX, y: "-50%" }}
-                transition={{ type: "spring", stiffness: 340, damping: 33, mass: 0.9 }}
-                style={{ insetInlineEnd: 16, willChange: "transform, opacity" }}
-                className="fixed top-1/2 z-[95] w-[min(320px,calc(100vw-40px))] overflow-hidden rounded-[28px] border border-white/10 bg-[#0e0e13]/85 shadow-[0_40px_120px_rgba(0,0,0,0.65)] backdrop-blur-2xl backdrop-saturate-150"
+                initial={reduce ? { opacity: 0 } : { opacity: 0, x: offX }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={reduce ? { opacity: 0 } : { opacity: 0, x: offX }}
+                transition={{ type: "spring", stiffness: 320, damping: 34, mass: 0.9 }}
+                style={{ insetInlineEnd: 0, willChange: "transform, opacity", pointerEvents: "none" }}
+                className="fixed inset-y-0 z-[95] w-[min(500px,100vw)]"
               >
+                {/* the FEATHERED VEIL — opaque app-ink hugging the anchored
+                    screen edge, dissolving into the page toward the content
+                    (dir-aware gradient + mask; the mask feathers the
+                    backdrop-blur too, so the melt has no boundary of its
+                    own). pointer-events pass through it, so tapping the
+                    faded zone closes the drawer like tapping outside. */}
+                <div
+                  aria-hidden="true"
+                  className="absolute inset-0 backdrop-blur-2xl backdrop-saturate-150"
+                  style={{ background: veilBg, WebkitMaskImage: veilMask, maskImage: veilMask }}
+                />
+                {/* content column — pinned to the anchored edge, OUTSIDE the
+                    fade zone, so text never sits on the translucent part */}
+                <div
+                  className="pointer-events-auto absolute inset-y-0 flex w-[72%] flex-col"
+                  style={{
+                    insetInlineEnd: 0,
+                    paddingTop: "env(safe-area-inset-top, 0px)",
+                    paddingBottom: "env(safe-area-inset-bottom, 0px)",
+                  }}
+                >
                 {/* header — identity only, NO email (moved to Settings) */}
-                <div className="flex items-center gap-3 border-b border-white/5 p-4">
+                <div className="flex items-center gap-3 p-5 pb-3">
                   {profile.avatarImage ? (
                     <img src={profile.avatarImage} alt="" className="h-11 w-11 shrink-0 rounded-full object-cover" />
                   ) : (
@@ -273,7 +306,7 @@ export default function UserMenu() {
                 </div>
 
                 {/* body — one monochrome list, VIP keeps its gold */}
-                <div className="no-scrollbar max-h-[52vh] min-h-0 overflow-y-auto overscroll-contain p-2.5" role="menu">
+                <div className="no-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain p-3" role="menu">
                   <ul className="space-y-1">
                     {/* VIP — the ONLY colored element in the drawer */}
                     <li>
@@ -351,7 +384,7 @@ export default function UserMenu() {
                 </div>
 
                 {/* footer — version/update (desktop) or about (web) */}
-                <div className="border-t border-white/5 px-4 py-3 text-[11px] text-zinc-500">
+                <div className="px-5 pb-4 pt-2 text-[11px] text-zinc-500">
                   {electron ? (
                     <div className="flex items-center justify-between gap-2">
                       <span dir="ltr">{tr("app.name")} · v{bridge()?.version ?? "1.0.0"}</span>
@@ -372,6 +405,7 @@ export default function UserMenu() {
                       </Link>
                     </div>
                   )}
+                </div>
                 </div>
               </motion.div>
             )}

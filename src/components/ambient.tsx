@@ -7,16 +7,26 @@
  * arrays; whole doc series sit at 9.2–9.4 and would otherwise own the
  * rating sort) and unknown-genre ("نامشخص") entries filtered out.
  *
+ * v0.30.12 — the oval fade now COVERS THE FRAME: the user said the old
+ * 72%-stop ellipse ate too much of the cover ("فید کوتاهه، بیشتر تصویر
+ * باید خودش رو نشون بده"). The solid core grows 32%→48% of the half-axes
+ * (≈2.2× the fully-visible area) and the feather runs all the way to
+ * 100% — the inscribed ellipse — so the fade lands EXACTLY on the cover
+ * frame (edge midpoints) and everything beyond it (corners) is already
+ * fully transparent. That is his "فید بیرون از کادر" idea rendered the
+ * only way a rectangle can take it: the fade reaches the frame, the
+ * frame itself can never show. Ghosts also enter ONE BY ONE now (each
+ * slot gets a random reveal delay — useGhostDelays — instead of the
+ * whole layer popping in as a block; the home complaint that they were
+ * not random and did not arrive one after another).
+ *
  * OVAL COVERS (16/9 backdrops — the user flipped back to the wide cover
- * form) shaped as soft ELLIPSES: a radial mask whose alpha reaches zero
- * at ~72% of the half-axes, far INSIDE the element box, so no border
- * pixel can ever show (the v0.30.8 linear-intersect lesson kept for the
- * poster variant). The image swap happens only after the next cover is
- * preloaded AND decoded — otherwise the browser keeps painting the old
- * bitmap until the new one arrives and the poster visibly changes
- * mid-fade (the user-reported bug). GPU-only opacity/transform via the
- * vip-ambient keyframes; the swap lands on the invisible 0-opacity
- * boundary of each cycle. */
+ * form) shaped as soft ELLIPSES. The image swap happens only after the
+ * next cover is preloaded AND decoded — otherwise the browser keeps
+ * painting the old bitmap until the new one arrives and the poster
+ * visibly changes mid-fade (the user-reported bug). GPU-only
+ * opacity/transform via the vip-ambient keyframes; the swap lands on
+ * the invisible 0-opacity boundary of each cycle. */
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { posterSrc, backdropSrc } from "@/lib/covers";
@@ -34,11 +44,13 @@ export type GhostSlot = {
 
 export type GhostShape = "oval" | "poster";
 
-/* OVAL: radial ellipse whose fade ends at 72% of the half-axes — zero
- * alpha long before the box edge, so the rectangle can never show.
+/* OVAL: radial ellipse with a BIG solid core (48%) and a long feather that
+ * hits zero exactly AT the inscribed ellipse (= the box edge midpoints):
+ * the fade reaches the cover frame, the rectangle can never show.
  * POSTER: intersect of two linear feathers, each hitting transparent
  * exactly AT the edge (kept for the 2/3 variant). */
-export const OVAL_MASK = "radial-gradient(50% 50% at 50% 50%, #000 32%, rgba(0,0,0,0.85) 52%, transparent 72%)";
+export const OVAL_MASK =
+  "radial-gradient(50% 50% at 50% 50%, #000 48%, rgba(0,0,0,0.82) 66%, rgba(0,0,0,0.45) 82%, rgba(0,0,0,0.12) 93%, transparent 100%)";
 export const GHOST_MASK_X = "linear-gradient(to right, transparent 0%, #000 25%, #000 75%, transparent 100%)";
 export const GHOST_MASK_Y = "linear-gradient(to bottom, transparent 0%, #000 28%, #000 72%, transparent 100%)";
 export const GHOST_MASK = `${GHOST_MASK_X}, ${GHOST_MASK_Y}`;
@@ -84,6 +96,19 @@ export function useFamousPosterPool(limit = 42, kind: "backdrop" | "poster" = "b
   return covers;
 }
 
+/** Random per-slot REVEAL delays (seconds) so ghosts surface ONE BY ONE
+ *  instead of as a synchronized block — the home-page complaint ("انگار
+ *  رندم نیستند و پشت سر نمیان"). Client-only state: the ghosts render
+ *  null until the pool fetch lands (post-mount), so this never touches
+ *  SSR hydration. */
+export function useGhostDelays(count: number, spread = 6): number[] {
+  const [delays, setDelays] = useState<number[]>([]);
+  useEffect(() => {
+    setDelays(Array.from({ length: count }, () => Math.random() * spread));
+  }, [count, spread]);
+  return delays;
+}
+
 /** One floating ghost cover. `advance` = the host's total slot count, so
  *  successive cycles never repeat a cover across simultaneous slots.
  *
@@ -101,6 +126,7 @@ export function AmbientGhost({
   advance,
   maxWidth,
   shape = "oval",
+  revealDelay = 0,
 }: {
   slot: GhostSlot;
   covers: string[];
@@ -108,6 +134,8 @@ export function AmbientGhost({
   advance: number;
   maxWidth: string;
   shape?: GhostShape;
+  /** random staggered-entrance delay (s) — see useGhostDelays */
+  revealDelay?: number;
 }) {
   const [idx, setIdx] = useState(() => startIndex % Math.max(1, covers.length));
   const idxRef = useRef(idx);
@@ -129,32 +157,45 @@ export function AmbientGhost({
 
   const src = covers[idx % covers.length];
   const oval = shape === "oval";
+  /* v0.30.12: a WRAPPER owns the staggered entrance (ghost-in, one random
+   * delay per slot) and the img owns the fade cycle (vip-ambient) — two
+   * opacity animations on one element would fight; separate layers keep
+   * the reveal and the breathing independent. */
   return (
-    <img
-      src={src}
-      alt=""
+    <div
       aria-hidden="true"
-      draggable={false}
-      decoding="async"
-      onAnimationIteration={onIter}
-      className="vip-ambient-img absolute select-none object-cover"
+      className="ghost-in absolute select-none"
       style={{
         left: slot.left,
         top: slot.top,
         width: slot.w,
         maxWidth,
         aspectRatio: oval ? "16 / 9" : "2 / 3",
-        borderRadius: oval ? 0 : 18,
         opacity: 0,
-        filter: `blur(${slot.blur}px) saturate(0.9) brightness(0.85)`,
-        WebkitMaskImage: oval ? OVAL_MASK : GHOST_MASK,
-        maskImage: oval ? OVAL_MASK : GHOST_MASK,
-        ...(oval ? {} : { WebkitMaskComposite: "source-in", maskComposite: "intersect" }),
-        "--vip-o": slot.o,
-        "--vip-tilt": slot.tilt,
-        animation: `vip-ambient ${slot.dur}s linear ${slot.delay}s infinite`,
-        willChange: "opacity, transform",
-      } as React.CSSProperties}
-    />
+        animation: `ghost-in 1600ms ease ${revealDelay}s both`,
+      }}
+    >
+      <img
+        src={src}
+        alt=""
+        aria-hidden="true"
+        draggable={false}
+        decoding="async"
+        onAnimationIteration={onIter}
+        className="vip-ambient-img absolute inset-0 h-full w-full select-none object-cover"
+        style={{
+          borderRadius: oval ? 0 : 18,
+          opacity: 0,
+          filter: `blur(${slot.blur}px) saturate(0.9) brightness(0.85)`,
+          WebkitMaskImage: oval ? OVAL_MASK : GHOST_MASK,
+          maskImage: oval ? OVAL_MASK : GHOST_MASK,
+          ...(oval ? {} : { WebkitMaskComposite: "source-in", maskComposite: "intersect" }),
+          "--vip-o": slot.o,
+          "--vip-tilt": slot.tilt,
+          animation: `vip-ambient ${slot.dur}s linear ${slot.delay}s infinite`,
+          willChange: "opacity, transform",
+        } as React.CSSProperties}
+      />
+    </div>
   );
 }
