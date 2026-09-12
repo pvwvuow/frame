@@ -26,26 +26,37 @@ export type LibrarySnapshot = {
   watchlist: { titleId: number; status: ListStatus }[];
   favorites: number[];
   ratings: { titleId: number; score: number }[];
-  collections: { name: string; items: number[] }[];
+  /** v0.29.0 (VERIFY-DATA-16) — `cid` = the cloud row's stable uuid when the
+   *  collection has synced at least once; pushCollectionsUp matches by it. */
+  collections: { name: string; cid?: string; items: number[] }[];
   profile: { displayName: string; avatar: number; avatarImage: string | null; reduceMotion: boolean; kidsMode: boolean; hasPin: boolean };
   /* v0.12.0 — watch history + full profile ride along so fullSync can push
      them to Supabase (history + avatar + settings follow the account) */
   progress: { titleId: number; episodeId: number | null; position: number; duration: number; updatedAt: string }[];
+  /** v0.29.0 (VERIFY-DATA-7b) — per-episode positions (desktop) ride along */
+  episodeProgress?: { titleId: number; episodeId: number | null; position: number; duration: number; updatedAt: string }[];
   profileFull: Record<string, unknown>;
 };
 
 export async function getLibrarySnapshot(userKey: string): Promise<LibrarySnapshot> {
-  const [wl, fav, rt, cols, profile, progress] = await Promise.all([
+  const [wl, fav, rt, cols, profile, progress, epProgress] = await Promise.all([
     db.watchlist.findMany({ where: { userKey }, select: { titleId: true, status: true } }),
     db.favorite.findMany({ where: { userKey }, select: { titleId: true } }),
     db.userRating.findMany({ where: { userKey }, select: { titleId: true, score: true } }),
     db.userCollection.findMany({
       where: { userKey },
       orderBy: { createdAt: "asc" },
-      select: { name: true, items: { orderBy: { addedAt: "asc" }, select: { titleId: true } } },
+      select: { name: true, cloudId: true, items: { orderBy: { addedAt: "asc" }, select: { titleId: true } } },
     }),
     getProfile(userKey),
     db.watchProgress.findMany({
+      where: { userKey },
+      orderBy: { updatedAt: "desc" },
+      take: 500,
+      select: { titleId: true, episodeId: true, position: true, duration: true, updatedAt: true },
+    }),
+    // v0.29.0 (VERIFY-DATA-7b) — per-episode rows leave the device too
+    db.watchEpisodeProgress.findMany({
       where: { userKey },
       orderBy: { updatedAt: "desc" },
       take: 500,
@@ -57,9 +68,12 @@ export async function getLibrarySnapshot(userKey: string): Promise<LibrarySnapsh
     watchlist: wl.map((w) => ({ titleId: w.titleId, status: w.status as ListStatus })),
     favorites: fav.map((f) => f.titleId),
     ratings: rt,
-    collections: cols.map((c) => ({ name: c.name, items: c.items.map((i) => i.titleId) })),
+    // v0.29.0 (VERIFY-DATA-16) — cloudId rides along so pushCollectionsUp can
+    // match the cloud row by its STABLE uuid instead of the editable name
+    collections: cols.map((c) => ({ name: c.name, cid: c.cloudId ?? undefined, items: c.items.map((i) => i.titleId) })),
     profile: { displayName: profile.displayName, avatar: profile.avatar, avatarImage: profile.avatarImage ?? null, reduceMotion: profile.reduceMotion, kidsMode: profile.kidsMode, hasPin: !!profile.parentalPin },
     progress: progress.map((p) => ({ titleId: p.titleId, episodeId: p.episodeId, position: p.position, duration: p.duration, updatedAt: new Date(p.updatedAt).toISOString() })),
+    episodeProgress: epProgress.map((p) => ({ titleId: p.titleId, episodeId: p.episodeId, position: p.position, duration: p.duration, updatedAt: new Date(p.updatedAt).toISOString() })),
     profileFull,
   };
 }

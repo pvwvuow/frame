@@ -198,7 +198,7 @@ export default function MyListAside({
                   type="button"
                   onClick={() => void remove(c)}
                   aria-label={`حذف ${c.name}`}
-                  className="absolute -top-1.5 -start-1.5 hidden h-6 w-6 place-items-center rounded-full bg-zinc-900 text-zinc-400 ring-1 ring-white/10 transition hover:bg-rose-600 hover:text-white group-hover:grid"
+                  className="absolute -top-1.5 -start-1.5 grid h-8 w-8 place-items-center rounded-full bg-zinc-900 text-zinc-400 opacity-0 ring-1 ring-white/10 transition hover:bg-rose-600 hover:text-white group-hover:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100"
                 >
                   <TrashIcon width={12} height={12} />
                 </button>

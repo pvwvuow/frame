@@ -22,6 +22,13 @@ import { createCollection, setCollectionItem } from "./collections";
 import type { LiteTitle } from "./mobile/db";
 
 const TABLE = "shared_collections";
+/** v0.29.0 (NEW-DATA-14) — the public wall is read through this projection
+ *  view: it exposes the display name/avatar but NOT owner_id. The old public
+ *  SELECT on the base table let any anonymous visitor harvest every
+ *  publisher's auth UUID. The base table remains the fallback until the
+ *  hardened SQL has been applied on the project. */
+const WALL_VIEW = "shared_wall_public";
+const WALL_COLUMNS = "id,owner_name,owner_avatar,name,description,items,item_count,created_at,updated_at";
 const MAX_ITEMS = 60;
 
 export type SharedCollectionItem = {
@@ -40,8 +47,12 @@ export type SharedCollectionItem = {
 
 export type SharedCollection = {
   id: string;
-  ownerId: string;
+  /** v0.29.0 — no longer exposed publicly (the wall view omits it). Kept for
+   *  typing compatibility; only the OWNER's own rows ever carry it. */
+  ownerId?: string;
   ownerName: string;
+  /** v0.29.0 — snapshot on the row; the client never joins cinema_profiles */
+  ownerAvatar?: string;
   name: string;
   description: string;
   items: SharedCollectionItem[];
@@ -52,8 +63,9 @@ export type SharedCollection = {
 
 type Row = {
   id: string;
-  owner_id: string;
-  owner_name: string | null;
+  owner_id?: string;
+  owner_name?: string | null;
+  owner_avatar?: string | null;
   name: string;
   description: string | null;
   items: SharedCollectionItem[] | null;
@@ -66,6 +78,7 @@ const mapRow = (r: Row): SharedCollection => ({
   id: r.id,
   ownerId: r.owner_id,
   ownerName: (r.owner_name || "").trim() || "کاربر فریم",
+  ownerAvatar: (r.owner_avatar || "").trim() || undefined,
   name: r.name,
   description: r.description || "",
   items: Array.isArray(r.items) ? r.items : [],
@@ -79,13 +92,22 @@ export async function listSharedCollections(limit = 60): Promise<SharedCollectio
   try {
     const sb = getSupabase();
     if (!sb) return [];
-    const { data, error } = await sb
-      .from(TABLE)
-      .select("*")
-      .order("updated_at", { ascending: false })
-      .limit(limit);
-    if (error || !data) return [];
-    return (data as Row[]).map(mapRow);
+    // v0.29.0 (NEW-DATA-14) — prefer the hardened projection view; the base
+    // table only serves until the new SQL file has been run on the project.
+    let rows: Row[] | null = null;
+    const fromView = await sb.from(WALL_VIEW).select(WALL_COLUMNS).order("updated_at", { ascending: false }).limit(limit);
+    if (!fromView.error && fromView.data) {
+      rows = fromView.data as unknown as Row[];
+    } else {
+      const { data, error } = await sb
+        .from(TABLE)
+        .select(WALL_COLUMNS)
+        .order("updated_at", { ascending: false })
+        .limit(limit);
+      if (error || !data) return [];
+      rows = data as unknown as Row[];
+    }
+    return rows.map(mapRow);
   } catch {
     return [];
   }
@@ -145,10 +167,21 @@ export async function shareCollectionToWall(
       (email.includes("@") ? email.split("@")[0] : "") ||
       "کاربر فریم";
 
+    // v0.29.0 (NEW-DATA-14) — snapshot the display avatar onto the row so the
+    // wall never needs to read OTHER users' cinema_profiles rows.
+    let ownerAvatar = "";
+    try {
+      const { data: prof } = await sb.from("cinema_profiles").select("avatar").eq("uid", uid).maybeSingle();
+      ownerAvatar = String((prof as { avatar?: unknown } | null)?.avatar ?? "").slice(0, 400);
+    } catch {
+      /* best-effort */
+    }
+
     const { error } = await sb.from(TABLE).upsert(
       {
         owner_id: uid,
         owner_name: ownerName.slice(0, 40),
+        owner_avatar: ownerAvatar,
         name: String(uc.name ?? "").trim().slice(0, 60),
         description: "",
         items: payload,

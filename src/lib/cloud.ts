@@ -39,13 +39,17 @@ import {
 } from "./auth-offline";
 import { attachIdentity } from "./identity";
 import {
+  bumpSyncOpAttempts,
   clearAllTombstones,
   clearTombstone,
   countSyncOps,
   dropOpsForOtherUids,
   enqueueSyncOp,
   getSyncOps,
+  getTombstones,
+  OP_RETRY_BACKOFF_MS,
   peekTombstone,
+  quarantinePoisonOps,
   readEvCursor,
   recordTombstone,
   removeSyncOps,
@@ -438,6 +442,18 @@ export async function pushProfile(profileData?: Record<string, unknown>): Promis
     delete data.__tsIdentity;
     delete data.__tsPlayback;
     data.playerPrefs = collectPlayerPrefs();
+    // v0.29.0 (VERIFY-DATA-6) — `listDetails` (watchlist note/pin/plannedDate)
+    // is a CLOUD-MANAGED key written by collectAndPushListDetails(). This
+    // upsert used to REPLACE the whole row, so whenever pushProfile landed
+    // after it (they ran concurrently in Promise.all!) every list note was
+    // wiped. Re-attach the cloud's current listDetails before writing.
+    try {
+      const { data: cur } = await sb.from("profiles").select("data").eq("user_id", uid).maybeSingle();
+      const cloudListDetails = ((cur as { data?: Record<string, unknown> } | null)?.data)?.listDetails;
+      if (cloudListDetails && typeof cloudListDetails === "object") data.listDetails = cloudListDetails;
+    } catch {
+      /* best-effort — the row may not exist yet */
+    }
     // v0.13.0 FIX — when the touch mark was missing we used to write
     // 1970-01-01, so every OTHER device considered the profile forever
     // out-of-date (the two 1970 rows in Supabase). Default to now instead.
@@ -721,14 +737,46 @@ export async function pushProgressDelete(titleId?: number | number[]): Promise<v
   }
 }
 
-/** Throttled single-title push (called from the player's save()). */
+/** Throttled single-title push (called from the player's save()).
+ *  v0.29.0 (NEW-DATA-4) — the drop used to be SILENT: the row inside the
+ *  20s window never reached the cloud, and nothing flushed it on pause /
+ *  app-hide, so the last minutes of watching were lost on other devices.
+ *  Now the latest row is remembered per title and `flushProgressOne()`
+ *  bypasses the throttle — the players call it on pause / pagehide. */
 const lastProgressPush = new Map<number, number>();
+const pendingProgress = new Map<number, Omit<ProgressPush, "updatedAt">>();
 export async function pushProgressOne(row: Omit<ProgressPush, "updatedAt">): Promise<void> {
+  pendingProgress.set(row.titleId, row);
   const now = Date.now();
   const last = lastProgressPush.get(row.titleId) ?? 0;
   if (now - last < 20_000) return;
-  lastProgressPush.set(row.titleId, now);
-  await pushProgressRows([{ ...row, updatedAt: new Date().toISOString() }]);
+  await flushProgressOne(row.titleId);
+}
+
+/** NEW-DATA-4 — force-push the pending row of one title (or all titles when
+ *  omitted). Called on pause / visibility-hidden / pagehide. */
+export async function flushProgressOne(titleId?: number): Promise<void> {
+  const rows: Omit<ProgressPush, "updatedAt">[] = [];
+  if (titleId != null) {
+    const r = pendingProgress.get(titleId);
+    if (r) {
+      rows.push(r);
+      pendingProgress.delete(titleId);
+    }
+  } else {
+    for (const [id, r] of pendingProgress) {
+      rows.push(r);
+      pendingProgress.delete(id);
+    }
+  }
+  if (!rows.length) return;
+  const now = Date.now();
+  for (const r of rows) lastProgressPush.set(r.titleId, now);
+  try {
+    await pushProgressRows(rows.map((r) => ({ ...r, updatedAt: new Date().toISOString() })));
+  } catch {
+    /* pushProgressRows already queues on failure */
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -883,7 +931,7 @@ export type CloudSnapshot = {
   favorites: CloudItemRef[];
   watchlist: (CloudItemRef & { status: string; updatedAt?: string })[];
   ratings: (CloudItemRef & { score: number; updatedAt?: string })[];
-  collections: { name: string; items: CloudItemRef[] }[];
+  collections: { name: string; cid?: string; items: CloudItemRef[] }[];
   progress: { slug: string; season: number; episode: number; position: number; duration: number; updatedAt: string }[];
 };
 
@@ -917,6 +965,10 @@ export async function pullCloudSnapshot(): Promise<CloudSnapshot | null> {
     ratings: rtRows.filter((r) => r.slug).map((r) => ({ slug: r.slug, title: r.title ?? "", score: Number(r.score), updatedAt: r.updated_at ? String(r.updated_at) : undefined })),
     collections: colRows.map((c) => ({
       name: String(c.name),
+      // v0.29.0 (VERIFY-DATA-16) — the cloud row's STABLE uuid rides along so
+      // the merge can match collections by id (names are user-editable; two
+      // devices renaming concurrently used to fork duplicates forever).
+      cid: String(c.id),
       items: (c.user_collection_items ?? []).filter((i) => i.slug).map((i) => ({ slug: i.slug, title: i.title ?? "" })),
     })),
     progress: progRows
@@ -941,10 +993,17 @@ export async function syncCloudToLocal(): Promise<MergeResult> {
     const snap = await pullCloudSnapshot();
     if (!snap) return { ok: false, reason: "no-session" };
     const deletions = await pullDeletionEvents();
+    // v0.29.0 (VERIFY-DATA-1/1b) — the desktop merge route runs SERVER-side
+    // (Electron main process) and can never see this renderer's localStorage
+    // tombstones. Ship them in the body so the merge can (a) skip re-adding
+    // rows deleted offline on THIS device and (b) delete local rows older
+    // than the tombstone — the resurrection class is finally dead on
+    // desktop too (mobile's mergeCloudSnapshot already consulted them).
+    const tombstones = getTombstones().slice(0, 2_000);
     const r = await fetch("/api/cloud/merge", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...snap, deletions }),
+      body: JSON.stringify({ ...snap, deletions, tombstones }),
     });
     if (!r.ok) return { ok: false, reason: `merge-${r.status}` };
     const d = (await r.json()) as { ok?: boolean; favoritesAdded: number; listAdded: number; listUpdated?: number; ratingsAdded: number; progressApplied?: number; deletionsApplied?: number; skipped?: number };
@@ -1076,8 +1135,10 @@ async function runFullSync(): Promise<MergeResult> {
           watchlist: { titleId: number; status: string }[];
           favorites: number[];
           ratings: { titleId: number; score: number }[];
-          collections?: { name: string; items: number[] }[];
+          collections?: { name: string; cid?: string; items: number[] }[];
           progress?: ProgressPush[];
+          /** v0.29.0 (VERIFY-DATA-7b) — per-episode rows ride along (desktop) */
+          episodeProgress?: ProgressPush[];
         };
         const allIds = [
           ...lib.favorites,
@@ -1090,6 +1151,14 @@ async function runFullSync(): Promise<MergeResult> {
           const k = keys.get(Number(id));
           return k ? { slug: k.slug, title: k.title } : null;
         };
+        // v0.29.0 (VERIFY-DATA-6) — collectAndPushListDetails() and
+        // pushProfile() BOTH read-modify-write the SAME profiles.data row.
+        // They used to run inside one Promise.all, so whichever landed later
+        // wiped the other's write: list notes vanished, or name/avatar/
+        // quality rolled back for no reason. Everything that touches OTHER
+        // tables stays parallel; the two profile-row writers are now strictly
+        // ordered (listDetails first, full profile second — pushProfile also
+        // re-attaches the cloud's listDetails as belt-and-braces).
         await Promise.all([
           ...lib.favorites
             .map(Number)
@@ -1105,11 +1174,15 @@ async function runFullSync(): Promise<MergeResult> {
             .filter((x): x is { score: number; r: CloudItemRef } => !!x.r)
             .map(({ score, r }) => pushRatingRef(r, score)),
           pushCollectionsUp(lib.collections ?? []),
-          pushProgressRows(lib.progress ?? []),
-          collectAndPushListDetails(),
-          pushProfile((lib as { profileFull?: Record<string, unknown> }).profileFull),
+          // v0.29.0 (VERIFY-DATA-7b) — per-episode positions finally leave the
+          // device: desktop's WatchEpisodeProgress rows are pushed as their own
+          // cloud rows (the cloud PK is (user,slug,season,episode)); the
+          // title-level rows stay as they were. Mobile already pushed these.
+          pushProgressRows([...(lib.progress ?? []), ...(lib.episodeProgress ?? [])]),
           pushCinemaProfile((lib as { profileFull?: Record<string, unknown> }).profileFull),
         ]);
+        await collectAndPushListDetails();
+        await pushProfile((lib as { profileFull?: Record<string, unknown> }).profileFull);
       }
     } catch {
       /* offline push is fine — pulls still worked */
@@ -1122,6 +1195,13 @@ async function runFullSync(): Promise<MergeResult> {
       } catch {
         /* retried by the listeners */
       }
+    }
+    // v0.29.0 (NEW-DATA-13) — offline contact messages leave the outbox once
+    // the account + cloud are reachable
+    try {
+      await flushContactOutbox();
+    } catch {
+      /* best-effort */
     }
     try {
       localStorage.setItem("frame.lastSync", new Date().toISOString());
@@ -1184,9 +1264,13 @@ export async function pushCollectionRename(oldName: string, newName: string): Pr
 /** Push the LOCAL collections up to the cloud (matched by name, idempotent).
  *  v0.10.32 — collections sync like favorites: local-first, cloud mirror.
  *  v0.13.0 — items accept either numeric ids (resolved to slugs here) or
- *  ready {slug,title} refs; the cloud stores slugs only. */
+ *  ready {slug,title} refs; the cloud stores slugs only.
+ *  v0.29.0 (VERIFY-DATA-16) — when the snapshot carries the cloud row's
+ *  stable uuid (`cid`, stamped by the merge on the way in), the upsert
+ *  matches by ID first and only falls back to the name. Two devices renaming
+ *  the same collection no longer fork two cloud rows. */
 export async function pushCollectionsUp(
-  collections: { name: string; items: (number | CloudItemRef)[] }[]
+  collections: { name: string; cid?: string; items: (number | CloudItemRef)[] }[]
 ): Promise<void> {
   try {
     const uid = await currentUserId();
@@ -1195,13 +1279,21 @@ export async function pushCollectionsUp(
     for (const col of collections) {
       const name = String(col.name ?? "").trim().slice(0, 60);
       if (!name) continue;
-      const { data: existing } = await sb
-        .from("user_collections")
-        .select("id")
-        .eq("user_id", uid)
-        .eq("name", name)
-        .maybeSingle();
-      let colId = (existing as { id: string } | null)?.id as string | undefined;
+      const cid = typeof col.cid === "string" && /^[0-9a-f-]{36}$/i.test(col.cid) ? col.cid : "";
+      let colId: string | undefined;
+      if (cid) {
+        const byId = await sb.from("user_collections").select("id").eq("user_id", uid).eq("id", cid).maybeSingle();
+        colId = ((byId.data as { id: string } | null) ?? undefined)?.id;
+      }
+      if (!colId) {
+        const { data: existing } = await sb
+          .from("user_collections")
+          .select("id")
+          .eq("user_id", uid)
+          .eq("name", name)
+          .maybeSingle();
+        colId = (existing as { id: string } | null)?.id as string | undefined;
+      }
       if (!colId) {
         const ins = await sb.from("user_collections").insert({ user_id: uid, name }).select("id").single();
         colId = (ins.data as { id: string } | null)?.id;
@@ -1287,6 +1379,12 @@ export async function flushSyncOps(): Promise<{ flushed: number; left: number }>
   const uid = await currentUserId();
   if (!sb || !uid) return { flushed: 0, left: countSyncOps() };
   dropOpsForOtherUids(uid); // never replay account A's ops under account B
+  // v0.29.0 (NEW-DATA-2) — a permanently-failing op used to BLOCK the whole
+  // queue forever (break on first failure + no attempts field): one bad rename
+  // and no change ever synced again, with zero UI indication. Now every op
+  // counts its attempts, the queue keeps flowing past a failing op, and a
+  // poison op is quarantined after MAX_OP_ATTEMPTS separate flush rounds.
+  quarantinePoisonOps();
   const done: string[] = [];
   for (const op of getSyncOps()) {
     let ok = false;
@@ -1295,8 +1393,13 @@ export async function flushSyncOps(): Promise<{ flushed: number; left: number }>
     } catch {
       ok = false;
     }
-    if (!ok) break; // keep queue order; retry on the next trigger
-    done.push(op.id);
+    if (ok) {
+      done.push(op.id);
+      continue;
+    }
+    bumpSyncOpAttempts(op.id);
+    // keep going — a failing op no longer starves the ops behind it
+    await new Promise((r) => setTimeout(r, OP_RETRY_BACKOFF_MS));
   }
   removeSyncOps(done);
   return { flushed: done.length, left: countSyncOps() };
@@ -1506,4 +1609,205 @@ export async function applyCloudListDetails(): Promise<void> {
   } catch {
     /* best-effort */
   }
+}
+
+/* ------------------------------------------------------------------ */
+/* v0.29.0 (NEW-DATA-13) — contact messages are REALLY delivered        */
+/* ------------------------------------------------------------------ */
+
+/** The contact form used to fake success: the message landed in a
+ *  localStorage outbox that NOTHING ever read or sent. Real delivery rides
+ *  the existing `user_events` cloud table (type "contact_message") — support
+ *  reads them from the same dashboard as every other event, zero Supabase
+ *  DDL. Signed-out / offline messages queue in the SAME outbox key as before
+ *  and are flushed automatically on the next sync/login. */
+
+const CONTACT_OUTBOX_KEY = "nama.contact.outbox";
+const CONTACT_FLUSHED_KEY = "nama.contact.flushedAt";
+
+function readContactOutbox(): { id: string; name: string; email: string; topic: string; message: string; at: string }[] {
+  try {
+    const raw = JSON.parse(localStorage.getItem(CONTACT_OUTBOX_KEY) ?? "[]") as {
+      id?: string; name?: string; email?: string; topic?: string; message?: string; at?: string;
+    }[];
+    if (!Array.isArray(raw)) return [];
+    return raw
+      .filter((m) => m && typeof m.message === "string" && m.message.trim())
+      .map((m) => ({
+        id: String(m.id ?? `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`),
+        name: String(m.name ?? ""),
+        email: String(m.email ?? ""),
+        topic: String(m.topic ?? ""),
+        message: String(m.message ?? "").slice(0, 2000),
+        at: String(m.at ?? new Date().toISOString()),
+      }));
+  } catch {
+    return [];
+  }
+}
+
+function writeContactOutbox(rows: { id: string; name: string; email: string; topic: string; message: string; at: string }[]): void {
+  try {
+    localStorage.setItem(CONTACT_OUTBOX_KEY, JSON.stringify(rows.slice(-50)));
+  } catch {
+    /* private mode */
+  }
+}
+
+export type ContactOutcome = "sent" | "queued";
+
+/** Send one contact message. Returns "sent" when it reached the cloud,
+ *  "queued" when it is stored offline (it WILL be flushed on the next
+ *  successful sync — see flushContactOutbox). */
+export async function sendContactMessage(msg: { name: string; email: string; topic: string; message: string }): Promise<ContactOutcome> {
+  const clean = {
+    id: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`,
+    name: String(msg.name ?? "").slice(0, 80),
+    email: String(msg.email ?? "").slice(0, 120),
+    topic: String(msg.topic ?? "").slice(0, 40),
+    message: String(msg.message ?? "").slice(0, 2000),
+    at: new Date().toISOString(),
+  };
+  const uid = await currentUserId();
+  const sb = getSupabase();
+  if (uid && sb) {
+    const { error } = await sb.from("user_events").insert({
+      user_id: uid,
+      type: "contact_message",
+      payload: clean as unknown as Record<string, unknown>,
+    });
+    if (!error) {
+      try { localStorage.setItem(CONTACT_FLUSHED_KEY, new Date().toISOString()); } catch { /* ignore */ }
+      return "sent";
+    }
+  }
+  const box = readContactOutbox();
+  box.push(clean);
+  writeContactOutbox(box);
+  return "queued";
+}
+
+/** Flush offline contact messages after a successful sync (uid available +
+ *  cloud reachable). Called from runFullSync. */
+export async function flushContactOutbox(): Promise<void> {
+  try {
+    const box = readContactOutbox();
+    if (!box.length) return;
+    const uid = await currentUserId();
+    const sb = getSupabase();
+    if (!uid || !sb) return;
+    const left: typeof box = [];
+    for (const m of box) {
+      const { error } = await sb.from("user_events").insert({
+        user_id: uid,
+        type: "contact_message",
+        payload: m as unknown as Record<string, unknown>,
+      });
+      if (error) left.push(m);
+    }
+    writeContactOutbox(left);
+    if (!left.length) {
+      try { localStorage.setItem(CONTACT_FLUSHED_KEY, new Date().toISOString()); } catch { /* ignore */ }
+    }
+  } catch {
+    /* best-effort */
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* v0.29.0 (NEW-DATA-7) — backup IMPORT (the export existed alone)      */
+/* ------------------------------------------------------------------ */
+
+export type BackupImportCounts = { favorites: number; list: number; ratings: number; collections: number; progress: number };
+
+/** Import a backup JSON (the same shape SettingsForm exports). Numeric ids
+ *  are resolved to STABLE slugs locally and the rows are applied through the
+ *  existing /api/cloud/merge machinery (union/LWW + caps) — an import can
+ *  never overwrite newer data, only add/refresh. */
+export async function importBackupSnapshot(snap: {
+  favorites?: unknown;
+  watchlist?: unknown;
+  ratings?: unknown;
+  collections?: unknown;
+  progress?: unknown;
+  episodeProgress?: unknown;
+}): Promise<BackupImportCounts> {
+  const favs = Array.isArray(snap.favorites) ? snap.favorites.map(Number).filter((n) => Number.isFinite(n) && n > 0) : [];
+  const wl = Array.isArray(snap.watchlist) ? (snap.watchlist as { titleId?: unknown; status?: unknown }[]) : [];
+  const rt = Array.isArray(snap.ratings) ? (snap.ratings as { titleId?: unknown; score?: unknown }[]) : [];
+  const cols = Array.isArray(snap.collections) ? (snap.collections as { name?: unknown; items?: unknown }[]) : [];
+  const prog = Array.isArray(snap.progress) ? (snap.progress as { titleId?: unknown; position?: unknown; duration?: unknown; updatedAt?: unknown }[]) : [];
+  const epProg = Array.isArray(snap.episodeProgress) ? (snap.episodeProgress as { titleId?: unknown; position?: unknown; duration?: unknown; updatedAt?: unknown }[]) : [];
+
+  const ids = [
+    ...favs,
+    ...wl.map((w) => Number(w?.titleId)),
+    ...rt.map((r) => Number(r?.titleId)),
+    ...cols.flatMap((c) => (Array.isArray(c?.items) ? c.items.map(Number) : [])),
+    ...prog.map((p) => Number(p?.titleId)),
+    ...epProg.map((p) => Number(p?.titleId)),
+  ].filter((n) => Number.isFinite(n) && n > 0);
+  const keys = await cloudKeysFor([...new Set(ids)]);
+  const ref = (id: unknown): { slug: string; title: string } | null => {
+    const k = keys.get(Math.round(Number(id)));
+    return k ? { slug: k.slug, title: k.title } : null;
+  };
+  const progRows = [...prog, ...epProg]
+    .map((p) => {
+      const r = ref(p?.titleId);
+      if (!r) return null;
+      const position = Number(p?.position ?? 0);
+      if (!Number.isFinite(position)) return null;
+      return {
+        slug: r.slug,
+        title: r.title,
+        season: 0,
+        episode: 0,
+        position,
+        duration: Number(p?.duration ?? 0) || 0,
+        updated_at: typeof p?.updatedAt === "string" ? p.updatedAt : new Date().toISOString(),
+      };
+    })
+    .filter((r): r is NonNullable<typeof r> => !!r)
+    .slice(0, 500);
+
+  const body = {
+    favorites: favs.map(ref).filter((r): r is { slug: string; title: string } => !!r),
+    watchlist: wl
+      .map((w) => {
+        const r = ref(w?.titleId);
+        const status = String(w?.status ?? "");
+        return r && status ? { ...r, status } : null;
+      })
+      .filter((r): r is { slug: string; title: string; status: string } => !!r),
+    ratings: rt
+      .map((row) => {
+        const r = ref(row?.titleId);
+        const score = Number(row?.score ?? 0);
+        return r && score >= 1 && score <= 10 ? { ...r, score } : null;
+      })
+      .filter((r): r is { slug: string; title: string; score: number } => !!r),
+    collections: cols
+      .map((c) => ({
+        name: String(c?.name ?? "").trim().slice(0, 60),
+        items: (Array.isArray(c?.items) ? c.items : []).map(ref).filter((r): r is { slug: string; title: string } => !!r),
+      }))
+      .filter((c) => c.name),
+    progress: progRows,
+  };
+
+  const r = await fetch("/api/cloud/merge", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) throw new Error(`merge-${r.status}`);
+  const d = (await r.json()) as { favoritesAdded?: number; listAdded?: number; ratingsAdded?: number; collectionsAdded?: number; progressApplied?: number };
+  return {
+    favorites: d.favoritesAdded ?? 0,
+    list: d.listAdded ?? 0,
+    ratings: d.ratingsAdded ?? 0,
+    collections: d.collectionsAdded ?? 0,
+    progress: d.progressApplied ?? 0,
+  };
 }

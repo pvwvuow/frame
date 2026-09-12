@@ -3,20 +3,33 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import { CheckCircleIcon } from "../Icons";
+import { sendContactMessage } from "@/lib/cloud";
 
 export default function ContactForm() {
   const [sent, setSent] = useState(false);
+  const [busy, setBusy] = useState(false);
   const [f, setF] = useState({ name: "", email: "", topic: "پیشنهاد", message: "" });
   const valid = f.name.trim() && /\S+@\S+\.\S+/.test(f.email) && f.message.trim().length >= 10;
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!valid) return toast.error("لطفاً همه فیلدها را درست پر کنید");
-    const box = JSON.parse(localStorage.getItem("nama.contact.outbox") || "[]");
-    box.push({ ...f, at: new Date().toISOString() });
-    localStorage.setItem("nama.contact.outbox", JSON.stringify(box));
-    setSent(true);
-    toast.success("پیام شما ثبت شد");
+    setBusy(true);
+    try {
+      // v0.29.0 (NEW-DATA-13) — the form used to PRETEND to send: the message
+      // landed in a localStorage outbox nothing ever read. Now it really goes
+      // to the cloud (user_events → support), and when offline / signed-out
+      // it queues and is flushed automatically on the next sync — the UI
+      // says WHICH of the two happened.
+      const outcome = await sendContactMessage(f);
+      setSent(true);
+      if (outcome === "sent") toast.success("پیام شما ارسال شد");
+      else toast.message("پیام ذخیره شد و به‌محض اتصال به سرور ارسال می‌شود");
+    } catch {
+      toast.error("ارسال ممکن نشد — دوباره تلاش کنید");
+    } finally {
+      setBusy(false);
+    }
   };
 
   if (sent)
@@ -50,7 +63,7 @@ export default function ContactForm() {
       </label>
       <div className="flex items-center justify-between">
         <span className="text-[11px] text-zinc-500">با ارسال پیام، قوانین استفاده را می‌پذیرید.</span>
-        <button type="submit" disabled={!valid} className="h-11 rounded-full bg-brand px-7 text-sm font-bold text-white hover:bg-brand-600 disabled:opacity-40">ارسال پیام</button>
+        <button type="submit" disabled={!valid || busy} className="h-11 rounded-full bg-brand px-7 text-sm font-bold text-white hover:bg-brand-600 disabled:opacity-40">{busy ? "در حال ارسال…" : "ارسال پیام"}</button>
       </div>
     </form>
   );

@@ -36,6 +36,9 @@ type Ctx = {
   rate: (id: number, score: number) => Promise<void>;
   refresh: () => Promise<void>;
   setProfile: (p: Partial<Profile>) => void;
+  /** v0.29.0 (NEW-UI-1) — the last /api/library load failed: badges/lists on
+   *  screen may be STALE, not genuinely empty. UI surfaces show a banner. */
+  libraryError?: boolean;
 };
 
 const LibraryCtx = createContext<Ctx | null>(null);
@@ -65,25 +68,39 @@ export default function LibraryProvider({ children }: { children: ReactNode }) {
   const [favorites, setFavorites] = useState<Set<number>>(new Set());
   const [ratings, setRatings] = useState<Map<number, number>>(new Map());
   const [profile, setProfileState] = useState<Profile>({ displayName: "کاربر فریم", avatar: 0, avatarImage: null, reduceMotion: false });
+  // v0.29.0 (NEW-UI-1) — a failed /api/library used to be swallowed and the
+  // EMPTY local state was presented as reality («لیست خالی» after a server
+  // hiccup). The failure is now tracked + retried once, and the UI can show it.
+  const [libraryError, setLibraryError] = useState(false);
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const refresh = useCallback(async () => {
-    try {
-      const d = await call<{
-        watchlist: { titleId: number; status: ListStatus }[];
-        favorites: number[];
-        ratings: { titleId: number; score: number }[];
-        profile: Profile;
-      }>("/api/library", "GET");
-      setList(new Map(d.watchlist.map((w) => [w.titleId, w.status])));
-      setFavorites(new Set(d.favorites));
-      setRatings(new Map(d.ratings.map((r) => [r.titleId, r.score])));
-      setProfileState(d.profile);
-    } catch {
-      /* offline – keep optimistic state */
-    } finally {
-      setReady(true);
-    }
+  const refresh = useCallback(async (): Promise<void> => {
+    const attempt = async (retry: boolean): Promise<void> => {
+      try {
+        const d = await call<{
+          watchlist: { titleId: number; status: ListStatus }[];
+          favorites: number[];
+          ratings: { titleId: number; score: number }[];
+          profile: Profile;
+        }>("/api/library", "GET");
+        setList(new Map(d.watchlist.map((w) => [w.titleId, w.status])));
+        setFavorites(new Set(d.favorites));
+        setRatings(new Map(d.ratings.map((r) => [r.titleId, r.score])));
+        setProfileState(d.profile);
+        setLibraryError(false);
+      } catch {
+        setLibraryError(true);
+        // one silent retry — transient hiccups (server restarting) should not
+        // flip the whole UI into «error» mode
+        if (retry) {
+          await new Promise((r) => setTimeout(r, 2500));
+          await attempt(false);
+        }
+      } finally {
+        setReady(true);
+      }
+    };
+    await attempt(true);
   }, []);
 
   useEffect(() => {
@@ -263,8 +280,9 @@ export default function LibraryProvider({ children }: { children: ReactNode }) {
       rate,
       refresh,
       setProfile,
+      libraryError,
     }),
-    [ready, profile, list, favorites, ratings, toggleList, toggleFavorite, setStatus, rate, refresh, setProfile]
+    [ready, profile, list, favorites, ratings, toggleList, toggleFavorite, setStatus, rate, refresh, setProfile, libraryError]
   );
 
   return <LibraryCtx.Provider value={value}>{children}</LibraryCtx.Provider>;

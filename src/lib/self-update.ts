@@ -297,7 +297,16 @@ function wireEvents() {
  *  the per-id `namaDownload` listener BEFORE the request (no event can slip
  *  past), resolves on its done event, rejects on error/cancel or the timeout,
  *  then verifies the file really landed on disk (exists + size > 0).
- *  Progress fan-out stays with the existing wireEvents listener (same id). */
+ *  Progress fan-out stays with the existing wireEvents listener (same id).
+ *
+ *  v0.29.0 (NEW-MOB-1) — CRITICAL ordering fix: the wait-promise was awaited
+ *  BEFORE `b.downloadFile(...)` was ever called, i.e. we waited for a `done`
+ *  event of a download that had not started yet. Every OTA / cover-pack
+ *  therefore sat at 0% for 15 minutes and then failed with
+ *  «download-timeout» (the in-app update path was effectively DEAD). The
+ *  listener is registered first (synchronously), then the download STARTS,
+ *  and only then do we await its completion. A failed start fails fast
+ *  instead of burning the whole timeout. */
 async function awaitDownloadedFile(
   id: string,
   url: string,
@@ -306,10 +315,10 @@ async function awaitDownloadedFile(
 ): Promise<void> {
   const b = nativeBridge();
   if (!b) throw new Error("no-bridge");
-  await new Promise<void>((resolve, reject) => {
+  let removeListener: (() => void) | null = null;
+  const donePromise = new Promise<void>((resolve, reject) => {
     let timer: ReturnType<typeof setTimeout> | null = null;
     let settled = false;
-    let removeListener: (() => void) | null = null;
     const settle = (err?: Error) => {
       if (settled) return;
       settled = true;
@@ -336,7 +345,14 @@ async function awaitDownloadedFile(
       })
       .catch(() => settle(new Error("listener-failed")));
   });
-  await b.downloadFile({ id, url, dest });
+  // v0.29.0 (NEW-MOB-1) — START the engine AFTER the listener is registered
+  // (the addListener call above already ran synchronously) and BEFORE waiting.
+  try {
+    await b.downloadFile({ id, url, dest });
+  } catch (err) {
+    throw err instanceof Error ? err : new Error("download-start-failed");
+  }
+  await donePromise;
   try {
     const stat = await b.fileStat({ path: dest });
     if (!stat || !stat.exists || stat.size <= 0) throw new Error("download-missing");

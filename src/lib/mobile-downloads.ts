@@ -94,6 +94,46 @@ async function onEvent(e: NamaDownloadEvent) {
     await db.dlitems.update(e.id, { status: "failed", speed: 0 });
   }
   broadcast();
+  // v0.29.0 (NEW-MOB-2) — a finished slot must be handed to the next queued
+  // item immediately; nothing used to do this, so items 3..N stayed at
+  // «در صف / ۰٪» until the next app restart.
+  if (e.type === "done" || e.type === "error") void pumpQueue();
+}
+
+/** v0.29.0 (NEW-MOB-2) — the QUEUE SCHEDULER. Starts this account's oldest
+ *  queued rows while fewer than MAX_ACTIVE are downloading. Called after
+ *  every terminal download event, after enqueue, cancel and remove. */
+let pumping = false;
+export async function pumpQueue(): Promise<void> {
+  const b = nativeBridge();
+  if (!b || pumping) return;
+  pumping = true;
+  try {
+    const uk = activeUserKey();
+    const rows = ((await db.dlitems.where("status").anyOf("downloading", "queued").toArray()) as unknown as DownloadRecord[])
+      .filter((r) => r.userKey === uk)
+      .sort((a, b2) => a.createdAt - b2.createdAt); // FIFO — oldest first
+    let active = rows.filter((r) => r.status === "downloading").length;
+    for (const r of rows) {
+      if (active >= MAX_ACTIVE) break;
+      if (r.status !== "queued") continue;
+      // the file may already be fully on disk (previous attempt finished
+      // between the last event and now) — mark complete instead of restarting
+      const stat = await b.fileStat({ path: r.dest }).catch(() => null);
+      if (stat?.exists && r.total > 0 && stat.size >= r.total) {
+        await db.dlitems.update(r.id, { status: "completed" });
+        continue;
+      }
+      await b.download({ id: r.id, url: r.url, dest: r.dest });
+      await db.dlitems.update(r.id, { status: "downloading" });
+      active++;
+    }
+  } catch {
+    /* best-effort — the next event pumps again */
+  } finally {
+    pumping = false;
+  }
+  broadcast();
 }
 
 /* ---------------- queries ---------------- */
@@ -101,17 +141,19 @@ async function onEvent(e: NamaDownloadEvent) {
 export async function listDownloads(): Promise<DownloadRecord[]> {
   const uk = activeUserKey();
   const rows = (await db.dlitems.toArray()) as unknown as DownloadRecord[];
-  // v0.27.0 (DATA-13) — per-account: rows from another account (or legacy
-  // rows stamped by the v5 migration for a DIFFERENT account) never leak
+  // v0.29.0 (VERIFY-DATA-13) — STRICT ownership: the old `!r.userKey ||`
+  // leniency surfaced unowned/legacy rows to EVERY account. The Dexie v5
+  // upgrade already stamped all pre-existing rows with the then-active key,
+  // so an unstamped row can only be junk — never someone's download.
   return rows
-    .filter((r) => !r.userKey || r.userKey === uk)
+    .filter((r) => r.userKey === uk)
     .sort((a, b) => b.createdAt - a.createdAt);
 }
 
 export async function getDownloadFor(titleId: number, episodeId: number | null): Promise<DownloadRecord | null> {
   const uk = activeUserKey();
   const all = (await db.dlitems.where("titleId").equals(titleId).toArray()) as unknown as DownloadRecord[];
-  const rows = all.filter((r) => (r.episodeId ?? null) === (episodeId ?? null) && (!r.userKey || r.userKey === uk));
+  const rows = all.filter((r) => (r.episodeId ?? null) === (episodeId ?? null) && r.userKey === uk);
   if (!rows.length) return null;
   // completed first, then the most recent attempt
   const rank = (r: DownloadRecord) => (r.status === "completed" ? 2 : 1);
@@ -159,14 +201,9 @@ export async function enqueueDownload(input: {
     userKey: activeUserKey(),
   };
   await db.dlitems.put(rec as unknown as Record<string, unknown>);
-  // respect MAX_ACTIVE: extras stay queued until a slot frees (the engine
-  // itself runs whatever it is given; we only start up to MAX_ACTIVE)
-  const active = (await db.dlitems.where("status").anyOf("downloading", "queued").toArray()) as unknown as DownloadRecord[];
-  const starting = active.filter((r) => r.status === "downloading").length;
-  if (starting < MAX_ACTIVE) {
-    await b.download({ id, url: input.url, dest });
-    await db.dlitems.update(id, { status: "downloading" });
-  }
+  // respect MAX_ACTIVE: extras stay queued until a slot frees — v0.29.0 the
+  // shared scheduler (pumpQueue) owns slot assignment everywhere
+  await pumpQueue();
   broadcast();
   return { ok: true };
 }
@@ -209,6 +246,7 @@ export async function cancelDownload(id: string) {
   await nativeBridge()?.downloadAction({ id, action: "cancel" });
   await db.dlitems.delete(id);
   broadcast();
+  void pumpQueue(); // a freed slot must start the next queued row (NEW-MOB-2)
 }
 
 export async function removeDownload(id: string) {
@@ -219,6 +257,7 @@ export async function removeDownload(id: string) {
   }
   await db.dlitems.delete(id);
   broadcast();
+  void pumpQueue();
 }
 
 /** Kick the queue after boot: resume rows that were mid-flight (THIS account's only). */
@@ -227,7 +266,7 @@ export async function resumeQueueOnBoot() {
   if (!b) return;
   wire();
   const uk = activeUserKey();
-  const rows = ((await db.dlitems.where("status").anyOf("downloading", "queued").toArray()) as unknown as DownloadRecord[]).filter((r) => !r.userKey || r.userKey === uk);
+  const rows = ((await db.dlitems.where("status").anyOf("downloading", "queued").toArray()) as unknown as DownloadRecord[]).filter((r) => r.userKey === uk);
   let started = 0;
   for (const r of rows) {
     if (started >= MAX_ACTIVE) break;
@@ -241,6 +280,9 @@ export async function resumeQueueOnBoot() {
     started++;
   }
   if (rows.length) broadcast();
+  // v0.29.0 (NEW-MOB-2) — hand any remaining queued rows a slot as soon as
+  // one frees instead of stranding them until the next restart
+  void pumpQueue();
 }
 
 /* ---------------- formatting ---------------- */

@@ -242,9 +242,15 @@ export async function getSimilar(t: TitleView, limit = 10) {
   return rows.map(pv);
 }
 
-export async function getReviews(titleId: number) {
+export async function getReviews(titleId: number, userKey?: string) {
+  // v0.29.0 (NEW-DATA-10) — reviews are per-account: the Review table used to
+  // have no owner at all, so every account on the device saw every other
+  // account's comments. Legacy rows (userKey null) stay visible to everyone.
   return db.review.findMany({
-    where: { titleId },
+    where: {
+      titleId,
+      ...(userKey ? { OR: [{ userKey }, { userKey: null }] } : {}),
+    },
     orderBy: { createdAt: "desc" },
     take: 200, // C-9 — سقف لیست؛ رتبه‌بندی/صفی‌سازی بعدی
   });

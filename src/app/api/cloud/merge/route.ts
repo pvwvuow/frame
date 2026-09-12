@@ -38,11 +38,16 @@ type Deletion = {
   to?: unknown;
   slug?: unknown;
 };
+/** v0.29.0 (VERIFY-DATA-1) — the client's own deletion tombstones ship in the
+ *  body: the merge runs in the Electron MAIN process and cannot read the
+ *  renderer's localStorage, so offline deletions used to be resurrected by
+ *  the very next pull on desktop (mobile consulted them locally already). */
+type Tombstone = { kind?: unknown; key?: unknown; at?: unknown };
 type Body = {
   favorites?: Ref[];
   watchlist?: (Ref & { status?: unknown; updatedAt?: unknown })[];
   ratings?: (Ref & { score?: unknown; updatedAt?: unknown })[];
-  collections?: { name?: unknown; items?: Ref[] }[];
+  collections?: { name?: unknown; cid?: unknown; items?: Ref[] }[];
   progress?: {
     slug?: unknown;
     season?: unknown;
@@ -52,6 +57,7 @@ type Body = {
     updatedAt?: unknown;
   }[];
   deletions?: Deletion[];
+  tombstones?: Tombstone[];
 };
 
 const VALID_STATUSES = new Set(["planned", "watching", "watched"]);
@@ -90,6 +96,14 @@ export async function POST(req: Request) {
     }))
     .filter((d) => d.kind && d.key && d.at > 0);
 
+  // v0.29.0 (VERIFY-DATA-1/1b) — THIS device's offline deletions. They gate
+  // the adds below exactly like the cross-device deletion events do: a row
+  // whose slug was tombstoned AFTER the cloud row's updated_at must never be
+  // re-created locally, and local rows older than the tombstone are removed.
+  const tombstones = arr<Tombstone>(body.tombstones, 2_000)
+    .map((t) => ({ kind: String(t?.kind ?? ""), key: String(t?.key ?? "").slice(0, 160), at: toTs(t?.at) }))
+    .filter((t) => t.kind && t.key && t.at > 0);
+
   // one slug → id pass for the whole payload
   const allSlugs = [
     ...arr<Ref>(body.favorites),
@@ -97,7 +111,8 @@ export async function POST(req: Request) {
     ...arr<Ref>(body.ratings),
     ...arr<{ items?: Ref[] }>(body.collections).flatMap((c) => arr<Ref>(c?.items)),
     ...arr<Ref>(body.progress),
-    ...deletions.filter((d) => d.kind !== "collection").map((d) => ({ slug: d.key })),
+    ...deletions.filter((d) => d.kind !== "collection" && d.kind !== "progress").map((d) => ({ slug: d.key })),
+    ...tombstones.filter((t) => t.kind === "favorite" || t.kind === "watchlist" || t.kind === "rating" || t.kind === "progress").map((t) => ({ slug: t.key })),
   ]
     .map(slugOf)
     .filter(Boolean);
@@ -111,6 +126,47 @@ export async function POST(req: Request) {
     for (const r of rows) idBySlug.set(r.slug, r.id);
   }
   let skipped = 0;
+
+  /* ---------- tombstone gate (THIS device's offline deletions) ---------- */
+  const tombSlugs = new Set<string>();
+  for (const t of tombstones) {
+    if (t.kind !== "favorite" && t.kind !== "watchlist" && t.kind !== "rating" && t.kind !== "progress") continue;
+    if (t.key === "*") {
+      // whole-history wipe on this device — only meaningful for progress
+      const rows = await db.watchProgress.findMany({ where: { userKey }, select: { id: true, updatedAt: true } });
+      for (const r of rows) {
+        if (t.at > new Date(r.updatedAt).getTime()) await db.watchProgress.delete({ where: { id: r.id } });
+      }
+      continue;
+    }
+    const titleId = idBySlug.get(t.key);
+    if (!titleId) continue;
+    if (t.kind === "favorite") {
+      const row = await db.favorite.findUnique({ where: { userKey_titleId: { userKey, titleId } } });
+      if (row && t.at > new Date(row.createdAt).getTime()) {
+        await db.favorite.delete({ where: { userKey_titleId: { userKey, titleId } } });
+        tombSlugs.add(t.key);
+      }
+    } else if (t.kind === "watchlist") {
+      const row = await db.watchlist.findUnique({ where: { userKey_titleId: { userKey, titleId } } });
+      if (row && t.at > new Date(row.updatedAt).getTime()) {
+        await db.watchlist.delete({ where: { userKey_titleId: { userKey, titleId } } });
+        tombSlugs.add(t.key);
+      }
+    } else if (t.kind === "rating") {
+      const row = await db.userRating.findUnique({ where: { userKey_titleId: { userKey, titleId } } });
+      if (row && t.at > new Date(row.updatedAt).getTime()) {
+        await db.userRating.delete({ where: { userKey_titleId: { userKey, titleId } } });
+        tombSlugs.add(t.key);
+      }
+    } else {
+      const row = await db.watchProgress.findUnique({ where: { userKey_titleId: { userKey, titleId } } });
+      if (row && t.at > new Date(row.updatedAt).getTime()) {
+        await db.watchProgress.delete({ where: { id: row.id } });
+        tombSlugs.add(t.key);
+      }
+    }
+  }
 
   /* ---------- deletions first (they gate the adds below) ---------- */
   let deletionsApplied = 0;
@@ -205,7 +261,7 @@ export async function POST(req: Request) {
   let favoritesAdded = 0;
   const favPairs = arr<Ref>(body.favorites)
     .map((r) => ({ slug: slugOf(r), title: titleOf(r) }))
-    .filter((r) => r.slug && !deletedSlugs.has(r.slug))
+    .filter((r) => r.slug && !deletedSlugs.has(r.slug) && !tombSlugs.has(r.slug))
     .map((r) => ({ ...r, id: idBySlug.get(r.slug) ?? 0 }))
     .filter((r) => {
       if (!r.id) {
@@ -231,7 +287,7 @@ export async function POST(req: Request) {
   for (const row of arr<Ref & { status?: unknown; updatedAt?: unknown }>(body.watchlist)) {
     const slug = slugOf(row);
     const status = String(row?.status ?? "");
-    if (!slug || !VALID_STATUSES.has(status) || deletedSlugs.has(slug)) continue;
+    if (!slug || !VALID_STATUSES.has(status) || deletedSlugs.has(slug) || tombSlugs.has(slug)) continue;
     const titleId = idBySlug.get(slug);
     if (!titleId) {
       skipped++;
@@ -258,7 +314,7 @@ export async function POST(req: Request) {
   for (const row of arr<Ref & { score?: unknown; updatedAt?: unknown }>(body.ratings)) {
     const slug = slugOf(row);
     const score = Number(row?.score);
-    if (!slug || !Number.isFinite(score) || score < 1 || score > 10 || deletedSlugs.has(slug)) continue;
+    if (!slug || !Number.isFinite(score) || score < 1 || score > 10 || deletedSlugs.has(slug) || tombSlugs.has(slug)) continue;
     const titleId = idBySlug.get(slug);
     if (!titleId) {
       skipped++;
@@ -280,17 +336,27 @@ export async function POST(req: Request) {
     }
   }
 
-  // collections (matched by NAME; items resolved slug → id; renames arrive as
-  // deletion events above and must NOT resurrect the old name here)
+  // collections — v0.29.0 (VERIFY-DATA-16): matched by the STABLE cloud uuid
+  // (`cid`) first, name as the fallback. Items resolved slug → id; renames
+  // arrive as deletion events above and must NOT resurrect the old name here.
+  // Collection-name tombstones from THIS device gate re-creation too.
+  const colTombNames = new Set(tombstones.filter((t) => t.kind === "collection").map((t) => t.key));
   let collectionsAdded = 0;
   let collectionItemsAdded = 0;
-  for (const col of arr<{ name?: unknown; items?: Ref[] }>(body.collections)) {
+  for (const col of arr<{ name?: unknown; cid?: unknown; items?: Ref[] }>(body.collections)) {
     const name = String(col?.name ?? "").trim().slice(0, 60);
-    if (!name || [...renamedFrom.keys()].some((old) => old === name)) continue;
-    let row = await db.userCollection.findUnique({ where: { userKey_name: { userKey, name } } });
+    if (!name || [...renamedFrom.keys()].some((old) => old === name) || colTombNames.has(name)) continue;
+    const cid = typeof col?.cid === "string" && /^[0-9a-f-]{36}$/i.test(col.cid) ? col.cid : "";
+    let row =
+      (cid
+        ? await db.userCollection.findFirst({ where: { userKey, cloudId: cid } })
+        : null) ??
+      (await db.userCollection.findUnique({ where: { userKey_name: { userKey, name } } }));
     if (!row) {
-      row = await db.userCollection.create({ data: { userKey, name } });
+      row = await db.userCollection.create({ data: { userKey, name, ...(cid ? { cloudId: cid } : {}) } });
       collectionsAdded++;
+    } else if (cid && row.cloudId !== cid) {
+      await db.userCollection.update({ where: { id: row.id }, data: { cloudId: cid } });
     }
     const items = (col?.items ?? [])
       .map((r) => ({ slug: slugOf(r), id: idBySlug.get(slugOf(r)) ?? 0 }))
@@ -321,46 +387,84 @@ export async function POST(req: Request) {
   // position so a paused/rewound device never drags the other one back.
   // Episodes are resolved the stable way: (titleId, season, number) instead
   // of the drifting episode id.
+  //
+  // v0.29.0 (VERIFY-DATA-7b) — the cloud snapshot now carries MULTIPLE rows
+  // per slug (every per-episode position other devices pushed). Rows with
+  // season/episode > 0 land in the additive WatchEpisodeProgress table; the
+  // title-level WatchProgress row takes the NEWEST row per slug (so
+  // «ادامه تماشا» points at the episode that was actually played last).
   let progressApplied = 0;
-  for (const row of arr<{
+  const progressRows = arr<{
     slug?: unknown;
     season?: unknown;
     episode?: unknown;
     position?: unknown;
     duration?: unknown;
     updatedAt?: unknown;
-  }>(body.progress)) {
-    const slug = slugOf(row);
-    const position = Number(row?.position ?? 0);
-    const duration = Number(row?.duration ?? 0);
-    if (!slug || !Number.isFinite(position) || deletedSlugs.has(slug)) continue;
-    const titleId = idBySlug.get(slug);
+  }>(body.progress)
+    .map((row) => ({
+      slug: slugOf(row),
+      position: Number(row?.position ?? 0),
+      duration: Number(row?.duration ?? 0),
+      season: Math.max(0, Math.round(Number(row?.season ?? 0)) || 0),
+      number: Math.max(0, Math.round(Number(row?.episode ?? 0)) || 0),
+      ts: toTs(row?.updatedAt) || 0,
+    }))
+    .filter((r) => r.slug && Number.isFinite(r.position) && !deletedSlugs.has(r.slug) && !tombSlugs.has(r.slug));
+
+  // newest row per slug decides the title-level position
+  const newestBySlug = new Map<string, (typeof progressRows)[number]>();
+  for (const r of progressRows) {
+    if (r.ts > (newestBySlug.get(r.slug)?.ts ?? 0)) newestBySlug.set(r.slug, r);
+  }
+
+  for (const row of progressRows) {
+    const titleId = idBySlug.get(row.slug);
     if (!titleId) {
       skipped++;
       continue;
     }
-    const season = Math.max(0, Math.round(Number(row?.season ?? 0)) || 0);
-    const number = Math.max(0, Math.round(Number(row?.episode ?? 0)) || 0);
-    let episodeId: number | null = null;
-    if (season > 0 && number > 0) {
-      const ep = await db.episode.findFirst({ where: { titleId, season, number }, select: { id: true } });
-      episodeId = ep?.id ?? null;
-    }
-    let incomingTs = toTs(row?.updatedAt) || 0;
+    let incomingTs = row.ts;
     if (incomingTs > nowMs + SKEW_MS) incomingTs = nowMs; // wrong clock → neutralize
+    let episodeId: number | null = null;
+    if (row.season > 0 && row.number > 0) {
+      const ep = await db.episode.findFirst({ where: { titleId, season: row.season, number: row.number }, select: { id: true } });
+      episodeId = ep?.id ?? null;
+      if (episodeId) {
+        // per-episode row → the additive table (VERIFY-DATA-7b)
+        const exEp = await db.watchEpisodeProgress.findUnique({
+          where: { userKey_titleId_episodeId: { userKey, titleId, episodeId } },
+        });
+        if (!exEp) {
+          await db.watchEpisodeProgress.create({
+            data: { userKey, titleId, episodeId, position: row.position, duration: row.duration, ...(incomingTs ? { updatedAt: new Date(incomingTs) } : {}) },
+          });
+          progressApplied++;
+        } else if (incomingTs > new Date(exEp.updatedAt).getTime() + 500) {
+          await db.watchEpisodeProgress.update({
+            where: { id: exEp.id },
+            data: { position: row.position, duration: row.duration, ...(incomingTs > new Date(exEp.updatedAt).getTime() ? { updatedAt: new Date(incomingTs) } : {}) },
+          });
+          progressApplied++;
+        }
+      }
+    }
+    // the title-level row only follows the NEWEST cloud row for this slug —
+    // older episode rows must never drag «ادامه تماشا» backwards
+    if (newestBySlug.get(row.slug) !== row) continue;
     const ex = await db.watchProgress.findUnique({ where: { userKey_titleId: { userKey, titleId } } });
     if (!ex) {
-      await db.watchProgress.create({ data: { userKey, titleId, episodeId, position, duration, ...(incomingTs ? { updatedAt: new Date(incomingTs) } : {}) } });
+      await db.watchProgress.create({ data: { userKey, titleId, episodeId, position: row.position, duration: row.duration, ...(incomingTs ? { updatedAt: new Date(incomingTs) } : {}) } });
       progressApplied++;
     } else {
       const exTs = new Date(ex.updatedAt).getTime();
       const newer = incomingTs > exTs + 500;
       const closeCall = Math.abs(incomingTs - exTs) <= 2_000;
-      const further = position > ex.position + 1;
+      const further = row.position > ex.position + 1;
       if (newer || (closeCall && further)) {
         await db.watchProgress.update({
           where: { userKey_titleId: { userKey, titleId } },
-          data: { position, duration, episodeId, ...(incomingTs > exTs ? { updatedAt: new Date(incomingTs) } : {}) },
+          data: { position: row.position, duration: row.duration, episodeId, ...(incomingTs > exTs ? { updatedAt: new Date(incomingTs) } : {}) },
         });
         progressApplied++;
       }

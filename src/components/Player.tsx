@@ -14,7 +14,7 @@
  * Matroska container live and feeds it back as a WebVTT track.
  */
 import Link from "next/link";
-import { pushProgressOne } from "@/lib/cloud";
+import { flushProgressOne, pushProgressOne } from "@/lib/cloud";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { formatClock, fa } from "@/lib/format";
@@ -290,6 +290,26 @@ export default function Player() {
     },
     [titleId, episode?.id]
   );
+
+  // v0.29.0 (NEW-DATA-4) — the 20s cloud throttle used to DROP the last row:
+  // pause / tab-hide / close within the window never reached other devices.
+  // Now the pending row is flushed on pause, tab-hide and pagehide.
+  useEffect(() => {
+    const flush = () => void flushProgressOne();
+    const v = videoRef.current;
+    v?.addEventListener("pause", flush);
+    const onVis = () => {
+      if (document.visibilityState === "hidden") flush();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    window.addEventListener("pagehide", flush);
+    return () => {
+      v?.removeEventListener("pause", flush);
+      document.removeEventListener("visibilitychange", onVis);
+      window.removeEventListener("pagehide", flush);
+      flush(); // unmount (player closed / episode switched) → flush too
+    };
+  }, []);
 
   const bumpUi = useCallback(() => {
     setShowUi(true);

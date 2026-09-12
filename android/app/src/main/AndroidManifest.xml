@@ -43,11 +43,24 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths"></meta-data>
         </provider>
+
+        <!-- v0.29.0 (NEW-MOB-4) — keeps the process alive while downloads run -->
+        <service
+            android:name=".NamaDownloadService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
     </application>
 
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- v0.29.0 (NEW-MOB-4) — downloads run inside a foreground service:
+         without it Android 8+ freezes the process as soon as the user leaves
+         the app and every download dies silently at 0%. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- v0.17.0 — REQUEST_INSTALL_PACKAGES was REMOVED (Google Play Protect
          flags the «app downloads+installs its own APK» dropper pattern as
          harmful → red «Unsafe app blocked»). Full-APK updates now open the

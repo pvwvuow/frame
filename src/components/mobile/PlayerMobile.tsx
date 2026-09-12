@@ -36,8 +36,7 @@
  *   desktop/Electron (src/lib/mobile-ui.ts).
  */
 import Link from "next/link";
-import { pushProgressOne } from "@/lib/cloud";
-import { markProfilePlaybackTouched } from "@/lib/cloud";
+import { flushProgressOne, markProfilePlaybackTouched, pushProgressOne } from "@/lib/cloud";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { formatClock, fa } from "@/lib/format";
@@ -542,6 +541,26 @@ export default function PlayerMobile() {
     },
     [titleId, episode?.id]
   );
+
+  // v0.29.0 (NEW-DATA-4) — flush the throttled cloud row on pause / app-hide
+  // / pagehide; the last minutes of watching used to never leave the phone
+  // when they fell inside the 20s throttle window.
+  useEffect(() => {
+    const flush = () => void flushProgressOne();
+    const v = videoRef.current;
+    v?.addEventListener("pause", flush);
+    const onVis = () => {
+      if (document.visibilityState === "hidden") flush();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    window.addEventListener("pagehide", flush);
+    return () => {
+      v?.removeEventListener("pause", flush);
+      document.removeEventListener("visibilitychange", onVis);
+      window.removeEventListener("pagehide", flush);
+      flush();
+    };
+  }, []);
 
   const bumpUi = useCallback(() => {
     setShowUi(true);

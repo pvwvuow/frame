@@ -35,6 +35,7 @@ import {
 import { fa } from "@/lib/format";
 import Link from "next/link";
 import { watchHref } from "@/lib/mobile-links";
+import { preferredSourceIdx } from "@/lib/variant";
 
 type BtnProps = {
   titleId: number;
@@ -77,6 +78,7 @@ export function MobileDownloadButton({ titleId, slug, title, poster, type, episo
       let url = "";
       let quality = "";
       let variant = "";
+      const sources = d.sources ?? [];
       if (episodeId) {
         const ep = (d.episodes ?? []).find((e) => e.id === episodeId);
         url = ep?.videoUrl ?? "";
@@ -90,9 +92,23 @@ export function MobileDownloadButton({ titleId, slug, title, poster, type, episo
         toast.error("منبعی برای دانلود پیدا نشد");
         return;
       }
-      const first = (d.sources ?? []).find((s) => s.url === url);
-      quality = first?.q ?? "";
-      variant = first?.v ?? "";
+      // v0.29.0 (NEW-MOB-5) — downloads used to grab the CATALOG default file
+      // and ignore the user's quality pick entirely. Resolve the url against
+      // the title's source list; when the default url is not the user's
+      // preferred source, fall back to the SAME pick the player would make.
+      const matched = sources.find((s) => s.url === url);
+      if (matched) {
+        quality = matched.q ?? "";
+        variant = matched.v ?? "";
+      } else if (sources.length) {
+        const idx = preferredSourceIdx(sources as { q: string; v: string; url: string }[]);
+        const pick = sources[idx] ?? sources[0];
+        if (pick?.url) {
+          url = pick.url;
+          quality = pick.q ?? "";
+          variant = pick.v ?? "";
+        }
+      }
       const res = await enqueueDownload({ titleId, title, slug, poster, type, episodeId, episodeLabel, url, quality, variant });
       if (res.ok && !res.dup) toast.success(type === "series" && !episodeId ? "دانلود قسمت اول شروع شد" : "دانلود شروع شد");
       else if (res.dup) toast.message("این مورد از قبل در فهرست دانلود است");

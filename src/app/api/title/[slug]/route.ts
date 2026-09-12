@@ -14,7 +14,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ slug: string }
     getSimilar(t, 8),
     isInWatchlist(userKey, t.id),
     getProgressFor(userKey, t.id),
-    getReviews(t.id),
+    getReviews(t.id, userKey),
   ]);
 
   const userScore = reviews.length ? reviews.reduce((a, r) => a + r.rating, 0) / reviews.length : null;

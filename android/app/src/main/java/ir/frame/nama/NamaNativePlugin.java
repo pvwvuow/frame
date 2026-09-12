@@ -168,6 +168,9 @@ public class NamaNativePlugin extends Plugin {
         volatile long lastTick = 0;
         volatile long lastReceived = 0;
         volatile int errorCount = 0;
+        // v0.29.0 (NEW-MOB-4) — last value of `received` at which the mid-flight
+        // free-space check ran (every 256MB)
+        volatile long lastSpaceCheck = 0;
         // v0.26.0 — the worker thread + the live connection/stream references:
         // download() refuses a SECOND thread for a LIVE job (two writers on
         // one .part with different Range offsets corrupt the file), and
@@ -236,6 +239,10 @@ public class NamaNativePlugin extends Plugin {
         t.setName("nama-dl-" + id);
         job.worker = t;
         t.start();
+        // v0.29.0 (NEW-MOB-4) — a foreground service must wrap ACTIVE jobs:
+        // without it Android 8+ freezes the process the moment the user leaves
+        // the app and every download dies silently at 0%.
+        NamaDownloadService.start(getContext());
         JSObject ret = new JSObject();
         ret.put("ok", true);
         call.resolve(ret);
@@ -285,6 +292,15 @@ public class NamaNativePlugin extends Plugin {
                 return;
             }
             try {
+                // v0.29.0 (NEW-MOB-4) — FREE-SPACE GUARD: the old engine wrote
+                // blindly and died with a corrupt .part on a full disk. Refuse
+                // to start (and abort before each reconnect) below 150MB free.
+                if (!hasDiskSpace()) {
+                    job.status = "error";
+                    emit(job, "error", 0);
+                    JOBS.remove(job.id);
+                    return;
+                }
                 File dir = job.dest.getParentFile();
                 if (dir != null && !dir.exists()) dir.mkdirs();
                 long already = part.exists() ? part.length() : 0;
@@ -337,6 +353,19 @@ public class NamaNativePlugin extends Plugin {
                     }
                     out.write(buf, 0, n);
                     job.received += n;
+                    // v0.29.0 (NEW-MOB-4) — mid-flight space check (every 256MB)
+                    if (job.received - job.lastSpaceCheck > (256L << 20)) {
+                        job.lastSpaceCheck = job.received;
+                        if (!hasDiskSpace()) {
+                            out.close();
+                            in.close();
+                            c.disconnect();
+                            job.status = "error";
+                            emit(job, "error", 0);
+                            JOBS.remove(job.id);
+                            return;
+                        }
+                    }
                     long now = System.currentTimeMillis();
                     if (now - job.lastTick > 500) {
                         long speed = (long) ((job.received - job.lastReceived) * 1000.0 / (now - job.lastTick));
@@ -369,6 +398,7 @@ public class NamaNativePlugin extends Plugin {
                     job.status = "error";
                     emit(job, "error", 0);
                     JOBS.remove(job.id);
+                    maybeStopForeground();
                     return;
                 }
                 try {
@@ -387,6 +417,33 @@ public class NamaNativePlugin extends Plugin {
         job.status = "done";
         emit(job, "done", 0);
         JOBS.remove(job.id);
+        maybeStopForeground();
+    }
+
+    /** v0.29.0 (NEW-MOB-4) — free space on the volume holding filesDir.
+     *  150MB keeps headroom for the OS + the web-root swap. */
+    private boolean hasDiskSpace() {
+        try {
+            android.os.StatFs st = new android.os.StatFs(getContext().getFilesDir().getPath());
+            return st.getAvailableBytes() > 150L * 1024 * 1024;
+        } catch (Exception e) {
+            return true; // cannot tell → never block the download on a StatFs failure
+        }
+    }
+
+    /** v0.29.0 (NEW-MOB-4) — stop the foreground service when the last live
+     *  job is gone (done / failed / canceled / paused). */
+    private void maybeStopForeground() {
+        boolean anyLive = false;
+        for (Job j : JOBS.values()) {
+            if (j.worker != null && j.worker.isAlive() && "downloading".equals(j.status)) {
+                anyLive = true;
+                break;
+            }
+        }
+        if (!anyLive && NamaDownloadService.isRunning()) {
+            NamaDownloadService.stop(getContext());
+        }
     }
 
     private void emit(Job job, String type, long speed) {
@@ -398,6 +455,12 @@ public class NamaNativePlugin extends Plugin {
         data.put("speed", speed);
         data.put("status", job.status);
         notifyListeners("namaDownload", data);
+        // v0.29.0 (NEW-MOB-4) — the notification shows WHICH file is moving;
+        // throttled inside NamaDownloadService.update (~2s)
+        if (NamaDownloadService.isRunning()) {
+            String label = job.dest.getName();
+            NamaDownloadService.update(getContext(), label, (int) Math.min(job.received, Integer.MAX_VALUE), (int) Math.min(job.total, Integer.MAX_VALUE));
+        }
     }
 
     /* ------------------------------------------------------------------ */

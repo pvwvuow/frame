@@ -153,6 +153,24 @@ async function migrateAccountSpace(oldUid: string, newUid: string): Promise<void
   });
 }
 
+/** v0.29.0 (VERIFY-QOL-3) — does signing out RIGHT NOW risk destroying guest
+ * data? The reset path wipes the current space when NO account claims it —
+ * usually an empty fresh-guest (harmless), but after an OFFLINE sign-in the
+ * adopted-but-unattached space can still be the unclaimed guest space holding
+ * the user's library/history. The sign-out UI calls this to ask for
+ * confirmation instead of silently destroying everything. */
+export async function guestDataAtRisk(): Promise<boolean> {
+  try {
+    if (isDesktopRuntime()) return false; // desktop sign-out never wipes
+    const current = getUserKey();
+    const map = readAcctMap();
+    if (Object.values(map).includes(current)) return false; // claimed by an account → protected
+    return await spaceHasData(current);
+  } catch {
+    return false;
+  }
+}
+
 /** v0.27.0 (QOL-3) — orphan guest spaces used to pile up forever after every
  * sign-out. Now the PREVIOUS guest space (unclaimed by any account) is wiped
  * before a fresh one is minted — same isolation, no litter. */
@@ -182,6 +200,9 @@ async function wipeGuestSpace(uid: string): Promise<void> {
  *    fresh guest space — signed-out data survives restarts of the CURRENT
  *    guest, never leaks into the next one. */
 export async function switchIdentity(accountId: string | null, reset = false): Promise<{ switched: boolean }> {
+  // v0.29.0 (VERIFY-DATA-14) — restore the persisted account→space map FIRST
+  // (a wiped localStorage must not turn every known account into a stranger)
+  await restoreAcctMapFromDexie();
   const current = getUserKey();
   const map = readAcctMap();
   const claimed = Object.values(map).includes(current);
@@ -215,6 +236,9 @@ export async function switchIdentity(accountId: string | null, reset = false): P
   map[accountId] = target;
   lsSet(ACCT_MAP, JSON.stringify(map));
   lsSet(ACCT_ACTIVE, target);
+  // v0.29.0 (VERIFY-DATA-14) — remember WHICH account is active so the map
+  // restore can re-point the active space after a localStorage wipe
+  lsSet("frame.acct.activeId", accountId);
   void mirrorAcctMapToDexie();
   return { switched: target !== current };
 }
@@ -226,6 +250,37 @@ async function mirrorAcctMapToDexie(): Promise<void> {
     await db.kv.put({ key: "acct.map", value: readAcctMap() });
   } catch {
     /* best-effort */
+  }
+}
+
+/** v0.29.0 (VERIFY-DATA-14) — the Dexie mirror was WRITE-ONLY: no code ever
+ * read it back, so wiping localStorage (WebView cleanup, cache tools, a
+ * crash…) permanently hid every account that had ADOPTED its guest space —
+ * the adopted space id is random and lived only in the map. Now the map is
+ * restored (merged, localStorage entries win) before every identity
+ * decision, and the active space follows it when localStorage lost it. */
+async function restoreAcctMapFromDexie(): Promise<Record<string, string>> {
+  const local = readAcctMap();
+  try {
+    const row = (await db.kv.get("acct.map")) as { value?: Record<string, string> } | undefined;
+    const mirrored = row?.value && typeof row.value === "object" ? row.value : {};
+    const merged: Record<string, string> = { ...mirrored };
+    for (const [k, v] of Object.entries(local)) if (v) merged[k] = v; // local wins
+    const changed = JSON.stringify(merged) !== JSON.stringify(local);
+    if (changed) {
+      lsSet(ACCT_MAP, JSON.stringify(merged));
+      void mirrorAcctMapToDexie();
+    }
+    // the ACTIVE pointer can be lost independently of the map — if the map
+    // knows the active account but localStorage forgot, re-point it
+    if (!lsGet(ACCT_ACTIVE)) {
+      const activeId = lsGet("frame.acct.activeId");
+      const known = activeId ? merged[activeId] : "";
+      if (known) lsSet(ACCT_ACTIVE, known);
+    }
+    return merged;
+  } catch {
+    return local;
   }
 }
 
@@ -409,8 +464,8 @@ export async function getLibrarySnapshot(userKey = getUserKey()): Promise<Librar
   ]);
   const itemsOf = async (id: number) =>
     (await db.ucitems.where("collectionId").equals(id).toArray()).map((i) => Number((i as { titleId: number }).titleId));
-  const collections = [] as { name: string; items: number[] }[];
-  for (const c of cols) collections.push({ name: c.name, items: await itemsOf(c.id) });
+  const collections = [] as { name: string; cid?: string; items: number[] }[];
+  for (const c of cols) collections.push({ name: c.name, cid: c.cloudId, items: await itemsOf(c.id) });
   const { userKey: _uk, ...profileFull } = profile as Record<string, unknown>;
   return {
     watchlist: wl.map((w) => ({ titleId: Number(w.titleId), status: String(w.status) as ListStatus })),
@@ -838,19 +893,27 @@ export async function getContinueWatching(limit = 12, userKey = getUserKey()): P
 /* Reviews                                                             */
 /* ------------------------------------------------------------------ */
 
-export type ReviewRow = { id: number; titleId: number; author: string; rating: number; body: string; createdAt: string };
+export type ReviewRow = { id: number; titleId: number; author: string; rating: number; body: string; createdAt: string; userKey?: string };
 
 export async function addReview(b: { titleId: number; author: string; rating: number; body: string }): Promise<ReviewRow> {
   if (isDesktopRuntime()) return srvPost<ReviewRow>("/api/reviews", b);
-  const row = { titleId: b.titleId, author: b.author.slice(0, 80), rating: Math.min(10, Math.max(1, Math.round(b.rating))), body: b.body.slice(0, 2000), createdAt: now() };
+  // v0.29.0 (NEW-DATA-10) — reviews are stamped with the owning data space;
+  // the shared Dexie table used to leak every account's comments to every
+  // other account on the SAME device.
+  const row = { titleId: b.titleId, author: b.author.slice(0, 80), rating: Math.min(10, Math.max(1, Math.round(b.rating))), body: b.body.slice(0, 2000), createdAt: now(), userKey: getUserKey() };
   const id = await db.reviews.add({ ...row } as Record<string, unknown>);
   return { ...row, id: Number(id) };
 }
 
 export async function getReviews(titleId: number): Promise<ReviewRow[]> {
   if (isDesktopRuntime()) return srv<ReviewRow[]>(`/api/x/reviews?titleId=${titleId}`);
+  const uk = getUserKey();
   const rows = await db.reviews.where("titleId").equals(titleId).toArray();
-  return (rows as unknown as ReviewRow[]).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  // v0.29.0 (NEW-DATA-10) — own rows + legacy rows written before the stamp
+  // existed (they keep their old everyone-visible behaviour)
+  return (rows as unknown as (ReviewRow & { userKey?: string })[])
+    .filter((r) => !r.userKey || r.userKey === uk)
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
 /* ------------------------------------------------------------------ */
@@ -1032,6 +1095,8 @@ export type UCollection = {
   series: number;
   createdAt: string;
   updatedAt: string;
+  /** v0.29.0 (VERIFY-DATA-16) — the cloud row's stable uuid when synced */
+  cloudId?: string;
 };
 
 export async function listUserCollections(userKey = getUserKey()): Promise<UCollection[]> {
@@ -1061,6 +1126,7 @@ export async function listUserCollections(userKey = getUserKey()): Promise<UColl
       series,
       createdAt: String((c as { createdAt: string }).createdAt ?? now()),
       updatedAt: String((c as { updatedAt: string }).updatedAt ?? now()),
+      cloudId: typeof (c as { cloudId?: unknown }).cloudId === "string" ? String((c as { cloudId?: unknown }).cloudId) : undefined,
     });
   }
   return out.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
@@ -1339,15 +1405,23 @@ export async function mergeCloudSnapshot(
     }
   }
 
-  // collections (matched by name; renames arrive as deletion events above)
+  // collections (v0.29.0 VERIFY-DATA-16: matched by cloudId when the body
+  // carries it; the stable uuid is stamped on the local row so pushes can
+  // keep using it. renames arrive as deletion events above)
   for (const col of body.collections ?? []) {
     const name = String(col?.name ?? "").trim().slice(0, 60);
     if (!name || renamedFrom.has(name)) continue;
-    let row = await db.ucollections.where("[userKey+name]").equals([user, name]).first();
+    const cid = typeof (col as { cid?: unknown })?.cid === "string" && /^[0-9a-f-]{36}$/i.test(String((col as { cid?: unknown }).cid)) ? String((col as { cid?: unknown }).cid) : "";
+    let row = cid
+      ? ((await db.ucollections.where("userKey").equals(user).filter((c) => (c as { cloudId?: unknown }).cloudId === cid).first()) as Record<string, unknown> | undefined)
+      : undefined;
+    if (!row) row = (await db.ucollections.where("[userKey+name]").equals([user, name]).first()) as Record<string, unknown> | undefined;
     if (!row) {
-      const id = await db.ucollections.add({ userKey: user, name, createdAt: now(), updatedAt: now() });
+      const id = await db.ucollections.add({ userKey: user, name, createdAt: now(), updatedAt: now(), ...(cid ? { cloudId: cid } : {}) });
       row = { id } as Record<string, unknown>;
       collectionsAdded++;
+    } else if (cid && !(row as { cloudId?: unknown }).cloudId) {
+      await db.ucollections.update(Number(row.id), { cloudId: cid });
     }
     const colId = Number((row as { id: number }).id);
     for (const item of col?.items ?? []) {

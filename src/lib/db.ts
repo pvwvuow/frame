@@ -114,6 +114,19 @@ const RUNTIME_DDL: string[] = [
 )`,
   `CREATE UNIQUE INDEX IF NOT EXISTS "WatchEpisodeProgress_userKey_titleId_episodeId_key" ON "WatchEpisodeProgress"("userKey" ASC, "titleId" ASC, "episodeId" ASC)`,
   `CREATE INDEX IF NOT EXISTS "WatchEpisodeProgress_userKey_titleId_idx" ON "WatchEpisodeProgress"("userKey" ASC, "titleId" ASC)`,
+  /* v0.29.0 (NEW-DATA-13) — contact messages submitted from the form are
+   * persisted server-side too (desktop): the form ALSO pushes them to the
+   * cloud when signed in; this table is the durable local copy an operator
+   * can read from the user's own machine. */
+  `CREATE TABLE IF NOT EXISTS "ContactMessage" (
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+  "name" TEXT NOT NULL DEFAULT '',
+  "email" TEXT NOT NULL DEFAULT '',
+  "topic" TEXT NOT NULL DEFAULT '',
+  "body" TEXT NOT NULL,
+  "userKey" TEXT NOT NULL DEFAULT '',
+  "createdAt" DATETIME NOT NULL
+)`,
 ];
 
 /** v0.27.0 (DATA-10) — additive column helper: `ALTER TABLE ADD COLUMN` is
@@ -143,6 +156,11 @@ export function ensureRuntimeSchema(): Promise<void> {
       }
       // v0.27.0 (DATA-10) — the synced player-prefs blob on UserProfile
       await ensureColumn("UserProfile", "playerPrefs", `ALTER TABLE "UserProfile" ADD COLUMN "playerPrefs" TEXT`);
+      // v0.29.0 (VERIFY-DATA-16) — the cloud row's STABLE uuid on UserCollection
+      await ensureColumn("UserCollection", "cloudId", `ALTER TABLE "UserCollection" ADD COLUMN "cloudId" TEXT`);
+      // v0.29.0 (NEW-DATA-10) — reviews become PER-ACCOUNT (legacy rows keep
+      // NULL and stay visible to everyone, exactly like before)
+      await ensureColumn("Review", "userKey", `ALTER TABLE "Review" ADD COLUMN "userKey" TEXT`);
     })();
   }
   return schemaPromise;

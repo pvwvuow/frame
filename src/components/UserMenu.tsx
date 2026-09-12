@@ -92,6 +92,8 @@ export default function UserMenu() {
   const [mounted, setMounted] = useState(false);
   const [open, setOpen] = useState(false);
   const [checking, setChecking] = useState(false);
+  // v0.29.0 (VERIFY-QOL-3) — armed when the pending sign-out would erase data
+  const [confirmArmed, setConfirmArmed] = useState(false);
   const [unread, setUnread] = useState(0);
   const pathname = usePathname();
   const btnRef = useRef<HTMLButtonElement>(null);
@@ -309,7 +311,24 @@ export default function UserMenu() {
               {session && (
                 <button
                   type="button"
-                  onClick={() => {
+                  onClick={async () => {
+                    // v0.29.0 (VERIFY-QOL-3) — on Android the sign-out wipes the
+                    // current guest space when no account claims it; after an
+                    // OFFLINE sign-in that space can still hold the user's
+                    // library. Destructive sign-outs now need a SECOND tap.
+                    if (!confirmArmed) {
+                      try {
+                        const { guestDataAtRisk } = await import("@/lib/mobile/userdata");
+                        if (await guestDataAtRisk()) {
+                          setConfirmArmed(true);
+                          setTimeout(() => setConfirmArmed(false), 5000);
+                          return;
+                        }
+                      } catch {
+                        /* helper unavailable → sign out as before */
+                      }
+                    }
+                    setConfirmArmed(false);
                     setOpen(false);
                     // v0.10.13: instant local sign-out (snapshots cleared
                     // synchronously); the server revoke runs in background
@@ -317,10 +336,22 @@ export default function UserMenu() {
                     toast.success(locale === "en" ? "Signed out." : "از حساب خارج شدی.");
                     router.refresh();
                   }}
-                  className="mt-2 flex w-full items-center gap-3 rounded-full border border-transparent bg-white/[0.04] px-3.5 py-2.5 text-sm text-rose-300 transition hover:border-rose-500/30 hover:bg-rose-500/10 hover:text-rose-200"
+                  className={`mt-2 flex w-full items-center gap-3 rounded-full border px-3.5 py-2.5 text-sm transition ${
+                    confirmArmed
+                      ? "border-rose-500/50 bg-rose-500/20 font-bold text-rose-200"
+                      : "border-transparent bg-white/[0.04] text-rose-300 hover:border-rose-500/30 hover:bg-rose-500/10 hover:text-rose-200"
+                  }`}
                 >
                   <LogoutIcon width={17} height={17} />
-                  <span className="flex-1 text-start">{locale === "en" ? "Sign out" : "خروج از حساب"}</span>
+                  <span className="flex-1 text-start">
+                    {confirmArmed
+                      ? locale === "en"
+                        ? "Tap again — guest data on this device will be erased"
+                        : "دوباره بزنید — داده‌های مهمان این دستگاه پاک می‌شود"
+                      : locale === "en"
+                        ? "Sign out"
+                        : "خروج از حساب"}
+                  </span>
                 </button>
               )}
 

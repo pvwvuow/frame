@@ -237,6 +237,29 @@ export default function SettingsForm({ initial }: { initial: ProfileData }) {
     }
   };
 
+  // v0.29.0 (NEW-DATA-7) — the backup had NO import path: users who restored
+  // or switched devices could look at their JSON but never get the data back.
+  // Rows are applied through /api/cloud/merge (union + LWW): an import can
+  // only ADD/refresh, never clobber newer data.
+  const importFileRef = useRef<HTMLInputElement | null>(null);
+  const importAll = async (file: File) => {
+    try {
+      const text = await file.text();
+      const snap = JSON.parse(text) as Record<string, unknown>;
+      if (!snap || typeof snap !== "object" || !("watchlist" in snap || "favorites" in snap || "progress" in snap)) {
+        toast.error("این فایل پشتیبان نما نیست");
+        return;
+      }
+      const { importBackupSnapshot } = await import("@/lib/cloud");
+      const c = await importBackupSnapshot(snap as Parameters<typeof importBackupSnapshot>[0]);
+      toast.success(`بازگردانی شد: ${fa(c.list)} لیست · ${fa(c.favorites)} علاقه‌مندی · ${fa(c.ratings)} امتیاز`);
+      await lib.refresh();
+      router.refresh();
+    } catch {
+      toast.error("بازگردانی ناموفق بود — فایل معتبر نیست");
+    }
+  };
+
   const checkUpdates = async () => {
     const b = bridge();
     if (!b) return;
@@ -507,9 +530,25 @@ export default function SettingsForm({ initial }: { initial: ProfileData }) {
                 <div className="rounded-2xl border border-white/5 bg-white/[0.03] p-4">
                   <p className="text-sm font-bold text-white">پشتیبان‌گیری</p>
                   <p className="mt-0.5 text-[11px] text-zinc-500">خروجی JSON از لیست، علاقه‌مندی‌ها، امتیازها و تنظیمات</p>
-                  <button type="button" onClick={exportAll} className="mt-3 flex items-center gap-2 rounded-full bg-white px-4 py-2 text-xs font-bold text-black hover:bg-zinc-200">
-                    <DownloadIcon width={14} height={14} /> دانلود پشتیبان
-                  </button>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button type="button" onClick={exportAll} className="flex items-center gap-2 rounded-full bg-white px-4 py-2 text-xs font-bold text-black hover:bg-zinc-200">
+                      <DownloadIcon width={14} height={14} /> دانلود پشتیبان
+                    </button>
+                    <button type="button" onClick={() => importFileRef.current?.click()} className="flex items-center gap-2 rounded-full border border-white/15 px-4 py-2 text-xs font-bold text-white hover:bg-white/10">
+                      <FolderIcon width={14} height={14} /> بازگردانی پشتیبان
+                    </button>
+                    <input
+                      ref={importFileRef}
+                      type="file"
+                      accept="application/json,.json"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) void importAll(file);
+                        e.target.value = "";
+                      }}
+                    />
+                  </div>
                 </div>
                 <div className="rounded-2xl border border-white/5 bg-white/[0.03] p-4">
                   <p className="text-sm font-bold text-white">حافظه‌ی مرورگر / برنامه</p>

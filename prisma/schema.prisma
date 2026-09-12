@@ -106,12 +106,17 @@ model UserCollection {
   id        Int      @id @default(autoincrement())
   userKey   String
   name      String
+  /// v0.29.0 (VERIFY-DATA-16) — the Supabase row's stable uuid. Collection
+  /// sync used to key ONLY by name (user-editable), so a rename on device B
+  /// forked duplicates on device A. Null for never-synced local rows.
+  cloudId   String?
   createdAt DateTime @default(now())
   updatedAt DateTime @default(now()) @updatedAt
   items     UserCollectionItem[]
 
   @@unique([userKey, name])
   @@index([userKey])
+  @@index([cloudId])
 }
 
 model UserCollectionItem {
@@ -179,6 +184,9 @@ model Review {
   author    String
   rating    Int
   body      String
+  /// v0.29.0 (NEW-DATA-10) — owning data space on this device. Null for
+  /// legacy rows (they stay visible to every account, as before).
+  userKey   String?
   createdAt DateTime @default(now())
 
   @@index([titleId])

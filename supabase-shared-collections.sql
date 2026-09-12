@@ -8,8 +8,15 @@
 --
 --   shared_collections   (owner + name + denormalized items jsonb)
 --
--- RLS:
---   SELECT  → everyone (anon included) — it is a public wall
+-- RLS (v0.29.0 — NEW-DATA-14 hardening):
+--   SELECT  → the OWNER reads their own rows from the base table;
+--             everyone else (anon included) reads the
+--             shared_wall_public VIEW, which exposes id / name /
+--             description / items / owner_name / owner_avatar but NOT
+--             owner_id. The old «for select using (true)» let any
+--             anonymous visitor harvest every publisher's auth UUID
+--             (and then their name/avatar from cinema_profiles with a
+--             disposable account) — that leak is closed.
 --   INSERT/UPDATE/DELETE → owner only (auth.uid() = owner_id)
 --
 -- Items are denormalized ({id,title,poster,year,type,rating} jsonb) so
@@ -35,13 +42,21 @@ create table if not exists public.shared_collections (
 create index if not exists shared_collections_owner_idx  on public.shared_collections (owner_id);
 create index if not exists shared_collections_recent_idx on public.shared_collections (updated_at desc);
 
+-- v0.29.0 (NEW-DATA-14) — the wall card shows the publisher's avatar without
+-- any client-side join onto cinema_profiles: the snapshot rides the row.
+alter table public.shared_collections add column if not exists owner_avatar text not null default '';
+
 -- ---------- Row Level Security ----------
 alter table public.shared_collections enable row level security;
 
--- public read (the wall is visible to everyone, signed-out included)
+-- v0.29.0 — the base table is NO LONGER world-readable. Anon visitors get the
+-- projection view below; the owner still reads their own rows (badges,
+-- unshare).
 drop policy if exists "shared collections public read" on public.shared_collections;
-create policy "shared collections public read" on public.shared_collections
-  for select using (true);
+drop policy if exists "shared collections owner read" on public.shared_collections;
+create policy "shared collections owner read" on public.shared_collections
+  for select to authenticated
+  using (auth.uid() = owner_id);
 
 -- owner-only writes (drop+recreate so re-running the file never duplicates)
 drop policy if exists "shared collections owner insert" on public.shared_collections;
@@ -55,3 +70,23 @@ create policy "shared collections owner update" on public.shared_collections
 drop policy if exists "shared collections owner delete" on public.shared_collections;
 create policy "shared collections owner delete" on public.shared_collections
   for delete using (auth.uid() = owner_id);
+
+-- ---------- the PUBLIC projection (no owner_id) ----------
+-- security_invoker = false → the view runs with the OWNER's rights, so it can
+-- read the RLS-locked base table on behalf of anon visitors while exposing
+-- only the safe columns. Re-run safe: create-or-replace.
+create or replace view public.shared_wall_public
+with (security_invoker = false) as
+select
+  id,
+  owner_name,
+  owner_avatar,
+  name,
+  description,
+  items,
+  item_count,
+  created_at,
+  updated_at
+from public.shared_collections;
+
+grant select on public.shared_wall_public to anon, authenticated;

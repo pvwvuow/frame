@@ -229,7 +229,8 @@ async function handleX(req: Request, ctx: { params: Promise<{ path: string[] }> 
       return ok(await getUserScore(userKey, Number(sp.get("titleId")) || 0));
 
     case "reviews":
-      return ok(await getReviews(Number(sp.get("titleId")) || 0));
+      // v0.29.0 (NEW-DATA-10) — per-account reviews
+      return ok(await getReviews(Number(sp.get("titleId")) || 0, userKey));
 
     case "progress": {
       const titleId = Number(sp.get("titleId")) || 0;

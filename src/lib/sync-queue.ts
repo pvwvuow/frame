@@ -48,7 +48,21 @@ export type SyncOp = {
   /** favorite/watchlist/rating: {slug,title,value|status|score} */
   /** progress: rows[] already slug-resolved · *-del/collection-*: key fields */
   payload: Record<string, unknown>;
+  /** v0.29.0 (NEW-DATA-2) — failed replay attempts. A POISON op (e.g. a
+   *  collection rename that collides with an existing name — permanently
+   *  unsatisfiable) used to sit at the head of the queue and `flushSyncOps`
+   *  broke on the first failure, so NOTHING ever synced again. Now every op
+   *  counts its attempts; after MAX_OP_ATTEMPTS it is dropped (quarantined)
+   *  and the rest of the queue keeps flowing. */
+  attempts?: number;
 };
+
+/** v0.29.0 (NEW-DATA-2) — a permanently-failing op is dropped after this many
+ *  full flush attempts. Network hiccups retry forever (each flush = 1 try);
+ *  only ops that fail while ONLINE five separate times are treated as poison. */
+export const MAX_OP_ATTEMPTS = 5;
+/** spacing between retries inside one flush (online errors back off a little) */
+export const OP_RETRY_BACKOFF_MS = 1_500;
 
 export type Tombstone = { kind: "favorite" | "watchlist" | "rating" | "progress" | "collection"; key: string; at: string };
 
@@ -113,6 +127,26 @@ export function removeSyncOps(ids: string[]): void {
   lsSet(OPS_KEY, JSON.stringify(getSyncOps().filter((o) => !gone.has(o.id))));
 }
 
+/** v0.29.0 (NEW-DATA-2) — bump the attempt counter of one op (persisted). */
+export function bumpSyncOpAttempts(id: string): void {
+  const ops = getSyncOps();
+  const op = ops.find((o) => o.id === id);
+  if (!op) return;
+  op.attempts = (op.attempts ?? 0) + 1;
+  lsSet(OPS_KEY, JSON.stringify(ops));
+}
+
+/** v0.29.0 (NEW-DATA-2) — drop ops that have exhausted their retry budget.
+ *  Returns the ids that were removed. Keeps the queue flowing when one op can
+ *  never succeed (unique-constraint collisions, ops referencing deleted
+ *  parents, …) instead of blocking every future change forever. */
+export function quarantinePoisonOps(max = MAX_OP_ATTEMPTS): string[] {
+  const ops = getSyncOps();
+  const dead = ops.filter((o) => (o.attempts ?? 0) >= max).map((o) => o.id);
+  if (dead.length) removeSyncOps(dead);
+  return dead;
+}
+
 /** Drop ops that belong to ANOTHER account (never replay A's deletes as B). */
 export function dropOpsForOtherUids(activeUid: string): void {
   lsSet(OPS_KEY, JSON.stringify(getSyncOps().filter((o) => !o.uid || o.uid === activeUid)));
@@ -135,6 +169,15 @@ function loadTombs(): Tombstone[] {
 
 function saveTombs(t: Tombstone[]): void {
   lsSet(TOMB_KEY, JSON.stringify(t.slice(-TOMB_CAP)));
+}
+
+/** v0.29.0 (VERIFY-DATA-1) — read the live tombstones. The DESKTOP merge route
+ *  runs server-side (Electron main) and cannot see localStorage, so the client
+ *  now SHIPS its tombstones inside the /api/cloud/merge body; without this the
+ *  pull re-added rows the user had deleted offline — the «رستاخیز داده» class
+ *  survived on desktop even though mobile (mergeCloudSnapshot) was fixed. */
+export function getTombstones(): Tombstone[] {
+  return loadTombs();
 }
 
 /** Record a LOCAL deletion so the next pull cannot resurrect the row. */
