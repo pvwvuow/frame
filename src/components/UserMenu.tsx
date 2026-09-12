@@ -171,7 +171,12 @@ export default function UserMenu() {
     setChecking(true);
     try {
       const r = await b.checkForUpdates();
-      if (r.status === "available") toast.info(locale === "en" ? `Version ${r.version ?? ""} found – downloading…` : `نسخه‌ی جدید ${r.version ?? ""} پیدا شد و در حال دانلود است.`);
+      /* v0.30.4 — «available» no longer toasts: the UpdaterPopup (the
+         red-white glass card) already announces the new version and tracks
+         the download — the toast was a duplicate announcement. */
+      if (r.status === "available") {
+        /* handled by the UpdaterPopup */
+      }
       else if (r.status === "not-available") toast.success(locale === "en" ? "You're on the latest version." : "شما آخرین نسخه را دارید.");
       else if (r.status === "disabled") toast.message(locale === "en" ? "Auto-update is only available in the installed build." : "به‌روزرسانی خودکار فقط در نسخه‌ی نصب‌شده فعال است.");
       else toast.error(r.message ?? (locale === "en" ? "Update check failed." : "بررسی به‌روزرسانی ناموفق بود."));

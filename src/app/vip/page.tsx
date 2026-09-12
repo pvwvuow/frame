@@ -7,13 +7,14 @@
  *    customers — activation goes through the activate_code RPC, so users
  *    can never read or reuse codes) */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { UserIcon, CrownIcon, CheckCircleIcon, SparkIcon } from "@/components/Icons";
 import { useI18n } from "@/components/i18n/LocaleProvider";
 import { useCloudSession } from "@/lib/cloud";
 import { PLAN_LABELS, activationErrorText, useSubscription, type Plan } from "@/lib/subscription";
+import { posterSrc } from "@/lib/covers";
 import { fa } from "@/lib/format";
 
 type PlanDef = { key: Plan; title: string; note: string; noteEn: string; hot?: boolean };
@@ -40,6 +41,105 @@ const PLANS: PlanDef[] = [
   { key: "y1", title: "یک‌ساله", note: "یک سال تماشای کامل", noteEn: "1 year of full access" },
   { key: "life", title: "مادام‌العمر", note: "برای همیشه، بدون انقضا", noteEn: "Forever, never expires" },
 ];
+
+/* ── VIP ambient backdrop (v0.30.4) ───────────────────────────────────
+ * Real covers of top-rated titles drift in and out of the blackness
+ * around the page: matte (low opacity, slight blur, radial mask → edges
+ * dissolved into the dark), one surfacing top-start, the next bottom-end,
+ * never all at once, forever changing. GPU-only opacity/transform
+ * animation; the poster swaps at the invisible 0-opacity boundary of each
+ * cycle; reduced-motion users get a calm static page. */
+const AMBIENT_SLOTS = [
+  { left: "3%", top: "9%", w: 230, dur: 19, delay: -2, o: 0.3, blur: 2, tilt: "-4deg" },
+  { left: "74%", top: "5%", w: 205, dur: 24, delay: -13, o: 0.24, blur: 3, tilt: "3deg" },
+  { left: "7%", top: "56%", w: 195, dur: 27, delay: -19, o: 0.22, blur: 3, tilt: "5deg" },
+  { left: "79%", top: "46%", w: 240, dur: 18, delay: -8, o: 0.28, blur: 2, tilt: "-3deg" },
+  { left: "28%", top: "80%", w: 185, dur: 26, delay: -22, o: 0.2, blur: 4, tilt: "4deg" },
+  { left: "52%", top: "24%", w: 175, dur: 30, delay: -16, o: 0.15, blur: 5, tilt: "-5deg" },
+];
+
+function AmbientSlot({
+  slot,
+  posters,
+  startIndex,
+}: {
+  slot: (typeof AMBIENT_SLOTS)[number];
+  posters: string[];
+  startIndex: number;
+}) {
+  const [idx, setIdx] = useState(() => startIndex % Math.max(1, posters.length));
+  const src = posters[idx % posters.length];
+  return (
+    <img
+      src={src}
+      alt=""
+      aria-hidden="true"
+      draggable={false}
+      decoding="async"
+      onAnimationIteration={() => setIdx((i) => (i + AMBIENT_SLOTS.length) % posters.length)}
+      className="vip-ambient-img absolute select-none object-cover"
+      style={{
+        left: slot.left,
+        top: slot.top,
+        width: slot.w,
+        maxWidth: "32vw",
+        aspectRatio: "2 / 3",
+        borderRadius: 18,
+        opacity: 0,
+        filter: `blur(${slot.blur}px) saturate(0.65) brightness(0.6)`,
+        WebkitMaskImage: "radial-gradient(90% 90% at 50% 50%, #000 30%, transparent 72%)",
+        maskImage: "radial-gradient(90% 90% at 50% 50%, #000 30%, transparent 72%)",
+        "--vip-o": slot.o,
+        "--vip-tilt": slot.tilt,
+        animation: `vip-ambient ${slot.dur}s linear ${slot.delay}s infinite`,
+        willChange: "opacity, transform",
+      } as React.CSSProperties}
+    />
+  );
+}
+
+function VipAmbient() {
+  const [posters, setPosters] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+    let alive = true;
+    Promise.all([
+      fetch("/api/catalog?type=movie&sort=rating&limit=40").then((r) => (r.ok ? r.json() : { items: [] })),
+      fetch("/api/catalog?type=series&sort=rating&limit=40").then((r) => (r.ok ? r.json() : { items: [] })),
+    ])
+      .then(([m, s]) => {
+        if (!alive) return;
+        const pool = [ ...(m.items ?? []), ...(s.items ?? []) ]
+          .map((t: { poster?: string | null; posterUrl?: string | null }) => posterSrc(t))
+          .filter(Boolean);
+        /* shuffle so every visit surfaces different covers */
+        for (let i = pool.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [pool[i], pool[j]] = [pool[j], pool[i]];
+        }
+        setPosters(pool.slice(0, 24));
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  if (posters.length < AMBIENT_SLOTS.length) return null;
+  return (
+    <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden" aria-hidden="true">
+      {AMBIENT_SLOTS.map((slot, i) => (
+        <AmbientSlot key={i} slot={slot} posters={posters} startIndex={i * 4} />
+      ))}
+      {/* sink everything into the blackness at the edges */}
+      <div
+        className="absolute inset-0"
+        style={{ background: "radial-gradient(120% 95% at 50% 38%, transparent 42%, rgba(7, 7, 11, 0.9) 100%)" }}
+      />
+    </div>
+  );
+}
 
 export default function VipPage() {
   const { locale, dir } = useI18n();
@@ -114,6 +214,9 @@ export default function VipPage() {
   /* ---------------- main VIP page ---------------- */
   return (
     <main dir={dir} className="mx-auto w-full max-w-3xl px-4 pb-16 pt-28 sm:px-8 lg:pt-32">
+      {/* v0.30.4 — covers of top titles surfacing & dissolving in the dark */}
+      <VipAmbient />
+
       {/* header */}
       <div className="text-center">
         <VipEmblem size={76} />

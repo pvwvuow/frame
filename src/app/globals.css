@@ -522,3 +522,20 @@ html[data-electron="1"][data-platform="darwin"][dir="ltr"] .nav-inner { padding-
   inset: -9px;
   border-radius: 9999px;
 }
+
+/* ---------- VIP ambient posters (v0.30.4) ----------
+ * A handful of real covers drift in and out of the blackness behind the
+ * VIP page: matte (low opacity + blur + radial mask = dissolved edges),
+ * each slot fading in, holding, dissolving, resting dark while the next
+ * poster swaps in at the invisible boundary. Pure opacity/transform →
+ * GPU-only, zero layout work. */
+@keyframes vip-ambient {
+  0% { opacity: 0; transform: scale(1.03) rotate(var(--vip-tilt, 0deg)); }
+  16% { opacity: var(--vip-o, 0.26); }
+  58% { opacity: var(--vip-o, 0.26); }
+  80% { opacity: 0; transform: scale(1.1) rotate(var(--vip-tilt, 0deg)); }
+  100% { opacity: 0; transform: scale(1.1) rotate(var(--vip-tilt, 0deg)); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .vip-ambient-img { animation: none !important; }
+}
