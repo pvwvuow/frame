@@ -13,6 +13,7 @@ import { titleNames } from "@/lib/title-name";
 import TitleName from "./TitleName";
 import { watchHref } from "@/lib/mobile-links";
 import { posterSrc } from "@/lib/covers";
+import { genreLabel } from "@/lib/genres";
 
 /** Shape needed by the card grid — list endpoints may ship the lightweight
  *  variant (no description/cast/sources) while full TitleView still fits. */
@@ -114,7 +115,7 @@ export default function TitleCard({
               {t.genres[0] && (
                 <>
                   <span className="opacity-50">·</span>
-                  <span className="truncate">{t.genres[0]}</span>
+                  <span className="truncate">{genreLabel(t.genres[0], locale)}</span>
                 </>
               )}
             </p>

@@ -43,44 +43,44 @@ const PLANS: PlanDef[] = [
 ];
 
 /* ── VIP ambient backdrop (v0.30.4 → v0.30.9) ──────────────────────────
- * GHOST POSTERS (2/3 — the user prefers the poster form over wide
- * backdrops) of the all-time famous titles drift in and out of the
- * blackness around the page: brighter core, fully dissolved borders,
+ * OVAL COVERS (v0.30.10 — the user flipped back from posters to the wide
+ * cover form, shaped as soft fade-out ellipses so no border ever shows)
+ * of the all-time famous titles drift in and out of the blackness:
  * TEN staggered slots, fast cycles (9–15s). Shared machinery lives in
  * components/ambient.tsx; only the slot table is VIP-specific here. */
 const AMBIENT_SLOTS: GhostSlot[] = [
-  { left: "2%",  top: "7%",  w: 270, dur: 10, delay: -2,  o: 0.38, blur: 2, tilt: "-3deg" },
-  { left: "66%", top: "12%", w: 250, dur: 12, delay: -7,  o: 0.34, blur: 3, tilt: "2deg" },
-  { left: "10%", top: "32%", w: 225, dur: 13, delay: -11, o: 0.28, blur: 3, tilt: "3deg" },
-  { left: "58%", top: "40%", w: 260, dur: 9,  delay: -4,  o: 0.35, blur: 2, tilt: "-2deg" },
-  { left: "3%",  top: "58%", w: 240, dur: 14, delay: -9,  o: 0.32, blur: 3, tilt: "4deg" },
-  { left: "70%", top: "66%", w: 270, dur: 11, delay: -6,  o: 0.38, blur: 2, tilt: "-3deg" },
-  { left: "24%", top: "82%", w: 250, dur: 12, delay: -3,  o: 0.32, blur: 4, tilt: "2deg" },
-  { left: "42%", top: "18%", w: 215, dur: 15, delay: -12, o: 0.24, blur: 4, tilt: "-4deg" },
-  { left: "38%", top: "72%", w: 230, dur: 10, delay: -8,  o: 0.26, blur: 4, tilt: "3deg" },
-  { left: "84%", top: "30%", w: 200, dur: 13, delay: -5,  o: 0.30, blur: 3, tilt: "-2deg" },
+  { left: "2%",  top: "7%",  w: 460, dur: 10, delay: -2,  o: 0.38, blur: 2, tilt: "-3deg" },
+  { left: "66%", top: "12%", w: 420, dur: 12, delay: -7,  o: 0.34, blur: 3, tilt: "2deg" },
+  { left: "10%", top: "32%", w: 380, dur: 13, delay: -11, o: 0.28, blur: 3, tilt: "3deg" },
+  { left: "58%", top: "40%", w: 440, dur: 9,  delay: -4,  o: 0.35, blur: 2, tilt: "-2deg" },
+  { left: "3%",  top: "58%", w: 400, dur: 14, delay: -9,  o: 0.32, blur: 3, tilt: "4deg" },
+  { left: "70%", top: "66%", w: 460, dur: 11, delay: -6,  o: 0.38, blur: 2, tilt: "-3deg" },
+  { left: "24%", top: "82%", w: 420, dur: 12, delay: -3,  o: 0.32, blur: 4, tilt: "2deg" },
+  { left: "42%", top: "18%", w: 360, dur: 15, delay: -12, o: 0.24, blur: 4, tilt: "-4deg" },
+  { left: "38%", top: "72%", w: 390, dur: 10, delay: -8,  o: 0.26, blur: 4, tilt: "3deg" },
+  { left: "84%", top: "30%", w: 340, dur: 13, delay: -5,  o: 0.30, blur: 3, tilt: "-2deg" },
 ];
 
 function AmbientSlot({
   slot,
-  posters,
+  covers,
   startIndex,
 }: {
   slot: GhostSlot;
-  posters: string[];
+  covers: string[];
   startIndex: number;
 }) {
-  return <AmbientGhost slot={slot} posters={posters} startIndex={startIndex} advance={AMBIENT_SLOTS.length} maxWidth="40vw" />;
+  return <AmbientGhost slot={slot} covers={covers} startIndex={startIndex} advance={AMBIENT_SLOTS.length} maxWidth="46vw" shape="oval" />;
 }
 
 function VipAmbient() {
-  const posters = useFamousPosterPool();
+  const covers = useFamousPosterPool(42, "backdrop");
 
-  if (posters.length < AMBIENT_SLOTS.length) return null;
+  if (covers.length < AMBIENT_SLOTS.length) return null;
   return (
     <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden" aria-hidden="true">
       {AMBIENT_SLOTS.map((slot, i) => (
-        <AmbientSlot key={i} slot={slot} posters={posters} startIndex={i * 4} />
+        <AmbientSlot key={i} slot={slot} covers={covers} startIndex={i * 4} />
       ))}
       {/* sink everything into the blackness at the edges */}
       <div

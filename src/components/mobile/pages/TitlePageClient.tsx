@@ -46,6 +46,8 @@ import {
   type ProgressRow,
 } from "@/lib/mobile/userdata";
 import { fa, formatDuration, formatViews, typeLabel, formatClock } from "@/lib/format";
+import { genreLabel, genreListLabel } from "@/lib/genres";
+import { useI18n } from "@/components/i18n/LocaleProvider";
 import { posterSrc, backdropSrc } from "@/lib/covers";
 import { titleNames } from "@/lib/title-name";
 import { normalizeSources } from "@/lib/source-fix";
@@ -75,6 +77,7 @@ const TIERS_ORD: Record<string, number> = { "4K": 5, "1080p": 4, "720p": 3, "540
 
 export default function TitlePage() {
   const slug = useRouteSlug("slug");
+  const { t: tr, locale } = useI18n();
   const [picker, setPicker] = useState(false);
 
   type Eps = Awaited<ReturnType<typeof getEpisodes>>;
@@ -170,8 +173,8 @@ export default function TitlePage() {
   const hasDub = allSources.some((s) => s.v.includes("دوبله"));
   const hasHardSub = allSources.some((s) => s.v.includes("زیرنویس"));
   const variantBadges = [
-    ...(hasDub ? [{ label: "دوبله فارسی", c: "border-emerald-400/30 bg-emerald-500/10 text-emerald-300" }] : []),
-    ...(hasHardSub ? [{ label: "زیرنویس چسبیده", c: "border-sky-400/30 bg-sky-500/10 text-sky-300" }] : []),
+    ...(hasDub ? [{ label: tr("title.dubbed"), c: "border-emerald-400/30 bg-emerald-500/10 text-emerald-300" }] : []),
+    ...(hasHardSub ? [{ label: tr("title.hardSub"), c: "border-sky-400/30 bg-sky-500/10 text-sky-300" }] : []),
   ];
 
   // rating histogram (10 → 1)
@@ -182,11 +185,11 @@ export default function TitlePage() {
   const maxC = Math.max(1, ...hist.map((h) => h.c));
 
   const tabs = [
-    { id: "overview", label: "درباره اثر" },
-    ...(eps.length ? [{ id: "episodes", label: "قسمت‌ها", count: eps.length }] : []),
-    { id: "cast", label: "عوامل" },
-    { id: "reviews", label: "نظرات", count: revs.length },
-    { id: "similar", label: "مشابه" },
+    { id: "overview", label: tr("title.aboutTab") },
+    ...(eps.length ? [{ id: "episodes", label: tr("title.episodesTab"), count: eps.length }] : []),
+    { id: "cast", label: tr("title.castTab") },
+    { id: "reviews", label: tr("title.reviewsTab"), count: revs.length },
+    { id: "similar", label: tr("title.similarTab") },
   ];
 
   return (
@@ -200,14 +203,14 @@ export default function TitlePage() {
         <div className="absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-ink to-transparent" />
 
         {/* breadcrumbs */}
-        <nav className="absolute inset-x-0 top-20 z-10 mx-auto max-w-[1600px] px-4 text-xs text-zinc-400 sm:top-24 sm:px-8 lg:px-12" aria-label="مسیر">
+        <nav className="absolute inset-x-0 top-20 z-10 mx-auto max-w-[1600px] px-4 text-xs text-zinc-400 sm:top-24 sm:px-8 lg:px-12" aria-label={tr("title.breadcrumb")}>
           <ol className="flex items-center gap-2">
             <li>
-              <Link href="/" className="hover:text-white">خانه</Link>
+              <Link href="/" className="hover:text-white">{tr("nav.home")}</Link>
             </li>
             <li className="opacity-40">/</li>
             <li>
-              <Link href={t.type === "series" ? "/series" : "/movies"} className="hover:text-white">{t.type === "series" ? "سریال‌ها" : "فیلم‌ها"}</Link>
+              <Link href={t.type === "series" ? "/series" : "/movies"} className="hover:text-white">{t.type === "series" ? tr("common.seriesPlural") : tr("common.movies")}</Link>
             </li>
             <li className="opacity-40">/</li>
             <li className="truncate text-zinc-200" dir={names.primaryDir}>{names.primary}</li>
@@ -235,7 +238,7 @@ export default function TitlePage() {
               <span className="rounded-md bg-brand px-2.5 py-1 text-white shadow-[0_0_20px_var(--color-brand-glow)]">{typeLabel(t.type)}</span>
               {t.trendingScore >= 90 && (
                 <span className="flex items-center gap-1 rounded-md border border-orange-400/30 bg-orange-500/15 px-2 py-1 text-orange-300">
-                  <FlameIcon width={12} height={12} /> ترند
+                  <FlameIcon width={12} height={12} /> {tr("title.trending")}
                 </span>
               )}
               <span className="rounded-md border border-white/20 bg-black/40 px-2 py-1 text-zinc-100 backdrop-blur">{qualities.length ? qualities.join(" · ") : t.quality}</span>
@@ -248,7 +251,7 @@ export default function TitlePage() {
                 ))
               ) : (
                 <span className="flex items-center gap-1 rounded-md border border-white/20 bg-black/40 px-2 py-1 text-zinc-100 backdrop-blur">
-                  <SubtitleIcon width={12} height={12} /> بدون زیرنویس جدا
+                  <SubtitleIcon width={12} height={12} /> {tr("title.noSepSubs")}
                 </span>
               )}
             </div>
@@ -270,23 +273,23 @@ export default function TitlePage() {
                   <div className="grid h-9 w-9 place-items-center rounded-full bg-ink-800 text-sm font-black text-amber-400">{fa(t.rating)}</div>
                 </div>
                 <div className="text-xs leading-5">
-                  <p className="font-bold text-white">امتیاز نما</p>
-                  <p className="text-zinc-400">{avgUser ? `کاربران ${fa(avgUser.toFixed(1))} · ${fa(revs.length)} نظر` : "از ۱۰"}</p>
+                  <p className="font-bold text-white">{tr("title.frameScore")}</p>
+                  <p className="text-zinc-400">{avgUser ? tr("title.userScore", { n: fa(avgUser.toFixed(1)), c: fa(revs.length) }) : tr("title.ofTen")}</p>
                 </div>
               </div>
 
               <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-zinc-200">
                 <span className="flex items-center gap-1.5">
                   <ClockIcon width={16} height={16} className="text-zinc-400" />
-                  {t.type === "series" ? `${fa(eps.length)} قسمت · ${formatDuration(t.duration)}` : formatDuration(t.duration)}
+                  {t.type === "series" ? tr("title.episodesCount", { n: fa(eps.length), d: formatDuration(t.duration) }) : formatDuration(t.duration)}
                 </span>
                 <span className="flex items-center gap-1.5">
                   <EyeIcon width={16} height={16} className="text-zinc-400" />
-                  {formatViews(t.views)} بازدید
+                  {formatViews(t.views)} {tr("common.views")}
                 </span>
                 <span className="flex items-center gap-1.5">
                   <CalendarIcon width={16} height={16} className="text-zinc-400" />
-                  {t.year > 0 ? fa(t.year) : "نامشخص"}
+                  {t.year > 0 ? fa(t.year) : tr("title.unknownYear")}
                 </span>
                 <span className="flex items-center gap-1.5">
                   <GlobeIcon width={16} height={16} className="text-zinc-400" />
@@ -302,7 +305,7 @@ export default function TitlePage() {
                   href={`/${t.type === "series" ? "series" : "movies"}?genre=${encodeURIComponent(g)}`}
                   className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-zinc-300 transition hover:border-brand/60 hover:bg-brand/10 hover:text-white"
                 >
-                  {g}
+                  {genreLabel(g, locale)}
                 </Link>
               ))}
             </div>
@@ -316,7 +319,7 @@ export default function TitlePage() {
                 className="group flex h-12 items-center gap-2 rounded-full bg-brand px-7 text-sm font-extrabold text-white shadow-[0_10px_40px_var(--color-brand-glow)] transition hover:scale-[1.03] hover:bg-brand-600"
               >
                 <PlayIcon width={20} height={20} className="transition group-hover:scale-110" />
-                {hasProgress && progress ? `ادامه از ${formatClock(progress.position)}` : t.type === "series" ? "پخش قسمت اول" : "پخش فیلم"}
+                {hasProgress && progress ? tr("title.continueFrom", { time: formatClock(progress.position) }) : t.type === "series" ? tr("title.playFirstEpisode") : tr("title.playMovie")}
               </Link>
               {/* v0.10.19: download with a chosen quality (desktop app only) */}
               {t.type !== "series" && (
@@ -329,8 +332,8 @@ export default function TitlePage() {
               <button
                 type="button"
                 onClick={() => setPicker(true)}
-                aria-label="افزودن به مجموعه"
-                title="افزودن به مجموعه"
+                aria-label={tr("title.addToCollection")}
+                title={tr("title.addToCollection")}
                 className="grid h-12 w-12 place-items-center rounded-full border border-white/30 bg-white/10 text-white transition hover:bg-white/20"
               >
                 <LayersIcon width={20} height={20} />
@@ -338,8 +341,8 @@ export default function TitlePage() {
               {/* v0.10.23: تاریکخانه — design a shareable card for this title */}
               <Link
                 href={`/darkroom?title=${t.slug}`}
-                aria-label={t.type === "series" ? "ساخت پست از سریال" : "ساخت پست از فیلم"}
-                title="تاریکخانه — ساخت پست و استوری"
+                aria-label={t.type === "series" ? tr("title.postFromSeries") : tr("title.postFromMovie")}
+                title={tr("title.darkroomHint")}
                 className="grid h-12 w-12 place-items-center rounded-full border border-white/30 bg-white/10 text-white transition hover:bg-white/20"
               >
                 <CameraIcon width={20} height={20} />
@@ -362,7 +365,7 @@ export default function TitlePage() {
 
             {hasProgress && (
               <p className="mt-3 text-xs text-zinc-400">
-                {fa(pct)}٪ تماشا شده · {formatClock((progress?.duration ?? 0) - (progress?.position ?? 0))} باقی‌مانده
+                {tr("title.watchedPct", { p: fa(pct), t: formatClock((progress?.duration ?? 0) - (progress?.position ?? 0)) })}
               </p>
             )}
           </div>
@@ -379,15 +382,15 @@ export default function TitlePage() {
         <div className="min-w-0 space-y-16">
           {/* overview */}
           <section id="overview" className="scroll-mt-32">
-            <h2 className="mb-4 text-xl font-extrabold text-white">داستان {t.type === "series" ? "سریال" : "فیلم"}</h2>
+            <h2 className="mb-4 text-xl font-extrabold text-white">{t.type === "series" ? tr("title.storySeries") : tr("title.storyMovie")}</h2>
             <p className="max-w-3xl text-[15px] leading-9 text-zinc-300">{t.description}</p>
 
             <div className="mt-8 grid grid-cols-2 gap-3 sm:grid-cols-4">
               {[
-                { k: "کیفیت", v: qualities.length ? qualities.join(" · ") : t.quality },
-                { k: "مدت", v: formatDuration(t.duration) },
-                { k: "رده سنی", v: t.ageRating },
-                { k: "محصول", v: t.year > 0 ? `${t.country} · ${fa(t.year)}` : t.country },
+                { k: tr("common.quality"), v: qualities.length ? qualities.join(" · ") : t.quality },
+                { k: tr("title.metaDuration"), v: formatDuration(t.duration) },
+                { k: tr("common.ageRating"), v: t.ageRating },
+                { k: tr("title.metaOrigin"), v: t.year > 0 ? `${t.country} · ${fa(t.year)}` : t.country },
               ].map((x) => (
                 <div key={x.k} className="rounded-2xl border border-white/5 bg-ink-700/40 p-4">
                   <p className="text-[11px] text-zinc-500">{x.k}</p>
@@ -398,19 +401,19 @@ export default function TitlePage() {
             {allSources.length > 0 && (
               <div className="mt-4 rounded-2xl border border-white/5 bg-ink-700/40 p-4">
                 <p className="mb-2.5 flex items-center gap-2 text-sm font-extrabold text-white">
-                  <SubtitleIcon width={15} height={15} className="text-brand" /> نسخه‌های موجود
+                  <SubtitleIcon width={15} height={15} className="text-brand" /> {tr("title.availableVersions")}
                 </p>
                 <div className="flex flex-wrap gap-2">
                   {allSources.slice(0, 12).map((s, i) => (
                     <span key={`${s.url}-${i}`} className="flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] font-bold text-zinc-200">
-                      <span className="text-white">{s.q || "عادی"}</span>
+                      <span className="text-white">{s.q || tr("title.normalQuality")}</span>
                       {s.v && <span className={s.v.includes("دوبله") ? "text-emerald-300" : s.v.includes("زیرنویس") ? "text-sky-300" : "text-zinc-500"}>{s.v}</span>}
                       {s.mb ? <span className="text-zinc-500 num">{fa(s.mb)}MB</span> : null}
                     </span>
                   ))}
-                  {allSources.length > 12 && <span className="rounded-full px-2 py-1 text-[11px] text-zinc-500">+{fa(allSources.length - 12)} نسخه دیگر</span>}
+                  {allSources.length > 12 && <span className="rounded-full px-2 py-1 text-[11px] text-zinc-500">{tr("title.moreVersions", { n: fa(allSources.length - 12) })}</span>}
                 </div>
-                <p className="mt-2.5 text-[11px] leading-5 text-zinc-500">هنگام پخش می‌توانید از دکمه‌ی کیفیت، بین نسخه‌های بالا جابه‌جا شوید. برای زیرنویس جدا، دکمه‌ی CC داخل پخش‌کننده است.</p>
+                <p className="mt-2.5 text-[11px] leading-5 text-zinc-500">{tr("title.versionsHint")}</p>
               </div>
             )}
           </section>
@@ -419,9 +422,9 @@ export default function TitlePage() {
           {eps.length > 0 && (
             <section id="episodes" className="scroll-mt-32">
               <div className="mb-2 flex items-end justify-between">
-                <h2 className="text-xl font-extrabold text-white">قسمت‌ها</h2>
+                <h2 className="text-xl font-extrabold text-white">{tr("title.episodesTab")}</h2>
                 <span className="text-sm text-zinc-500">
-                  {fa(seasons.length)} فصل · {fa(eps.length)} قسمت
+                  {tr("title.seasonsEpisodes", { s: fa(seasons.length), e: fa(eps.length) })}
                 </span>
               </div>
               <EpisodeList
@@ -436,7 +439,7 @@ export default function TitlePage() {
 
           {/* cast */}
           <section id="cast" className="scroll-mt-32">
-            <h2 className="mb-5 text-xl font-extrabold text-white">عوامل و بازیگران</h2>
+            <h2 className="mb-5 text-xl font-extrabold text-white">{tr("title.castHeading")}</h2>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
               {t.director?.trim() && (
                 <Link
@@ -448,7 +451,7 @@ export default function TitlePage() {
                   </span>
                   <span className="min-w-0">
                     <span className="block truncate text-sm font-bold text-white">{t.director}</span>
-                    <span className="block text-[11px] text-zinc-400">کارگردان</span>
+                    <span className="block text-[11px] text-zinc-400">{tr("common.director")}</span>
                   </span>
                 </Link>
               )}
@@ -465,7 +468,7 @@ export default function TitlePage() {
                   </span>
                   <span className="min-w-0">
                     <span className="block truncate text-sm font-bold text-white">{c}</span>
-                    <span className="block text-[11px] text-zinc-400">بازیگر</span>
+                    <span className="block text-[11px] text-zinc-400">{tr("title.actor")}</span>
                   </span>
                 </Link>
               ))}
@@ -475,8 +478,8 @@ export default function TitlePage() {
           {/* reviews */}
           <section id="reviews" className="scroll-mt-32">
             <div className="mb-5 flex items-end justify-between">
-              <h2 className="text-xl font-extrabold text-white">نظرات کاربران</h2>
-              <span className="text-sm text-zinc-500">{fa(revs.length)} نظر</span>
+              <h2 className="text-xl font-extrabold text-white">{tr("title.reviewsHeading")}</h2>
+              <span className="text-sm text-zinc-500">{tr("title.reviewsCount", { n: fa(revs.length) })}</span>
             </div>
 
             <div className="grid gap-6 lg:grid-cols-5">
@@ -490,7 +493,7 @@ export default function TitlePage() {
                         <StarIcon key={i} width={14} height={14} className={avgUser && i < Math.round(avgUser / 2) ? "" : "opacity-25"} />
                       ))}
                     </div>
-                    <p className="mt-1 text-[11px] text-zinc-500">میانگین {fa(revs.length)} نظر</p>
+                    <p className="mt-1 text-[11px] text-zinc-500">{tr("title.avgOf", { n: fa(revs.length) })}</p>
                   </div>
                 </div>
                 <div className="mt-5 space-y-1.5">
@@ -523,7 +526,7 @@ export default function TitlePage() {
                       </span>
                       <div>
                         <p className="text-sm font-bold text-white">{r.author}</p>
-                        <p className="text-[11px] text-zinc-500">{new Date(r.createdAt).toLocaleDateString("fa-IR")}</p>
+                        <p className="text-[11px] text-zinc-500">{new Date(r.createdAt).toLocaleDateString(locale === "en" ? "en-US" : "fa-IR")}</p>
                       </div>
                       <span className="ms-auto flex items-center gap-1 rounded-lg bg-amber-400/10 px-2 py-1 text-sm font-bold text-amber-400">
                         <StarIcon width={13} height={13} /> {fa(r.rating)}
@@ -540,17 +543,17 @@ export default function TitlePage() {
         {/* ── SIDEBAR ──────────────────────────────────────────────── */}
         <aside className="space-y-5 lg:sticky lg:top-36 lg:self-start">
           <div className="rounded-3xl border border-white/5 bg-ink-700/40 p-5">
-            <h3 className="mb-4 text-sm font-extrabold text-white">مشخصات</h3>
+            <h3 className="mb-4 text-sm font-extrabold text-white">{tr("title.specs")}</h3>
             <dl className="space-y-3 text-sm">
               {[
-                { k: "عنوان اصلی", v: t.titleEn, ltr: true },
-                { k: "کارگردان", v: t.director },
-                { k: "ژانر", v: t.genres.join("، ") },
-                { k: "کشور", v: t.country },
-                { k: "سال انتشار", v: t.year > 0 ? fa(t.year) : "نامشخص" },
-                { k: "زبان", v: "فارسی دوبله / اصلی" },
-                { k: "کیفیت پخش", v: qualities.length ? qualities.join(" · ") : `${t.quality}` },
-                ...(eps.length ? [{ k: "تعداد فصل", v: fa(seasons.length) }] : []),
+                { k: tr("title.specOriginalTitle"), v: t.titleEn, ltr: true },
+                { k: tr("common.director"), v: t.director },
+                { k: tr("common.genre"), v: genreListLabel(t.genres, locale, locale === "en" ? ", " : "، ") },
+                { k: tr("common.country"), v: t.country },
+                { k: tr("title.specYear"), v: t.year > 0 ? fa(t.year) : tr("title.unknownYear") },
+                { k: tr("title.specLanguage"), v: tr("title.specLanguageValue") },
+                { k: tr("title.specQuality"), v: qualities.length ? qualities.join(" · ") : `${t.quality}` },
+                ...(eps.length ? [{ k: tr("title.specSeasons"), v: fa(seasons.length) }] : []),
               ].map((row) => (
                 <div key={row.k} className="flex items-start justify-between gap-4 border-b border-white/5 pb-3 last:border-0 last:pb-0">
                   <dt className="shrink-0 text-zinc-500">{row.k}</dt>
@@ -568,24 +571,24 @@ export default function TitlePage() {
             <div className="absolute inset-0 bg-gradient-to-b from-ink-700/70 to-ink-800" />
             <div className="relative">
               <p className="flex items-center gap-1.5 text-xs text-zinc-400">
-                <UsersIcon width={14} height={14} /> محبوبیت
+                <UsersIcon width={14} height={14} /> {tr("title.popularity")}
               </p>
               <div className="mt-2 flex items-end gap-2">
                 <span className="text-3xl font-black text-white">{fa(t.trendingScore)}</span>
-                <span className="pb-1 text-xs text-zinc-400">/ ۱۰۰ امتیاز ترند</span>
+                <span className="pb-1 text-xs text-zinc-400">/ {fa(100)} {tr("title.trendOutOf")}</span>
               </div>
               <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/10">
                 <div className="h-full rounded-full bg-gradient-to-l from-brand to-orange-400" style={{ width: `${t.trendingScore}%` }} />
               </div>
               <p className="mt-3 text-[11px] leading-5 text-zinc-400">
-                {formatViews(t.views)} بار در نما تماشا شده و در حال حاضر بین {t.trendingScore >= 90 ? "۵" : "۲۰"} اثر برتر قرار دارد.
+                {tr("title.popularityLine", { v: formatViews(t.views), r: t.trendingScore >= 90 ? fa(5) : fa(20) })}
               </p>
             </div>
           </div>
 
           {byDirector.length > 0 && (
             <div className="rounded-3xl border border-white/5 bg-ink-700/40 p-5">
-              <h3 className="mb-3 text-sm font-extrabold text-white">دیگر آثار {t.director}</h3>
+              <h3 className="mb-3 text-sm font-extrabold text-white">{tr("title.moreFromDirector", { name: t.director })}</h3>
               <ul className="space-y-2">
                 {byDirector.slice(0, 4).map((s) => (
                   <li key={s.id}>
@@ -610,7 +613,7 @@ export default function TitlePage() {
       {/* ── SIMILAR ──────────────────────────────────────────────────── */}
       {similar.length > 0 && (
         <section id="similar" className="mt-16 scroll-mt-32">
-          <Row title="آثار مشابه" subtitle="اگر این را دوست داشتید، این‌ها را هم ببینید" href={`/${t.type === "series" ? "series" : "movies"}?genre=${encodeURIComponent(t.genres[0] ?? "")}`}>
+          <Row title={tr("title.similarRow")} subtitle={tr("title.similarSub")} href={`/${t.type === "series" ? "series" : "movies"}?genre=${encodeURIComponent(t.genres[0] ?? "")}`}>
             {similar.map((s) => (
               <TitleCard key={s.id} t={s} />
             ))}

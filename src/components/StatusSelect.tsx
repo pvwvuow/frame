@@ -2,16 +2,18 @@
 
 import { LIST_STATUSES, type ListStatus } from "@/lib/library-shared";
 import { useLibrary } from "./library/LibraryProvider";
+import { useI18n } from "./i18n/LocaleProvider";
 
 /** Watch-status pills (planned / watching / watched) for a title in the user's list. */
 export default function StatusSelect({ titleId, size = "md" }: { titleId: number; size?: "sm" | "md" }) {
   const { list, setStatus } = useLibrary();
+  const { t: tr } = useI18n();
   const current = list.get(titleId);
   if (!current) return null;
   const pad = size === "sm" ? "px-2 py-1 text-[10px]" : "px-3 py-1.5 text-xs";
 
   return (
-    <div className="flex flex-wrap gap-1" role="radiogroup" aria-label="وضعیت تماشا">
+    <div className="flex flex-wrap gap-1" role="radiogroup" aria-label={tr("title.watchStatus")}>
       {LIST_STATUSES.map((s) => {
         const active = current === s.value;
         return (

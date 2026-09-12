@@ -12,8 +12,11 @@ import { BookmarkIcon, HeartIcon, HistoryIcon, SettingsIcon, StarIcon, ClockIcon
 import { getProfile, getUserStats, getFavoriteRows, getMyListRows, getContinueWatching } from "@/lib/mobile/userdata";
 import { fa, formatDuration } from "@/lib/format";
 import { useAsyncData } from "@/lib/use-async-data";
+import { useI18n } from "@/components/i18n/LocaleProvider";
+import { genreLabel } from "@/lib/genres";
 
 export default function ProfilePage() {
+  const { t: tr, locale } = useI18n();
   const { data: st, error, retry } = useAsyncData(
     () =>
       Promise.all([getProfile(), getUserStats(), getFavoriteRows(), getMyListRows(), getContinueWatching(3)]).then(
@@ -43,14 +46,14 @@ export default function ProfilePage() {
   }
 
   const { p, stats, favs, list, cont } = st;
-  const level = stats.minutesWatched > 1200 ? "سینه‌فیل" : stats.minutesWatched > 300 ? "تماشاگر حرفه‌ای" : stats.minutesWatched > 60 ? "علاقه‌مند" : "تازه‌وارد";
+  const level = stats.minutesWatched > 1200 ? tr("profile.levelCinephile") : stats.minutesWatched > 300 ? tr("profile.levelViewer") : stats.minutesWatched > 60 ? tr("profile.levelFan") : tr("profile.levelNewbie");
   const maxGenre = stats.topGenres[0]?.count ?? 1;
 
   const quick = [
-    { href: "/my-list", icon: BookmarkIcon, label: "لیست من", v: stats.listCount, tint: "text-brand" },
-    { href: "/favorites", icon: HeartIcon, label: "علاقه‌مندی‌ها", v: stats.favCount, tint: "text-rose-400" },
-    { href: "/history", icon: HistoryIcon, label: "تاریخچه", v: stats.historyCount, tint: "text-sky-400" },
-    { href: "/settings", icon: SettingsIcon, label: "تنظیمات", v: null, tint: "text-zinc-300" },
+    { href: "/my-list", icon: BookmarkIcon, label: tr("user.myList"), v: stats.listCount, tint: "text-brand" },
+    { href: "/favorites", icon: HeartIcon, label: tr("user.favorites"), v: stats.favCount, tint: "text-rose-400" },
+    { href: "/history", icon: HistoryIcon, label: tr("mylist.history"), v: stats.historyCount, tint: "text-sky-400" },
+    { href: "/settings", icon: SettingsIcon, label: tr("user.settings"), v: null, tint: "text-zinc-300" },
   ];
 
   return (
@@ -74,11 +77,14 @@ export default function ProfilePage() {
                 <SubscriptionBadge />
               </div>
               <p className="mt-2 text-sm text-zinc-400">
-                عضو از {new Date(stats.memberSince).toLocaleDateString("fa-IR", { year: "numeric", month: "long" })} · {stats.minutesWatched ? formatDuration(stats.minutesWatched) : "۰ دقیقه"} تماشا
+                {tr("profile.memberSince", {
+                  d: new Date(stats.memberSince).toLocaleDateString(locale === "en" ? "en-US" : "fa-IR", { year: "numeric", month: "long" }),
+                  w: stats.minutesWatched ? formatDuration(stats.minutesWatched) : formatDuration(0),
+                })}
               </p>
             </div>
             <Link href="/settings" className="flex h-11 items-center gap-2 rounded-full border border-white/15 bg-white/5 px-5 text-sm font-bold text-white hover:bg-white/10">
-              <SettingsIcon width={16} height={16} /> ویرایش پروفایل
+              <SettingsIcon width={16} height={16} /> {tr("profile.edit")}
             </Link>
           </div>
 
@@ -88,7 +94,7 @@ export default function ProfilePage() {
                 <span className={`grid h-11 w-11 place-items-center rounded-xl bg-white/5 ${q.tint}`}><q.icon width={20} height={20} /></span>
                 <span className="min-w-0">
                   <span className="block text-sm font-bold text-white">{q.label}</span>
-                  {q.v != null && <span className="block text-xs text-zinc-400">{fa(q.v)} مورد</span>}
+                  {q.v != null && <span className="block text-xs text-zinc-400">{tr("catalog.results", { n: fa(q.v) })}</span>}
                 </span>
                 <ChevronLeft width={16} height={16} className="ms-auto text-zinc-500 transition group-hover:-translate-x-1 group-hover:text-white" />
               </Link>
@@ -102,8 +108,8 @@ export default function ProfilePage() {
           {cont.length > 0 && (
             <section>
               <div className="mb-4 flex items-end justify-between">
-                <h2 className="text-xl font-extrabold text-white">ادامه تماشا</h2>
-                <Link href="/history" className="text-xs text-zinc-400 hover:text-brand">همه</Link>
+                <h2 className="text-xl font-extrabold text-white">{tr("home.continueTitle")}</h2>
+                <Link href="/history" className="text-xs text-zinc-400 hover:text-brand">{tr("common.all")}</Link>
               </div>
               <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{cont.map((c) => <ContinueCard key={c.title.id} c={c} />)}</div>
             </section>
@@ -111,8 +117,8 @@ export default function ProfilePage() {
           {favs.length > 0 && (
             <section>
               <div className="mb-4 flex items-end justify-between">
-                <h2 className="flex items-center gap-2 text-xl font-extrabold text-white"><HeartIcon width={18} height={18} filled className="text-rose-500" /> علاقه‌مندی‌های اخیر</h2>
-                <Link href="/favorites" className="text-xs text-zinc-400 hover:text-brand">همه</Link>
+                <h2 className="flex items-center gap-2 text-xl font-extrabold text-white"><HeartIcon width={18} height={18} filled className="text-rose-500" /> {tr("profile.recentFavs")}</h2>
+                <Link href="/favorites" className="text-xs text-zinc-400 hover:text-brand">{tr("common.all")}</Link>
               </div>
               <div className="grid grid-cols-3 gap-4 sm:grid-cols-4 lg:grid-cols-6">{favs.slice(0, 6).map((f) => <div key={f.title.id} className="[&>div]:w-full"><TitleCard t={f.title} size="sm" /></div>)}</div>
             </section>
@@ -120,30 +126,30 @@ export default function ProfilePage() {
           {list.length > 0 && (
             <section>
               <div className="mb-4 flex items-end justify-between">
-                <h2 className="flex items-center gap-2 text-xl font-extrabold text-white"><BookmarkIcon width={18} height={18} className="text-brand" /> آخرین‌های لیست من</h2>
-                <Link href="/my-list" className="text-xs text-zinc-400 hover:text-brand">مدیریت لیست</Link>
+                <h2 className="flex items-center gap-2 text-xl font-extrabold text-white"><BookmarkIcon width={18} height={18} className="text-brand" /> {tr("profile.recentList")}</h2>
+                <Link href="/my-list" className="text-xs text-zinc-400 hover:text-brand">{tr("mylist.manageList")}</Link>
               </div>
               <div className="grid grid-cols-3 gap-4 sm:grid-cols-4 lg:grid-cols-6">{list.slice(0, 6).map((f) => <div key={f.title.id} className="[&>div]:w-full"><TitleCard t={f.title} size="sm" progress={f.progress} /></div>)}</div>
             </section>
           )}
           {!cont.length && !favs.length && !list.length && (
             <div className="rounded-3xl border border-dashed border-white/10 p-12 text-center">
-              <p className="text-xl font-black text-white">پروفایل شما هنوز خالی است</p>
-              <p className="mt-2 text-sm text-zinc-500">چند فیلم ببینید یا ذخیره کنید تا این‌جا زنده شود.</p>
-              <Link href="/" className="mt-6 inline-block rounded-full bg-brand px-6 py-2.5 text-sm font-bold text-white">رفتن به خانه</Link>
+              <p className="text-xl font-black text-white">{tr("profile.emptyTitle")}</p>
+              <p className="mt-2 text-sm text-zinc-500">{tr("profile.emptyHint")}</p>
+              <Link href="/" className="mt-6 inline-block rounded-full bg-brand px-6 py-2.5 text-sm font-bold text-white">{tr("profile.goHome")}</Link>
             </div>
           )}
         </div>
 
         <aside className="space-y-6">
           <div className="rounded-3xl border border-white/5 bg-ink-800/60 p-5">
-            <h3 className="text-sm font-extrabold text-white">آمار شما</h3>
+            <h3 className="text-sm font-extrabold text-white">{tr("profile.statsTitle")}</h3>
             <ul className="mt-4 space-y-3 text-sm">
               {[
-                { icon: ClockIcon, k: "زمان تماشا", v: stats.minutesWatched ? formatDuration(stats.minutesWatched) : "۰" },
-                { icon: CheckCircleIcon, k: "تمام‌شده از لیست", v: fa(stats.watchedCount) },
-                { icon: StarIcon, k: "امتیاز داده‌اید", v: `${fa(stats.ratingCount)} عنوان` },
-                { icon: HeartIcon, k: "علاقه‌مندی", v: fa(stats.favCount) },
+                { icon: ClockIcon, k: tr("profile.watchTime"), v: stats.minutesWatched ? formatDuration(stats.minutesWatched) : fa(0) },
+                { icon: CheckCircleIcon, k: tr("profile.finishedFromList"), v: fa(stats.watchedCount) },
+                { icon: StarIcon, k: tr("profile.rated"), v: tr("catalog.results", { n: fa(stats.ratingCount) }) },
+                { icon: HeartIcon, k: tr("profile.fav"), v: fa(stats.favCount) },
               ].map((s) => (
                 <li key={s.k} className="flex items-center gap-3">
                   <s.icon width={16} height={16} className="text-zinc-500" />
@@ -154,13 +160,13 @@ export default function ProfilePage() {
             </ul>
           </div>
           <div className="rounded-3xl border border-white/5 bg-ink-800/60 p-5">
-            <h3 className="text-sm font-extrabold text-white">ژانرهای محبوب شما</h3>
+            <h3 className="text-sm font-extrabold text-white">{tr("profile.topGenresTitle")}</h3>
             {stats.topGenres.length ? (
               <ul className="mt-4 space-y-3">
                 {stats.topGenres.map((g) => (
                   <li key={g.genre}>
                     <div className="flex items-center justify-between text-xs">
-                      <Link href={`/movies?genre=${encodeURIComponent(g.genre)}`} className="font-bold text-zinc-200 hover:text-brand">{g.genre}</Link>
+                      <Link href={`/movies?genre=${encodeURIComponent(g.genre)}`} className="font-bold text-zinc-200 hover:text-brand">{genreLabel(g.genre, locale)}</Link>
                       <span className="text-zinc-500">{fa(g.count)}</span>
                     </div>
                     <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-white/5"><div className="h-full rounded-full bg-gradient-to-l from-brand to-rose-400" style={{ width: `${(g.count / maxGenre) * 100}%` }} /></div>
@@ -168,7 +174,7 @@ export default function ProfilePage() {
                 ))}
               </ul>
             ) : (
-              <p className="mt-3 text-xs text-zinc-500">با ذخیره کردن آثار، سلیقه‌تان این‌جا شکل می‌گیرد.</p>
+              <p className="mt-3 text-xs text-zinc-500">{tr("profile.topGenresEmpty")}</p>
             )}
           </div>
         </aside>

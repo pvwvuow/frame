@@ -25,9 +25,11 @@ import { getMyListRows, getUserStats, getFavoriteRows, getHistory, getContinueWa
 import { fetchUserCollections, type UCollection } from "@/lib/collections";
 import { g2j } from "@/lib/jalali";
 import { fa } from "@/lib/format";
+import { useI18n } from "@/components/i18n/LocaleProvider";
 
 function MyListInner() {
   const sp = useSearchParams();
+  const { t: tr } = useI18n();
   const view = sp.get("view") === "list" ? "list" : "calendar";
 
   const [st, setSt] = useState<{
@@ -116,12 +118,12 @@ function MyListInner() {
     history[0]?.title.backdrop ?? cont[0]?.title.backdrop ?? rows[0]?.title.backdrop ?? trending[0]?.backdrop;
 
   const NAV = [
-    { href: "/my-list?view=list", label: "واچ‌لیست", icon: BookmarkIcon, active: view === "list" },
-    { href: "/my-list?view=calendar", label: "تقویم", icon: CalendarIcon, active: view === "calendar" },
-    { href: "/favorites", label: "علاقه‌مندی‌ها", icon: HeartIcon, active: false },
-    { href: "/collections", label: "مجموعه‌ها", icon: LayersIcon, active: false },
-    { href: "/history", label: "تاریخچه", icon: HistoryIcon, active: false },
-    { href: "/downloads", label: "دانلودها", icon: DownloadIcon, active: false },
+    { href: "/my-list?view=list", label: tr("mylist.watchlist"), icon: BookmarkIcon, active: view === "list" },
+    { href: "/my-list?view=calendar", label: tr("mylist.calendar"), icon: CalendarIcon, active: view === "calendar" },
+    { href: "/favorites", label: tr("user.favorites"), icon: HeartIcon, active: false },
+    { href: "/collections", label: tr("user.collections"), icon: LayersIcon, active: false },
+    { href: "/history", label: tr("mylist.history"), icon: HistoryIcon, active: false },
+    { href: "/downloads", label: tr("nav.downloads"), icon: DownloadIcon, active: false },
   ];
 
   return (
@@ -131,7 +133,7 @@ function MyListInner() {
           {/* ================= ستون ناوبری + آمار ================= */}
           <aside className="space-y-6 lg:sticky lg:top-24 lg:self-start">
             <div>
-              <h1 className="text-2xl font-black text-white">لیست من</h1>
+              <h1 className="text-2xl font-black text-white">{tr("user.myList")}</h1>
               <nav className="mt-4 space-y-1">
                 {NAV.map((n) => (
                   <Link
@@ -152,13 +154,13 @@ function MyListInner() {
 
             {/* آمار */}
             <div className="rounded-2xl border border-white/5 bg-white/[0.03] p-4">
-              <p className="text-xs font-black text-white">آمار</p>
+              <p className="text-xs font-black text-white">{tr("mylist.stats")}</p>
               <ul className="mt-3 space-y-3.5">
                 {[
-                  { icon: CalendarIcon, label: "دیده‌شده", v: fa(stats.watchedCount), c: "text-sky-400" },
-                  { icon: HeartIcon, label: "علاقه‌مندی‌ها", v: fa(stats.favCount), c: "text-rose-400" },
-                  { icon: CheckCircleIcon, label: "سریال کامل‌شده", v: fa(seriesCompleted), c: "text-emerald-400" },
-                  { icon: ClockIcon, label: "ساعت تماشا", v: `${fa(hours)} ساعت`, c: "text-amber-400" },
+                  { icon: CalendarIcon, label: tr("mylist.watched"), v: fa(stats.watchedCount), c: "text-sky-400" },
+                  { icon: HeartIcon, label: tr("user.favorites"), v: fa(stats.favCount), c: "text-rose-400" },
+                  { icon: CheckCircleIcon, label: tr("mylist.seriesCompleted"), v: fa(seriesCompleted), c: "text-emerald-400" },
+                  { icon: ClockIcon, label: tr("mylist.watchHours"), v: `${fa(hours)} ${tr("common.hour")}`, c: "text-amber-400" },
                 ].map((s) => (
                   <li key={s.label} className="flex items-center gap-3">
                     <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-white/5 ${s.c}`}>
@@ -174,7 +176,7 @@ function MyListInner() {
             </div>
 
             <p className="hidden px-1 text-[13px] font-bold italic leading-7 text-zinc-500 lg:block">
-              داستان‌های خوب، روزهای بهتری می‌سازند.
+              {tr("mylist.quote")}
               <span className="mt-2 block h-0.5 w-8 rounded-full bg-brand" />
             </p>
           </aside>
@@ -196,11 +198,11 @@ function MyListInner() {
                   <div className="relative flex min-h-[190px] items-end justify-between gap-4 p-6 sm:p-8">
                     <div className="min-w-0">
                       <p className="mb-2 flex items-center gap-2 text-[11px] font-black text-zinc-300">
-                        لیست من
+                        {tr("user.myList")}
                       </p>
-                      <h2 className="text-3xl font-black text-white sm:text-4xl">تقویم</h2>
+                      <h2 className="text-3xl font-black text-white sm:text-4xl">{tr("mylist.calendar")}</h2>
                       <p className="mt-2 max-w-md text-[13px] leading-6 text-zinc-300">
-                        ثبتِ بصری فیلم‌ها و سریال‌هایی که دیده‌اید — همه در یک جا.
+                        {tr("mylist.calendarSub")}
                       </p>
                     </div>
                     <Link
@@ -211,9 +213,9 @@ function MyListInner() {
                         <CalendarIcon width={20} height={20} />
                       </span>
                       <span>
-                        <span className="block text-[10px] text-zinc-400">این ماه</span>
+                        <span className="block text-[10px] text-zinc-400">{tr("mylist.thisMonth")}</span>
                         <span className="num block text-2xl font-black leading-7 text-white">{fa(thisMonthCount)}</span>
-                        <span className="block text-[10px] text-zinc-400">عنوان دیده‌شده</span>
+                        <span className="block text-[10px] text-zinc-400">{tr("mylist.watchedTitles")}</span>
                       </span>
                       <ChevronRight width={16} height={16} className="rotate-180 text-zinc-500 transition group-hover:text-white" />
                     </Link>
@@ -232,11 +234,11 @@ function MyListInner() {
                   <section>
                     <div className="mb-4 flex items-end justify-between">
                       <div>
-                        <h2 className="text-xl font-extrabold text-white">ادامه تماشا</h2>
-                        <p className="text-xs text-zinc-500">از همان‌جا که رها کردید</p>
+                        <h2 className="text-xl font-extrabold text-white">{tr("home.continueTitle")}</h2>
+                        <p className="text-xs text-zinc-500">{tr("home.continueSub")}</p>
                       </div>
                       <Link href="/history" className="text-xs text-zinc-400 transition hover:text-brand">
-                        تاریخچه کامل
+                        {tr("mylist.fullHistory")}
                       </Link>
                     </div>
                     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
@@ -251,8 +253,8 @@ function MyListInner() {
                 <section className="mt-10">
                   <div className="mb-2 flex items-end justify-between">
                     <div>
-                      <h2 className="text-xl font-extrabold text-white">مدیریت لیست</h2>
-                      <p className="text-xs text-zinc-500">{fa(rows.length)} عنوان در لیست شما</p>
+                      <h2 className="text-xl font-extrabold text-white">{tr("mylist.manageList")}</h2>
+                      <p className="text-xs text-zinc-500">{tr("mylist.listCount", { n: fa(rows.length) })}</p>
                     </div>
                   </div>
                   <MyListManager rows={rows} />
@@ -263,12 +265,12 @@ function MyListInner() {
                   <div className="mb-4 flex items-end justify-between">
                     <div>
                       <h2 className="flex items-center gap-2 text-xl font-extrabold text-white">
-                        <SparkIcon width={18} height={18} className="text-brand" /> پیشنهاد برای شما
+                        <SparkIcon width={18} height={18} className="text-brand" /> {tr("mylist.suggestTitle")}
                       </h2>
-                      <p className="text-xs text-zinc-500">پرطرفدارترین‌های این هفته</p>
+                      <p className="text-xs text-zinc-500">{tr("mylist.suggestSub")}</p>
                     </div>
                     <Link href="/movies?sort=trending" className="text-xs text-zinc-400 transition hover:text-brand">
-                      مشاهده همه
+                      {tr("common.viewAll")}
                     </Link>
                   </div>
                   <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8">

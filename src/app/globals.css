@@ -543,3 +543,20 @@ html[data-electron="1"][data-platform="darwin"][dir="ltr"] .nav-inner { padding-
      slot opacity and skip only the drift/swap. */
   .vip-ambient-img { animation: none !important; opacity: var(--vip-o, 0.26) !important; }
 }
+
+/* ---------- User drawer PUSH (v0.30.10) ----------
+ * The avatar drawer is a side panel that takes physical space: while it
+ * is open (html[data-udrawer="1"], set by UserMenu) the app shell and
+ * the footer slide toward the START edge — the drawer «هول می‌دهد» the
+ * app a bit and occupies its own room. Fixed chrome (navbar) stays put;
+ * the panel is portaled to <body> so the header's backdrop-filter can
+ * never become its containing block. */
+.nama-shell {
+  transition: transform 520ms cubic-bezier(0.32, 0.72, 0.28, 1);
+  will-change: transform;
+}
+html[data-udrawer="1"] .nama-shell { transform: translateX(calc(-1 * min(300px, 24vw))); }
+html[dir="rtl"][data-udrawer="1"] .nama-shell { transform: translateX(min(300px, 24vw)); }
+@media (prefers-reduced-motion: reduce) {
+  .nama-shell { transition: none; }
+}

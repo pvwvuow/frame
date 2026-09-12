@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { markProfileTouched, useCloudSession, wipeCloudAccountData, pushCinemaProfile } from "@/lib/cloud";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { toast } from "sonner";
 import { useLibrary } from "./LibraryProvider";
 import { CheckIcon, TrashIcon, UserIcon, PlayIcon, SunIcon, BellIcon, ShieldIcon, LockIcon, KeyboardIcon, InfoIcon, FolderIcon, RefreshIcon, DownloadIcon, ExternalIcon, MonitorIcon, CameraIcon } from "../Icons";
@@ -381,6 +382,36 @@ export default function SettingsForm({ initial }: { initial: ProfileData }) {
                       {!p.avatarImage && p.avatar === i && <CheckIcon width={16} height={16} className="text-white" />}
                     </button>
                   ))}
+                </div>
+
+                {/* v0.30.10 — the account email lives HERE now (the sync
+                    identity); the user asked it out of the avatar drawer */}
+                <div className="mt-6 border-t border-white/5 pt-4">
+                  <p className="text-xs font-bold text-zinc-400">{locale === "en" ? "Sync account" : "حساب سینک"}</p>
+                  {session?.user?.email ? (
+                    <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                      <span dir="ltr" className="max-w-full truncate rounded-xl bg-white/5 px-3 py-2 text-xs text-zinc-200 ring-1 ring-white/10">
+                        {session.user.email}
+                      </span>
+                      <span className="rounded-full bg-emerald-500/10 px-2.5 py-1 text-[10px] font-bold text-emerald-300 ring-1 ring-emerald-400/20">
+                        {locale === "en" ? "Library syncs across your devices" : "کتابخانه بین دستگاه‌هات سینک می‌شود"}
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="mt-1.5 flex flex-wrap items-center gap-3">
+                      <p className="text-xs text-zinc-500">
+                        {locale === "en"
+                          ? "Sign in to sync your list, favorites and watch progress."
+                          : "برای سینک لیست، علاقه‌مندی‌ها و پیشرفت تماشا، وارد حسابت شو."}
+                      </p>
+                      <Link
+                        href="/auth"
+                        className="flex h-9 items-center rounded-full bg-white px-4 text-xs font-extrabold text-black transition hover:bg-zinc-200"
+                      >
+                        {locale === "en" ? "Sign in" : "ورود / ثبت‌نام"}
+                      </Link>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

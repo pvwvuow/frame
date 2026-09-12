@@ -6,6 +6,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import TitleCard, { type TitleCardData } from "@/components/TitleCard";
 import { fa } from "@/lib/format";
+import { useI18n } from "./i18n/LocaleProvider";
 import { ChevronLeft, RefreshIcon } from "./Icons";
 
 export default function CatalogLoadMore({
@@ -21,6 +22,7 @@ export default function CatalogLoadMore({
   rankStart?: number;
   pageSize?: number;
 }) {
+  const { t: tr, dir } = useI18n();
   const [items, setItems] = useState<TitleCardData[]>([]);
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(false);
@@ -100,14 +102,14 @@ export default function CatalogLoadMore({
 
       {failed ? (
         <div className="mt-8 flex flex-col items-center gap-3 text-center">
-          <p className="text-sm font-bold text-white" dir="rtl">بارگیری ادامه‌ی فهرست ناموفق بود</p>
+          <p className="text-sm font-bold text-white" dir={dir}>{tr("loadMore.failed")}</p>
           <button
             type="button"
             onClick={() => void loadMore()}
             className="flex h-11 items-center gap-2 rounded-full border border-white/15 bg-white/5 px-6 text-sm font-bold text-white transition hover:bg-white/10"
-            dir="rtl"
+            dir={dir}
           >
-            <RefreshIcon width={15} height={15} /> تلاش دوباره
+            <RefreshIcon width={15} height={15} /> {tr("nav.retry")}
           </button>
         </div>
       ) : (
@@ -124,7 +126,7 @@ export default function CatalogLoadMore({
               ) : (
                 <ChevronLeft width={16} height={16} />
               )}
-              {loading ? "در حال بارگذاری…" : `نمایش بیشتر (${fa(remaining)} عنوان دیگر)`}
+              {loading ? tr("common.loading") : tr("loadMore.more", { n: fa(remaining) })}
             </button>
           </div>
         )

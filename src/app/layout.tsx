@@ -148,9 +148,12 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
                 <CatalogGate>
                   {/* inside the gate: first-launch auth waits for the catalog import */}
                   <WelcomeAuth />
-                  <div className="min-h-screen">{children}</div>
+                  {/* nama-shell = the surface the user drawer pushes aside (v0.30.10) */}
+                  <div className="nama-shell min-h-screen">{children}</div>
                   <HideOnPip>
-                    <Footer />
+                    <div className="nama-shell">
+                      <Footer />
+                    </div>
                   </HideOnPip>
                 </CatalogGate>
               </QuickViewProvider>

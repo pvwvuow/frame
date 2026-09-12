@@ -372,7 +372,7 @@ export default function Navbar() {
               {open && !q.trim() && recent.length > 0 && (
                 <div className="glass-strong glass-in fixed inset-x-2 top-16 z-40 overflow-hidden rounded-2xl p-3 sm:absolute sm:inset-x-auto sm:top-12 sm:end-0 sm:w-[min(420px,calc(100vw-24px))]">
                   <div className="flex items-center justify-between px-1 pb-2">
-                    <span className="text-[11px] font-bold text-zinc-500">جستجوهای اخیر</span>
+                    <span className="text-[11px] font-bold text-zinc-500">{t("nav.recentSearches")}</span>
                     <button
                       type="button"
                       onClick={() => {
@@ -381,7 +381,7 @@ export default function Navbar() {
                       }}
                       className="text-[10px] text-zinc-500 hover:text-zinc-300"
                     >
-                      پاک کردن
+                      {t("nav.clear")}
                     </button>
                   </div>
                   <div className="flex flex-wrap gap-1.5">
@@ -392,7 +392,7 @@ export default function Navbar() {
                         </Link>
                         <button
                           type="button"
-                          aria-label={`حذف ${s}`}
+                          aria-label={t("nav.removeSearch", { q: s })}
                           onClick={() => {
                             forgetSearch(s);
                             setRecent(getRecentSearches());
@@ -416,14 +416,14 @@ export default function Navbar() {
                   ) : failed && results.length === 0 ? (
                     /* v0.27.0 (UI-2) — network failure is a distinct state */
                     <div className="p-4 text-sm">
-                      <p className="font-bold text-rose-300">خطا در جستجو</p>
-                      <p className="mt-1 text-zinc-400">اتصال برقرار نشد — دوباره تلاش کنید.</p>
+                      <p className="font-bold text-rose-300">{t("nav.searchError")}</p>
+                      <p className="mt-1 text-zinc-400">{t("nav.searchErrorHint")}</p>
                       <button
                         type="button"
                         onClick={() => setSearchNonce((n) => n + 1)}
                         className="mt-2 rounded-full border border-white/15 px-3 py-1 text-xs font-bold text-white hover:bg-white/10"
                       >
-                        تلاش مجدد
+                        {t("nav.retry")}
                       </button>
                     </div>
                   ) : results.length === 0 ? (

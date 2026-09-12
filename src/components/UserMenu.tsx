@@ -1,14 +1,25 @@
 "use client";
 
+/* v0.30.10 — the avatar menu is now a MINIMAL SIDE DRAWER.
+ *
+ * The old dropdown card (email header, theme picker, colored entries)
+ * is gone. The user asked for: minimal, monochrome (ONLY the VIP entry
+ * keeps its gold), few elements, a drawer that slides in from the SIDE
+ * and is vertically CENTERED, one that PUSHES the app content aside
+ * (html[data-udrawer] + .nama-shell in globals.css) and closes itself
+ * smartly on any interaction with the app (outside pointerdown, scroll,
+ * navigation, Escape). Removed at the user's request: the «لیست من»
+ * entry, the quick theme switcher, and the account email — the email
+ * now lives in Settings (account/sync card). */
+
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import { createPortal } from "react-dom";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { useTheme } from "next-themes";
 import { useLibrary } from "./library/LibraryProvider";
 import { AVATARS } from "./library/SettingsForm";
 import {
-  BookmarkIcon,
   HeartIcon,
   HistoryIcon,
   SettingsIcon,
@@ -21,7 +32,6 @@ import {
   CrownIcon,
 } from "./Icons";
 import { fa } from "@/lib/format";
-import { THEMES } from "./theme/ThemeToggle";
 import { bridge, useIsElectron } from "@/lib/platform";
 import { toast } from "sonner";
 import { useI18n } from "./i18n/LocaleProvider";
@@ -29,19 +39,17 @@ import type { TKey } from "@/lib/i18n";
 import { explicitSignOut, useCloudSession } from "@/lib/cloud";
 
 type IconCmp = typeof UserIcon;
-type Entry = { href: string; label: TKey; icon: IconCmp; key?: "list" | "fav" | "notif"; tint?: string };
+type Entry = { href: string; label: TKey; icon: IconCmp; key?: "fav" | "notif" };
 
+/* v0.30.10: monochrome personal set — «لیست من» removed (it stays reachable
+ * from the navbar / mobile nav), every tint neutralized to zinc. */
 const PERSONAL: Entry[] = [
-  { href: "/profile", label: "user.profile", icon: UserIcon, tint: "text-zinc-300" },
-  { href: "/my-list", label: "user.myList", icon: BookmarkIcon, key: "list", tint: "text-brand" },
-  { href: "/favorites", label: "user.favorites", icon: HeartIcon, key: "fav", tint: "text-rose-400" },
-  { href: "/history", label: "user.history", icon: HistoryIcon, tint: "text-sky-400" },
-  { href: "/notifications", label: "user.notifications", icon: BellIcon, key: "notif", tint: "text-amber-400" },
+  { href: "/profile", label: "user.profile", icon: UserIcon },
+  { href: "/favorites", label: "user.favorites", icon: HeartIcon, key: "fav" },
+  { href: "/history", label: "user.history", icon: HistoryIcon },
+  { href: "/notifications", label: "user.notifications", icon: BellIcon, key: "notif" },
 ];
-// v0.10.23: the «کشف» group (rankings/collections/people/random) was removed
-// from this menu at the user's request — those pages stay reachable from the
-// navbar «بیشتر» dropdown.
-const SETTINGS_ENTRY: Entry = { href: "/settings", label: "user.settings", icon: SettingsIcon, tint: "text-zinc-200" };
+const SETTINGS_ENTRY: Entry = { href: "/settings", label: "user.settings", icon: SettingsIcon };
 
 /* Hoisted out of the component so React keeps DOM nodes between renders
    (defining it inline re-mounted every item on each render → focus loss / flicker). */
@@ -50,14 +58,12 @@ function Item({
   label,
   icon: Icon,
   count,
-  tint,
   active,
 }: {
   href: string;
   label: string;
   icon: IconCmp;
   count?: number | null;
-  tint?: string;
   active: boolean;
 }) {
   return (
@@ -65,13 +71,11 @@ function Item({
       <Link
         href={href}
         role="menuitem"
-        className={`flex items-center gap-3 rounded-full border px-3.5 py-2.5 text-sm transition ${
-          active
-            ? "border-brand/50 bg-brand/15 text-white"
-            : "border-transparent bg-white/[0.04] text-zinc-300 hover:border-white/15 hover:bg-white/10 hover:text-white"
+        className={`flex items-center gap-3 rounded-2xl px-3.5 py-2.5 text-sm transition ${
+          active ? "bg-white/[0.1] text-white" : "text-zinc-300 hover:bg-white/[0.06] hover:text-white"
         }`}
       >
-        <Icon width={17} height={17} className={tint ?? (active ? "text-white" : "text-zinc-400")} />
+        <Icon width={17} height={17} className={active ? "text-white" : "text-zinc-400"} />
         <span className="flex-1">{label}</span>
         {count != null && count > 0 && (
           <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-bold text-zinc-200 num">{fa(count)}</span>
@@ -82,10 +86,9 @@ function Item({
 }
 
 export default function UserMenu() {
-  const { profile, list, favorites } = useLibrary();
+  const { profile, favorites } = useLibrary();
   const { session } = useCloudSession();
   const router = useRouter();
-  const { theme, setTheme } = useTheme();
   const { t: tr, locale, dir } = useI18n();
   const electron = useIsElectron();
   const reduce = useReducedMotion();
@@ -101,6 +104,17 @@ export default function UserMenu() {
 
   useEffect(() => setMounted(true), []);
   useEffect(() => setOpen(false), [pathname]);
+
+  /* the PUSH: while the drawer is open the app shell slides aside —
+   * see .nama-shell rules in globals.css (dir-aware translate). */
+  useEffect(() => {
+    const html = document.documentElement;
+    if (open) html.dataset.udrawer = "1";
+    else delete html.dataset.udrawer;
+    return () => {
+      delete html.dataset.udrawer;
+    };
+  }, [open]);
 
   // unread notifications badge (refreshes on route change + every 2 min)
   const loadUnread = useCallback(() => {
@@ -128,17 +142,20 @@ export default function UserMenu() {
     return () => clearInterval(t);
   }, [loadUnread, pathname]);
 
-  // keyboard + outside click + focus management
+  /* smart close: outside pointerdown (touch included), any content scroll,
+     Escape — plus the route-change effect above. */
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
-    const onDoc = (e: MouseEvent) => {
+    const onDoc = (e: PointerEvent) => {
       if (panelRef.current && !panelRef.current.contains(e.target as Node) && btnRef.current && !btnRef.current.contains(e.target as Node)) {
         setOpen(false);
       }
     };
+    const onWheel = () => setOpen(false);
     document.addEventListener("keydown", onKey);
-    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("pointerdown", onDoc);
+    window.addEventListener("wheel", onWheel, { passive: true });
     const focusTimer = window.setTimeout(() => {
       panelRef.current?.querySelector<HTMLElement>("[data-autofocus]")?.focus({ preventScroll: true });
     }, 60);
@@ -146,15 +163,14 @@ export default function UserMenu() {
     return () => {
       window.clearTimeout(focusTimer);
       document.removeEventListener("keydown", onKey);
-      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("pointerdown", onDoc);
+      window.removeEventListener("wheel", onWheel);
       btn?.focus({ preventScroll: true });
     };
   }, [open]);
 
-  /* Account identity (v0.10.10): once signed in, the menu shows the CLOUD
-     account — the display name picked at signup (user_metadata.display_name)
-     or the email handle — never the local default placeholder ("کاربر نما"),
-     which previously confused users into thinking signup did nothing. */
+  /* Account identity (v0.10.10): the drawer greets the CLOUD account display
+     name — the email itself moved to Settings (v0.30.10, sync account). */
   const email = session?.user?.email ?? "";
   const meta = (session?.user?.user_metadata ?? {}) as { display_name?: string; name?: string; full_name?: string };
   const accountName =
@@ -162,7 +178,6 @@ export default function UserMenu() {
   const shownName = accountName || profile.displayName;
   const initial = (shownName || (locale === "en" ? "N" : "ن")).trim().slice(0, 1).toUpperCase();
   const grad = AVATARS[profile.avatar] ?? AVATARS[0];
-  const themeValue = mounted ? theme ?? "dark" : "dark";
   const isActive = (href: string) => (href.includes("#") ? false : pathname === href || (href !== "/" && !!pathname?.startsWith(href)));
 
   const checkUpdates = async () => {
@@ -185,7 +200,11 @@ export default function UserMenu() {
     }
   };
 
-  const countOf = (e: Entry) => (e.key === "list" ? list.size : e.key === "fav" ? favorites.size : e.key === "notif" ? unread : null);
+  const countOf = (e: Entry) => (e.key === "fav" ? favorites.size : e.key === "notif" ? unread : null);
+
+  /* the drawer slides in from the SAME physical side it lives on
+     (inline-end = the avatar corner): LTR → from the right, RTL → from the left */
+  const offX = dir === "rtl" ? -380 : 380;
 
   return (
     <div className="relative">
@@ -193,11 +212,11 @@ export default function UserMenu() {
         ref={btnRef}
         type="button"
         onClick={() => setOpen((o) => !o)}
-        aria-haspopup="menu"
+        aria-haspopup="dialog"
         aria-expanded={open}
         aria-label={tr("user.openMenu")}
         className={`relative flex items-center gap-2 rounded-full border p-0.5 pe-1 transition ${
-          open ? "border-brand/50 bg-brand/15" : "border-white/15 bg-white/[0.06] hover:border-white/30 hover:bg-white/10"
+          open ? "border-white/40 bg-white/15" : "border-white/15 bg-white/[0.06] hover:border-white/30 hover:bg-white/10"
         }`}
       >
         {profile.avatarImage ? (
@@ -216,203 +235,149 @@ export default function UserMenu() {
         <ChevronDown width={14} height={14} className={`hidden text-zinc-400 transition sm:block ${open ? "rotate-180" : ""}`} />
       </button>
 
-      <AnimatePresence>
-        {open && (
-          <motion.div
-            ref={panelRef}
-            role="menu"
-            aria-label={tr("user.openMenu")}
-            dir={dir}
-            initial={reduce ? { opacity: 0 } : { opacity: 0, y: -8, scale: 0.97 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={reduce ? { opacity: 0 } : { opacity: 0, y: -8, scale: 0.97 }}
-            transition={{ type: "spring", stiffness: 420, damping: 32, mass: 0.8 }}
-            style={{ transformOrigin: dir === "rtl" ? "top left" : "top right", willChange: "transform, opacity" }}
-            className="glass-strong glass-in absolute end-0 top-12 z-[95] max-h-[calc(100dvh-88px)] w-[min(360px,calc(100vw-24px))] overflow-hidden rounded-3xl border border-white/10 shadow-[0_30px_80px_rgba(0,0,0,0.6)]"
-          >
-            {/* header — v0.10.23: the quick pills row under the account name was
-                removed at the user's request (those entries live in the list below) */}
-            <div className="relative shrink-0 border-b border-white/5 p-4">
-              <div className={`pointer-events-none absolute inset-0 ${dir === "rtl" ? "bg-[radial-gradient(ellipse_at_top_right,rgba(229,9,20,0.16),transparent_60%)]" : "bg-[radial-gradient(ellipse_at_top_left,rgba(229,9,20,0.16),transparent_60%)]"}`} />
-              <div className="relative flex items-center gap-3">
-                <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-full bg-gradient-to-br text-base font-black text-white shadow-lg ${grad}`}>{initial}</span>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-extrabold text-white">{shownName}</p>
-                  {email ? (
-                    /* signed in → the account email is the secondary line */
-                    <p dir="ltr" className="truncate text-start text-[11px] text-zinc-400" title={email}>
-                      {email}
-                    </p>
+      {mounted &&
+        createPortal(
+          <AnimatePresence>
+            {open && (
+              <motion.div
+                ref={panelRef}
+                role="dialog"
+                aria-label={tr("user.openMenu")}
+                dir={dir}
+                initial={reduce ? { opacity: 0, y: "-50%" } : { opacity: 0, x: offX, y: "-50%" }}
+                animate={{ opacity: 1, x: 0, y: "-50%" }}
+                exit={reduce ? { opacity: 0, y: "-50%" } : { opacity: 0, x: offX, y: "-50%" }}
+                transition={{ type: "spring", stiffness: 340, damping: 33, mass: 0.9 }}
+                style={{ insetInlineEnd: 16, willChange: "transform, opacity" }}
+                className="fixed top-1/2 z-[95] w-[min(320px,calc(100vw-40px))] overflow-hidden rounded-[28px] border border-white/10 bg-[#0e0e13]/85 shadow-[0_40px_120px_rgba(0,0,0,0.65)] backdrop-blur-2xl backdrop-saturate-150"
+              >
+                {/* header — identity only, NO email (moved to Settings) */}
+                <div className="flex items-center gap-3 border-b border-white/5 p-4">
+                  {profile.avatarImage ? (
+                    <img src={profile.avatarImage} alt="" className="h-11 w-11 shrink-0 rounded-full object-cover" />
                   ) : (
-                    <Link href="/profile" data-autofocus className="text-[11px] text-zinc-400 transition hover:text-brand">
-                      {locale === "en" ? "View profile →" : "مشاهده پروفایل ←"}
-                    </Link>
+                    <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-full bg-gradient-to-br text-base font-black text-white shadow-lg ${grad}`}>{initial}</span>
                   )}
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setOpen(false)}
-                  aria-label={tr("common.close")}
-                  className="grid h-8 w-8 place-items-center rounded-full border border-white/10 bg-white/5 text-zinc-300 transition hover:bg-white/10 hover:text-white"
-                >
-                  <CloseIcon width={14} height={14} />
-                </button>
-              </div>
-              {/* v0.10.23: the quick pills row under the account name was removed
-                  at the user's request — those entries live in the list below */}
-            </div>
-
-            {/* body */}
-            <div className="no-scrollbar max-h-[calc(100dvh-300px)] min-h-0 overflow-y-auto overscroll-contain p-2.5" role="menu">
-              <p className="px-2 pb-1.5 pt-1 text-[10px] font-bold text-zinc-500">{tr("user.personal")}</p>
-              <ul className="space-y-1">
-                {/* VIP — gold, always on top (v0.10.11) */}
-                <li>
-                  <Link
-                    href="/vip"
-                    role="menuitem"
-                    className={`flex items-center gap-3 rounded-full border px-3.5 py-2.5 text-sm transition ${
-                      isActive("/vip")
-                        ? "border-amber-400/60 bg-amber-400/15 text-white"
-                        : "border-amber-400/25 bg-amber-400/[0.07] text-amber-200 hover:border-amber-300/50 hover:bg-amber-400/15 hover:text-amber-100"
-                    }`}
-                  >
-                    <CrownIcon width={17} height={17} />
-                    <span className="flex-1">{locale === "en" ? "VIP subscription" : "اشتراک ویژه (VIP)"}</span>
-                  </Link>
-                </li>
-                <Item
-                  href="/auth"
-                  icon={UserIcon}
-                  label={
-                    session?.user?.email
-                      ? (() => {
-                          const mail = session.user.email ?? "";
-                          return mail.length > 28 ? `${mail.slice(0, 26)}…` : mail;
-                        })()
-                      : locale === "en"
-                        ? "Sign in / Sign up"
-                        : "ورود / ثبت‌نام"
-                  }
-                  active={isActive("/auth")}
-                  tint="text-brand"
-                />
-                {PERSONAL.map((it) => (
-                  <Item
-                    key={it.href}
-                    {...it}
-                    label={tr(it.label)}
-                    active={isActive(it.href)}
-                    count={countOf(it)}
-                  />
-                ))}
-              </ul>
-              <p className="px-2 pb-1.5 pt-3 text-[10px] font-bold text-zinc-500">{tr("user.support")}</p>
-              <ul className="space-y-1">
-                <Item {...SETTINGS_ENTRY} label={tr(SETTINGS_ENTRY.label)} active={isActive("/settings")} />
-              </ul>
-
-              {/* sign out — visible whenever a cloud session exists */}
-              {session && (
-                <button
-                  type="button"
-                  onClick={async () => {
-                    // v0.29.0 (VERIFY-QOL-3) — on Android the sign-out wipes the
-                    // current guest space when no account claims it; after an
-                    // OFFLINE sign-in that space can still hold the user's
-                    // library. Destructive sign-outs now need a SECOND tap.
-                    if (!confirmArmed) {
-                      try {
-                        const { guestDataAtRisk } = await import("@/lib/mobile/userdata");
-                        if (await guestDataAtRisk()) {
-                          setConfirmArmed(true);
-                          setTimeout(() => setConfirmArmed(false), 5000);
-                          return;
-                        }
-                      } catch {
-                        /* helper unavailable → sign out as before */
-                      }
-                    }
-                    setConfirmArmed(false);
-                    setOpen(false);
-                    // v0.10.13: instant local sign-out (snapshots cleared
-                    // synchronously); the server revoke runs in background
-                    void explicitSignOut();
-                    toast.success(locale === "en" ? "Signed out." : "از حساب خارج شدی.");
-                    router.refresh();
-                  }}
-                  className={`mt-2 flex w-full items-center gap-3 rounded-full border px-3.5 py-2.5 text-sm transition ${
-                    confirmArmed
-                      ? "border-rose-500/50 bg-rose-500/20 font-bold text-rose-200"
-                      : "border-transparent bg-white/[0.04] text-rose-300 hover:border-rose-500/30 hover:bg-rose-500/10 hover:text-rose-200"
-                  }`}
-                >
-                  <LogoutIcon width={17} height={17} />
-                  <span className="flex-1 text-start">
-                    {confirmArmed
-                      ? locale === "en"
-                        ? "Tap again — guest data on this device will be erased"
-                        : "دوباره بزنید — داده‌های مهمان این دستگاه پاک می‌شود"
-                      : locale === "en"
-                        ? "Sign out"
-                        : "خروج از حساب"}
-                  </span>
-                </button>
-              )}
-
-              {/* v0.10.23: the quick language switcher was removed from this
-                  menu at the user's request — language lives in the navbar + settings */}
-
-              {/* quick theme */}
-              <div className="mt-2 rounded-2xl border border-white/5 bg-white/[0.03] p-2">
-                <p className="mb-1.5 px-1 text-[10px] font-bold text-zinc-500">{tr("user.theme")}</p>
-                <div className="flex gap-1">
-                  {THEMES.map((t) => {
-                    const active = themeValue === t.value;
-                    return (
-                      <button
-                        key={t.value}
-                        type="button"
-                        onClick={() => setTheme(t.value)}
-                        aria-pressed={active}
-                        className={`flex flex-1 items-center justify-center gap-1 rounded-full border py-1.5 text-[11px] font-bold transition ${
-                          active ? "border-white bg-white text-black shadow" : "border-transparent bg-white/5 text-zinc-300 hover:bg-white/10 hover:text-white"
-                        }`}
-                      >
-                        <t.icon width={13} height={13} /> {tr(t.label)}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-
-            {/* footer */}
-            <div className="shrink-0 border-t border-white/5 px-4 py-3 text-[11px] text-zinc-500">
-              {electron ? (
-                <div className="flex items-center justify-between gap-2">
-                  <span dir="ltr">{tr("app.name")} · v{bridge()?.version ?? "1.0.0"}</span>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-extrabold text-white">{shownName}</p>
+                    <p className="mt-0.5 text-[11px] text-zinc-500">{session ? tr("user.account") : tr("user.guest")}</p>
+                  </div>
                   <button
                     type="button"
-                    onClick={checkUpdates}
-                    disabled={checking}
-                    className="flex items-center gap-1 rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-zinc-300 transition hover:bg-white/10 hover:text-white disabled:opacity-50"
+                    onClick={() => setOpen(false)}
+                    aria-label={tr("common.close")}
+                    className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-zinc-400 transition hover:bg-white/10 hover:text-white"
                   >
-                    <RefreshIcon width={12} height={12} className={checking ? "animate-spin" : ""} /> {tr("user.checkUpdate")}
+                    <CloseIcon width={14} height={14} />
                   </button>
                 </div>
-              ) : (
-                <div className="flex items-center justify-between gap-2">
-                  <span>{tr("app.name")} · {tr("app.tagline")}</span>
-                  <Link href="/about" className="transition hover:text-white">
-                    {tr("footer.aboutUs")}
-                  </Link>
+
+                {/* body — one monochrome list, VIP keeps its gold */}
+                <div className="no-scrollbar max-h-[52vh] min-h-0 overflow-y-auto overscroll-contain p-2.5" role="menu">
+                  <ul className="space-y-1">
+                    {/* VIP — the ONLY colored element in the drawer */}
+                    <li>
+                      <Link
+                        href="/vip"
+                        role="menuitem"
+                        data-autofocus
+                        className={`flex items-center gap-3 rounded-2xl px-3.5 py-2.5 text-sm transition ${
+                          isActive("/vip")
+                            ? "bg-amber-400/20 text-amber-100"
+                            : "text-amber-300/90 hover:bg-amber-400/10 hover:text-amber-200"
+                        }`}
+                      >
+                        <CrownIcon width={17} height={17} />
+                        <span className="flex-1">{locale === "en" ? "VIP subscription" : "اشتراک ویژه (VIP)"}</span>
+                      </Link>
+                    </li>
+                    {!session && (
+                      <Item href="/auth" icon={UserIcon} label={locale === "en" ? "Sign in / Sign up" : "ورود / ثبت‌نام"} active={isActive("/auth")} />
+                    )}
+                    {PERSONAL.map((it) => (
+                      <Item
+                        key={it.href}
+                        {...it}
+                        label={tr(it.label)}
+                        active={isActive(it.href)}
+                        count={countOf(it)}
+                      />
+                    ))}
+                    <Item {...SETTINGS_ENTRY} icon={SettingsIcon} label={tr(SETTINGS_ENTRY.label)} active={isActive("/settings")} />
+                  </ul>
+
+                  {/* sign out — monochrome; the two-tap destructive confirm
+                      (v0.29.0) survives restyle */}
+                  {session && (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (!confirmArmed) {
+                          try {
+                            const { guestDataAtRisk } = await import("@/lib/mobile/userdata");
+                            if (await guestDataAtRisk()) {
+                              setConfirmArmed(true);
+                              setTimeout(() => setConfirmArmed(false), 5000);
+                              return;
+                            }
+                          } catch {
+                            /* helper unavailable → sign out as before */
+                          }
+                        }
+                        setConfirmArmed(false);
+                        setOpen(false);
+                        void explicitSignOut();
+                        toast.success(locale === "en" ? "Signed out." : "از حساب خارج شدی.");
+                        router.refresh();
+                      }}
+                      className={`mt-1 flex w-full items-center gap-3 rounded-2xl px-3.5 py-2.5 text-sm transition ${
+                        confirmArmed
+                          ? "bg-white/15 font-bold text-white"
+                          : "text-zinc-400 hover:bg-white/[0.06] hover:text-white"
+                      }`}
+                    >
+                      <LogoutIcon width={17} height={17} />
+                      <span className="flex-1 text-start">
+                        {confirmArmed
+                          ? locale === "en"
+                            ? "Tap again — guest data on this device will be erased"
+                            : "دوباره بزنید — داده‌های مهمان این دستگاه پاک می‌شود"
+                          : locale === "en"
+                            ? "Sign out"
+                            : "خروج از حساب"}
+                      </span>
+                    </button>
+                  )}
                 </div>
-              )}
-            </div>
-          </motion.div>
+
+                {/* footer — version/update (desktop) or about (web) */}
+                <div className="border-t border-white/5 px-4 py-3 text-[11px] text-zinc-500">
+                  {electron ? (
+                    <div className="flex items-center justify-between gap-2">
+                      <span dir="ltr">{tr("app.name")} · v{bridge()?.version ?? "1.0.0"}</span>
+                      <button
+                        type="button"
+                        onClick={checkUpdates}
+                        disabled={checking}
+                        className="flex items-center gap-1 rounded-full px-2.5 py-1 text-zinc-400 transition hover:bg-white/10 hover:text-white disabled:opacity-50"
+                      >
+                        <RefreshIcon width={12} height={12} className={checking ? "animate-spin" : ""} /> {tr("user.checkUpdate")}
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-between gap-2">
+                      <span>{tr("app.name")} · {tr("app.tagline")}</span>
+                      <Link href="/about" className="transition hover:text-white">
+                        {tr("footer.aboutUs")}
+                      </Link>
+                    </div>
+                  )}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>,
+          document.body
         )}
-      </AnimatePresence>
     </div>
   );
 }

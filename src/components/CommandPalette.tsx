@@ -24,6 +24,7 @@ import {
   BellIcon,
   UserIcon,
 } from "./Icons";
+import { useI18n } from "./i18n/LocaleProvider";
 import TitleName from "@/components/TitleName";
 import { titleHref } from "@/lib/mobile-links";
 import { useFocusTrap } from "@/lib/focus-trap";
@@ -45,6 +46,7 @@ export default function CommandPalette() {
   const router = useRouter();
   const pathname = usePathname();
   const { setTheme } = useTheme();
+  const { t: tr } = useI18n();
   /* v0.27.0 (A11Y-1) — real focus trap: Tab cycles inside, Escape closes,
    * focus returns to the opener on close. */
   const trapRef = useFocusTrap<HTMLDivElement>(open, { onClose: () => setOpen(false) });
@@ -112,26 +114,26 @@ export default function CommandPalette() {
   };
   const commands = useMemo<Cmd[]>(
     () => [
-      { id: "home", label: "خانه", icon: HomeIcon, run: () => go("/"), keywords: "home" },
-      { id: "movies", label: "فیلم‌ها", icon: FilmIcon, run: () => go("/movies"), keywords: "movies film" },
-      { id: "series", label: "سریال‌ها", icon: TvIcon, run: () => go("/series"), keywords: "series tv" },
-      { id: "genres", label: "ژانرها", icon: SparkIcon, run: () => go("/genres"), keywords: "genre" },
-      { id: "collections", label: "مجموعه‌ها", hint: "کالکشن‌های دست‌چین", icon: LayersIcon, run: () => go("/collections"), keywords: "collections" },
-      { id: "random", label: "یک پیشنهاد شانسی", hint: "امشب چی ببینم؟", icon: ShuffleIcon, run: () => go("/random"), keywords: "random shuffle" },
-      { id: "list", label: "لیست من", icon: BookmarkIcon, run: () => go("/my-list"), keywords: "list watchlist" },
-      { id: "fav", label: "علاقه‌مندی‌ها", icon: HeartIcon, run: () => go("/favorites"), keywords: "favorites" },
-      { id: "history", label: "تاریخچه تماشا", icon: HistoryIcon, run: () => go("/history"), keywords: "history" },
-      { id: "people", label: "هنرمندان", hint: "کارگردان‌ها و بازیگران", icon: UsersIcon, run: () => go("/people"), keywords: "people cast director" },
-      { id: "notifications", label: "اعلان‌ها", icon: BellIcon, run: () => go("/notifications"), keywords: "notifications bell" },
-      { id: "profile", label: "پروفایل من", icon: UserIcon, run: () => go("/profile"), keywords: "profile" },
-      { id: "settings", label: "تنظیمات", icon: SettingsIcon, run: () => go("/settings"), keywords: "settings" },
-      { id: "t-dark", label: "تم تیره", icon: MoonIcon, run: () => { setTheme("dark"); setOpen(false); }, keywords: "dark theme" },
-      { id: "t-light", label: "تم روشن", icon: SunIcon, run: () => { setTheme("light"); setOpen(false); }, keywords: "light theme" },
-      { id: "t-system", label: "تم خودکار (سیستم)", icon: MonitorIcon, run: () => { setTheme("system"); setOpen(false); }, keywords: "system theme auto" },
-      { id: "shortcuts", label: "کلیدهای میانبر", icon: KeyboardIcon, run: () => go("/settings#shortcuts"), keywords: "shortcuts keyboard" },
+      { id: "home", label: tr("nav.home"), icon: HomeIcon, run: () => go("/"), keywords: "home" },
+      { id: "movies", label: tr("nav.movies"), icon: FilmIcon, run: () => go("/movies"), keywords: "movies film" },
+      { id: "series", label: tr("nav.series"), icon: TvIcon, run: () => go("/series"), keywords: "series tv" },
+      { id: "genres", label: tr("nav.genres"), icon: SparkIcon, run: () => go("/genres"), keywords: "genre" },
+      { id: "collections", label: tr("user.collections"), hint: tr("palette.collectionsHint"), icon: LayersIcon, run: () => go("/collections"), keywords: "collections" },
+      { id: "random", label: tr("palette.randomLabel"), hint: tr("user.random"), icon: ShuffleIcon, run: () => go("/random"), keywords: "random shuffle" },
+      { id: "list", label: tr("user.myList"), icon: BookmarkIcon, run: () => go("/my-list"), keywords: "list watchlist" },
+      { id: "fav", label: tr("user.favorites"), icon: HeartIcon, run: () => go("/favorites"), keywords: "favorites" },
+      { id: "history", label: tr("user.history"), icon: HistoryIcon, run: () => go("/history"), keywords: "history" },
+      { id: "people", label: tr("user.people"), hint: tr("nav.peopleHint"), icon: UsersIcon, run: () => go("/people"), keywords: "people cast director" },
+      { id: "notifications", label: tr("user.notifications"), icon: BellIcon, run: () => go("/notifications"), keywords: "notifications bell" },
+      { id: "profile", label: tr("user.profile"), icon: UserIcon, run: () => go("/profile"), keywords: "profile" },
+      { id: "settings", label: tr("user.settings"), icon: SettingsIcon, run: () => go("/settings"), keywords: "settings" },
+      { id: "t-dark", label: tr("palette.themeDark"), icon: MoonIcon, run: () => { setTheme("dark"); setOpen(false); }, keywords: "dark theme" },
+      { id: "t-light", label: tr("palette.themeLight"), icon: SunIcon, run: () => { setTheme("light"); setOpen(false); }, keywords: "light theme" },
+      { id: "t-system", label: tr("palette.themeSystem"), icon: MonitorIcon, run: () => { setTheme("system"); setOpen(false); }, keywords: "system theme auto" },
+      { id: "shortcuts", label: tr("palette.shortcuts"), icon: KeyboardIcon, run: () => go("/settings#shortcuts"), keywords: "shortcuts keyboard" },
     ],
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [router]
+     
+    [router, tr]
   );
 
   const filteredCmds = useMemo(() => {
@@ -147,7 +149,7 @@ export default function CommandPalette() {
       run: () => go(titleHref(r.slug)),
       node: (
         <>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
+          { }
           <img src={r.poster} alt="" className="h-12 w-8 shrink-0 rounded-md object-cover" />
           <span className="min-w-0 flex-1">
             <TitleName t={r} layout="inline" primaryClass="text-sm font-bold text-white" secondaryClass="text-[11px] text-zinc-500" />
@@ -155,7 +157,7 @@ export default function CommandPalette() {
               {r.year}
             </span>
           </span>
-          <span className="text-[11px] text-zinc-500">{r.type === "series" ? "سریال" : "فیلم"} · ★ {fa(r.rating)}</span>
+          <span className="text-[11px] text-zinc-500">{r.type === "series" ? tr("common.series") : tr("common.movie")} · ★ {fa(r.rating)}</span>
         </>
       ),
     })),
@@ -178,7 +180,7 @@ export default function CommandPalette() {
       };
     }),
   ];
-  if (q.trim()) items.push({ key: "search-all", run: () => { rememberSearch(q); go(`/search?q=${encodeURIComponent(q.trim())}`); }, node: <span className="text-sm text-brand">جستجوی کامل «{q.trim()}» →</span> });
+  if (q.trim()) items.push({ key: "search-all", run: () => { rememberSearch(q); go(`/search?q=${encodeURIComponent(q.trim())}`); }, node: <span className="text-sm text-brand">{tr("palette.searchAll", { q: q.trim() })}</span> });
 
   useEffect(() => setIdx(0), [q, results.length]);
 
@@ -199,7 +201,7 @@ export default function CommandPalette() {
 
   return (
     <div className="fixed inset-0 z-[120] flex items-start justify-center px-3 pt-[12vh]" style={{ background: "var(--overlay)" }} onMouseDown={(e) => e.target === e.currentTarget && setOpen(false)}>
-      <div ref={trapRef} role="dialog" aria-modal="true" aria-label="جستجوی سریع" className="glass-strong glass-in w-full max-w-xl overflow-hidden rounded-3xl">
+      <div ref={trapRef} role="dialog" aria-modal="true" aria-label={tr("palette.ariaLabel")} className="glass-strong glass-in w-full max-w-xl overflow-hidden rounded-3xl">
         <div className="flex items-center gap-3 border-b border-white/10 px-4">
           <SearchIcon className="shrink-0 text-zinc-400" />
           <input
@@ -207,23 +209,23 @@ export default function CommandPalette() {
             value={q}
             onChange={(e) => setQ(e.target.value)}
             onKeyDown={onKeyNav}
-            placeholder="جستجوی فیلم، سریال یا دستور…"
+            placeholder={tr("palette.placeholder")}
             className="h-14 w-full bg-transparent text-base text-white placeholder:text-zinc-500 focus:outline-none"
           />
           <kbd className="hidden rounded-md border border-white/15 bg-white/5 px-1.5 py-0.5 text-[10px] text-zinc-400 sm:block">ESC</kbd>
         </div>
         <ul className="max-h-[52vh] overflow-y-auto p-2">
-          {loading && results.length === 0 && q.trim() && <li className="px-3 py-2 text-xs text-zinc-500">در حال جستجو…</li>}
+          {loading && results.length === 0 && q.trim() && <li className="px-3 py-2 text-xs text-zinc-500">{tr("common.searching")}</li>}
           {failed && results.length === 0 && q.trim() && (
             <li className="px-3 py-2">
               {/* v0.27.0 (UI-2) — retryable network error, not «پیدا نشد» */}
-              <p className="text-xs font-bold text-rose-300">خطا در جستجو — اتصال برقرار نشد</p>
+              <p className="text-xs font-bold text-rose-300">{tr("palette.searchError")}</p>
               <button type="button" onClick={() => setNonce((n) => n + 1)} className="mt-1 rounded-full border border-white/15 px-3 py-1 text-[11px] font-bold text-white hover:bg-white/10">
-                تلاش مجدد
+                {tr("nav.retry")}
               </button>
             </li>
           )}
-          {items.length === 0 && !failed && <li className="px-3 py-6 text-center text-sm text-zinc-500">چیزی پیدا نشد.</li>}
+          {items.length === 0 && !failed && <li className="px-3 py-6 text-center text-sm text-zinc-500">{tr("common.noResults")}</li>}
           {items.map((it, i) => (
             <li key={it.key}>
               <button
@@ -238,9 +240,9 @@ export default function CommandPalette() {
           ))}
         </ul>
         <div className="flex items-center justify-between border-t border-white/10 px-4 py-2 text-[10px] text-zinc-500">
-          <span>↑↓ حرکت · Enter انتخاب</span>
+          <span>{tr("palette.navHint")}</span>
           <span className="flex items-center gap-1">
-            <kbd className="rounded border border-white/15 px-1">Ctrl</kbd>+<kbd className="rounded border border-white/15 px-1">K</kbd> باز/بسته
+            <kbd className="rounded border border-white/15 px-1">Ctrl</kbd>+<kbd className="rounded border border-white/15 px-1">K</kbd> {tr("palette.toggle")}
           </span>
         </div>
       </div>

@@ -9,6 +9,8 @@ import { getProgressMap } from "@/lib/mobile/userdata";
 import { fa } from "@/lib/format";
 import { SearchIcon, FlameIcon, FilmIcon, TvIcon, SparkIcon, CloseIcon, HistoryIcon } from "@/components/Icons";
 import { getRecentSearches, rememberSearch, forgetSearch, clearRecentSearches } from "@/lib/search-history";
+import { useI18n } from "@/components/i18n/LocaleProvider";
+import { genreLabel } from "@/lib/genres";
 
 // verified against the live catalog – every chip must return results
 // (genres are stored in Persian; cast names are Latin, so actor names
@@ -18,6 +20,7 @@ const POPULAR_QUERIES = ["کمدی", "اکشن", "انیمیشن", "ترسناک
 function SearchInner() {
   const sp = useSearchParams();
   const router = useRouter();
+  const { t: tr, locale } = useI18n();
   const q = sp.get("q") ?? "";
   const type = sp.get("type") ?? undefined;
   const term = q.trim();
@@ -53,7 +56,7 @@ function SearchInner() {
         <div className="mx-auto max-w-[1600px] px-4 pt-32 text-center sm:px-8 lg:px-12">
           <div className="mx-auto flex w-72 items-center justify-center gap-2">
             <span className="h-4 w-4 animate-spin rounded-full border-2 border-brand border-t-transparent" />
-            <span className="text-sm text-zinc-400">در حال جستجو…</span>
+            <span className="text-sm text-zinc-400">{tr("common.searching")}</span>
           </div>
         </div>
       </main>
@@ -66,9 +69,9 @@ function SearchInner() {
   const series = all.length - movies;
 
   const tabs = [
-    { v: undefined, label: "همه", n: all.length, icon: SparkIcon },
-    { v: "movie", label: "فیلم", n: movies, icon: FilmIcon },
-    { v: "series", label: "سریال", n: series, icon: TvIcon },
+    { v: undefined, label: tr("common.all"), n: all.length, icon: SparkIcon },
+    { v: "movie", label: tr("common.movie"), n: movies, icon: FilmIcon },
+    { v: "series", label: tr("common.series"), n: series, icon: TvIcon },
   ];
 
   return (
@@ -77,8 +80,8 @@ function SearchInner() {
       <section className="relative overflow-hidden">
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(229,9,20,0.18),transparent_60%)]" />
         <div className="relative mx-auto max-w-[1600px] px-4 pb-8 pt-28 text-center sm:px-8 lg:px-12 lg:pt-36">
-          <h1 className="text-3xl font-black text-white sm:text-4xl">دنبال چه چیزی می‌گردید؟</h1>
-          <p className="mt-2 text-sm text-zinc-400">نام فیلم، سریال، بازیگر، کارگردان یا حتی ژانر را بنویسید.</p>
+          <h1 className="text-3xl font-black text-white sm:text-4xl">{tr("search.heading")}</h1>
+          <p className="mt-2 text-sm text-zinc-400">{tr("search.sub")}</p>
 
           <form
             onSubmit={(e) => {
@@ -98,22 +101,22 @@ function SearchInner() {
               defaultValue={q}
               autoFocus
               autoComplete="off"
-              placeholder="مثلاً: مدار سکوت، نوآر، شهاب حسینی..."
+              placeholder={tr("search.placeholder")}
               className="h-11 w-full bg-transparent text-base text-white placeholder:text-zinc-500 focus:outline-none"
             />
             <button type="submit" className="h-11 shrink-0 rounded-full bg-brand px-6 text-sm font-bold text-white transition hover:bg-brand-600">
-              جستجو
+              {tr("nav.search")}
             </button>
           </form>
 
           {!term && (
             <div className="mt-5 flex flex-wrap items-center justify-center gap-2 text-xs">
               <span className="flex items-center gap-1 text-zinc-500">
-                <FlameIcon width={13} height={13} className="text-orange-400" /> جستجوهای پرتکرار:
+                <FlameIcon width={13} height={13} className="text-orange-400" /> {tr("search.popular")}
               </span>
               {POPULAR_QUERIES.map((p) => (
                 <Link key={p} href={`/search?q=${encodeURIComponent(p)}`} className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-zinc-300 transition hover:border-brand/50 hover:text-white">
-                  {p}
+                  {genreLabel(p, locale)}
                 </Link>
               ))}
             </div>
@@ -124,7 +127,7 @@ function SearchInner() {
             <div className="mx-auto mt-4 max-w-2xl text-center">
               <div className="flex flex-wrap items-center justify-center gap-2 text-xs">
                 <span className="flex items-center gap-1 text-zinc-500">
-                  <HistoryIcon width={13} height={13} /> جستجوهای اخیر شما:
+                  <HistoryIcon width={13} height={13} /> {tr("search.recentYours")}
                 </span>
                 {recent.map((s) => (
                   <span key={s} className="flex items-center overflow-hidden rounded-full border border-brand/30 bg-brand/10">
@@ -133,7 +136,7 @@ function SearchInner() {
                     </Link>
                     <button
                       type="button"
-                      aria-label={`حذف ${s}`}
+                      aria-label={tr("nav.removeSearch", { q: s })}
                       onClick={() => {
                         forgetSearch(s);
                         setRecent(getRecentSearches());
@@ -152,7 +155,7 @@ function SearchInner() {
                   }}
                   className="px-2 py-1 text-[10px] text-zinc-500 hover:text-zinc-300"
                 >
-                  پاک کردن همه
+                  {tr("search.clearAll")}
                 </button>
               </div>
             </div>
@@ -165,7 +168,7 @@ function SearchInner() {
           <>
             <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
               <h2 className="text-xl font-extrabold text-white">
-                نتایج برای «{q}» <span className="text-sm font-normal text-zinc-500">({fa(results.length)} مورد)</span>
+                {tr("search.resultsFor", { q })} <span className="text-sm font-normal text-zinc-500">({tr("catalog.results", { n: fa(results.length) })})</span>
               </h2>
               {all.length > 0 && (
                 <div className="flex rounded-full border border-white/10 bg-white/5 p-1 text-xs">
@@ -192,16 +195,16 @@ function SearchInner() {
                 <span className="mx-auto grid h-16 w-16 place-items-center rounded-2xl bg-white/5 text-zinc-500">
                   <SearchIcon width={28} height={28} />
                 </span>
-                <p className="mt-5 text-xl font-black text-white">چیزی پیدا نشد</p>
-                <p className="mt-2 text-sm text-zinc-500">املای کلمه را بررسی کنید، یا یکی از این ژانرها را امتحان کنید:</p>
+                <p className="mt-5 text-xl font-black text-white">{tr("common.noResults")}</p>
+                <p className="mt-2 text-sm text-zinc-500">{tr("search.checkSpelling")}</p>
                 <div className="mt-5 flex flex-wrap justify-center gap-2">
                   {GENRES.slice(0, 8).map((g) => (
                     <Link key={g} href={`/search?q=${encodeURIComponent(g)}`} className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-zinc-300 hover:bg-white/10">
-                      {g}
+                      {genreLabel(g, locale)}
                     </Link>
                   ))}
                 </div>
-                <p className="mt-10 mb-4 text-sm font-bold text-zinc-300">شاید این‌ها را دوست داشته باشید</p>
+                <p className="mt-10 mb-4 text-sm font-bold text-zinc-300">{tr("search.maybeLike")}</p>
                 <div className="flex flex-wrap justify-center gap-4">
                   {trending.slice(0, 6).map((t) => (
                     <TitleCard key={t.id} t={t} size="sm" />
@@ -223,9 +226,9 @@ function SearchInner() {
             {/* browse by genre */}
             <section>
               <div className="mb-4 flex items-end justify-between">
-                <h2 className="text-xl font-extrabold text-white">مرور بر اساس ژانر</h2>
+                <h2 className="text-xl font-extrabold text-white">{tr("search.browseGenre")}</h2>
                 <Link href="/genres" className="text-xs text-zinc-400 hover:text-brand">
-                  همه ژانرها
+                  {tr("search.allGenres")}
                 </Link>
               </div>
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
@@ -239,8 +242,8 @@ function SearchInner() {
                       className="absolute -end-6 -top-6 h-20 w-20 rounded-full opacity-30 blur-2xl transition group-hover:opacity-60"
                       style={{ background: `hsl(${(i * 47) % 360} 80% 55%)` }}
                     />
-                    <p className="relative font-bold text-white">{g}</p>
-                    <p className="relative mt-1 text-[11px] text-zinc-500">مشاهده آثار</p>
+                    <p className="relative font-bold text-white">{genreLabel(g, locale)}</p>
+                    <p className="relative mt-1 text-[11px] text-zinc-500">{tr("search.viewTitles")}</p>
                   </Link>
                 ))}
               </div>
@@ -249,10 +252,10 @@ function SearchInner() {
             <section className="mt-14">
               <div className="mb-4 flex items-end justify-between">
                 <h2 className="flex items-center gap-2 text-xl font-extrabold text-white">
-                  <FlameIcon width={18} height={18} className="text-orange-400" /> داغ‌ترین‌های امروز
+                  <FlameIcon width={18} height={18} className="text-orange-400" /> {tr("search.trendingToday")}
                 </h2>
                 <Link href="/movies?sort=trending" className="text-xs text-zinc-400 hover:text-brand">
-                  مشاهده همه
+                  {tr("common.viewAll")}
                 </Link>
               </div>
               <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8">
@@ -271,13 +274,14 @@ function SearchInner() {
 }
 
 export default function SearchPage() {
+  const { t: tr } = useI18n();
   return (
     <Suspense fallback={
       <main className="pb-16">
         <div className="mx-auto max-w-[1600px] px-4 pt-32 text-center sm:px-8 lg:px-12">
           <div className="mx-auto flex w-72 items-center justify-center gap-2">
             <span className="h-4 w-4 animate-spin rounded-full border-2 border-brand border-t-transparent" />
-            <span className="text-sm text-zinc-400">در حال جستجو…</span>
+            <span className="text-sm text-zinc-400">{tr("common.searching")}</span>
           </div>
         </div>
       </main>

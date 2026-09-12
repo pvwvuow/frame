@@ -11,6 +11,7 @@ import { useI18n } from "./i18n/LocaleProvider";
 import { titleNames } from "@/lib/title-name";
 import { titleHref, watchHref } from "@/lib/mobile-links";
 import { posterSrc, backdropSrc } from "@/lib/covers";
+import { genreListLabel } from "@/lib/genres";
 import { useLibrary } from "./library/LibraryProvider";
 import { GlassButton } from "./ui/glass";
 
@@ -104,7 +105,7 @@ export default function Hero({ items, watchlistIds }: { items: TitleView[]; watc
             </span>
             <span>{fa(cur.year)}</span>
             <span>{cur.type === "series" ? `${tr("common.perEpisode")} ${formatDuration(cur.duration)}` : formatDuration(cur.duration)}</span>
-            <span className="text-zinc-400">{cur.genres.join(" · ")}</span>
+            <span className="text-zinc-400">{genreListLabel(cur.genres, locale)}</span>
           </div>
 
           <p className="mt-4 line-clamp-3 max-w-xl text-sm leading-7 text-zinc-300 sm:text-base">
@@ -136,7 +137,7 @@ export default function Hero({ items, watchlistIds }: { items: TitleView[]; watc
         <div className="absolute bottom-8 end-4 hidden items-center gap-2 sm:end-8 sm:flex lg:end-12">
           <button
             type="button"
-            aria-label={stopped ? "ادامه چرخش اسلاید" : "توقف چرخش اسلاید"}
+            aria-label={stopped ? tr("hero.resumeRotation") : tr("hero.pauseRotation")}
             onClick={() => setUserPaused((p) => !p)}
             className="tap-expand grid h-8 w-8 place-items-center rounded-full bg-black/50 text-zinc-200 ring-1 ring-white/15 backdrop-blur transition hover:bg-black/70"
           >

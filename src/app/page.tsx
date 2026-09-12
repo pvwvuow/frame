@@ -48,33 +48,34 @@ type HomeData = {
   listRows: ListRow[];
 };
 
-/* ── Home ghost posters (v0.30.9) ─────────────────────────────────────
- * The SAME famous-poster ambient as the VIP page, but spread over FOURTEEN
- * slots across the whole viewport (پراکندگی بیشتر) and DARKER (opacity
- * 0.08–0.16) so it never competes with the content — the rows and the
- * hero scroll OVER the fixed layer. It only exists BELOW the hero: a
- * sentinel right after <Hero> gates it (scroll-past → fade in, scroll
- * back → fade out); the ghosts themselves never scroll — they are fixed,
- * the content glides over them. */
+/* ── Home ghost covers (v0.30.10) ─────────────────────────────────────
+ * The SAME famous-cover ambient as the VIP page — OVAL 16/9 backdrops
+ * (the user flipped back from posters to the cover form) — spread over
+ * FOURTEEN slots across the whole viewport (پراکندگی بیشتر) and DARKER
+ * (opacity 0.08–0.16) so it never competes with the content — the rows
+ * and the hero scroll OVER the fixed layer. It only exists BELOW the
+ * hero: a sentinel right after <Hero> gates it (scroll-past → fade in,
+ * scroll back → fade out); the ghosts themselves never scroll — they
+ * are fixed, the content glides over them. */
 const HOME_GHOST_SLOTS: GhostSlot[] = [
-  { left: "3%",  top: "6%",  w: 200, dur: 14, delay: -3,  o: 0.12, blur: 3, tilt: "-3deg" },
-  { left: "78%", top: "4%",  w: 180, dur: 16, delay: -9,  o: 0.1,  blur: 4, tilt: "2deg" },
-  { left: "40%", top: "10%", w: 150, dur: 18, delay: -14, o: 0.08, blur: 5, tilt: "3deg" },
-  { left: "62%", top: "22%", w: 210, dur: 13, delay: -6,  o: 0.14, blur: 3, tilt: "-2deg" },
-  { left: "12%", top: "30%", w: 230, dur: 15, delay: -11, o: 0.15, blur: 3, tilt: "4deg" },
-  { left: "85%", top: "34%", w: 190, dur: 17, delay: -2,  o: 0.11, blur: 4, tilt: "-3deg" },
-  { left: "34%", top: "42%", w: 170, dur: 19, delay: -8,  o: 0.09, blur: 5, tilt: "2deg" },
-  { left: "55%", top: "52%", w: 220, dur: 14, delay: -13, o: 0.13, blur: 3, tilt: "-4deg" },
-  { left: "5%",  top: "58%", w: 180, dur: 16, delay: -5,  o: 0.11, blur: 4, tilt: "3deg" },
-  { left: "80%", top: "64%", w: 240, dur: 12, delay: -10, o: 0.16, blur: 3, tilt: "-2deg" },
-  { left: "28%", top: "72%", w: 200, dur: 20, delay: -16, o: 0.1,  blur: 5, tilt: "2deg" },
-  { left: "60%", top: "80%", w: 170, dur: 15, delay: -7,  o: 0.12, blur: 4, tilt: "-3deg" },
-  { left: "10%", top: "86%", w: 220, dur: 18, delay: -12, o: 0.14, blur: 3, tilt: "3deg" },
-  { left: "88%", top: "88%", w: 160, dur: 17, delay: -4,  o: 0.09, blur: 5, tilt: "-2deg" },
+  { left: "3%",  top: "6%",  w: 340, dur: 14, delay: -3,  o: 0.12, blur: 3, tilt: "-3deg" },
+  { left: "78%", top: "4%",  w: 300, dur: 16, delay: -9,  o: 0.1,  blur: 4, tilt: "2deg" },
+  { left: "40%", top: "10%", w: 260, dur: 18, delay: -14, o: 0.08, blur: 5, tilt: "3deg" },
+  { left: "62%", top: "22%", w: 360, dur: 13, delay: -6,  o: 0.14, blur: 3, tilt: "-2deg" },
+  { left: "12%", top: "30%", w: 380, dur: 15, delay: -11, o: 0.15, blur: 3, tilt: "4deg" },
+  { left: "85%", top: "34%", w: 320, dur: 17, delay: -2,  o: 0.11, blur: 4, tilt: "-3deg" },
+  { left: "34%", top: "42%", w: 280, dur: 19, delay: -8,  o: 0.09, blur: 5, tilt: "2deg" },
+  { left: "55%", top: "52%", w: 370, dur: 14, delay: -13, o: 0.13, blur: 3, tilt: "-4deg" },
+  { left: "5%",  top: "58%", w: 300, dur: 16, delay: -5,  o: 0.11, blur: 4, tilt: "3deg" },
+  { left: "80%", top: "64%", w: 400, dur: 12, delay: -10, o: 0.16, blur: 3, tilt: "-2deg" },
+  { left: "28%", top: "72%", w: 340, dur: 20, delay: -16, o: 0.1,  blur: 5, tilt: "2deg" },
+  { left: "60%", top: "80%", w: 280, dur: 15, delay: -7,  o: 0.12, blur: 4, tilt: "-3deg" },
+  { left: "10%", top: "86%", w: 370, dur: 18, delay: -12, o: 0.14, blur: 3, tilt: "3deg" },
+  { left: "88%", top: "88%", w: 270, dur: 17, delay: -4,  o: 0.09, blur: 5, tilt: "-2deg" },
 ];
 
 function HomeGhosts() {
-  const posters = useFamousPosterPool();
+  const covers = useFamousPosterPool(42, "backdrop");
   const [on, setOn] = useState(false);
 
   /* gate = the sentinel right after the hero: ghosts fade in once it
@@ -100,7 +101,7 @@ function HomeGhosts() {
     };
   }, []);
 
-  if (posters.length < HOME_GHOST_SLOTS.length) return null;
+  if (covers.length < HOME_GHOST_SLOTS.length) return null;
   return (
     <div
       className="pointer-events-none fixed inset-0 -z-10 overflow-hidden"
@@ -111,10 +112,11 @@ function HomeGhosts() {
         <AmbientGhost
           key={i}
           slot={slot}
-          posters={posters}
+          covers={covers}
           startIndex={i * 3}
           advance={HOME_GHOST_SLOTS.length}
-          maxWidth="30vw"
+          maxWidth="36vw"
+          shape="oval"
         />
       ))}
       {/* gently sink the layer edges into the ink so ghosts never cut hard

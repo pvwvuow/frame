@@ -4,8 +4,10 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { StarIcon } from "./Icons";
 import { fa } from "@/lib/format";
+import { useI18n } from "./i18n/LocaleProvider";
 
 export default function ReviewForm({ titleId, slug }: { titleId: number; slug: string }) {
+  const { t: tr } = useI18n();
   const [author, setAuthor] = useState("");
   const [rating, setRating] = useState(8);
   const [hover, setHover] = useState<number | null>(null);
@@ -27,22 +29,22 @@ export default function ReviewForm({ titleId, slug }: { titleId: number; slug: s
           });
           if (r.ok) {
             setBody("");
-            setMsg("نظر شما ثبت شد. ممنون!");
+            setMsg(tr("review.thanks"));
             router.refresh();
           } else {
             const d = (await r.json().catch(() => ({}))) as { error?: string };
-            setMsg(d.error ?? "خطایی رخ داد");
+            setMsg(d.error ?? tr("review.error"));
           }
         });
       }}
       className="rounded-2xl border border-white/5 bg-ink-700/60 p-5"
     >
-      <p className="mb-4 font-bold text-white">نظر خود را بنویسید</p>
+      <p className="mb-4 font-bold text-white">{tr("review.write")}</p>
       <div className="grid gap-3 sm:grid-cols-2">
         <input
           value={author}
           onChange={(e) => setAuthor(e.target.value)}
-          placeholder="نام شما"
+          placeholder={tr("review.yourName")}
           required
           className="h-11 rounded-xl border border-white/10 bg-ink px-4 text-sm text-white placeholder:text-zinc-500 focus:border-brand focus:outline-none"
         />
@@ -55,7 +57,7 @@ export default function ReviewForm({ titleId, slug }: { titleId: number; slug: s
               onMouseEnter={() => setHover(n)}
               onMouseLeave={() => setHover(null)}
               className={`transition ${n <= (hover ?? rating) ? "text-amber-400" : "text-zinc-600"}`}
-              aria-label={`امتیاز ${n}`}
+              aria-label={`${tr("review.ratingAria")} ${n}`}
             >
               <StarIcon width={18} height={18} />
             </button>
@@ -66,7 +68,7 @@ export default function ReviewForm({ titleId, slug }: { titleId: number; slug: s
       <textarea
         value={body}
         onChange={(e) => setBody(e.target.value)}
-        placeholder="نظرتان درباره‌ی این اثر..."
+        placeholder={tr("review.placeholder")}
         required
         rows={3}
         className="mt-3 w-full resize-none rounded-xl border border-white/10 bg-ink px-4 py-3 text-sm text-white placeholder:text-zinc-500 focus:border-brand focus:outline-none"
@@ -77,7 +79,7 @@ export default function ReviewForm({ titleId, slug }: { titleId: number; slug: s
           disabled={pending}
           className="h-11 rounded-full bg-brand px-6 text-sm font-bold text-white transition hover:bg-brand-600 disabled:opacity-50"
         >
-          {pending ? "در حال ارسال..." : "ثبت نظر"}
+          {pending ? tr("review.sending") : tr("review.submit")}
         </button>
         {msg && <span className="text-sm text-zinc-300">{msg}</span>}
       </div>

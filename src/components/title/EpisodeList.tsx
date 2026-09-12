@@ -7,6 +7,7 @@ import { PlayIcon, CheckIcon } from "../Icons";
 import DownloadButton from "../download/DownloadButton";
 import { absolutizeUrl, normalizeSources } from "@/lib/source-fix";
 import { watchHref } from "@/lib/mobile-links";
+import { useI18n } from "../i18n/LocaleProvider";
 
 export type EpisodeItem = {
   id: number;
@@ -38,6 +39,7 @@ export default function EpisodeList({
   year?: number;
 }) {
   const seasons = useMemo(() => Array.from(new Set(episodes.map((e) => e.season))), [episodes]);
+  const { t: tr } = useI18n();
   const currentEp = episodes.find((e) => e.id === progress?.episodeId);
   const [season, setSeason] = useState(currentEp?.season ?? seasons[0] ?? 1);
   const list = episodes.filter((e) => e.season === season);
@@ -128,7 +130,7 @@ export default function EpisodeList({
                     <div className="flex items-center gap-2">
                       <span className="text-2xl font-black leading-none text-zinc-600">{fa(e.number)}</span>
                       <p className="truncate font-bold text-white">{e.name}</p>
-                      {active && <span className="rounded-md bg-brand/20 px-1.5 py-0.5 text-[10px] font-bold text-brand">در حال تماشا</span>}
+                      {active && <span className="rounded-md bg-brand/20 px-1.5 py-0.5 text-[10px] font-bold text-brand">{tr("title.nowWatching")}</span>}
                     </div>
                     <p className="mt-2 line-clamp-3 text-xs leading-6 text-zinc-400">{e.synopsis}</p>
                   </Link>

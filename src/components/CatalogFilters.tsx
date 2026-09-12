@@ -3,14 +3,18 @@
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { fa } from "@/lib/format";
+import { genreLabel } from "@/lib/genres";
+import { useI18n } from "./i18n/LocaleProvider";
 import { ChevronDown, CloseIcon, StarIcon } from "./Icons";
 
+/* labels live in the dictionary (v0.30.10) — the raw Persian strings used to
+   leak into EN mode */
 const SORTS = [
-  { v: "trending", label: "پرطرفدار" },
-  { v: "newest", label: "جدیدترین" },
-  { v: "rating", label: "بالاترین امتیاز" },
-  { v: "views", label: "پربازدید" },
-];
+  { v: "trending", label: "catalog.sortTrending" },
+  { v: "newest", label: "catalog.sortNewest" },
+  { v: "rating", label: "catalog.sortRating" },
+  { v: "views", label: "catalog.sortViews" },
+] as const;
 
 export default function CatalogFilters({
   genres,
@@ -30,6 +34,7 @@ export default function CatalogFilters({
   const pathname = usePathname();
   const router = useRouter();
   const params = useSearchParams();
+  const { t: tr, locale } = useI18n();
 
   const build = (patch: Record<string, string | undefined>) => {
     const p = new URLSearchParams(params.toString());
@@ -54,7 +59,7 @@ export default function CatalogFilters({
               !genre ? "border-brand bg-brand text-white shadow-[0_6px_20px_var(--color-brand-glow)]" : "border-white/10 bg-white/5 text-zinc-300 hover:bg-white/10"
             }`}
           >
-            همه
+            {tr("common.all")}
           </Link>
           {genres.map((g) => (
             <Link
@@ -64,7 +69,7 @@ export default function CatalogFilters({
                 genre === g ? "border-brand bg-brand text-white shadow-[0_6px_20px_var(--color-brand-glow)]" : "border-white/10 bg-white/5 text-zinc-300 hover:bg-white/10"
               }`}
             >
-              {g}
+              {genreLabel(g, locale)}
             </Link>
           ))}
         </div>
@@ -78,7 +83,7 @@ export default function CatalogFilters({
                 href={build({ sort: s.v })}
                 className={`rounded-full px-3 py-1.5 font-bold transition ${sort === s.v ? "bg-white text-black" : "text-zinc-300 hover:text-white"}`}
               >
-                {s.label}
+                {tr(s.label)}
               </Link>
             ))}
           </div>
@@ -89,7 +94,7 @@ export default function CatalogFilters({
               onChange={(e) => router.push(build({ year: e.target.value || undefined }))}
               className="h-9 appearance-none rounded-full border border-white/10 bg-white/5 pe-8 ps-4 text-xs font-medium text-zinc-200 focus:outline-none"
             >
-              <option value="">همه سال‌ها</option>
+              <option value="">{tr("catalog.allYears")}</option>
               {years.map((y) => (
                 <option key={y} value={y}>
                   {fa(y)}
@@ -105,10 +110,10 @@ export default function CatalogFilters({
               onChange={(e) => router.push(build({ rating: e.target.value || undefined }))}
               className="h-9 appearance-none rounded-full border border-white/10 bg-white/5 pe-8 ps-9 text-xs font-medium text-zinc-200 focus:outline-none"
             >
-              <option value="">هر امتیازی</option>
-              <option value="9">۹ به بالا</option>
-              <option value="8">۸ به بالا</option>
-              <option value="7">۷ به بالا</option>
+              <option value="">{tr("catalog.anyRating")}</option>
+              <option value="9">{tr("catalog.ratingUp", { n: fa(9) })}</option>
+              <option value="8">{tr("catalog.ratingUp", { n: fa(8) })}</option>
+              <option value="7">{tr("catalog.ratingUp", { n: fa(7) })}</option>
             </select>
             <StarIcon width={13} height={13} className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-amber-400" />
             <ChevronDown width={14} height={14} className="pointer-events-none absolute end-3 top-1/2 -translate-y-1/2 text-zinc-400" />
@@ -119,7 +124,7 @@ export default function CatalogFilters({
               href={pathname}
               className="flex h-9 items-center gap-1 rounded-full border border-white/10 px-3 text-xs text-zinc-400 transition hover:border-brand/50 hover:text-white"
             >
-              <CloseIcon width={12} height={12} /> حذف فیلترها ({fa(activeCount)})
+              <CloseIcon width={12} height={12} /> {tr("catalog.reset")} ({fa(activeCount)})
             </Link>
           )}
         </div>

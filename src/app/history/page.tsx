@@ -6,8 +6,10 @@ import { HistoryIcon, ClockIcon, CheckCircleIcon, PlayIcon } from "@/components/
 import { getHistory } from "@/lib/mobile/userdata";
 import { fa, formatDuration } from "@/lib/format";
 import { useAsyncData } from "@/lib/use-async-data";
+import { useI18n } from "@/components/i18n/LocaleProvider";
 
 export default function HistoryPage() {
+  const { t: tr } = useI18n();
   const { data: rows, error, retry } = useAsyncData(() => getHistory(), []);
 
   const minutes = rows ? Math.round(rows.reduce((a, r) => a + r.position, 0) / 60) : 0;
@@ -18,7 +20,7 @@ export default function HistoryPage() {
       <section className="relative overflow-hidden">
         {rows?.[0] && (
           <>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
+            { }
             <img src={rows[0].title.backdrop} alt="" className="absolute inset-0 h-full w-full object-cover opacity-30 blur-sm" />
             <div className="absolute inset-0 bg-gradient-to-b from-ink/60 via-ink/85 to-ink" />
           </>
@@ -26,15 +28,15 @@ export default function HistoryPage() {
         <div className="relative mx-auto max-w-[1600px] px-4 pb-8 pt-28 sm:px-8 lg:px-12 lg:pt-36">
           <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
             <div>
-              <p className="mb-3 flex items-center gap-2 text-xs font-bold text-brand"><HistoryIcon width={16} height={16} /> فعالیت شما</p>
-              <h1 className="text-4xl font-black text-white sm:text-5xl">تاریخچه تماشا</h1>
-              <p className="mt-3 max-w-xl text-sm leading-7 text-zinc-300">هر چیزی که دیده‌اید، بر اساس روز مرتب شده؛ از هرجا که خواستید ادامه دهید یا از تاریخچه پاکش کنید.</p>
+              <p className="mb-3 flex items-center gap-2 text-xs font-bold text-brand"><HistoryIcon width={16} height={16} /> {tr("history.yourActivity")}</p>
+              <h1 className="text-4xl font-black text-white sm:text-5xl">{tr("user.history")}</h1>
+              <p className="mt-3 max-w-xl text-sm leading-7 text-zinc-300">{tr("history.sub")}</p>
             </div>
             <div className="grid grid-cols-3 gap-3">
               {[
-                { icon: PlayIcon, v: fa(rows?.length ?? 0), k: "عنوان" },
-                { icon: CheckCircleIcon, v: fa(finished), k: "تمام‌شده" },
-                { icon: ClockIcon, v: minutes ? formatDuration(minutes) : "۰", k: "زمان تماشا" },
+                { icon: PlayIcon, v: fa(rows?.length ?? 0), k: tr("catalog.titles") },
+                { icon: CheckCircleIcon, v: fa(finished), k: tr("history.finished") },
+                { icon: ClockIcon, v: minutes ? formatDuration(minutes) : fa(0), k: tr("profile.watchTime") },
               ].map((s) => (
                 <div key={s.k} className="glass rounded-2xl px-4 py-3">
                   <s.icon width={16} height={16} className="text-zinc-400" />
@@ -52,7 +54,7 @@ export default function HistoryPage() {
         ) : rows ? (
           <HistoryList rows={rows} />
         ) : (
-          <div className="py-16 text-center text-sm text-zinc-500">در حال بارگذاری تاریخچه…</div>
+          <div className="py-16 text-center text-sm text-zinc-500">{tr("history.loading")}</div>
         )}
       </div>
     </main>
