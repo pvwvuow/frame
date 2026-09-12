@@ -29,13 +29,19 @@ function ThemedToaster() {
       richColors
       closeButton
       toastOptions={{
-        className: "font-body glass-strong",
+        className: "font-body",
         style: {
           fontFamily: "var(--font-sans)",
+          /* --toast-bg is now TRANSLUCENT (v0.30.9) — the blur does the
+             legibility work: every toast reads as the same matte glass
+             the user picked as the reference material (the details pill) */
           background: "var(--toast-bg)",
+          backdropFilter: "blur(28px) saturate(170%)",
+          WebkitBackdropFilter: "blur(28px) saturate(170%)",
           border: "1px solid var(--toast-border)",
           color: "var(--toast-fg)",
           borderRadius: 16,
+          boxShadow: "0 18px 50px rgba(0,0,0,0.45)",
         },
       }}
     />

@@ -90,7 +90,7 @@
   --overlay: rgba(0, 0, 0, 0.72);
   --shadow-color: 0 0 0;
   --stroke: rgba(255, 255, 255, 0.35);
-  --toast-bg: #16161c;
+  --toast-bg: rgba(18, 18, 26, 0.6);
   --toast-border: rgba(255, 255, 255, 0.1);
   --toast-fg: #f4f4f5;
 }
@@ -138,7 +138,7 @@
   --overlay: rgba(230, 232, 240, 0.72);
   --shadow-color: 30 30 60;
   --stroke: rgba(15, 15, 20, 0.28);
-  --toast-bg: #ffffff;
+  --toast-bg: rgba(255, 255, 255, 0.65);
   --toast-border: rgba(0, 0, 0, 0.08);
   --toast-fg: #18181b;
 }

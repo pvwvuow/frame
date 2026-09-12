@@ -46,7 +46,7 @@ export default function LanguageToggle({ className = "" }: { className?: string 
         <span dir="ltr">{locale === "fa" ? "FA" : "EN"}</span>
       </button>
       {open && (
-        <ul role="listbox" aria-label={t("common.language")} className="glass-strong glass-in absolute end-0 top-12 z-50 w-44 overflow-hidden rounded-2xl p-1.5">
+        <ul role="listbox" aria-label={t("common.language")} className="glass glass-in absolute end-0 top-12 z-50 w-44 overflow-hidden rounded-2xl p-1.5">
           {LOCALES.map((l) => {
             const meta = LOCALE_META[l];
             const on = l === locale;

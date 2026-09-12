@@ -7,14 +7,14 @@
  *    customers — activation goes through the activate_code RPC, so users
  *    can never read or reuse codes) */
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { UserIcon, CrownIcon, CheckCircleIcon, SparkIcon } from "@/components/Icons";
 import { useI18n } from "@/components/i18n/LocaleProvider";
 import { useCloudSession } from "@/lib/cloud";
 import { PLAN_LABELS, activationErrorText, useSubscription, type Plan } from "@/lib/subscription";
-import { backdropSrc } from "@/lib/covers";
+import { AmbientGhost, useFamousPosterPool, type GhostSlot } from "@/components/ambient";
 import { fa } from "@/lib/format";
 
 type PlanDef = { key: Plan; title: string; note: string; noteEn: string; hot?: boolean };
@@ -42,120 +42,39 @@ const PLANS: PlanDef[] = [
   { key: "life", title: "مادام‌العمر", note: "برای همیشه، بدون انقضا", noteEn: "Forever, never expires" },
 ];
 
-/* ── VIP ambient backdrop (v0.30.4, re-tuned v0.30.7 + v0.30.8) ────────
- * WIDE COVERS (backdrops, not posters) of the ALL-TIME top-rated movies
- * & series (documentaries / unknown-genre entries filtered out) drift in
- * and out of the blackness around the page: brighter core (the center of
- * each cover must read, not drown), fully dissolved borders (the mask is
- * an intersect of two linear feathers so EVERY edge — including the flat
- * top/bottom of a 16/9 box — reaches zero alpha BEFORE the border), big
- * (360–520px), fast cycles (9–15s), TEN staggered slots so something is
- * always surfacing while something else dissolves. GPU-only
- * opacity/transform animation; the cover swaps at the invisible
- * 0-opacity boundary of each cycle. */
-const AMBIENT_SLOTS = [
-  { left: "2%",  top: "7%",  w: 520, dur: 10, delay: -2,  o: 0.38, blur: 2, tilt: "-3deg" },
-  { left: "66%", top: "12%", w: 470, dur: 12, delay: -7,  o: 0.34, blur: 3, tilt: "2deg" },
-  { left: "10%", top: "32%", w: 420, dur: 13, delay: -11, o: 0.28, blur: 3, tilt: "3deg" },
-  { left: "58%", top: "40%", w: 500, dur: 9,  delay: -4,  o: 0.35, blur: 2, tilt: "-2deg" },
-  { left: "3%",  top: "58%", w: 450, dur: 14, delay: -9,  o: 0.32, blur: 3, tilt: "4deg" },
-  { left: "70%", top: "66%", w: 520, dur: 11, delay: -6,  o: 0.38, blur: 2, tilt: "-3deg" },
-  { left: "24%", top: "82%", w: 470, dur: 12, delay: -3,  o: 0.32, blur: 4, tilt: "2deg" },
-  { left: "42%", top: "18%", w: 410, dur: 15, delay: -12, o: 0.24, blur: 4, tilt: "-4deg" },
-  { left: "38%", top: "72%", w: 440, dur: 10, delay: -8,  o: 0.26, blur: 4, tilt: "3deg" },
-  { left: "84%", top: "30%", w: 370, dur: 13, delay: -5,  o: 0.30, blur: 3, tilt: "-2deg" },
+/* ── VIP ambient backdrop (v0.30.4 → v0.30.9) ──────────────────────────
+ * GHOST POSTERS (2/3 — the user prefers the poster form over wide
+ * backdrops) of the all-time famous titles drift in and out of the
+ * blackness around the page: brighter core, fully dissolved borders,
+ * TEN staggered slots, fast cycles (9–15s). Shared machinery lives in
+ * components/ambient.tsx; only the slot table is VIP-specific here. */
+const AMBIENT_SLOTS: GhostSlot[] = [
+  { left: "2%",  top: "7%",  w: 270, dur: 10, delay: -2,  o: 0.38, blur: 2, tilt: "-3deg" },
+  { left: "66%", top: "12%", w: 250, dur: 12, delay: -7,  o: 0.34, blur: 3, tilt: "2deg" },
+  { left: "10%", top: "32%", w: 225, dur: 13, delay: -11, o: 0.28, blur: 3, tilt: "3deg" },
+  { left: "58%", top: "40%", w: 260, dur: 9,  delay: -4,  o: 0.35, blur: 2, tilt: "-2deg" },
+  { left: "3%",  top: "58%", w: 240, dur: 14, delay: -9,  o: 0.32, blur: 3, tilt: "4deg" },
+  { left: "70%", top: "66%", w: 270, dur: 11, delay: -6,  o: 0.38, blur: 2, tilt: "-3deg" },
+  { left: "24%", top: "82%", w: 250, dur: 12, delay: -3,  o: 0.32, blur: 4, tilt: "2deg" },
+  { left: "42%", top: "18%", w: 215, dur: 15, delay: -12, o: 0.24, blur: 4, tilt: "-4deg" },
+  { left: "38%", top: "72%", w: 230, dur: 10, delay: -8,  o: 0.26, blur: 4, tilt: "3deg" },
+  { left: "84%", top: "30%", w: 200, dur: 13, delay: -5,  o: 0.30, blur: 3, tilt: "-2deg" },
 ];
-
-/* Edge feathers: a RADIAL mask can never fully erase the flat edges of a
- * wide 16/9 element (top/bottom midpoints sit well inside the ellipse →
- * the cover border stayed visible). Two LINEAR feathers intersected
- * guarantee zero alpha at every border pixel: each axis fades to
- * transparent exactly AT the edge, the plateau keeps the center intact. */
-const AMB_MASK_X = "linear-gradient(to right, transparent 0%, #000 25%, #000 75%, transparent 100%)";
-const AMB_MASK_Y = "linear-gradient(to bottom, transparent 0%, #000 28%, #000 72%, transparent 100%)";
-const AMB_MASK = `${AMB_MASK_X}, ${AMB_MASK_Y}`;
 
 function AmbientSlot({
   slot,
   posters,
   startIndex,
 }: {
-  slot: (typeof AMBIENT_SLOTS)[number];
+  slot: GhostSlot;
   posters: string[];
   startIndex: number;
 }) {
-  const [idx, setIdx] = useState(() => startIndex % Math.max(1, posters.length));
-  const src = posters[idx % posters.length];
-  return (
-    <img
-      src={src}
-      alt=""
-      aria-hidden="true"
-      draggable={false}
-      decoding="async"
-      onAnimationIteration={() => setIdx((i) => (i + AMBIENT_SLOTS.length) % posters.length)}
-      className="vip-ambient-img absolute select-none object-cover"
-      style={{
-        left: slot.left,
-        top: slot.top,
-        width: slot.w,
-        maxWidth: "46vw",
-        aspectRatio: "16 / 9",
-        borderRadius: 16,
-        opacity: 0,
-        filter: `blur(${slot.blur}px) saturate(0.9) brightness(0.85)`,
-        WebkitMaskImage: AMB_MASK,
-        maskImage: AMB_MASK,
-        WebkitMaskComposite: "source-in",
-        maskComposite: "intersect",
-        "--vip-o": slot.o,
-        "--vip-tilt": slot.tilt,
-        animation: `vip-ambient ${slot.dur}s linear ${slot.delay}s infinite`,
-        willChange: "opacity, transform",
-      } as React.CSSProperties}
-    />
-  );
+  return <AmbientGhost slot={slot} posters={posters} startIndex={startIndex} advance={AMBIENT_SLOTS.length} maxWidth="40vw" />;
 }
 
 function VipAmbient() {
-  const [posters, setPosters] = useState<string[]>([]);
-
-  useEffect(() => {
-    /* NOTE: no prefers-reduced-motion early-return here — reduced-motion
-     * users still get the covers (static matte, via CSS below); skipping
-     * the fetch left them a plain black page. */
-    let alive = true;
-    Promise.all([
-      fetch("/api/catalog?type=movie&sort=rating&limit=60").then((r) => (r.ok ? r.json() : { items: [] })),
-      fetch("/api/catalog?type=series&sort=rating&limit=60").then((r) => (r.ok ? r.json() : { items: [] })),
-    ])
-      .then(([m, s]) => {
-        if (!alive) return;
-        /* the user wants the ALL-TIME FAMOUS covers here — and explicitly
-         * NOT documentaries. Documentaries rank very high in the rating
-         * sort (whole doc series sit at 9.2–9.4) and would otherwise own
-         * the pool; genre is stored as a Persian JSON array ("مستند").
-         * "نامشخص" (unknown-genre) entries are excluded for the same
-         * reason — they are not recognizably famous titles. */
-        const pool = [ ...(m.items ?? []), ...(s.items ?? []) ]
-          .filter((t: { genres?: string[] | null }) => {
-            const g = Array.isArray(t.genres) ? t.genres : [];
-            return !g.includes("مستند") && !g.includes("Documentary") && !g.includes("نامشخص");
-          })
-          .map((t: { backdrop?: string | null; backdropUrl?: string | null }) => backdropSrc(t))
-          .filter(Boolean);
-        /* shuffle so every visit surfaces different covers */
-        for (let i = pool.length - 1; i > 0; i--) {
-          const j = Math.floor(Math.random() * (i + 1));
-          [pool[i], pool[j]] = [pool[j], pool[i]];
-        }
-        setPosters(pool.slice(0, 30));
-      })
-      .catch(() => {});
-    return () => {
-      alive = false;
-    };
-  }, []);
+  const posters = useFamousPosterPool();
 
   if (posters.length < AMBIENT_SLOTS.length) return null;
   return (

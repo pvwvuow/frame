@@ -31,6 +31,8 @@ import { formatClock, episodeLabel } from "@/lib/format";
 import { backdropSrc } from "@/lib/covers";
 import TitleName from "@/components/TitleName";
 import { useAsyncData } from "@/lib/use-async-data";
+import { AmbientGhost, useFamousPosterPool, type GhostSlot } from "@/components/ambient";
+import { useEffect, useState } from "react";
 
 type HomeData = {
   featured: TitleView[];
@@ -45,6 +47,85 @@ type HomeData = {
   favRows: FavoriteRow[];
   listRows: ListRow[];
 };
+
+/* ── Home ghost posters (v0.30.9) ─────────────────────────────────────
+ * The SAME famous-poster ambient as the VIP page, but spread over FOURTEEN
+ * slots across the whole viewport (پراکندگی بیشتر) and DARKER (opacity
+ * 0.08–0.16) so it never competes with the content — the rows and the
+ * hero scroll OVER the fixed layer. It only exists BELOW the hero: a
+ * sentinel right after <Hero> gates it (scroll-past → fade in, scroll
+ * back → fade out); the ghosts themselves never scroll — they are fixed,
+ * the content glides over them. */
+const HOME_GHOST_SLOTS: GhostSlot[] = [
+  { left: "3%",  top: "6%",  w: 200, dur: 14, delay: -3,  o: 0.12, blur: 3, tilt: "-3deg" },
+  { left: "78%", top: "4%",  w: 180, dur: 16, delay: -9,  o: 0.1,  blur: 4, tilt: "2deg" },
+  { left: "40%", top: "10%", w: 150, dur: 18, delay: -14, o: 0.08, blur: 5, tilt: "3deg" },
+  { left: "62%", top: "22%", w: 210, dur: 13, delay: -6,  o: 0.14, blur: 3, tilt: "-2deg" },
+  { left: "12%", top: "30%", w: 230, dur: 15, delay: -11, o: 0.15, blur: 3, tilt: "4deg" },
+  { left: "85%", top: "34%", w: 190, dur: 17, delay: -2,  o: 0.11, blur: 4, tilt: "-3deg" },
+  { left: "34%", top: "42%", w: 170, dur: 19, delay: -8,  o: 0.09, blur: 5, tilt: "2deg" },
+  { left: "55%", top: "52%", w: 220, dur: 14, delay: -13, o: 0.13, blur: 3, tilt: "-4deg" },
+  { left: "5%",  top: "58%", w: 180, dur: 16, delay: -5,  o: 0.11, blur: 4, tilt: "3deg" },
+  { left: "80%", top: "64%", w: 240, dur: 12, delay: -10, o: 0.16, blur: 3, tilt: "-2deg" },
+  { left: "28%", top: "72%", w: 200, dur: 20, delay: -16, o: 0.1,  blur: 5, tilt: "2deg" },
+  { left: "60%", top: "80%", w: 170, dur: 15, delay: -7,  o: 0.12, blur: 4, tilt: "-3deg" },
+  { left: "10%", top: "86%", w: 220, dur: 18, delay: -12, o: 0.14, blur: 3, tilt: "3deg" },
+  { left: "88%", top: "88%", w: 160, dur: 17, delay: -4,  o: 0.09, blur: 5, tilt: "-2deg" },
+];
+
+function HomeGhosts() {
+  const posters = useFamousPosterPool();
+  const [on, setOn] = useState(false);
+
+  /* gate = the sentinel right after the hero: ghosts fade in once it
+   * climbs above 70% of the viewport (i.e. the user has scrolled into
+   * the rows), fade out again when the hero takes the screen back. */
+  useEffect(() => {
+    let raf = 0;
+    const measure = () => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => {
+        const gate = document.getElementById("home-ghost-gate");
+        if (!gate) return;
+        setOn(gate.getBoundingClientRect().top < window.innerHeight * 0.7);
+      });
+    };
+    measure();
+    window.addEventListener("scroll", measure, { passive: true });
+    window.addEventListener("resize", measure);
+    return () => {
+      window.removeEventListener("scroll", measure);
+      window.removeEventListener("resize", measure);
+      cancelAnimationFrame(raf);
+    };
+  }, []);
+
+  if (posters.length < HOME_GHOST_SLOTS.length) return null;
+  return (
+    <div
+      className="pointer-events-none fixed inset-0 -z-10 overflow-hidden"
+      aria-hidden="true"
+      style={{ opacity: on ? 1 : 0, transition: "opacity 1100ms ease" }}
+    >
+      {HOME_GHOST_SLOTS.map((slot, i) => (
+        <AmbientGhost
+          key={i}
+          slot={slot}
+          posters={posters}
+          startIndex={i * 3}
+          advance={HOME_GHOST_SLOTS.length}
+          maxWidth="30vw"
+        />
+      ))}
+      {/* gently sink the layer edges into the ink so ghosts never cut hard
+          against the viewport border (they sit BEHIND z-10 content) */}
+      <div
+        className="absolute inset-0"
+        style={{ background: "radial-gradient(130% 100% at 50% 42%, transparent 48%, rgba(7, 7, 11, 0.85) 100%)" }}
+      />
+    </div>
+  );
+}
 
 export default function HomePage() {
   const { t: tr, locale } = useI18n();
@@ -117,8 +198,19 @@ export default function HomePage() {
   );
 
   return (
-    <main className="pb-10">
+    /* isolate: the ghost layer is fixed -z-10 — WITHOUT a stacking context
+     * on <main> it would paint below body’s opaque bg-ink (html owns a
+     * background, so body’s never propagates to the canvas — the v0.30.6
+     * paint-order lesson). Isolating keeps it above the body background,
+     * below the page content. */
+    <main className="isolate pb-10">
       <Hero items={featured} watchlistIds={watchlistIds} />
+
+      {/* ghost gate: everything BELOW this point floats over the fixed
+          famous-poster layer (see HomeGhosts) */}
+      <div id="home-ghost-gate" aria-hidden className="relative h-px w-full" />
+
+      <HomeGhosts />
 
       <div className="relative z-10 mt-6 space-y-2">
         {continueItems.length > 0 && (
@@ -193,21 +285,26 @@ export default function HomePage() {
           ))}
         </Row>
 
-        {/* promo banner */}
+        {/* promo banner — v0.30.9: matte-glass slab (the material of the
+            details pill the user picked as the reference): the artwork sits
+            BEHIND a real backdrop-blur layer with a subtle white tint, so
+            the whole banner reads as one frosted surface — no more hard
+            gradient-to-solid slab */}
         {featured[1] && (
           <section className="mt-12 px-4 sm:px-8 lg:px-12">
-            <div className="relative overflow-hidden rounded-3xl ring-1 ring-white/10">
-              <img src={backdropSrc(featured[1])} alt="" loading="lazy" decoding="async" data-ph-title={featured[1]?.title ?? ""} className="absolute inset-0 h-full w-full object-cover" />
-              <div className={`absolute inset-0 ${locale === "en" ? "bg-gradient-to-r" : "bg-gradient-to-l"} from-ink via-ink/80 to-ink/20`} />
+            <div className="relative overflow-hidden rounded-3xl shadow-[0_30px_80px_rgba(0,0,0,0.45)] ring-1 ring-white/15">
+              <img src={backdropSrc(featured[1])} alt="" loading="lazy" decoding="async" data-ph-title={featured[1]?.title ?? ""} className="absolute inset-0 h-full w-full scale-110 object-cover" />
+              <div className="absolute inset-0 bg-white/[0.07] backdrop-blur-[30px] backdrop-saturate-150" />
+              <div className={`absolute inset-0 ${locale === "en" ? "bg-gradient-to-r" : "bg-gradient-to-l"} from-ink/70 via-ink/30 to-transparent`} />
               <div className="relative flex min-h-[300px] flex-col justify-center gap-4 p-8 sm:p-14 lg:max-w-2xl">
                 <span className="w-fit rounded-md bg-brand px-2 py-1 text-xs font-bold text-white">{tr("hero.featured")}</span>
                 <TitleName t={featured[1]} as="h3" primaryClass="text-3xl font-black text-white sm:text-4xl" secondaryClass="text-base text-zinc-300" />
-                <p className="line-clamp-2 text-sm leading-7 text-zinc-300">{featured[1].description}</p>
+                <p className="line-clamp-2 text-sm leading-7 text-zinc-200">{featured[1].description}</p>
                 <div className="flex gap-3">
                   <Link href={watchHref(featured[1].slug)} className="flex h-11 items-center gap-2 rounded-full bg-white px-6 text-sm font-extrabold text-black hover:bg-zinc-200">
                     <PlayIcon width={18} height={18} /> {tr("common.play")}
                   </Link>
-                  <Link href={titleHref(featured[1].slug)} className="flex h-11 items-center rounded-full border border-white/20 bg-white/10 px-6 text-sm font-bold text-white backdrop-blur hover:bg-white/20">
+                  <Link href={titleHref(featured[1].slug)} className="flex h-11 items-center rounded-full border border-white/25 bg-white/10 px-6 text-sm font-bold text-white backdrop-blur hover:bg-white/20">
                     {tr("common.details")}
                   </Link>
                 </div>
