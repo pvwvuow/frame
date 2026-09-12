@@ -1049,6 +1049,34 @@ function scheduleUpdateRetry() {
   }, wait);
 }
 
+/* v0.30.13 — make DIFFERENTIAL updates actually engage.
+ * electron-updater's NSIS delta downloader needs the PREVIOUS installer at
+ * <cacheDir>/installer.exe ("frame-updater" under LOCALAPPDATA for us) to
+ * splice the new one from, but NOTHING in electron-updater 6.x ever writes
+ * that file — the downloaded setup sits at <cacheDir>/pending/<name>.exe —
+ * so DifferentialDownloader always threw ENOENT and every update silently
+ * fell back to a FULL ~150MB download. Seed the cache ourselves the moment
+ * an update finishes downloading: from the NEXT release on, the updater
+ * splices against this copy and only the changed ~1MB blocks come over the
+ * wire. Best-effort — a failure here just means one more full download. */
+function seedUpdaterCache(info) {
+  try {
+    if (process.platform !== "win32" || !info?.downloadedFile) return;
+    const fsp = require("node:fs");
+    const path = require("node:path");
+    const os = require("node:os");
+    const cacheDir = path.join(
+      process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local"),
+      "frame-updater" // appInfo.name ("frame").toLowerCase() + "-updater"
+    );
+    fsp.mkdirSync(cacheDir, { recursive: true });
+    fsp.copyFileSync(info.downloadedFile, path.join(cacheDir, "installer.exe"));
+    log.info("updater cache seeded — future updates can download differentially");
+  } catch (e) {
+    log.warn("could not seed updater cache (next update will be a full download):", e?.message || e);
+  }
+}
+
 function setupUpdater() {
   if (!app.isPackaged) return;
   try {
@@ -1060,7 +1088,7 @@ function setupUpdater() {
     autoUpdater.on("update-available", (i) => { updateRetryCount = 0; updateSend({ status: "available", version: i.version }); });
     autoUpdater.on("update-not-available", () => { updateRetryCount = 0; updateSend({ status: "not-available" }); });
     autoUpdater.on("download-progress", (p) => updateSend({ status: "downloading", percent: p.percent }));
-    autoUpdater.on("update-downloaded", (i) => updateSend({ status: "downloaded", version: i.version }));
+    autoUpdater.on("update-downloaded", (i) => { seedUpdaterCache(i); updateSend({ status: "downloaded", version: i.version }); });
     autoUpdater.on("error", (e) => {
       // mid-publish race → self-heal in the background, no user-facing error
       if (isReleasePublishing(e)) { scheduleUpdateRetry(); return; }

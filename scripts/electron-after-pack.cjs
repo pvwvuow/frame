@@ -82,4 +82,47 @@ exports.default = async function afterPack(context) {
   }
 
   console.log("  • afterPack: standalone server copied →", dest, "(cover-light: covers+catalog excluded)");
+
+  /* v0.30.13 — DETERMINISTIC PAYLOAD, the other half of differential updates.
+   * electron-updater downloads only the changed ~1MB blocks between the
+   * installed installer and the new one (blockmap diff over a NON-SOLID 7z
+   * with a 1MB dictionary — electron-builder's differential-aware archive
+   * options). That only pays off when UNCHANGED files compress to IDENTICAL
+   * archive bytes — but a fresh `next build` + cpSync stamps every file with
+   * the build time, the 7z headers carry those mtimes, and the whole ~150MB
+   * payload differed on every release, so even a working delta equaled a
+   * full download. Stamp every packed path with ONE fixed epoch: same
+   * content → same archive bytes → the next update only fetches what
+   * actually changed. */
+  const EPOCH = new Date(946684800000); // 2000-01-01T00:00:00Z — fixed forever
+  let stampFailed = 0;
+  const stampTree = (rootDir) => {
+    const stack = [rootDir];
+    while (stack.length) {
+      const cur = stack.pop();
+      let entries;
+      try {
+        entries = fs.readdirSync(cur, { withFileTypes: true });
+      } catch {
+        continue;
+      }
+      for (const e of entries) {
+        const p = path.join(cur, e.name);
+        if (e.isDirectory()) stack.push(p);
+        try {
+          fs.utimesSync(p, EPOCH, EPOCH);
+        } catch {
+          stampFailed++;
+        }
+      }
+      try {
+        fs.utimesSync(cur, EPOCH, EPOCH);
+      } catch {
+        stampFailed++;
+      }
+    }
+  };
+  stampTree(context.appOutDir);
+  if (stampFailed) console.warn(`  • afterPack: could not stamp ${stampFailed} paths (read-only?) — delta size may suffer`);
+  console.log("  • afterPack: payload mtimes normalized → deterministic archives for delta updates");
 };
