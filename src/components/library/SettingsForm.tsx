@@ -49,6 +49,7 @@ export type ProfileData = {
   notifyNewEpisodes: boolean;
   notifyRecommendations: boolean;
   notifyContinue: boolean;
+  notifySystem: boolean;
   kidsMode: boolean;
   parentalPin: string;
   language: string;
@@ -494,11 +495,11 @@ export default function SettingsForm({ initial }: { initial: ProfileData }) {
         )}
 
         {section === "notifications" && (
-          <Card title="اعلان‌ها" desc="اعلان‌ها در مرکز اعلان‌های فریم (و در نسخه‌ی دسکتاپ روی نشان برنامه) نمایش داده می‌شوند.">
+          <Card title="اعلان‌ها" desc="اعلان‌ها در مرکز اعلان‌های فریم نمایش داده می‌شوند؛ روی اندروید قسمت‌های جدید و یادآوری‌ها به استاتوس‌بار هم می‌آیند (حداکثر ۸ در روز، ساکت از نیمه‌شب تا ۸ صبح).">
             <div className="grid gap-3 md:grid-cols-2">
-              <Toggle checked={p.notifyNewEpisodes} onChange={(v) => set("notifyNewEpisodes", v)} label="قسمت‌های جدید" hint="برای سریال‌های داخل لیست شما" />
-              <Toggle checked={p.notifyRecommendations} onChange={(v) => set("notifyRecommendations", v)} label="پیشنهادهای ویژه" hint="بر اساس ژانرهای مورد علاقه‌تان" />
-              <Toggle checked={p.notifyContinue} onChange={(v) => set("notifyContinue", v)} label="یادآوری ادامه تماشا" hint="آثاری که نیمه‌کاره رها کرده‌اید" />
+              <Toggle checked={p.notifyNewEpisodes} onChange={(v) => set("notifyNewEpisodes", v)} label="قسمت‌های جدید" hint="برای سریال‌هایی که می‌بینید یا در لیست دارید — هر فصل یک کارت گروهی مثل «۳ قسمت جدید از …»" />
+              <Toggle checked={p.notifyContinue} onChange={(v) => set("notifyContinue", v)} label="یادآوری ادامه تماشا" hint="آثاری که بیش از ۷۲ ساعت نیمه‌کاره مانده‌اند — کلیک، از همان دقیقه ادامه می‌دهد" />
+              <Toggle checked={p.notifySystem} onChange={(v) => set("notifySystem", v)} label="اعلان‌های فریم" hint="خبرهای خود فریم، مثل خوش‌آمد" />
             </div>
           </Card>
         )}

@@ -8,6 +8,7 @@ import { LIST_STATUSES, type ListStatus } from "@/lib/library-shared";
 import type { TitleView } from "./db";
 import { titleHref, watchHref } from "@/lib/links";
 import { recordTombstone, tombstoneNewerThan } from "@/lib/sync-queue";
+import { faDigits } from "@/lib/format";
 
 export { LIST_STATUSES };
 export type { ListStatus };
@@ -323,6 +324,7 @@ export type ProfileRow = {
   notifyNewEpisodes: boolean;
   notifyRecommendations: boolean;
   notifyContinue: boolean;
+  notifySystem: boolean;
   kidsMode: boolean;
   parentalPin: string;
   language: string;
@@ -350,6 +352,7 @@ const DEFAULT_PROFILE = (userKey: string): ProfileRow => ({
   notifyNewEpisodes: true,
   notifyRecommendations: true,
   notifyContinue: true,
+  notifySystem: true,
   kidsMode: false,
   parentalPin: "",
   language: "fa",
@@ -385,7 +388,7 @@ export async function patchProfile(b: Record<string, unknown>, userKey = getUser
   if (typeof b.avatar === "number") next.avatar = Math.max(0, Math.min(11, Math.round(b.avatar)));
   if (b.avatarImage === null) next.avatarImage = null;
   else if (typeof b.avatarImage === "string" && b.avatarImage.length <= 400_000 && /^data:image\/(?:png|jpe?g|webp);base64,[A-Za-z0-9+/=]+$/.test(b.avatarImage)) next.avatarImage = b.avatarImage;
-  for (const k of ["autoplay", "autoNext", "matureContent", "reduceMotion", "skipIntro", "dataSaver", "notifyNewEpisodes", "notifyRecommendations", "notifyContinue", "kidsMode"] as const) {
+  for (const k of ["autoplay", "autoNext", "matureContent", "reduceMotion", "skipIntro", "dataSaver", "notifyNewEpisodes", "notifyRecommendations", "notifyContinue", "notifySystem", "kidsMode"] as const) {
     if (typeof b[k] === "boolean") next[k] = b[k] as boolean;
   }
   if (typeof b.quality === "string" && QUALITIES.has(b.quality)) next.quality = b.quality;
@@ -964,117 +967,234 @@ export async function getUserStats(userKey = getUserKey()): Promise<UserStats> {
 }
 
 /* ------------------------------------------------------------------ */
-/* Notifications (derived on the fly, mirrors lib/notifications.ts)    */
+/* Notifications (v0.31.0 NOTIF-1) — موتور محلی، رویداد ماندگار        */
+/*                                                                      */
+/* The events are BUILT by runNotificationsScan() into the notifevents  */
+/* table (Dexie v6) with the same deterministic ids as the desktop      */
+/* engine, then getNotifications() simply reads them. Scans run after   */
+/* a catalog import (db.ts) and throttled on every read (10 min).       */
+/* Fresh events ride the Android status bar via ../notify-push.        */
 /* ------------------------------------------------------------------ */
 
-export type Notification = { id: string; kind: "episode" | "continue" | "recommend" | "new" | "system"; title: string; body: string; href: string; image?: string; at: string; read?: boolean };
+export type Notification = { id: string; kind: "episode" | "continue" | "system"; title: string; body: string; href: string; image?: string; at: string; read: boolean; count?: number };
 
-export async function getNotifications(userKey = getUserKey()): Promise<Notification[]> {
-  if (isDesktopRuntime()) return srv<Notification[]>("/api/notifications");
+const CONTINUE_AFTER_MS = 72 * 60 * 60 * 1000;
+const UNREAD_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+const READ_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const SCAN_THROTTLE_MS = 10 * 60 * 1000;
+const MAX_CANDIDATE_SERIES = 16;
+
+const snapKey = (u: string) => `notif:snap:${u}`;
+const scanKey = (u: string) => `notif:scan:${u}`;
+
+function faList(nums: number[]): string {
+  const s = nums.map((n) => faDigits(n));
+  if (s.length <= 1) return s[0] ?? "";
+  return s.slice(0, -1).join("، ") + " و " + s[s.length - 1];
+}
+
+async function kvGetValue(key: string): Promise<unknown> {
+  const row = await db.kv.get(key);
+  return row?.value;
+}
+
+/** اسکن محلی: قسمت‌های تازه + یادآوری ادامه تماشا + خوش‌آمد → notifevents */
+export async function runNotificationsScan(userKey = getUserKey(), force = false): Promise<void> {
+  if (isDesktopRuntime()) return; // desktop: the scan lives server-side
   const user = userKey || "guest";
-  const [profile, list, cont] = await Promise.all([getProfile(user), getMyListRows(user), getContinueWatching(6, user)]);
-  const out: Notification[] = [];
+  if (!force) {
+    const lastAt = Number(await kvGetValue(scanKey(user))) || 0;
+    if (Date.now() - lastAt < SCAN_THROTTLE_MS) return;
+    await db.kv.put({ key: scanKey(user), value: Date.now() });
+  }
+  const [profile, list, progress] = await Promise.all([
+    getProfile(user),
+    getMyListRows(user),
+    db.progress.where("userKey").equals(user).toArray() as unknown as Promise<Record<string, unknown>[]>,
+  ]);
   const nowMs = Date.now();
+  const nowIso = new Date(nowMs).toISOString();
 
+  const watched = new Set(list.filter((r) => r.status === "watched").map((r) => r.title.id));
+  const titles = new Map<number, LiteTitle>();
+  const addTitle = async (id: number) => {
+    if (titles.size >= MAX_CANDIDATE_SERIES || titles.has(id) || watched.has(id)) return;
+    const t = (await db.titles.get(id)) as unknown as LiteTitle | undefined;
+    if (t && t.type === "series") titles.set(id, t);
+  };
+  for (const r of list) if (r.title.type === "series") await addTitle(r.title.id);
+  for (const p of progress) await addTitle(Number(p.titleId));
+
+  // snapshot (per title: max epKey = season*1000+number)
+  const prev = (await kvGetValue(snapKey(user))) as { maxEp?: Record<string, number> } | undefined;
+  const firstRun = !prev;
+  const prevMax = prev?.maxEp ?? {};
+  const nextMax: Record<string, number> = { ...prevMax };
+  const created: Notification[] = [];
+
+  const upsert = async (ev: Notification, data: Record<string, unknown>) => {
+    await db.notifevents.put({ ...ev, createdAt: ev.at, userKey: user, data: JSON.stringify(data) } as Record<string, unknown>);
+  };
+
+  // --- 1) قسمت‌های جدید ---
   if (profile.notifyNewEpisodes) {
-    const series = list.filter((r) => r.title.type === "series" && r.status !== "watched").slice(0, 8);
-    for (const r of series) {
-      const eps = await getEpisodes(r.title.id);
-      const last = eps[eps.length - 1];
-      if (!last) continue;
-      out.push({
-        id: `ep-${last.id}`,
-        kind: "episode",
-        title: `قسمت ${last.number} فصل ${last.season} «${r.title.title}»`,
-        body: last.name,
-        href: watchHref(r.title.slug, last.id),
-        image: last.thumbnail || r.title.backdrop,
-        at: new Date(nowMs - 1000 * 60 * 60 * (2 + (last.id % 20))).toISOString(),
-      });
-    }
-  }
-
-  if (profile.notifyContinue) {
-    for (const c of cont) {
-      const pct = c.duration ? Math.round((c.position / c.duration) * 100) : 0;
-      out.push({
-        id: `cont-${c.title.id}`,
-        kind: "continue",
-        title: `ادامه‌ی «${c.title.title}»`,
-        body: c.episodeName ? `قسمت ${c.episodeNumber} · ${pct}٪ دیده‌اید` : `${pct}٪ دیده‌اید؛ از همان‌جا ادامه دهید`,
-        href: watchHref(c.title.slug, c.episodeId),
-        image: c.title.backdrop,
-        at: new Date(nowMs - 1000 * 60 * 60 * 26).toISOString(),
-      });
-    }
-  }
-
-  if (profile.notifyRecommendations) {
-    const counts = new Map<string, number>();
-    list.forEach((r) => r.title.genres.forEach((g) => counts.set(g, (counts.get(g) ?? 0) + 1)));
-    const top = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
-    if (top) {
-      const { getSimilar } = await import("./db");
-      const pool = list.length ? await getSimilar(list[0].title, 6) : [];
-      for (const t of pool.slice(0, 3)) {
-        out.push({
-          id: `rec-${t.id}`,
-          kind: "recommend",
-          title: `پیشنهاد برای شما: «${t.title}»`,
-          body: top,
-          href: titleHref(t.slug),
-          image: t.poster,
-          at: new Date(nowMs - 1000 * 60 * 60 * 40).toISOString(),
-        });
+    for (const t of titles.values()) {
+      let eps: { id: number; season: number; number: number; name: string; thumbnail: string }[] = [];
+      try {
+        eps = (await getEpisodes(t.id)) as unknown as typeof eps;
+      } catch {
+        continue;
+      }
+      if (!eps.length) continue;
+      const epKey = (e: { season: number; number: number }) => e.season * 1000 + e.number;
+      const curMax = Math.max(...eps.map(epKey));
+      nextMax[String(t.id)] = Math.max(prevMax[String(t.id)] ?? 0, curMax);
+      const known = prevMax[String(t.id)];
+      if (firstRun || known == null || curMax <= known) continue;
+      const fresh = eps.filter((e) => epKey(e) > known).sort((a, b) => epKey(a) - epKey(b));
+      const bySeason = new Map<number, typeof fresh>();
+      for (const e of fresh) {
+        const arr = bySeason.get(e.season) ?? [];
+        arr.push(e);
+        bySeason.set(e.season, arr);
+      }
+      for (const [season, arr] of bySeason) {
+        const numbers = arr.map((e) => e.number);
+        const count = arr.length;
+        const evId = `ep:${t.id}:${season}:${Math.max(...arr.map((e) => e.id))}`;
+        const ev: Notification = {
+          id: evId,
+          kind: "episode",
+          title: count === 1 ? `قسمت ${faDigits(numbers[0])} فصل ${faDigits(season)} «${t.title}»` : `${faDigits(count)} قسمت جدید از «${t.title}»`,
+          body: count === 1 ? arr[0].name || "همین حالا قابل تماشاست" : `فصل ${faDigits(season)} · قسمت‌های ${faList(numbers)}`,
+          href: watchHref(t.slug, arr[0].id),
+          image: arr[0].thumbnail || t.backdrop || t.poster,
+          at: nowIso,
+          read: false,
+          count,
+        };
+        await upsert(ev, { season, numbers, epIds: arr.map((e) => e.id), count });
+        created.push(ev);
       }
     }
   }
 
-  const { getNewest, currentManifest } = await import("./db");
-  const manifestAt = currentManifest()?.generatedAt ?? new Date().toISOString();
-  for (const t of await getNewest(4)) {
-    out.push({
-      id: `new-${t.id}`,
-      kind: "new",
-      title: `تازه اضافه شد: «${t.title}»`,
-      body: `${t.type === "series" ? "سریال" : "فیلم"} · ${t.year} · ${t.genres.slice(0, 2).join("، ")}`,
-      href: titleHref(t.slug),
-      image: t.poster,
-      at: manifestAt,
-    });
+  // --- 2) ادامه تماشا (بیش از ۷۲ ساعت پارک شده) ---
+  if (profile.notifyContinue) {
+    for (const p of progress) {
+      const tid = Number(p.titleId);
+      if (watched.has(tid)) continue;
+      const dur = Number(p.duration) || 0;
+      const pos = Number(p.position) || 0;
+      if (dur <= 0 || pos <= 0) continue;
+      const pct = pos / dur;
+      if (pct < 0.02 || pct >= 0.95) continue;
+      if (nowMs - (Date.parse(String(p.updatedAt)) || 0) < CONTINUE_AFTER_MS) continue;
+      const t = (await db.titles.get(tid)) as unknown as LiteTitle | undefined;
+      if (!t) continue;
+      const epId = (p.episodeId as number | null) ?? null;
+      const pctText = `${faDigits(Math.round(pct * 100))}٪`;
+      const ev: Notification = {
+        id: `cont:${tid}:${epId ?? 0}`,
+        kind: "continue",
+        title: `ادامه‌ی «${t.title}»`,
+        body: `${pctText} دیده‌اید؛ از همان‌جا ادامه بده`,
+        href: watchHref(t.slug, epId),
+        image: t.backdrop || t.poster,
+        at: nowIso,
+        read: false,
+      };
+      await upsert(ev, { pct: Math.round(pct * 100) });
+      created.push(ev);
+    }
   }
 
-  out.push({
-    id: "sys-welcome",
-    kind: "system",
-    title: "به فریم خوش آمدید",
-    body: "از تنظیمات می‌توانید نوع اعلان‌هایی که دریافت می‌کنید را شخصی‌سازی کنید.",
-    href: "/settings#notifications",
-    at: profile.createdAt,
-  });
+  // --- 3) خوش‌آمد ---
+  if (profile.notifySystem && !(await db.notifevents.get(`sys:${user}`))) {
+    const ev: Notification = {
+      id: `sys:${user}`,
+      kind: "system",
+      title: "به فریم خوش آمدید",
+      body: "از تنظیمات می‌توانید نوع اعلان‌هایی که دریافت می‌کنید را شخصی‌سازی کنید.",
+      href: "/settings#notifications",
+      at: nowIso,
+      read: false,
+    };
+    await upsert(ev, {});
+    created.push(ev);
+  }
 
-  const reads = new Set((await db.notificationsRead.where("userKey").equals(user).toArray()).map((r) => r.id));
-  return out.sort((a, b) => +new Date(b.at) - +new Date(a.at)).map((n) => ({ ...n, read: reads.has(n.id) }));
+  await db.kv.put({ key: snapKey(user), value: { maxEp: nextMax } });
+
+  // انقضا + پوش استاتوس‌بار اندروید (سکوت شب، سقف روزانه، سوییچ هر دسته —
+  // همه داخل dispatchLocalPush)
+  await purgeNotifications(user);
+  if (created.length) {
+    try {
+      const { dispatchLocalPush } = await import("../notify-push");
+      await dispatchLocalPush(created);
+    } catch {
+      /* بدون پوش هم رویدادها در مرکز اعلان‌ها هستند */
+    }
+  }
+}
+
+async function purgeNotifications(user: string): Promise<void> {
+  const nowMs = Date.now();
+  const rows = (await db.notifevents.where("userKey").equals(user).toArray()) as unknown as Record<string, unknown>[];
+  const dead: string[] = [];
+  for (const r of rows) {
+    const createdAt = Date.parse(String(r.createdAt ?? r.at ?? "")) || 0;
+    const readAt = r.readAt ? Date.parse(String(r.readAt)) || 0 : 0;
+    const expired = readAt ? nowMs - readAt > READ_TTL_MS : nowMs - createdAt > UNREAD_TTL_MS;
+    if (expired) dead.push(String(r.id));
+  }
+  if (dead.length) await db.notifevents.bulkDelete(dead);
+}
+
+export async function getNotifications(userKey = getUserKey()): Promise<Notification[]> {
+  if (isDesktopRuntime()) return srv<Notification[]>("/api/notifications");
+  const user = userKey || "guest";
+  await runNotificationsScan(user).catch(() => {});
+  const rows = (await db.notifevents.where("userKey").equals(user).toArray()) as unknown as (Notification & { createdAt: string; readAt?: string; data?: string })[];
+  return rows
+    .map((r) => {
+      let count: number | undefined;
+      try {
+        count = (JSON.parse(r.data ?? "{}") as { count?: number }).count;
+      } catch {
+        /* بدون count */
+      }
+      return { id: r.id, kind: r.kind, title: r.title, body: r.body, href: r.href, image: r.image, at: r.createdAt, read: !!r.read || !!r.readAt, count };
+    })
+    .sort((a, b) => Date.parse(b.at) - Date.parse(a.at))
+    .slice(0, 100);
 }
 
 export async function markNotificationRead(id: string, userKey = getUserKey()): Promise<void> {
   if (isDesktopRuntime()) {
-    await srvPost("/api/notifications", { id });
+    await srvPost("/api/notifications", { action: "read", id });
     return;
   }
-  const user = userKey || "guest";
-  if (await db.notificationsRead.get(id)) return;
-  await db.notificationsRead.put({ id, userKey: user, at: now() });
+  await db.notifevents.update(id, { read: true, readAt: now() });
 }
 
 export async function markAllNotificationsRead(userKey = getUserKey()): Promise<void> {
   if (isDesktopRuntime()) {
-    await srvPost("/api/notifications", { all: true });
+    await srvPost("/api/notifications", { action: "read-all" });
     return;
   }
-  const items = await getNotifications(userKey);
   const user = userKey || "guest";
-  await db.notificationsRead.bulkPut(items.filter((n) => !n.read).map((n) => ({ id: n.id, userKey: user, at: now() })));
+  const rows = (await db.notifevents.where("userKey").equals(user).toArray()) as unknown as Notification[];
+  for (const r of rows) if (!r.read) await db.notifevents.update(r.id, { read: true, readAt: now() });
+}
+
+export async function hideNotification(id: string, userKey = getUserKey()): Promise<void> {
+  if (isDesktopRuntime()) {
+    await srvPost("/api/notifications", { action: "hide", id });
+    return;
+  }
+  await db.notifevents.delete(id);
 }
 
 /* episode id helper re-export for the watch page */

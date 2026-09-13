@@ -94,6 +94,9 @@ export const db = new Dexie("frame-mobile") as Dexie & {
   dlitems: Dexie.Table<Record<string, unknown>, string>;
   /* v0.25.0 — per-title full records fetched on demand (slug → record) */
   fulls: Dexie.Table<Record<string, unknown>, string>;
+  /* v0.31.0 (NOTIF-1) — persistent notification events (the local engine's
+   * output; same deterministic ids as the desktop NotificationEvent table) */
+  notifevents: Dexie.Table<Record<string, unknown>, string>;
 };
 
 db.version(1).stores({
@@ -147,6 +150,14 @@ db.version(5)
       if (!rec.userKey) rec.userKey = active;
     });
   });
+
+/* v6 (v0.31.0, NOTIF-1): persistent notification events — the mobile mirror
+ * of the desktop NotificationEvent table. Deterministic primary key, per-user
+ * index, created/read timestamps. The legacy notificationsRead table stays
+ * (harmless) but is no longer written. */
+db.version(6).stores({
+  notifevents: "&id, userKey, kind, createdAt, [userKey+kind]",
+});
 
 /* stable episode ids derived from (title, season, number) */
 export const episodeId = (titleId: number, season: number, number: number) => titleId * 100_000 + season * 1000 + number;
@@ -243,6 +254,12 @@ async function doInit(onProgress?: (p: ImportProgress) => void): Promise<void> {
     { key: LITE_KEY(remote.version), value: lite },
   ]);
   p({ done: remote.shardCount + 1, total: remote.shardCount + 1, phase: "done" });
+  // v0.31.0 (NOTIF-1) — the catalog just changed: new episodes may have
+  // landed for series the user follows. Background scan (throttled inside);
+  // dynamic import breaks the module cycle userdata ← → db.
+  void import("./userdata")
+    .then((m) => m.runNotificationsScan())
+    .catch(() => {});
 }
 
 type CatalogTitle = {

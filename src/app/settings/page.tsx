@@ -60,6 +60,7 @@ export default function SettingsPage() {
               notifyNewEpisodes: p.notifyNewEpisodes,
               notifyRecommendations: p.notifyRecommendations,
               notifyContinue: p.notifyContinue,
+              notifySystem: p.notifySystem,
               kidsMode: p.kidsMode,
               parentalPin: p.parentalPin,
               language: p.language,

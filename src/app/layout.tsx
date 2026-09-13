@@ -11,6 +11,7 @@ import WelcomeAuth from "@/components/auth/WelcomeAuth";
 import CloudAutoSync from "@/components/auth/CloudAutoSync";
 import MobileUpdater from "@/components/mobile/MobileUpdater";
 import ElectronBridge from "@/components/electron/ElectronBridge";
+import NotificationActionsHost from "@/components/NotificationActionsHost";
 import HideOnPip from "@/components/HideOnPip";
 import GlobalPlayer from "@/components/GlobalPlayer";
 import CatalogGate from "@/components/mobile/CatalogGate";
@@ -143,6 +144,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
                   <Navbar />
                   <CommandPalette />
                   <ElectronBridge />
+                  <NotificationActionsHost />
                   <GlobalPlayer />
                 </HideOnPip>
                 <CatalogGate>

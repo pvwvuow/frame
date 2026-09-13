@@ -3,31 +3,23 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import type { Notification } from "@/lib/mobile/userdata";
-import { BellIcon, CheckIcon, CloseIcon, TvIcon, PlayIcon, SparkIcon, FlameIcon, InfoIcon, SettingsIcon } from "../Icons";
+import { BellIcon, CheckIcon, CloseIcon, TvIcon, PlayIcon, InfoIcon, SettingsIcon } from "../Icons";
 import { fa } from "@/lib/format";
 import { bridge } from "@/lib/platform";
+
+/* v0.31.0 (NOTIF-1) — the list reads the PERSISTED events the local engine
+ * built; read/hide go to the DB (POST /api/notifications) instead of
+ * localStorage, so the badge, the list and the status bar all agree. */
 
 const KINDS = {
   episode: { label: "قسمت جدید", icon: TvIcon, tint: "text-sky-400 bg-sky-500/10" },
   continue: { label: "ادامه تماشا", icon: PlayIcon, tint: "text-amber-400 bg-amber-500/10" },
-  recommend: { label: "پیشنهاد", icon: SparkIcon, tint: "text-fuchsia-400 bg-fuchsia-500/10" },
-  new: { label: "تازه‌ها", icon: FlameIcon, tint: "text-brand bg-brand/10" },
   system: { label: "فریم", icon: InfoIcon, tint: "text-zinc-300 bg-white/10" },
 } as const;
 
-const READ_KEY = "nama-notif-read";
-const HIDE_KEY = "nama-notif-hidden";
-
-function load(key: string): Set<string> {
-  try {
-    return new Set(JSON.parse(localStorage.getItem(key) ?? "[]"));
-  } catch {
-    return new Set();
-  }
-}
-
 function since(iso: string) {
   const d = (Date.now() - +new Date(iso)) / 1000;
+  if (d < 60) return "همین حالا";
   if (d < 3600) return `${fa(Math.max(1, Math.round(d / 60)))} دقیقه پیش`;
   if (d < 86400) return `${fa(Math.round(d / 3600))} ساعت پیش`;
   if (d < 86400 * 30) return `${fa(Math.round(d / 86400))} روز پیش`;
@@ -35,52 +27,40 @@ function since(iso: string) {
 }
 
 export default function NotificationList({ items }: { items: Notification[] }) {
-  const [read, setRead] = useState<Set<string>>(new Set());
-  const [hidden, setHidden] = useState<Set<string>>(new Set());
+  const [list, setList] = useState<Notification[]>(items);
   const [filter, setFilter] = useState<"all" | keyof typeof KINDS>("all");
   const [mounted, setMounted] = useState(false);
 
-  useEffect(() => {
-    setRead(load(READ_KEY));
-    setHidden(load(HIDE_KEY));
-    setMounted(true);
-  }, []);
+  useEffect(() => setList(items), [items]);
+  useEffect(() => setMounted(true), []);
 
-  const visible = useMemo(() => items.filter((n) => !hidden.has(n.id) && (filter === "all" || n.kind === filter)), [items, hidden, filter]);
-  const unread = useMemo(() => items.filter((n) => !hidden.has(n.id) && !read.has(n.id)).length, [items, hidden, read]);
+  const visible = useMemo(() => list.filter((n) => filter === "all" || n.kind === filter), [list, filter]);
+  const unread = useMemo(() => list.filter((n) => !n.read).length, [list]);
 
   useEffect(() => {
     if (mounted) bridge()?.setBadge(unread);
   }, [unread, mounted]);
 
-  const persist = (key: string, s: Set<string>) => localStorage.setItem(key, JSON.stringify([...s]));
-  const markRead = (id: string) =>
-    setRead((s) => {
-      const n = new Set(s).add(id);
-      persist(READ_KEY, n);
-      return n;
-    });
-  const markAll = () => {
-    const n = new Set(items.map((i) => i.id));
-    persist(READ_KEY, n);
-    setRead(n);
+  const post = async (body: Record<string, unknown>) => {
+    try {
+      const r = await fetch("/api/notifications", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      if (r.ok) {
+        const fresh = (await r.json()) as Notification[];
+        if (Array.isArray(fresh)) setList(fresh);
+      }
+    } catch {
+      /* آفلاین — لیست دست‌نخورده می‌ماند */
+    }
   };
-  const hide = (id: string) =>
-    setHidden((s) => {
-      const n = new Set(s).add(id);
-      persist(HIDE_KEY, n);
-      return n;
-    });
-  const restore = () => {
-    localStorage.removeItem(HIDE_KEY);
-    setHidden(new Set());
-  };
+  const markRead = (id: string) => void post({ action: "read", id });
+  const markAll = () => void post({ action: "read-all" });
+  const hide = (id: string) => void post({ action: "hide", id });
 
   return (
     <div>
       <div className="flex flex-wrap items-center gap-2">
         <div className="no-scrollbar flex gap-1 overflow-x-auto rounded-full bg-white/5 p-1">
-          {(["all", "episode", "continue", "recommend", "new", "system"] as const).map((k) => (
+          {(["all", "episode", "continue", "system"] as const).map((k) => (
             <button key={k} type="button" onClick={() => setFilter(k)} className={`whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-bold transition ${filter === k ? "bg-white text-black" : "text-zinc-300 hover:bg-white/10"}`}>
               {k === "all" ? "همه" : KINDS[k].label}
             </button>
@@ -90,11 +70,6 @@ export default function NotificationList({ items }: { items: Notification[] }) {
           {unread > 0 && (
             <button type="button" onClick={markAll} className="flex items-center gap-1 rounded-full border border-white/10 px-3 py-1.5 text-xs font-bold text-zinc-200 hover:bg-white/10">
               <CheckIcon width={13} height={13} /> خواندن همه ({fa(unread)})
-            </button>
-          )}
-          {hidden.size > 0 && (
-            <button type="button" onClick={restore} className="rounded-full px-3 py-1.5 text-xs text-zinc-400 hover:text-white">
-              بازگرداندن {fa(hidden.size)} اعلان
             </button>
           )}
           <Link href="/settings#notifications" aria-label="تنظیمات اعلان‌ها" className="grid h-8 w-8 place-items-center rounded-full border border-white/10 text-zinc-300 hover:bg-white/10">
@@ -113,11 +88,11 @@ export default function NotificationList({ items }: { items: Notification[] }) {
         <ul className="mt-6 space-y-2">
           {visible.map((n) => {
             const k = KINDS[n.kind];
-            const isRead = read.has(n.id);
+            const isRead = n.read;
             return (
               <li key={n.id} className={`group relative flex items-start gap-3 rounded-2xl border p-3 transition ${isRead ? "border-white/5 bg-white/[0.02]" : "border-white/10 bg-white/[0.05]"}`}>
                 {!isRead && <span className="absolute end-3 top-3 h-2 w-2 rounded-full bg-brand shadow-[0_0_10px_var(--color-brand-glow)]" aria-label="خوانده‌نشده" />}
-                <Link href={n.href} onClick={() => markRead(n.id)} className="flex min-w-0 flex-1 items-start gap-3">
+                <Link href={n.href} onClick={() => !isRead && markRead(n.id)} className="flex min-w-0 flex-1 items-start gap-3">
                   {n.image ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img src={n.image} alt="" loading="lazy" decoding="async" className="h-16 w-16 shrink-0 rounded-xl bg-ink-700 object-cover" />

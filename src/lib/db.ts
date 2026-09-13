@@ -127,6 +127,26 @@ const RUNTIME_DDL: string[] = [
   "userKey" TEXT NOT NULL DEFAULT '',
   "createdAt" DATETIME NOT NULL
 )`,
+  /* v0.31.0 (NOTIF-1) — persistent notification engine: events the local scan
+   * BUILDS (after catalog sync / at app start) and stores per account, with
+   * deterministic ids so repeated scans never duplicate. Replaces the old
+   * derive-on-every-GET implementation that faked timestamps. */
+  `CREATE TABLE IF NOT EXISTS "NotificationEvent" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "userKey" TEXT NOT NULL,
+  "kind" TEXT NOT NULL,
+  "titleId" INTEGER,
+  "title" TEXT NOT NULL,
+  "body" TEXT NOT NULL DEFAULT '',
+  "href" TEXT NOT NULL DEFAULT '',
+  "image" TEXT,
+  "data" TEXT NOT NULL DEFAULT '{}',
+  "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "readAt" DATETIME,
+  "expiresAt" DATETIME NOT NULL
+)`,
+  `CREATE INDEX IF NOT EXISTS "NotificationEvent_userKey_createdAt_idx" ON "NotificationEvent"("userKey" ASC, "createdAt" ASC)`,
+  `CREATE INDEX IF NOT EXISTS "NotificationEvent_userKey_readAt_idx" ON "NotificationEvent"("userKey" ASC, "readAt" ASC)`,
 ];
 
 /** v0.27.0 (DATA-10) — additive column helper: `ALTER TABLE ADD COLUMN` is
@@ -161,6 +181,8 @@ export function ensureRuntimeSchema(): Promise<void> {
       // v0.29.0 (NEW-DATA-10) — reviews become PER-ACCOUNT (legacy rows keep
       // NULL and stay visible to everyone, exactly like before)
       await ensureColumn("Review", "userKey", `ALTER TABLE "Review" ADD COLUMN "userKey" TEXT`);
+      // v0.31.0 (NOTIF-1) — the per-category switch for Frame's own notices
+      await ensureColumn("UserProfile", "notifySystem", `ALTER TABLE "UserProfile" ADD COLUMN "notifySystem" BOOLEAN NOT NULL DEFAULT 1`);
     })();
   }
   return schemaPromise;

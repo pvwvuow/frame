@@ -47,7 +47,7 @@ export async function PATCH(req: Request) {
   if (typeof b.avatar === "number") data.avatar = Math.max(0, Math.min(11, Math.round(b.avatar)));
   if (b.avatarImage === null) data.avatarImage = null;
   else if (typeof b.avatarImage === "string" && b.avatarImage.length <= AVATAR_IMAGE_MAX && AVATAR_IMAGE_RE.test(b.avatarImage)) data.avatarImage = b.avatarImage;
-  for (const k of ["autoplay", "autoNext", "matureContent", "reduceMotion", "skipIntro", "dataSaver", "notifyNewEpisodes", "notifyRecommendations", "notifyContinue", "kidsMode"] as const) {
+  for (const k of ["autoplay", "autoNext", "matureContent", "reduceMotion", "skipIntro", "dataSaver", "notifyNewEpisodes", "notifyRecommendations", "notifyContinue", "notifySystem", "kidsMode"] as const) {
     if (typeof b[k] === "boolean") data[k] = b[k];
   }
   if (typeof b.quality === "string" && QUALITIES.has(b.quality)) data.quality = b.quality;

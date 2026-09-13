@@ -16,7 +16,7 @@ import {
   toggleWatchlist, patchWatchlist, removeWatchlist, isInWatchlist,
   upsertProgress, getProgressFor, removeProgress, setRating,
   addReview, getReviews, getProfile, patchProfile, wipeProfile,
-  getUserStats, getNotifications, markNotificationRead, markAllNotificationsRead,
+  getUserStats, getNotifications, markNotificationRead, markAllNotificationsRead, hideNotification, runNotificationsScan,
   listUserCollections, createUserCollection, renameUserCollection, deleteUserCollection,
   getCollectionItems, collectionsContaining, setCollectionItem, mergeCloudSnapshot,
   switchIdentity, getUserKey,
@@ -83,7 +83,15 @@ const routes: { method: string; pattern: string; handler: Handler }[] = [
   { method: "GET", pattern: "/api/identity", handler: () => ({ uid: getUserKey(), mobile: true }) },
 
   { method: "GET", pattern: "/api/notifications", handler: async () => getNotifications() },
-  { method: "POST", pattern: "/api/notifications", handler: ({ body }) => (body.all ? markAllNotificationsRead() : markNotificationRead(String(body.id ?? ""))).then(() => ({ ok: true })) },
+  /* v0.31.0 (NOTIF-1) — actions match the desktop route; every POST answers
+   * with the FRESH list so the UI and the badge update in one round-trip */
+  { method: "POST", pattern: "/api/notifications", handler: async ({ body }) => {
+      if (body.action === "scan") await runNotificationsScan(undefined, true);
+      else if (body.action === "read") await markNotificationRead(String(body.id ?? ""));
+      else if (body.action === "read-all") await markAllNotificationsRead();
+      else if (body.action === "hide") await hideNotification(String(body.id ?? ""));
+      return getNotifications();
+  } },
 
   { method: "POST", pattern: "/api/reviews", handler: ({ body }) => addReview({ titleId: Number(body.titleId), author: String(body.author ?? ""), rating: Number(body.rating ?? 0), body: String(body.body ?? "") }) },
 

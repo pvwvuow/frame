@@ -167,21 +167,14 @@ export default function UserMenu() {
   useEffect(() => setMounted(true), []);
   useEffect(() => setOpen(false), [pathname]);
 
-  // unread notifications badge (refreshes on route change + every 2 min)
+  // unread notifications badge (refreshes on route change + every 2 min).
+  // v0.31.0 (NOTIF-1): read state lives in the DB now — the server already
+  // returns `read` per event, no localStorage mirror to disagree with it.
   const loadUnread = useCallback(() => {
-    const load = (k: string): Set<string> => {
-      try {
-        return new Set(JSON.parse(localStorage.getItem(k) ?? "[]"));
-      } catch {
-        return new Set();
-      }
-    };
     fetch("/api/notifications")
       .then((r) => (r.ok ? r.json() : []))
-      .then((d: { id: string }[]) => {
-        const read = load("nama-notif-read");
-        const hidden = load("nama-notif-hidden");
-        const n = Array.isArray(d) ? d.filter((x) => !read.has(x.id) && !hidden.has(x.id)).length : 0;
+      .then((d: { read?: boolean }[]) => {
+        const n = Array.isArray(d) ? d.filter((x) => !x.read).length : 0;
         setUnread(n);
         bridge()?.setBadge(n);
       })

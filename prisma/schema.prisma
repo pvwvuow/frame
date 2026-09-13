@@ -215,6 +215,8 @@ model UserProfile {
   notifyNewEpisodes     Boolean @default(true)
   notifyRecommendations Boolean @default(true)
   notifyContinue        Boolean @default(true)
+  /// v0.31.0 (NOTIF-1) — اعلان‌های خود فریم (خوش‌آمد و …)
+  notifySystem          Boolean @default(true)
   // --- parental control ---
   kidsMode      Boolean  @default(false)
   parentalPin   String   @default("")
@@ -231,6 +233,30 @@ model SyncState {
   key       String   @id
   value     String
   updatedAt DateTime @updatedAt
+}
+
+/// v0.31.0 (NOTIF-1) — موتور اعلان محلی: رویدادها توسط اسکن محلی (بعد از
+/// همگام‌سازی کاتالوگ / شروع برنامه) «ساخته» و برای هر حساب ذخیره می‌شوند —
+/// برخلاف نسخه‌ی قبل که با timestamp جعلی روی هر GET دوباره مشتق می‌شدند.
+/// id قطعی (deterministic) است تا اسکن تکراری هرگز رویداد تکراری نسازد:
+///   ep:{titleId}:{season}:{maxNewEpId} | cont:{titleId}:{episodeId} | sys:{userKey}
+model NotificationEvent {
+  id        String    @id
+  userKey   String
+  kind      String // episode | continue | system
+  titleId   Int?
+  title     String
+  body      String    @default("")
+  href      String    @default("")
+  image     String?
+  /// JSON payload برای نوتیفیکیشن استاتوس‌بار اندروید (season, numbers, epIds…)
+  data      String    @default("{}")
+  createdAt DateTime  @default(now())
+  readAt    DateTime?
+  /// خوانده‌نشده: ۳۰ روز؛ خوانده‌شده: ۷ روز بعد از خواندن
+  expiresAt DateTime
+  @@index([userKey, createdAt])
+  @@index([userKey, readAt])
 }
 
 /// v0.10.35 — نگاشت «حساب ابری ← فضای داده‌ی محلی».

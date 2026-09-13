@@ -158,6 +158,9 @@ class SourceSync {
         this.st.finishedAt = Date.now();
         const mm = Math.max(1, Math.round((Date.now() - (this.st.startedAt ?? Date.now())) / 60000));
         this.pushLog(`پایان همگام‌سازی — ${this.st.titles} عنوان، ${this.st.episodes} قسمت در ${mm} دقیقه.`);
+        // v0.31.0 (NOTIF-1) — قسمت‌های تازه همین حالا نشستند: اسکن اعلان برای
+        // همه‌ی حساب‌ها (گروه‌های «قسمت جدید» + یادآوری ادامه تماشا)
+        void import("@/lib/notifications").then((m) => m.scanAllUsers()).catch(() => {});
       }
       await this.save("meta");
     } catch (e) {

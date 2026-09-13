@@ -375,7 +375,7 @@ const IDENTITY_FIELDS = ["displayName", "avatar", "avatarImage", "language", "ki
 const PLAYBACK_FIELDS = [
   "autoplay", "autoNext", "quality", "subtitle", "matureContent", "reduceMotion",
   "skipIntro", "playbackSpeed", "volume", "dataSaver",
-  "notifyNewEpisodes", "notifyRecommendations", "notifyContinue", "playerPrefs",
+  "notifyNewEpisodes", "notifyRecommendations", "notifyContinue", "notifySystem", "playerPrefs",
 ] as const;
 
 export function markProfileTouched(ts?: string) {
