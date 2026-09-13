@@ -86,14 +86,8 @@ export default function AppUpdateCard() {
                 دانلود نسخهٔ جدید (APK)
               </a>
             )}
-            <a
-              href={rel.html_url}
-              target="_blank"
-              rel="noreferrer"
-              className="rounded-full border border-white/15 px-5 py-2.5 text-xs font-bold text-zinc-200 transition hover:bg-white/5"
-            >
-              مشاهدهٔ تغییرات
-            </a>
+            {/* v0.33.0 — «مشاهدهٔ تغییرات» (GitHub release page) removed: release
+                notes are a developer surface; the card itself says what to do. */}
           </div>
         </div>
       )}

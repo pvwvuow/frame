@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
 import { useLibrary } from "./LibraryProvider";
-import { CheckIcon, TrashIcon, UserIcon, PlayIcon, SunIcon, BellIcon, ShieldIcon, LockIcon, KeyboardIcon, InfoIcon, FolderIcon, RefreshIcon, DownloadIcon, ExternalIcon, MonitorIcon, CameraIcon } from "../Icons";
+import { CheckIcon, TrashIcon, UserIcon, PlayIcon, SunIcon, BellIcon, ShieldIcon, LockIcon, KeyboardIcon, InfoIcon, FolderIcon, RefreshIcon, DownloadIcon, CameraIcon } from "../Icons";
 import { ThemeSegment } from "../theme/ThemeToggle";
 import { bridge, useIsElectron } from "@/lib/platform";
 import { fa } from "@/lib/format";
@@ -128,9 +128,7 @@ export default function SettingsForm({ initial }: { initial: ProfileData }) {
   const [danger, setDanger] = useState<string | null>(null);
   const [section, setSection] = useState<SectionId>("profile");
   const [pinDraft, setPinDraft] = useState("");
-  const [info, setInfo] = useState<Awaited<ReturnType<NonNullable<ReturnType<typeof bridge>>["getInfo"]>> | null>(null);
   const [checking, setChecking] = useState(false);
-  const [storage, setStorage] = useState<{ used: number; quota: number } | null>(null);
   const avatarFileRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
   const lib = useLibrary();
@@ -153,11 +151,6 @@ export default function SettingsForm({ initial }: { initial: ProfileData }) {
     window.addEventListener("hashchange", apply);
     return () => window.removeEventListener("hashchange", apply);
   }, []);
-
-  useEffect(() => {
-    if (electron) bridge()?.getInfo().then(setInfo).catch(() => {});
-    navigator.storage?.estimate?.().then((e) => setStorage({ used: e.usage ?? 0, quota: e.quota ?? 0 })).catch(() => {});
-  }, [electron]);
 
   // warn on unsaved changes — v0.27.0 (UI-6): beforeunload alone only covers
   // close/refresh. In-app link clicks bypassed it silently, so the dirty bar
@@ -587,23 +580,10 @@ export default function SettingsForm({ initial }: { initial: ProfileData }) {
                     />
                   </div>
                 </div>
-                <div className="rounded-2xl border border-white/5 bg-white/[0.03] p-4">
-                  <p className="text-sm font-bold text-white">حافظه‌ی مرورگر / برنامه</p>
-                  <p className="mt-0.5 text-[11px] text-zinc-500">
-                    {storage ? `${(storage.used / 1024 / 1024).toLocaleString("fa-IR", { maximumFractionDigits: 1 })} مگابایت استفاده شده` : "در حال محاسبه…"}
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      localStorage.removeItem("nama-recent");
-                      sessionStorage.clear();
-                      toast.success("کش موقت پاک شد");
-                    }}
-                    className="mt-3 rounded-full border border-white/15 px-4 py-2 text-xs font-bold text-white hover:bg-white/10"
-                  >
-                    پاک کردن کش
-                  </button>
-                </div>
+                {/* v0.33.0 — the «حافظه‌ی مرورگر / برنامه» card (MB used + cache
+                    clear) is gone: storage is app-managed, the readout was a
+                    developer metric, and the one-line cache it cleared is
+                    rebuilt silently anyway. */}
               </div>
             </Card>
             <section className="rounded-3xl border border-rose-500/20 bg-rose-950/10 p-5 sm:p-6">
@@ -647,38 +627,27 @@ export default function SettingsForm({ initial }: { initial: ProfileData }) {
         )}
 
         {section === "about" && (
-          <Card id="about" title={electron ? "برنامه‌ی دسکتاپ فریم" : "درباره فریم"} desc={electron ? "اطلاعات نسخه، به‌روزرسانی و مسیر داده‌ها." : "اطلاعات نسخه‌ی وب."}>
+          <Card id="about" title={electron ? "برنامه‌ی دسکتاپ فریم" : "درباره فریم"} desc={electron ? "نسخه و به‌روزرسانی." : "اطلاعات نسخه‌ی وب."}>
             <div className="grid gap-3 md:grid-cols-2">
+              {/* v0.33.0 — the version card shrank to ONE row: the app version.
+                  Electron/Chromium/Node/platform matrix and the database path
+                  were developer diagnostics; nobody calls support asking for
+                  their Node runtime. */}
               <div className="rounded-2xl border border-white/5 bg-white/[0.03] p-4">
-                <p className="flex items-center gap-2 text-sm font-bold text-white"><MonitorIcon width={16} height={16} className="text-brand" /> نسخه</p>
+                <p className="flex items-center gap-2 text-sm font-bold text-white"><InfoIcon width={16} height={16} className="text-brand" /> نسخه</p>
                 <dl className="mt-3 space-y-1.5 text-xs text-zinc-400" dir="ltr">
-                  <div className="flex justify-between"><dt>App</dt><dd className="text-zinc-200">v{info?.version ?? bridge()?.version ?? process.env.NEXT_PUBLIC_APP_VERSION ?? "0.2.1"}</dd></div>
-                  {info && (
-                    <>
-                      <div className="flex justify-between"><dt>Electron</dt><dd className="text-zinc-200">{info.electron}</dd></div>
-                      <div className="flex justify-between"><dt>Chromium</dt><dd className="text-zinc-200">{info.chrome}</dd></div>
-                      <div className="flex justify-between"><dt>Node</dt><dd className="text-zinc-200">{info.node}</dd></div>
-                      <div className="flex justify-between"><dt>Platform</dt><dd className="text-zinc-200">{info.platform} / {info.arch}</dd></div>
-                    </>
-                  )}
+                  <div className="flex justify-between"><dt>Frame</dt><dd className="text-zinc-200">v{bridge()?.version ?? process.env.NEXT_PUBLIC_APP_VERSION ?? "0.2.1"}</dd></div>
                 </dl>
               </div>
               {electron ? (
                 <div className="rounded-2xl border border-white/5 bg-white/[0.03] p-4">
                   <p className="flex items-center gap-2 text-sm font-bold text-white"><RefreshIcon width={16} height={16} className="text-brand" /> به‌روزرسانی</p>
-                  <p className="mt-1 text-[11px] text-zinc-500">نسخه‌های جدید از GitHub Releases دریافت می‌شوند.</p>
+                  <p className="mt-1 text-[11px] text-zinc-500">نسخه‌های جدید خودکار بررسی و آماده‌ی نصب می‌شوند.</p>
                   <div className="mt-3 flex flex-wrap gap-2">
                     <button type="button" onClick={checkUpdates} disabled={checking} className="flex items-center gap-2 rounded-full bg-white px-4 py-2 text-xs font-bold text-black hover:bg-zinc-200 disabled:opacity-50">
                       <RefreshIcon width={14} height={14} className={checking ? "animate-spin" : ""} /> بررسی به‌روزرسانی
                     </button>
-                    <button type="button" onClick={() => bridge()?.openDataDir()} className="flex items-center gap-2 rounded-full border border-white/15 px-4 py-2 text-xs font-bold text-white hover:bg-white/10">
-                      <FolderIcon width={14} height={14} /> پوشه‌ی داده‌ها
-                    </button>
-                    <button type="button" onClick={() => bridge()?.openExternal("https://github.com/pvwvuow/frame/releases")} className="flex items-center gap-2 rounded-full border border-white/15 px-4 py-2 text-xs font-bold text-white hover:bg-white/10">
-                      <ExternalIcon width={14} height={14} /> صفحه‌ی انتشار
-                    </button>
                   </div>
-                  {info && <p className="mt-3 truncate text-[10px] text-zinc-600" dir="ltr" title={info.dbPath}>{info.dbPath}</p>}
                 </div>
               ) : (
                 <div className="rounded-2xl border border-white/5 bg-white/[0.03] p-4">
@@ -687,9 +656,6 @@ export default function SettingsForm({ initial }: { initial: ProfileData }) {
                   <div className="mt-3 flex flex-wrap gap-2">
                     <a href="/download" className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-xs font-bold text-black hover:bg-zinc-200">
                       <DownloadIcon width={14} height={14} /> صفحه‌ی دانلود
-                    </a>
-                    <a href="https://github.com/pvwvuow/frame/releases/latest" target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-full border border-white/15 px-4 py-2 text-xs font-bold text-white hover:bg-white/10">
-                      <ExternalIcon width={14} height={14} /> GitHub Releases
                     </a>
                   </div>
                 </div>

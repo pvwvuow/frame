@@ -19,8 +19,6 @@ import {
   scheduleAutoUpdateCheck,
   scheduleCoverSync,
   onUpdateProgress,
-  installedCoversRev,
-  appliedCoverCount,
   type UpdateCheck,
 } from "@/lib/self-update";
 import { fmtBytes, resumeQueueOnBoot } from "@/lib/mobile-downloads";
@@ -84,12 +82,10 @@ export function MobileUpdateCard() {
       setCheck(c);
       if (!c) toast.error("بررسی به‌روزرسانی ناموفق بود — اینترنت را چک کنید");
       else if (c.coversOnly) {
-        const total = c.packParts.length;
-        const done = appliedCoverCount(c.packRev);
-        setCoversDone({ done, total });
-        toast.message(
-          `به‌روزرسانی کاورها (ر${c.packRev}) در دسترس است — ${done}/${total} بسته نصب شده`,
-        );
+        // v0.33.0 — no more «(رN) X/Y بسته» telemetry; the artwork sync is
+        // a background concern, not a version the user tracks
+        setCoversDone({ done: c.packParts.length, total: c.packParts.length });
+        toast.message("تصاویر آفلاین به‌روزرسانی دارند — خودکار دانلود می‌شوند");
       } else if (!c.available) toast.success(`فریم به‌روز است (v${c.current})`);
       else if (c.ota) toast.message(`نسخهٔ ${c.version.replace(/^v/, "")} در دسترس است — فقط ${fmtBytes(c.bundleSize ?? 0)}`);
       else toast.message(`نسخهٔ ${c.version.replace(/^v/, "")} در دسترس است`);
@@ -137,16 +133,14 @@ export function MobileUpdateCard() {
     }
   };
 
-  const coversTotal = check?.packParts.length ?? 0;
-  const packBytes = check?.packParts.reduce((s, p) => s + p.size, 0) ?? 0;
   const phaseLabel = progress
     ? progress.phase === "covers"
-      ? `${progress.msg ?? "کاورها"} ${progress.pct}٪`
+      ? `${progress.msg ?? "تصاویر آفلاین"} ${progress.pct}٪`
       : progress.phase === "download"
         ? `${progress.pct}٪`
         : PHASE_LABEL[progress.phase] ?? ""
     : check?.coversOnly
-      ? "کاورها"
+      ? "تصاویر آفلاین"
       : check?.ota
         ? "به‌روزرسانی"
         : "نصب نسخهٔ جدید";
@@ -160,10 +154,10 @@ export function MobileUpdateCard() {
           </span>
           <div>
             <p className="text-sm font-bold text-white">به‌روزرسانی برنامه</p>
+            {/* v0.33.0 — subtitle keeps ONLY the installed version; the OTA bundle
+                rev and the covers rev were build internals */}
             <p className="mt-0.5 text-[11px] text-zinc-500">
               نسخهٔ نصب‌شده: v{info?.versionName ?? "…"}
-              {info?.otaVersion ? ` · به‌روزرسانی درجا: ${info.otaVersion.replace(/^v/, "")}` : ""}
-              {info ? ` · کاورها: ر${installedCoversRev(info.coversRev)}` : ""}
             </p>
           </div>
         </div>
@@ -194,11 +188,11 @@ export function MobileUpdateCard() {
             ? "این نسخه شامل تغییرات سیستمی است — صفحهٔ دانلود در مرورگر باز می‌شود؛ مثل بار اول نصب کنید (تنظیمات و سابقهٔ شما حفظ می‌شود)."
             : check.ota
               ? `این به‌روزرسانی «درجا» نصب می‌شود (${fmtBytes(check.bundleSize ?? 0)}) — نیازی به دانلود کل برنامه نیست.`
-              : `کاورهای ${coversTotal} بسته‌ای (${fmtBytes(packBytes)}) در پس‌زمینه نصب می‌شوند — بسته‌های نیمه‌کاره از سر گرفته می‌شوند.`}
+              : "تصاویر آفلاین در پس‌زمینه به‌روز می‌شوند — دانلودهای نیمه‌کاره از سر گرفته می‌شوند."}
         </p>
       )}
       {coversDone && !check?.available && (
-        <p className="mt-3 text-[11px] leading-5 text-zinc-500">کاورها به‌روز هستند.</p>
+        <p className="mt-3 text-[11px] leading-5 text-zinc-500">تصاویر آفلاین به‌روز هستند.</p>
       )}
     </div>
   );

@@ -978,9 +978,22 @@ function buildMenu() {
       ],
     },
     { label: "ویرایش", role: "editMenu" },
+    /* v0.33.0 — the stock viewMenu exposed «Toggle Developer Tools» inside the
+     * packaged app. Users got a console they can't act on (and a shortcut for
+     * breaking their own app); dev builds keep it via !app.isPackaged. */
     {
       label: "نما",
-      role: "viewMenu",
+      submenu: [
+        { role: "reload", label: "بارگذاری مجدد" },
+        { role: "forceReload", label: "بارگذاری مجدد اجباری" },
+        ...(app.isPackaged ? [] : [{ role: "toggleDevTools" }]),
+        { type: "separator" },
+        { role: "resetZoom", label: "اندازه‌ی معمول" },
+        { role: "zoomIn", label: "بزرگ‌نمایی" },
+        { role: "zoomOut", label: "کوچک‌نمایی" },
+        { type: "separator" },
+        { role: "togglefullscreen", label: "تمام‌صفحه" },
+      ],
     },
     { label: "پنجره", role: "windowMenu" },
     {
@@ -990,8 +1003,10 @@ function buildMenu() {
         { label: "میان‌برهای صفحه‌کلید", click: () => nav("/settings#shortcuts") },
         { type: "separator" },
         { label: "بررسی به‌روزرسانی…", click: () => checkForUpdates(true) },
-        { label: "صفحه‌ی انتشار در GitHub", click: () => shell.openExternal("https://github.com/pvwvuow/frame/releases") },
-        { label: "پوشه‌ی داده‌ها", click: () => shell.openPath(app.getPath("userData")) },
+        /* v0.33.0 — «صفحه‌ی انتشار در GitHub» and «پوشه‌ی داده‌ها» removed:
+            updates are automatic, and the data directory is app-managed.
+            The log folder stays — support needs it when a user reports a
+            playback problem. */
         { label: "پوشه‌ی لاگ", click: () => shell.openPath(path.dirname(log.transports.file.getFile().path)) },
         { type: "separator" },
         { label: `درباره‌ی Frame (v${app.getVersion()})`, click: () => nav("/settings#about") },

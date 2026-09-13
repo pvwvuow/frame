@@ -12,18 +12,16 @@
 
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { getInstallInfo, nativeBridge } from "@/lib/native-bridge";
+import { nativeBridge } from "@/lib/native-bridge";
 import {
   checkForUpdate,
   runCoverSync,
   onUpdateProgress,
-  installedCoversRev,
   appliedCoverCount,
   coversAutoEnabled,
   setCoversAuto,
   type UpdateCheck,
 } from "@/lib/self-update";
-import { fmtBytes } from "@/lib/mobile-downloads";
 import { CameraIcon } from "../Icons";
 
 export default function CoverPackCard() {
@@ -32,20 +30,11 @@ export default function CoverPackCard() {
   const [busy, setBusy] = useState(false);
   const [pct, setPct] = useState<number | null>(null);
   const [msg, setMsg] = useState<string>("");
-  const [packInfo, setPackInfo] = useState<{ parts: number; bytes: number; rev: number } | null>(null);
 
   useEffect(() => {
     if (!nativeBridge()) return;
     setShow(true);
     setOn(coversAutoEnabled());
-    void (async () => {
-      try {
-        const c = await checkForUpdate();
-        if (c?.packParts.length) setPackInfo({ parts: c.packParts.length, bytes: c.packParts.reduce((s, p) => s + p.size, 0), rev: c.packRev });
-      } catch {
-        /* ignore */
-      }
-    })();
   }, []);
 
   if (!show) return null;
@@ -98,8 +87,6 @@ export default function CoverPackCard() {
     }
   };
 
-  const localRev = installedCoversRev(undefined); // max(native baseline, merged parts)
-
   return (
     <div className="glass rounded-2xl p-4" dir="rtl">
       <div className="flex items-center justify-between gap-3">
@@ -108,11 +95,14 @@ export default function CoverPackCard() {
             <CameraIcon width={18} height={18} />
           </span>
           <div>
-            <p className="text-sm font-bold text-white">تصاویر آفلاین (پک کاور)</p>
+            <p className="text-sm font-bold text-white">تصاویر آفلاین</p>
+            {/* v0.33.0 — the «پک: ر۱۲ · نصب‌شده: ۵/۸» telemetry left the subtitle:
+                revisions and chunk counts are build internals. The toggle and the
+                progress bar say everything a user needs. */}
             <p className="mt-0.5 text-[11px] text-zinc-500">
-              پیش‌فرض: عکس‌ها همزمان با اسکرول از اینترنت لود می‌شوند — بدون دانلود یکجا.
-              {packInfo ? ` · پک: ر${packInfo.rev} (${packInfo.parts} بسته ≈ ${fmtBytes(packInfo.bytes)})` : ""}
-              {packInfo ? ` · نصب‌شده: ${appliedCoverCount(packInfo.rev)}/${packInfo.parts} (ر${localRev})` : ""}
+              {on
+                ? "عکس‌ها آفلاین هم لود می‌شوند — دانلود در پس‌زمینه انجام می‌شود."
+                : "پیش‌فرض: عکس‌ها همزمان با اسکرول از اینترنت لود می‌شوند."}
             </p>
           </div>
         </div>

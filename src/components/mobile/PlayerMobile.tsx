@@ -2676,9 +2676,8 @@ export default function PlayerMobile() {
           <div className="max-w-sm p-6 text-center">
             <p className="text-xl font-black text-white">پخش این نسخه ممکن نشد</p>
             <p className="mt-2 text-sm leading-7 text-zinc-400">اتصال به منبع پخش برقرار نشد یا فایل قابل پخش نیست. دوباره تلاش کنید یا نسخه/قسمت دیگری را امتحان کنید.</p>
-            <p className="mt-3 rounded-lg bg-white/5 px-3 py-2 text-[10px] leading-5 text-zinc-500" dir="ltr">
-              {appVer} · err: {lastVideoErr} · src: {probeInfo}
-            </p>
+            {/* v0.33.0 — the `appVer · err: … · src: …` fingerprint left the user
+                screen; the app reports its own diagnostics, users don't. */}
             <div className="mt-5 flex flex-wrap justify-center gap-3">
               <button
                 type="button"
@@ -3257,21 +3256,19 @@ export default function PlayerMobile() {
                     </span>
                   </button>
                 ))}
-                {/* stream info + v0.21.0 diagnostics */}
+                {/* v0.33.0 — «اطلاعات پخش» keeps only what a viewer can act on:
+                    which engine is playing, at what resolution/quality. The MSE
+                    state, last media error, probe verdict, buffer health and
+                    network readout were support diagnostics (still collected
+                    in-app, just not wallpapered in the UI). */}
                 <p className="mb-1 mt-3 text-[11px] font-black text-zinc-400">اطلاعات پخش</p>
                 <div className="rounded-xl bg-white/5 p-3 text-[11px] leading-6 text-zinc-400">
-                  <p>اپ: {appVer}</p>
                   <p>
                     پلیر فعال: {owner === "native" ? `نیتیو (Media3)${engine === "native" && !webOverride ? " — انتخاب شما" : ""}` : mseWanted ? "وب — بازسازی فایل (MSE)" : "وب (مستقیم)"}
                     {webOverride && owner !== "native" ? " — این جلسه، با سوئیچ شما" : ""}
                   </p>
-                  {mseWanted && <p>وضعیت MSE: {mseStateLabel}</p>}
-                  <p>خطای آخر ویدیو: <span dir="ltr" className="tabular-nums">{lastVideoErr}</span></p>
-                  <p>پیش‌بررسی منبع: <span dir="ltr" className="tabular-nums">{probeInfo}</span></p>
                   <p>رزولوشن: {videoEl && videoEl.videoWidth ? `${fa(videoEl.videoWidth)}×${fa(videoEl.videoHeight)}` : "—"}</p>
                   <p>نسخه فعال: {qualityLabel || "عادی"}{currentVariant ? ` · ${variantShort(currentVariant) || "اصلی"}` : ""}</p>
-                  <p>سلامت بافر: {fa(Math.max(0, Math.round(buffered - current)))} ثانیه</p>
-                  <p>شبکه: {netInfo().type}{fa(netInfo().downlink ?? 0) !== "۰" ? ` · ~${fa(netInfo().downlink ?? 0)}Mb/s` : ""}</p>
                 </div>
               </>
             )}

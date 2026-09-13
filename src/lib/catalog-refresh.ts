@@ -100,6 +100,24 @@ const SEED_PROOF_KEY = "seed.applied";
 let seedInflight: Promise<CatalogRefreshResult> | null = null;
 let syncInflight: Promise<CatalogRefreshResult> | null = null;
 
+/* v0.33.0 — the manual «تکمیل بچه بعدی» button left the settings page; the
+ * enrichment it triggered now rides the catalog pipeline itself. After every
+ * successful seed/remote apply (boot + 6h re-check) the background enricher
+ * wakes and fills the remaining junk genres / missing descriptions via
+ * wikidata. enrichBatch no-ops in milliseconds when nothing needs work and
+ * keeps its own per-slug 24h cooldowns, so this guard (1 trigger / 12h) is
+ * purely belt-and-braces against hammering the loop on health re-probes. */
+const AUTO_ENRICH_GAP_MS = 12 * 60 * 60 * 1000;
+let lastAutoEnrich = 0;
+function triggerAutoEnrich(): void {
+  const now = Date.now();
+  if (now - lastAutoEnrich < AUTO_ENRICH_GAP_MS) return;
+  lastAutoEnrich = now;
+  void import("@/lib/meta-enrich")
+    .then((m) => m.enrichInBackground(200, 25))
+    .catch(() => {});
+}
+
 /**
  * Runs the seed refresh at most once per server process. Later calls (health
  * is probed twice during boot) await the same result instead of re-merging.
@@ -136,7 +154,10 @@ export function recheckCatalogNow(url: string): Promise<CatalogRefreshResult> {
     );
   }
   syncInflight = null;
-  return syncCatalogOnce(url);
+  return syncCatalogOnce(url).then((r) => {
+    if (r.ok) triggerAutoEnrich(); // v0.33.0 — auto-enrich after a positive re-check
+    return r;
+  });
 }
 
 /* ------------------------------------------------------------------ */
@@ -227,6 +248,8 @@ export function runStartupSync(): Promise<StartupSyncState> {
     }
   })().then((state) => {
     startupState = state;
+    // v0.33.0 — enrichment continues automatically after the boot pipeline
+    if (state.status === "ok") triggerAutoEnrich();
     return state;
   });
   return startupInflight;
@@ -253,7 +276,10 @@ function scheduleResync(url: string) {
     syncInflight = null;
     syncCatalogOnce(u)
       .then((r) => {
-        if (r.ok) scheduleResync(u);
+        if (r.ok) {
+          triggerAutoEnrich(); // v0.33.0 — auto-enrich after each 6h apply
+          scheduleResync(u);
+        }
       })
       .catch(() => {});
   }, RESYNC_INTERVAL_MS);

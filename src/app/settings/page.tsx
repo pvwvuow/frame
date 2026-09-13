@@ -3,8 +3,6 @@
 import Link from "next/link";
 import SettingsForm from "@/components/library/SettingsForm";
 import LoadErrorCard from "@/components/LoadErrorCard";
-import SourceSyncCard from "@/components/settings/SourceSyncCard";
-import CatalogUpdateCard from "@/components/settings/CatalogUpdateCard";
 import AppUpdateCard from "@/components/settings/AppUpdateCard";
 import { MobileUpdateCard } from "@/components/mobile/MobileUpdater";
 import CoverPackCard from "@/components/settings/CoverPackCard";
@@ -70,8 +68,6 @@ export default function SettingsPage() {
         <AppUpdateCard />
         <MobileUpdateCard />
         <CoverPackCard />
-        <CatalogUpdateCard />
-        <SourceSyncCard />
 
         {/* support — merged into settings (menu only links here) */}
         <section id="support" className="mt-8 scroll-mt-28 rounded-3xl border border-white/5 bg-ink-700/40 p-5 sm:p-6">
