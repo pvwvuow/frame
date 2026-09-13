@@ -161,6 +161,9 @@ class SourceSync {
         // v0.31.0 (NOTIF-1) — قسمت‌های تازه همین حالا نشستند: اسکن اعلان برای
         // همه‌ی حساب‌ها (گروه‌های «قسمت جدید» + یادآوری ادامه تماشا)
         void import("@/lib/notifications").then((m) => m.scanAllUsers()).catch(() => {});
+        // v0.32.0 — عنوان‌های بدون ژانر/توضیح واقعی در پس‌زمینه تکمیل می‌شوند
+        // (ویکی‌دیتا با شناسه IMDb؛ فقط فیلدهای خالی/قالبی را پر می‌کند)
+        void import("@/lib/meta-enrich").then((m) => m.enrichInBackground(200, 25)).catch(() => {});
       }
       await this.save("meta");
     } catch (e) {

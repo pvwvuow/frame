@@ -678,9 +678,15 @@ async function applyCatalog(items: CatalogItem[]): Promise<CatalogRefreshResult>
   const stats = { created: 0, updated: 0, removed: 0 };
   const seedSlugs = new Set(items.map((t) => t.slug));
 
-  const current = await db.title.findMany({ select: { id: true, slug: true } });
+  const current = await db.title.findMany({ select: { id: true, slug: true, source: true } });
   const idBySlug = new Map(current.map((t) => [t.slug, t.id]));
-  const goneIds = current.filter((t) => !seedSlugs.has(t.slug)).map((t) => t.id);
+  // v0.32.0 — عنوان‌هایی که کاربر خودش از منبع دایرکتوری سینک کرده
+  // (source=od — که کاتالوگ میزبان هم همین برچسب را دارد) دیگر در هر
+  // به‌روزرسانی کاتالوگ به‌همراه فوری/لیست/پیشروی‌هایشان حذف نمی‌شوند؛
+  // «حذف عنوانِ خارج‌شده» فقط برای ردیف‌های demo/seed اعمال می‌شود.
+  // پیامد: عنوان od حذف‌شده از کاتالوگ میزبان روی دستگاه می‌ماند —
+  // تا وقتی فایلش بالاست هنوز پخش می‌شود و سینک بعدی خودش سر و مرتبش می‌کند.
+  const goneIds = current.filter((t) => !seedSlugs.has(t.slug) && t.source !== "od").map((t) => t.id);
 
   // 1. detach user rows from titles that are about to leave the catalog
   if (goneIds.length) {

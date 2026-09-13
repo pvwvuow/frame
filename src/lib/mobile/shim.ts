@@ -112,6 +112,9 @@ const routes: { method: string; pattern: string; handler: Handler }[] = [
   { method: "GET", pattern: "/api/source/sync", handler: () => ({ ok: true, running: false, configured: false, mobile: true, lastSync: null, items: [] }) },
   { method: "POST", pattern: "/api/source/sync", handler: () => ({ ok: false, error: "mobile-unsupported", message: "به‌روزرسانی از منبع در نسخه اندروید فعلاً غیرفعال است" }) },
   { method: "POST", pattern: "/api/catalog/sync", handler: () => ({ ok: false, skipped: false, error: "remote-catalog-disabled" }) },
+  /* v0.32.0 — تکمیل ژانر/توضیح فقط سمت دسکتاپ (کاتالوگ اندروید از شاردها می‌آید) */
+  { method: "GET", pattern: "/api/meta/enrich", handler: () => ({ needGenres: 0, needDesc: 0, running: false }) },
+  { method: "POST", pattern: "/api/meta/enrich", handler: () => ({ ok: false, error: "mobile-unsupported", message: "تکمیل خودکار اطلاعات روی اندروید لازم نیست؛ کاتالوگ از قبل کامل می‌آید" }) },
 
   /* v0.10.32 FIX: the cloud→device merge now REALLY runs on Android —
    * the snapshot from Supabase lands in Dexie, so an account's

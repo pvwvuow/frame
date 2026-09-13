@@ -13,6 +13,9 @@ export default function SourceSyncCard() {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
+  // v0.32.0 — تکمیل خودکار ژانر/توضیح
+  const [meta, setMeta] = useState<{ needGenres: number; needDesc: number; running: boolean } | null>(null);
+  const [enrichMsg, setEnrichMsg] = useState("");
 
   interface SyncStatus {
     status: string;
@@ -43,13 +46,50 @@ export default function SourceSyncCard() {
     return null;
   }, []);
 
+  const pollMeta = useCallback(async () => {
+    try {
+      const r = await fetch("/api/meta/enrich", { cache: "no-store" });
+      if (r.ok) setMeta(await r.json());
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
   useEffect(() => {
     void poll();
-    timer.current = setInterval(() => void poll(), 1500);
+    void pollMeta();
+    timer.current = setInterval(() => {
+      void poll();
+      void pollMeta();
+    }, 4000);
     return () => {
       if (timer.current) clearInterval(timer.current);
     };
-  }, [poll]);
+  }, [poll, pollMeta]);
+
+  async function runEnrich() {
+    setBusy(true);
+    setEnrichMsg("");
+    try {
+      const r = await fetch("/api/meta/enrich", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "run", limit: 25 }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) setEnrichMsg(j.message || "خطا در اجرای درخواست.");
+      else {
+        const g = Number(j.genresFixed ?? 0);
+        const d = Number(j.descriptionsFixed ?? 0);
+        setEnrichMsg(g + d > 0 ? `${g} ژانر و ${d} توضیح تکمیل شد.` : "در این بچه مورد جدیدی تکمیل نشد — بعداً دوباره امتحان کنید.");
+      }
+    } catch {
+      setEnrichMsg("ارتباط با سرور برقرار نشد.");
+    } finally {
+      setBusy(false);
+      void pollMeta();
+    }
+  }
 
   async function action(body: Record<string, unknown>) {
     setBusy(true);
@@ -126,6 +166,39 @@ export default function SourceSyncCard() {
         )}
       </div>
       {msg && <p className="mt-2 text-xs text-rose-400">{msg}</p>}
+
+      {/* v0.32.0 — تکمیل خودکار ژانر و توضیح (ویکی‌دیتا؛ فقط فیلدهای خالی/قالبی) */}
+      <div className="mt-6 rounded-xl border border-white/8 bg-black/20 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-bold text-white">تکمیل خودکار ژانر و توضیحات</p>
+            <p className="mt-1 text-xs leading-6 text-zinc-400">
+              عنوان‌هایی که ژانر یا «درباره» درست ندارند از ویکی‌دیتا و ویکی‌پدیا کامل می‌شوند؛
+              چیزی که از قبل درست است دست‌نخورده می‌ماند. بعد از هر همگام‌سازی هم خودش ادامه می‌دهد.
+            </p>
+          </div>
+          <button
+            onClick={() => void runEnrich()}
+            disabled={busy || meta?.running}
+            className="h-10 shrink-0 rounded-xl bg-white/10 px-5 text-sm font-bold text-white transition hover:bg-white/15 disabled:opacity-50"
+          >
+            {meta?.running ? "در حال تکمیل…" : "تکمیل بچه بعدی"}
+          </button>
+        </div>
+        {meta && (
+          <p className="mt-3 text-xs text-zinc-500">
+            {meta.needGenres > 0 || meta.needDesc > 0 ? (
+              <>
+                باقی‌مانده: <span className="font-bold text-zinc-300">{meta.needGenres.toLocaleString("fa-IR")}</span> ژانر،{" "}
+                <span className="font-bold text-zinc-300">{meta.needDesc.toLocaleString("fa-IR")}</span> توضیح
+              </>
+            ) : (
+              "همه‌ی عنوان‌ها اطلاعات کامل دارند."
+            )}
+          </p>
+        )}
+        {enrichMsg && <p className="mt-2 text-xs text-emerald-400">{enrichMsg}</p>}
+      </div>
 
       {st && (st.pages > 0 || running) && (
         <>
