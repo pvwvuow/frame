@@ -98,24 +98,110 @@ async function main() {
     },
     titles: out,
   };
-  const body = JSON.stringify(payload);
-  const sha = createHash("sha256").update(body).digest("hex");
 
   const dir = path.join(__dirname, "..", "public", "catalog");
-  fs.writeFileSync(path.join(dir, "index.json"), body);
+  /* v0.34.0 — SPLIT CATALOG (GitHub's 100MB raw-file cap).
+   *
+   * Three artifacts leave this script:
+   *
+   * 1. public/catalog/index.json — UNTOUCHED legacy payload (the v0.33.0
+   *    core). Old installed clients probe version.json, see the SAME sha256
+   *    they already merged, and skip: zero churn for them. This file stays
+   *    frozen; future content waves only grow the release assets below.
+   *
+   * 2. public/catalog/catalog-core.json + catalog-f2m.json — the FULL
+   *    current catalog split by source (demo/od = core, everything else —
+   *    f2m today — = one more part per 60MB). CI attaches them to the
+   *    GitHub RELEASE (assets allow 2GiB); v0.34.0+ clients fetch
+   *    releases/latest/download/… (electron/main.cjs DEFAULT_CATALOG_URL)
+   *    and merge the union. Git-ignored: too big for blobs.
+   *
+   * 3. public/catalog/version.json — v2: sha256 = the frozen legacy core
+   *    (old-client skip), partsSha256 = core+f2m content identity for the
+   *    new clients, parts[] = the release-asset part list.
+   *
+   * .full.json is a local hand-off for mobile-shard-catalog.cjs so the
+   * Android lite shards cover the FULL library (git-ignored too). */
+  const PART_LIMIT = 60 * 1024 * 1024;
+  const CORE_SOURCES = new Set(["demo", "od"]);
+  const coreTitles = out.filter((t) => CORE_SOURCES.has(t.source));
+  const restTitles = out.filter((t) => !CORE_SOURCES.has(t.source));
+
+  const coreBody = JSON.stringify({
+    format: "nama-catalog",
+    version: 1,
+    generatedAt: payload.generatedAt,
+    counts: {
+      titles: coreTitles.length,
+      movies: coreTitles.filter((t) => t.type === "movie").length,
+      series: coreTitles.filter((t) => t.type === "series").length,
+      episodes: coreTitles.reduce((a, t) => a + t.episodes.length, 0),
+    },
+    titles: coreTitles,
+  });
+  fs.writeFileSync(path.join(dir, "catalog-core.json"), coreBody);
+
+  const restChunks = [];
+  let chunk = [];
+  let chunkBytes = 0;
+  const flushChunk = () => {
+    if (!chunk.length) return;
+    restChunks.push(chunk);
+    chunk = [];
+    chunkBytes = 0;
+  };
+  for (const t of restTitles) {
+    const sz = Buffer.byteLength(JSON.stringify(t));
+    if (chunkBytes + sz > PART_LIMIT) flushChunk();
+    chunk.push(t);
+    chunkBytes += sz;
+  }
+  flushChunk();
+  const partsMeta = restChunks.map((titles, i) => {
+    const file = i === 0 ? "catalog-f2m.json" : `catalog-part-${i}.json`;
+    const pb = Buffer.from(JSON.stringify({ format: "nama-catalog-part", version: 1, titles }));
+    fs.writeFileSync(path.join(dir, file), pb);
+    return {
+      file,
+      sha256: createHash("sha256").update(pb).digest("hex"),
+      titles: titles.length,
+      bytes: pb.length,
+    };
+  });
+
+  fs.writeFileSync(
+    path.join(dir, ".full.json"),
+    JSON.stringify({ format: "nama-catalog", version: 1, generatedAt: payload.generatedAt, counts: payload.counts, titles: out })
+  );
+
+  /* The frozen legacy index.json's sha256 — old clients compare it against
+   * their stored hash and skip the download entirely. */
+  let legacySha = "";
+  try {
+    legacySha = createHash("sha256").update(fs.readFileSync(path.join(dir, "index.json"))).digest("hex");
+  } catch {
+    legacySha = sha; // no legacy file on disk (fresh host) — point at the core
+  }
+
+  const partsSha256 = createHash("sha256").update(coreBody + partsMeta.map((p) => fs.readFileSync(path.join(dir, p.file))).join("")).digest("hex");
   fs.writeFileSync(
     path.join(dir, "version.json"),
     JSON.stringify({
       format: "nama-catalog-version",
-      version: 1,
-      sha256: sha,
+      version: 2,
+      sha256: legacySha,
+      partsSha256,
+      parts: partsMeta,
       counts: payload.counts,
       generatedAt: payload.generatedAt,
     })
   );
   const mb = (n) => (n / 1024 / 1024).toFixed(1) + "MB";
-  console.log(`index.json: ${mb(body.length)} | sha256: ${sha}`);
-  console.log("counts:", JSON.stringify(payload.counts));
+  console.log(`legacy index.json (frozen): sha256 ${legacySha.slice(0, 12)}…`);
+  console.log(`catalog-core.json: ${mb(Buffer.byteLength(coreBody))} (core ${coreTitles.length} titles)`);
+  for (const p of partsMeta) console.log(`  ${p.file}: ${mb(p.bytes)} | ${p.titles} titles | ${p.sha256.slice(0, 12)}…`);
+  console.log(`partsSha256: ${partsSha256.slice(0, 12)}…`);
+  console.log("counts (full):", JSON.stringify(payload.counts));
 
   /* v0.25.0 — PER-TITLE full records (the on-demand half of the mobile
    * architecture). The Android shards become ~7MB LITE files (list fields

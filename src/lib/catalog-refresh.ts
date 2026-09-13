@@ -562,6 +562,23 @@ function rebaseAsset(url_: string, siteRoot: string): string {
 const FETCH_TIMEOUT_MS = 300_000; // full-catalog payloads grow with the library (+sources ≈ 69MB)
 const VERSION_TIMEOUT_MS = 15_000; // v0.23.1: 8s was too tight for cold connections to raw.githubusercontent
 
+/** URL of a file sitting NEXT TO the catalog payload — version.json, part
+ *  files. v0.34.0 FIX: the old `[^/]*(?:\?.*)?#.*$` replace never matched a
+ *  URL without a literal `#`, so the probe has been re-fetching the whole
+ *  index.json (which has no sha256 field → probe "unknown") since v0.23.1 —
+ *  every boot-time remote sync silently skipped. The URL API is exact. */
+function siblingUrl(catalogUrl: string, fileName: string): string {
+  try {
+    const u = new URL(catalogUrl);
+    u.pathname = u.pathname.replace(/[^/]*$/, fileName);
+    u.search = "";
+    u.hash = "";
+    return u.toString();
+  } catch {
+    return catalogUrl.replace(/[^/]*$/, fileName);
+  }
+}
+
 /**
  * Tiny companion of index.json (same directory): { sha256, titles, … }.
  * When present the app can detect "nothing changed" without downloading
@@ -569,9 +586,24 @@ const VERSION_TIMEOUT_MS = 15_000; // v0.23.1: 8s was too tight for cold connect
  *
  * v0.23.1: one short retry — a single timed-out probe on a flaky connection
  * used to fall through to the full ~80MB download path below.
+ *
+ * v0.34.0 — the hosted catalog outgrew a single raw file (GitHub's 100MB
+ * blob cap): export-catalog now writes the CORE catalog (demo/od titles) as
+ * index.json and the remaining waves (f2m) as one or more part files next to
+ * it, with the part list + their sha256s advertised in version.json.
+ *
+ * Old clients keep fetching index.json and merge the core exactly as before
+ * (extra version.json fields are ignored by them). New clients fetch core +
+ * every part and merge the union; the stored sync hash is partsSha256
+ * (sha256 of core body + every part body), so a parts-only content change
+ * still triggers a re-merge.
  */
-async function probeVersionHash(catalogUrl: string): Promise<string | null> {
-  const vUrl = catalogUrl.replace(/[^/]*(?:\?.*)?#.*$/, "version.json");
+async function probeVersion(catalogUrl: string): Promise<{
+  sha256: string;
+  partsSha256: string | null;
+  parts: Array<{ file: string; sha256?: string }>;
+} | null> {
+  const vUrl = siblingUrl(catalogUrl, "version.json");
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       const res = await fetch(vUrl, {
@@ -580,8 +612,22 @@ async function probeVersionHash(catalogUrl: string): Promise<string | null> {
         cache: "no-store",
       });
       if (!res.ok) return null;
-      const j = (await res.json()) as { sha256?: string };
-      return typeof j.sha256 === "string" && /^[0-9a-f]{64}$/i.test(j.sha256) ? j.sha256.toLowerCase() : null;
+      const j = (await res.json()) as {
+        sha256?: string;
+        partsSha256?: string;
+        parts?: Array<{ file?: string; sha256?: string }>;
+      };
+      if (typeof j.sha256 !== "string" || !/^[0-9a-f]{64}$/i.test(j.sha256)) return null;
+      const parts = Array.isArray(j.parts)
+        ? j.parts
+            .filter((p) => typeof p?.file === "string" && p.file.length < 200)
+            .map((p) => ({ file: p.file as string, sha256: typeof p.sha256 === "string" ? p.sha256 : undefined }))
+        : [];
+      const partsSha256 =
+        typeof j.partsSha256 === "string" && /^[0-9a-f]{64}$/i.test(j.partsSha256)
+          ? j.partsSha256.toLowerCase()
+          : null;
+      return { sha256: j.sha256.toLowerCase(), partsSha256, parts };
     } catch {
       // transient network hiccup → retry once, then report unknown
     }
@@ -596,7 +642,10 @@ async function syncCatalog(catalogUrl: string): Promise<CatalogRefreshResult> {
   // → "catalog sync watcher timed out" on every boot of upgraded old installs)
   await ensureSeeded();
   const prev = await db.syncState.findUnique({ where: { key: HASH_KEY } });
-  const knownHash = await probeVersionHash(catalogUrl);
+  const probe = await probeVersion(catalogUrl);
+  // v0.34.0 — track the combined core+parts identity; single-file catalogs
+  // (or a probe from an older host) fall back to the plain sha256.
+  const knownHash = probe ? (probe.partsSha256 ?? probe.sha256) : null;
 
   // v0.23.1 — PROOF-OF-CHANGE GUARD. The version.json probe is the only cheap
   // way to know the remote changed. When the probe itself is unreachable
@@ -627,7 +676,30 @@ async function syncCatalog(catalogUrl: string): Promise<CatalogRefreshResult> {
   });
   if (!res.ok) throw new Error(`catalog fetch failed: HTTP ${res.status}`);
   const body = await res.text();
-  const hash = sha256(body);
+
+  // v0.34.0 — the remote may advertise part files (the catalog outgrew the
+  // 100MB raw-file cap). Fetch ALL parts BEFORE merging: a truncated union
+  // would make applyCatalog delete the titles the missing parts carry.
+  const partBodies: string[] = [];
+  if (probe?.parts.length) {
+    for (const part of probe.parts) {
+      const pUrl = part.file.startsWith("http") ? part.file : siblingUrl(catalogUrl, part.file);
+      const pRes = await fetch(pUrl, {
+        headers: { "User-Agent": "Nama-Catalog-Sync" },
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      });
+      if (!pRes.ok) throw new Error(`catalog part fetch failed: ${part.file} HTTP ${pRes.status}`);
+      const pBody = await pRes.text();
+      if (part.sha256 && sha256(pBody) !== part.sha256.toLowerCase()) {
+        throw new Error(`catalog part hash mismatch: ${part.file}`);
+      }
+      partBodies.push(pBody);
+    }
+  }
+
+  // content identity: core body + every part body (matches version.json's
+  // partsSha256; single-file catalogs keep the plain core-body hash)
+  const hash = sha256(body + partBodies.join(""));
 
   if (prev?.value === hash) {
     scheduleResync(catalogUrl);
@@ -645,7 +717,18 @@ async function syncCatalog(catalogUrl: string): Promise<CatalogRefreshResult> {
 
   const siteRoot = siteRootOf(catalogUrl);
 
-  const items: CatalogItem[] = payload.titles.map((t) => ({
+  /* v0.34.0 — the export writes `sources` as a REAL JSON array (safeParse in
+   * export-catalog.mjs), but this mapper only accepted JSON STRINGS — every
+   * remote merge silently wiped every device's sources down to "[]". Accept
+   * both shapes now (array → stringify, string → keep, else "[]"). Same fix
+   * for the per-episode sources below. */
+  const asSourcesJson = (v: unknown): string => {
+    if (Array.isArray(v)) return JSON.stringify(v);
+    if (typeof v === "string" && v.startsWith("[")) return v;
+    return "[]";
+  };
+
+  const mapItem = (t: Record<string, unknown>): CatalogItem => ({
     slug: String(t.slug),
     title: String(t.title),
     titleEn: String(t.titleEn ?? t.title),
@@ -664,7 +747,7 @@ async function syncCatalog(catalogUrl: string): Promise<CatalogRefreshResult> {
     country: String(t.country ?? "نامشخص"),
     ageRating: String(t.ageRating ?? "+13"),
     quality: String(t.quality ?? "HD"),
-    sources: typeof t.sources === "string" && t.sources.startsWith("[") ? t.sources : "[]",
+    sources: asSourcesJson(t.sources),
     featured: Boolean(t.featured),
     trendingScore: Number(t.trendingScore) || 0,
     views: Number(t.views) || 0,
@@ -678,11 +761,21 @@ async function syncCatalog(catalogUrl: string): Promise<CatalogRefreshResult> {
           synopsis: String(e.synopsis ?? ""),
           duration: Number(e.duration) || 45,
           videoUrl: String(e.videoUrl ?? ""),
-          sources: typeof e.sources === "string" && e.sources.startsWith("[") ? e.sources : "[]",
+          sources: asSourcesJson(e.sources),
           thumbnail: rebaseAsset(String(e.thumbnail ?? ""), siteRoot),
         }))
       : [],
-  }));
+  });
+
+  const rawItems = [...payload.titles];
+  for (const pBody of partBodies) {
+    const part = JSON.parse(pBody) as { format?: string; titles?: Record<string, unknown>[] };
+    if (part.format !== "nama-catalog-part" || !Array.isArray(part.titles)) {
+      throw new Error("bad catalog part payload (format/titles)");
+    }
+    rawItems.push(...part.titles);
+  }
+  const items: CatalogItem[] = rawItems.map(mapItem);
 
   const result = await applyCatalog(items);
   if (result.ok) {

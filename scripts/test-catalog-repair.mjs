@@ -107,7 +107,9 @@ async function makeCatalog(db2, spec) {
         videoUrl: "https://x/" + item.s + ".mkv",
         featured: !!item.featured,
         trendingScore: item.featured ? 90 : 50,
-        source: "od",
+        // v0.32.0 policy: only demo/seed rows are removed when they leave the
+        // catalog; od rows stay (their own sync owns them). Tests opt in per item.
+        source: item.source ?? "od",
         createdAt: new Date(2026, 8, 10),
       },
     });
@@ -150,15 +152,17 @@ console.log("\n[A] half-applied merge (the frozen mixed-hero report) → repaire
 {
   const live = freshDb("live-a.db");
   const c = client(live);
-  // the kill happened mid-merge: only 5 of the 8 release titles exist (z9 is
-  // an extra stale title), featured flags are a MIX
+  // the kill happened mid-merge: only 5 of the 8 release titles exist (z8 is
+  // an extra stale DEMO title — removable; z9 is a stale OD title — kept by
+  // the v0.32.0 policy), featured flags are a MIX
   await makeCatalog(c, [
     { s: "a1", featured: true, episodes: 2 },               // old flag survived
     { s: "a5", featured: true },                            // wrongly featured leftover
     { s: "a6", featured: true },                            // wrongly featured leftover
     { s: "a7" },
     { s: "a8", rating: 9.9 },
-    { s: "z9", featured: true },                            // extra stale-featured title
+    { s: "z8", featured: true, source: "demo" },            // extra stale-featured DEMO title
+    { s: "z9" },                                            // extra stale OD title → survives
   ]);
   await c.favorite.create({ data: { userKey: "u1", titleId: (await c.title.findFirst({ where: { slug: slugOf("a7") } })).id } });
   const beforeFeatured = await featuredSlugsOf(c);
@@ -170,7 +174,8 @@ console.log("\n[A] half-applied merge (the frozen mixed-hero report) → repaire
   check("merge ran (not skipped)", r.ok === true && !r.skipped, JSON.stringify(r));
   check("3 missing titles created", r.created === 3, `created=${r.created}`);
   check("mixed flags updated (≥3)", r.updated >= 3, `updated=${r.updated}`);
-  check("stale extra title removed", r.removed === 1 && (await c.title.count()) === 8, `removed=${r.removed} count=${await c.title.count()}`);
+  check("stale extra DEMO title removed", r.removed === 1 && (await c.title.count()) === 9, `removed=${r.removed} count=${await c.title.count()}`);
+  check("stale extra OD title survives (v0.32.0 policy)", !!(await c.title.findFirst({ where: { slug: slugOf("z9") } })));
   check("featured set == release lineup", JSON.stringify(await featuredSlugsOf(c)) === JSON.stringify(SEED_FEATURED));
   check("completion proof stored", (await proofOf(c)) === seedSha);
   check("pre-existing favorite survived", (await c.favorite.count({ where: { userKey: "u1" } })) === 1);
@@ -188,7 +193,7 @@ console.log("\n[B] healthy DB re-run → instant skip via completion proof");
   const r = await m.refreshCatalogOnce(seedPath);
   check("skipped via proof", r.ok === true && r.skipped === true, JSON.stringify(r));
   check("no churn", r.created === 0 && r.updated === 0 && r.removed === 0);
-  check("8 titles untouched", (await c.title.count()) === 8);
+  check("9 titles untouched", (await c.title.count()) === 9);
   await c.$disconnect();
 }
 

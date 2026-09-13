@@ -100,6 +100,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Decompress seed database (v0.34.0 — db/custom.db exceeds the 100MB blob cap)
+        shell: bash
+        run: |
+          if command -v xz >/dev/null 2>&1; then
+            xz -dk db/custom.db.xz
+          else
+            7z x -y db/custom.db.xz
+          fi
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -138,6 +147,24 @@ jobs:
         run: node scripts/test-startup-fixes.mjs
       - name: Stream proxy / MKV subtitle tests
         run: node scripts/test-stream-proxy.mjs
+
+      # v0.34.0 — the split catalog ships as RELEASE ASSETS (raw blobs cap at
+      # 100MB; release assets at 2GiB). Ubuntu does the export once and
+      # attaches core+part+version to the release the prepare job pre-created.
+      - name: Build & attach split-catalog assets
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          node scripts/export-catalog.mjs
+          gh release upload "$TAG" \
+            public/catalog/catalog-core.json \
+            public/catalog/catalog-f2m.json \
+            public/catalog/version.json \
+            --clobber --repo "$GITHUB_REPOSITORY"
+          echo "catalog assets attached to $TAG"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+          DATABASE_URL: "file:../db/custom.db"
 
       - name: Build & publish desktop app
         uses: nick-fields/retry@v3
@@ -179,6 +206,14 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+      - name: Decompress seed database (v0.34.0 — db/custom.db exceeds the 100MB blob cap)
+        shell: bash
+        run: |
+          if command -v xz >/dev/null 2>&1; then
+            xz -dk db/custom.db.xz
+          else
+            7z x -y db/custom.db.xz
+          fi
 
       - uses: actions/setup-node@v4
         with:

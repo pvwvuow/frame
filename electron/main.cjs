@@ -586,7 +586,11 @@ async function startServer() {
      (resources/app) containing either
        - another http(s) URL  → sync from that server instead, or
        - "off" / "local"      → disable remote sync entirely (bundled seed only). */
-  const DEFAULT_CATALOG_URL = "https://raw.githubusercontent.com/pvwvuow/frame/main/public/catalog/index.json";
+  /* v0.34.0 — the split catalog lives on RELEASE assets (2GiB cap) instead of
+ * raw blobs (100MB cap): releases/latest/download always resolves to the
+ * newest published release. version.json + part files are probed/fetched
+ * relative to this URL by catalog-refresh.ts. */
+const DEFAULT_CATALOG_URL = "https://github.com/pvwvuow/frame/releases/latest/download/catalog-core.json";
   let catalogUrl = "";
   try {
     const urlFile = path.join(path.dirname(seed), "catalog-url.txt");

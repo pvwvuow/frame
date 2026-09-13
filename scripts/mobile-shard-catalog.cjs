@@ -50,11 +50,24 @@ const LITE_FIELDS = [
 
 function main() {
   console.time("shard");
-  const raw = JSON.parse(fs.readFileSync(SRC, "utf8"));
+  /* v0.34.0 — export-catalog hands over the FULL current catalog via
+   * .full.json (git-ignored); the committed index.json stays FROZEN at the
+   * v0.33.0 core so old clients keep hash-skipping. Fall back to
+   * index.json+parts for hosts that don't run the new export. */
+  const FULL = path.join(ROOT, "public", "catalog", ".full.json");
+  let raw;
+  if (fs.existsSync(FULL)) {
+    raw = JSON.parse(fs.readFileSync(FULL, "utf8"));
+    console.log("source: .full.json (full current catalog)");
+  } else {
+    raw = JSON.parse(fs.readFileSync(SRC, "utf8"));
+    console.log("source: index.json (legacy path)");
+  }
   if (raw.format !== "nama-catalog") throw new Error("unexpected catalog format: " + raw.format);
+  let allTitles = raw.titles;
 
   // stable id assignment: slug-sorted
-  const titles = [...raw.titles].sort((a, b) => (a.slug < b.slug ? -1 : a.slug > b.slug ? 1 : 0));
+  const titles = [...allTitles].sort((a, b) => (a.slug < b.slug ? -1 : a.slug > b.slug ? 1 : 0));
   titles.forEach((t, i) => {
     t.id = i + 1;
   });
@@ -97,7 +110,9 @@ function main() {
   let version;
   try {
     const vj = JSON.parse(fs.readFileSync(path.join(ROOT, "public", "catalog", "version.json"), "utf8"));
-    version = String(vj.sha256 || vj.version || "").slice(0, 12);
+    /* v0.34.0 — prefer partsSha256 (core+parts identity) so a parts-only
+     * content change still re-imports on devices. */
+    version = String(vj.partsSha256 || vj.sha256 || vj.version || "").slice(0, 12);
   } catch {}
   if (!version) {
     console.error("FATAL: public/catalog/version.json missing or has no sha256 — run export-catalog.mjs first. Refusing to stamp shards with an unstable version.");

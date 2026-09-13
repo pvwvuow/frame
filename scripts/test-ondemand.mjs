@@ -67,7 +67,10 @@ function main() {
   check("lite ids unique & dense 1..N", seenIds.size === manifest.counts.titles && heavyLeak === 0 || seenIds.size === manifest.counts.titles, `unique=${seenIds.size} titles=${manifest.counts.titles}`);
   check("no heavy fields in lite records", heavyLeak === 0, `${heavyLeak} leaks`);
   check("all required lite fields present", missingFields === 0, `${missingFields} missing`);
-  check("posterUrl shipped for most titles", episodeRefCount > manifest.counts.titles * 0.9, `${episodeRefCount}/${manifest.counts.titles}`);
+  /* v0.34.0 — threshold 0.9 → 0.6: the Film2Media wave (~5.4k titles) ships
+   * with runtime SVG covers (/api/cover) until each earns an IMDb tt via the
+   * metadata pipeline; posterUrl is only derivable for tt-covered titles. */
+  check("posterUrl shipped for most titles", episodeRefCount > manifest.counts.titles * 0.6, `${episodeRefCount}/${manifest.counts.titles}`);
   check("episode counters match manifest", slugs.length === manifest.counts.titles);
 
   console.log("== per-title full records ==");
@@ -105,7 +108,13 @@ function main() {
   console.log("== desktop index.json ==");
   const index = JSON.parse(fs.readFileSync(path.join(CATALOG, "index.json"), "utf8"));
   check("index.json still full format", index.format === "nama-catalog");
-  check("index.json title count matches shards", index.titles.length === manifest.counts.titles);
+  /* v0.34.0 — the committed index.json is the FROZEN legacy core (old
+   * clients hash-skip it); the full library now lives in the release-asset
+   * split (version.json counts) + the shards built from it. */
+  const vj2 = JSON.parse(fs.readFileSync(path.join(CATALOG, "version.json"), "utf8"));
+  const partTitles = (vj2.parts || []).reduce((a, p) => a + (p.titles || 0), 0);
+  check("index.json + parts == shards count", index.titles.length + partTitles === manifest.counts.titles, `index=${index.titles.length} parts=${partTitles} shards=${manifest.counts.titles}`);
+  check("version.json counts == shards count", (vj2.counts?.titles ?? -1) === manifest.counts.titles, `version=${vj2.counts?.titles} shards=${manifest.counts.titles}`);
   const idxSample = index.titles.find((t) => t.episodes && t.episodes.length > 0);
   check("index.json keeps full records (episodes)", !!idxSample);
   check("index.json carries posterUrl", index.titles.some((t) => typeof t.posterUrl === "string" && t.posterUrl.includes("metahub")));

@@ -84,6 +84,12 @@ for (const rel of REQUIRED) {
 
 /* 4 ─ seed DB --------------------------------------------------------- */
 section("4. Seed database (db/custom.db)");
+const seedXz = path.join(ROOT, "db", "custom.db.xz");
+/* v0.34.0 — the SQLite seed outgrew GitHub's 100MB blob cap, so the repo
+ * ships db/custom.db.xz and CI/dev decompresses it before the build. */
+if (!fs.existsSync(seed) && fs.existsSync(seedXz)) {
+  ok("db/custom.db.xz present (decompress with: xz -dk db/custom.db.xz)");
+}
 const seed = path.join(ROOT, "db", "custom.db");
 if (fs.existsSync(seed)) {
   const sz = fs.statSync(seed).size;
@@ -95,6 +101,8 @@ if (fs.existsSync(seed)) {
   if (!isSqlite) bad("db/custom.db is NOT a SQLite file (header mismatch) — reseed before building");
   else if (sz < 1024 * 1024) bad(`db/custom.db suspiciously small (${(sz / 1024).toFixed(0)} KB)`);
   else ok(`SQLite header OK, ${(sz / 1024 / 1024).toFixed(1)} MB`);
+} else if (fs.existsSync(seedXz)) {
+  ok("db/custom.db absent but .xz present — CI decompress step will materialize it");
 } else bad("db/custom.db missing — afterPack will refuse to package");
 
 /* 5 ─ catalog consistency ---------------------------------------------- */
@@ -124,7 +132,27 @@ const liveJson = path.join(ROOT, "public", "catalog", "index.json");
 if (fs.existsSync(liveJson)) {
   const mb = fs.statSync(liveJson).size / 1024 / 1024;
   ok(`index.json size ${mb.toFixed(1)} MB (bundled seed must reflect this)`);
+  if (mb > 95) bad(`index.json ${mb.toFixed(1)} MB exceeds GitHub's 100MB blob cap — core catalog must shrink`);
 }
+/* v0.34.0 — parts of the split catalog must exist and hash-match */
+try {
+  const v = JSON.parse(fs.readFileSync(vjson, "utf8"));
+  for (const p of v.parts || []) {
+    const pf = path.join(ROOT, "public", "catalog", p.file);
+    if (!QUICK && fs.existsSync(pf) && p.sha256) {
+      const { createHash } = await import("node:crypto");
+      const h = createHash("sha256").update(fs.readFileSync(pf)).digest("hex");
+      if (h === p.sha256) ok(`${p.file}: ${p.titles} titles, sha OK (${(p.bytes / 1048576).toFixed(1)} MB)`);
+      else bad(`${p.file} sha mismatch — re-run export-catalog.mjs`);
+    } else if (!fs.existsSync(pf)) {
+      /* the part lives as a RELEASE ASSET (attached by CI); the repo copy is
+       * git-ignored, so a fresh checkout legitimately lacks it */
+      warn(`${p.file} not on disk (release asset — CI attaches it)`);
+    } else {
+      ok(`${p.file}: ${p.titles} titles (sha not verified in --quick)`);
+    }
+  }
+} catch {}
 
 /* 6 ─ release state ------------------------------------------------------ */
 section("6. Release state");

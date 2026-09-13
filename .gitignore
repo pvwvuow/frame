@@ -144,3 +144,13 @@ android/app/src/main/assets/public/
 !/scripts/test-mkv-web.mjs
 !/scripts/test-mkv-web-browser.mjs
 .test-tmp-mse/
+
+# v0.34.0 — the 140MB SQLite seed exceeds GitHub's 100MB blob cap; the repo
+# ships db/custom.db.xz and CI decompresses it (preflight tolerates both).
+db/custom.db
+
+# v0.34.0 — split-catalog release assets (CI attaches them to the GitHub release)
+public/catalog/catalog-core.json
+public/catalog/catalog-f2m.json
+public/catalog/catalog-part-*.json
+public/catalog/.full.json

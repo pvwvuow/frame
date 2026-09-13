@@ -17,6 +17,8 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+      - name: Decompress seed database (v0.34.0 — db/custom.db exceeds the 100MB blob cap)
+        run: xz -dk db/custom.db.xz
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -57,6 +59,8 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+      - name: Decompress seed database (v0.34.0 — db/custom.db exceeds the 100MB blob cap)
+        run: xz -dk db/custom.db.xz
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -92,6 +96,8 @@ jobs:
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
+      - name: Decompress seed database (v0.34.0 — db/custom.db exceeds the 100MB blob cap)
+        run: xz -dk db/custom.db.xz
       - uses: actions/setup-node@v4
         with:
           node-version: 22
