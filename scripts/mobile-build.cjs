@@ -36,7 +36,7 @@ const ROOT = path.join(__dirname, "..");
 //     required for every user on ≤ rev 5. NOTE: this is the LAST APK that
 //     users of ≤ rev 5 receive via the in-app installer; from now on the
 //     updater opens the browser.
-const NATIVE_REV = 10; // v0.26.0 — PlayerActivity (503 retry ladder, onStop pause, crash-shield) + NamaNativePlugin (OTA atomic staging swap, download guard/UA) → APK required for every user on ≤ rev 9.
+const NATIVE_REV = 12; // v0.31.0 (NOTIF-1) — @capacitor/local-notifications lands in the native layer (plugin + channels + tap-to-open host; POST_NOTIFICATIONS was already declared) → APK required for every user on ≤ rev 11. NOTE: the v0.31.0 release itself shipped with this constant still at 10 — version.properties was rewritten by android:export (the v0.19.0 bug again), so that APK understates itself as rev 10; 12 forces the APK path for both 0.30.x (11) and those 0.31.0 installs (10).
                       // ⚠️ bump THIS constant AND let it rewrite version.properties — bumping version.properties alone gets silently overwritten by android:export (this script) and CI ships an OTA bundle instead of the full APK (the v0.19.0 bug).
 const API_DIR = path.join(ROOT, "src", "app", "api");
 const TMP_DIR = path.join(ROOT, ".mobile-tmp-api");
