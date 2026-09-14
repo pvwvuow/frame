@@ -99,6 +99,11 @@ export const fa = {
     downloading: "در حال دانلود به‌روزرسانی…",
     downloadedTitle: "به‌روزرسانی آماده است",
     downloadedBody: "با بستن و اجرای مجدد برنامه نصب می‌شود.",
+    /* v0.34.2 — differential (blockmap) honesty */
+    smart: "دانلود هوشمند فعال است — فقط بخش‌های تغییرکرده دانلود می‌شود.",
+    fullThisTime: "این بار نسخه‌ی کامل دانلود می‌شود؛ از به‌روزرسانی بعدی فقط تغییرات.",
+    downloadedDelta: "فقط تغییرات دانلود شد — با بستن و اجرای مجدد برنامه نصب می‌شود.",
+    downloadedFull: "این بار کامل دانلود شد؛ از دفعه‌ی بعد فقط تغییرات دانلود می‌شود.",
     installNow: "نصب همین حالا",
     later: "بعداً",
     errorTitle: "خطای به‌روزرسانی",
@@ -376,6 +381,11 @@ export const en: Dictionary = {
     downloading: "Downloading update…",
     downloadedTitle: "Update ready",
     downloadedBody: "It installs when the app relaunches.",
+    /* v0.34.2 — differential (blockmap) honesty */
+    smart: "Smart download active — fetching only the changed parts.",
+    fullThisTime: "This one downloads in full; from the next update, only the changes.",
+    downloadedDelta: "Only the changes were fetched — it installs when the app relaunches.",
+    downloadedFull: "This one was a full download; from now on, only the changes.",
     installNow: "Install now",
     later: "Later",
     errorTitle: "Update error",

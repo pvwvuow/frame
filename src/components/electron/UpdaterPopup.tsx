@@ -20,14 +20,20 @@ type UpdState = {
   version?: string;
   percent?: number;
   message?: string;
-  push: (s: { status: UpdStatus; version?: string; percent?: number; message?: string }) => void;
+  /* v0.34.2 — differential honesty: deltaArmed says whether the old installer
+   * was splicable when the download started (win32 cache seed), mode says
+   * what the finished download actually was. "full" when the differential
+   * failed and the whole installer came over the wire. */
+  mode?: "delta" | "full";
+  deltaArmed?: boolean;
+  push: (s: { status: UpdStatus; version?: string; percent?: number; message?: string; mode?: "delta" | "full"; deltaArmed?: boolean }) => void;
   dismiss: () => void;
 };
 
 const useUpdStore = create<UpdState>((set) => ({
   status: "idle",
   push: (s) => set({ ...s }),
-  dismiss: () => set({ status: "idle", percent: undefined, message: undefined }),
+  dismiss: () => set({ status: "idle", percent: undefined, message: undefined, mode: undefined, deltaArmed: undefined }),
 }));
 
 export default function UpdaterPopup() {
@@ -36,6 +42,8 @@ export default function UpdaterPopup() {
   const version = useUpdStore((s) => s.version);
   const percent = useUpdStore((s) => s.percent);
   const message = useUpdStore((s) => s.message);
+  const mode = useUpdStore((s) => s.mode);
+  const deltaArmed = useUpdStore((s) => s.deltaArmed);
   const dismiss = useUpdStore((s) => s.dismiss);
   const [mounted, setMounted] = useState(false);
 
@@ -67,6 +75,11 @@ export default function UpdaterPopup() {
   const downloaded = status === "downloaded";
   const error = status === "error";
   const pct = typeof percent === "number" ? Math.min(100, Math.max(0, Math.round(percent))) : 0;
+  /* v0.34.2 — a real delta (multi-range) emits NO progress events: the bar
+   * would sit at 0% and look broken. Show the smart line instead, but keep
+   * the bar whenever percent events DO arrive (a full download, or a delta
+   * that failed mid-splice and fell back). */
+  const showBar = downloading && (deltaArmed !== true || pct > 0);
 
   const retry = () => {
     void bridge()?.checkForUpdates?.();
@@ -107,17 +120,29 @@ export default function UpdaterPopup() {
                   </p>
                   <p className="mt-1 text-[13px] leading-6 text-zinc-400">
                     {downloaded
-                      ? t("upd.downloadedBody")
+                      ? mode === "delta"
+                        ? t("upd.downloadedDelta")
+                        : mode === "full"
+                          ? t("upd.downloadedFull")
+                          : t("upd.downloadedBody")
                       : error
                         ? message || t("upd.errorTitle")
                         : downloading
-                          ? t("upd.downloading")
+                          ? deltaArmed === true
+                            ? t("upd.smart")
+                            : t("upd.downloading")
                           : version
                             ? t("upd.availableBody", { v: version })
                             : t("upd.downloading")}
                   </p>
 
-                  {downloading && (
+                  {/* v0.34.2 — honest expectation when the updater cache was
+                      cold and this update necessarily comes in full. */}
+                  {(downloading || status === "available") && deltaArmed === false && (
+                    <p className="mt-1.5 text-[12px] leading-6 text-amber-300/90">{t("upd.fullThisTime")}</p>
+                  )}
+
+                  {downloading && showBar && (
                     <div className="mt-3">
                       <div className="h-1.5 overflow-hidden rounded-full bg-white/10">
                         <div className="h-full rounded-full bg-brand transition-[width] duration-500" style={{ width: `${pct}%` }} />
@@ -125,6 +150,11 @@ export default function UpdaterPopup() {
                       <p className="mt-1.5 text-[11px] font-bold text-zinc-400 num" dir="ltr">
                         {pct}%
                       </p>
+                    </div>
+                  )}
+                  {downloading && !showBar && (
+                    <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+                      <div className="h-full w-1/3 animate-pulse rounded-full bg-brand/70" />
                     </div>
                   )}
 
@@ -165,13 +195,22 @@ export default function UpdaterPopup() {
 }
 
 /** Feed updater events from ElectronBridge into the popup store. */
-export function pushUpdaterStatus(s: { status: string; version?: string; percent?: number; message?: string }) {
+export function pushUpdaterStatus(s: {
+  status: string;
+  version?: string;
+  percent?: number;
+  message?: string;
+  mode?: "delta" | "full";
+  deltaArmed?: boolean;
+}) {
   if (s.status === "available" || s.status === "downloading" || s.status === "downloaded" || s.status === "error") {
     useUpdStore.getState().push({
       status: s.status,
       version: s.version,
       percent: s.status === "downloading" ? s.percent ?? useUpdStore.getState().percent : undefined,
       message: s.message,
+      mode: s.mode,
+      deltaArmed: s.deltaArmed,
     });
   }
 }

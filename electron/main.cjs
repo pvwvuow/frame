@@ -1054,6 +1054,57 @@ let updateSend = () => {};
 let updateRetryCount = 0;
 let updateRetryTimer = null;
 
+/* v0.34.2 — differential (blockmap) honesty. The NSIS delta downloader needs
+ * the PREVIOUS installer at <cacheDir>/installer.exe to splice from; when it
+ * is missing (a manually-installed version, a wiped cache, or the first hop
+ * after the seeding chain was introduced) electron-updater silently falls
+ * back to a FULL ~150MB download and the user just sees a progress bar
+ * climbing from zero with no explanation. 0.34.0→0.34.1 was measured at 1.9%
+ * changed blocks (2.8MB of 148MB), so a full download there was a BUG, not a
+ * necessity. Wrap the differential entry point to know which mode ran, probe
+ * the cache state, and pass both to the renderer so the popup can say what
+ * is happening and why. */
+let deltaMode = null; // "delta" | "full" | null (no download attempted yet)
+
+function updaterCacheDir() {
+  const path = require("node:path");
+  const os = require("node:os");
+  return path.join(
+    process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local"),
+    "frame-updater" // appInfo.name ("frame").toLowerCase() + "-updater" == app-update.yml updaterCacheDirName
+  );
+}
+
+function updaterCacheState() {
+  try {
+    const fsp = require("node:fs");
+    const path = require("node:path");
+    const dir = updaterCacheDir();
+    const installer = path.join(dir, "installer.exe");
+    const blockmap = path.join(dir, "current.blockmap");
+    const st = (f) => {
+      try { return fsp.existsSync(f) ? fsp.statSync(f).size : 0; } catch { return 0; }
+    };
+    return { installer: st(installer), blockmap: st(blockmap) };
+  } catch {
+    return { installer: 0, blockmap: 0 };
+  }
+}
+
+/** win32: delta only when the old installer is splicable; AppImage (linux):
+ * the RUNNING app image is the old file, so delta is always armed; mac zip:
+ * electron-updater seeds <cache>/update.zip itself after the first download. */
+function deltaArmed() {
+  try {
+    const fsp = require("node:fs");
+    const path = require("node:path");
+    if (process.platform === "win32") return updaterCacheState().installer > 0;
+    if (process.platform === "linux") return !!process.env.APPIMAGE;
+    if (process.platform === "darwin") return fsp.existsSync(path.join(updaterCacheDir(), "update.zip"));
+  } catch { /* fall through */ }
+  return false;
+}
+
 function scheduleUpdateRetry() {
   if (!autoUpdater || updateRetryCount >= 3) return;
   updateRetryCount += 1;
@@ -1083,14 +1134,22 @@ function seedUpdaterCache(info) {
     if (process.platform !== "win32" || !info?.downloadedFile) return;
     const fsp = require("node:fs");
     const path = require("node:path");
-    const os = require("node:os");
-    const cacheDir = path.join(
-      process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local"),
-      "frame-updater" // appInfo.name ("frame").toLowerCase() + "-updater"
-    );
+    const cacheDir = updaterCacheDir();
     fsp.mkdirSync(cacheDir, { recursive: true });
     fsp.copyFileSync(info.downloadedFile, path.join(cacheDir, "installer.exe"));
-    log.info("updater cache seeded — future updates can download differentially");
+    // v0.34.2 — also pin the NEW blockmap next to it (electron-updater saves
+    // it into pending/ and copies it over only on its own success path; a
+    // local copy here keeps the next delta from depending on that copy OR on
+    // the old release's assets staying downloadable).
+    try {
+      const pendingBlockmap = path.join(cacheDir, "pending", "current.blockmap");
+      const rootBlockmap = path.join(cacheDir, "current.blockmap");
+      if (fsp.existsSync(pendingBlockmap) && !fsp.existsSync(rootBlockmap)) {
+        fsp.copyFileSync(pendingBlockmap, rootBlockmap);
+      }
+    } catch { /* best effort — updater has its own copy path */ }
+    const st = updaterCacheState();
+    log.info(`updater cache seeded — installer.exe=${Math.round(st.installer / 1048576)}MB, blockmap=${st.blockmap ? "present" : "missing"} — the NEXT update downloads differentially`);
   } catch (e) {
     log.warn("could not seed updater cache (next update will be a full download):", e?.message || e);
   }
@@ -1112,11 +1171,7 @@ function seedUpdaterCacheFromPending() {
     if (process.platform !== "win32") return;
     const fsp = require("node:fs");
     const path = require("node:path");
-    const os = require("node:os");
-    const cacheDir = path.join(
-      process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local"),
-      "frame-updater"
-    );
+    const cacheDir = updaterCacheDir();
     const installer = path.join(cacheDir, "installer.exe");
     if (fsp.existsSync(installer)) {
       log.info("updater cache already seeded — differential updates armed");
@@ -1148,11 +1203,39 @@ function setupUpdater() {
     autoUpdater.logger = log;
     autoUpdater.autoDownload = true;
     autoUpdater.autoInstallOnAppQuit = true;
+    // v0.34.2 — know whether the next download is a real delta or a full
+    // fallback (the method returns true when it FAILED and the caller must
+    // download the whole installer). Wrapped defensively — if electron-updater
+    // renames it, we simply lose the hint, nothing breaks.
+    for (const m of ["differentialDownloadInstaller"]) {
+      const orig = autoUpdater[m];
+      if (typeof orig !== "function") continue;
+      autoUpdater[m] = async (...args) => {
+        deltaMode = null;
+        const fallback = await orig.apply(autoUpdater, args);
+        deltaMode = fallback ? "full" : "delta";
+        log.info(`differential download ${fallback ? "FAILED — falling back to the full installer" : "OK — only changed blocks fetched"}`);
+        return fallback;
+      };
+    }
+    const st = updaterCacheState();
+    log.info(`updater cache: installer.exe=${st.installer ? Math.round(st.installer / 1048576) + "MB" : "missing"}, current.blockmap=${st.blockmap ? Math.round(st.blockmap / 1024) + "KB" : "missing"} — differential ${deltaArmed() ? "ARMED" : "disarmed (next update downloads in full, then arms)"}`);
     updateSend = (payload) => mainWindow?.webContents.send("nama:update-status", payload);
-    autoUpdater.on("update-available", (i) => { updateRetryCount = 0; updateSend({ status: "available", version: i.version }); });
+    autoUpdater.on("update-available", (i) => {
+      updateRetryCount = 0;
+      const armed = deltaArmed();
+      log.info(`update ${i.version} available — differential ${armed ? "armed" : "NOT armed"}`);
+      updateSend({ status: "available", version: i.version, deltaArmed: armed });
+    });
     autoUpdater.on("update-not-available", () => { updateRetryCount = 0; updateSend({ status: "not-available" }); });
     autoUpdater.on("download-progress", (p) => updateSend({ status: "downloading", percent: p.percent }));
-    autoUpdater.on("update-downloaded", (i) => { seedUpdaterCache(i); updateSend({ status: "downloaded", version: i.version }); });
+    autoUpdater.on("update-downloaded", (i) => {
+      seedUpdaterCache(i);
+      const fullSize = (Array.isArray(i.files) && i.files.find((f) => String(f.url || "").toLowerCase().endsWith(".exe")))?.size || (Array.isArray(i.files) ? i.files[0]?.size : null);
+      // mode omitted when the download came from the already-cached pending
+      // file (no differential attempt ran) — the popup stays neutral then.
+      updateSend({ status: "downloaded", version: i.version, ...(deltaMode ? { mode: deltaMode } : {}), size: fullSize });
+    });
     autoUpdater.on("error", (e) => {
       // mid-publish race → self-heal in the background, no user-facing error
       if (isReleasePublishing(e)) { scheduleUpdateRetry(); return; }
