@@ -190,6 +190,10 @@ async function main() {
       format: "nama-catalog-version",
       version: 2,
       sha256: legacySha,
+      /* v0.34.3 — per-file hash of catalog-core.json: lets the Electron-side
+       * catalog cache (catalog-cache downloader in main.cjs) skip the ~111MB
+       * core re-download when only a part changed. Old clients ignore it. */
+      coreSha256: createHash("sha256").update(coreBody).digest("hex"),
       partsSha256,
       parts: partsMeta,
       counts: payload.counts,

@@ -12,7 +12,7 @@
  * data survives updates. The Next server is spawned as a Node child process
  * (ELECTRON_RUN_AS_NODE) on a free localhost port and the window loads it.
  */
-const { app, BrowserWindow, ipcMain, shell, Menu, nativeTheme, dialog, session } = require("electron");
+const { app, BrowserWindow, ipcMain, shell, Menu, nativeTheme, dialog, session, net: electronNet } = require("electron");
 const { spawn, execFileSync } = require("node:child_process");
 const path = require("node:path");
 const fs = require("node:fs");
@@ -545,6 +545,170 @@ function siteRootOfUrl(u) {
   }
 }
 
+/* ------------------------------------------------------------------ */
+/* v0.34.3 — PROXY-AWARE CATALOG CACHE (the content-sync network fix)  */
+/*                                                                     */
+/* The embedded Next server syncs the catalog with Node's fetch, which */
+/* IGNORES the system proxy. On machines where GitHub is only reached  */
+/* through a system proxy (the typical Iranian VPN setup), every       */
+/* catalog probe/download failed SILENTLY → the catalog froze at the   */
+/* last bundled seed (the "SVG posters" report) while app updates and  */
+/* poster images — both on Chromium's network stack — worked fine.     */
+/*                                                                     */
+/* The shell now downloads version.json + core + parts through         */
+/* electronNet.fetch (Chromium stack, system-proxy aware — the SAME    */
+/* stack that provably downloads app updates on those machines) into   */
+/* <userData>/catalog-cache/ and triggers the server merge afterwards. */
+/* The server reads that cache first (NAMA_CATALOG_CACHE_DIR) and only */
+/* falls back to its own Node fetch when the cache is missing/invalid. */
+/* ------------------------------------------------------------------ */
+
+const CATALOG_CACHE_INTERVAL_MS = 6 * 60 * 60 * 1000; // mirrors the server's own 6h resync
+const CATALOG_CACHE_BOOT_DELAY_MS = 20 * 1000; // let the boot seed-merge settle first
+const SAFE_CATALOG_FILE_RE = /^[A-Za-z0-9._-]{1,100}$/;
+let catalogCacheScheduled = false;
+
+function catalogCacheDir() {
+  return path.join(app.getPath("userData"), "catalog-cache");
+}
+
+/** Sibling file URL — same rule as siblingUrl() in catalog-refresh.ts. */
+function catalogSiblingUrl(url_, fileName) {
+  try {
+    const u = new URL(url_);
+    u.pathname = u.pathname.replace(/[^/]*$/, fileName);
+    u.search = "";
+    u.hash = "";
+    return u.toString();
+  } catch {
+    return url_.replace(/[^/]*$/, fileName);
+  }
+}
+
+async function catalogFetchBuffer(url_, timeoutMs) {
+  const res = await electronNet.fetch(url_, {
+    headers: { "User-Agent": "Nama-Catalog-Sync" },
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return Buffer.from(await res.arrayBuffer());
+}
+
+function sha256OfBuffer(buf) {
+  return crypto.createHash("sha256").update(buf).digest("hex");
+}
+
+/** Authoritative content check over the cached file set: sha256(core + parts)
+ *  must equal version.json's partsSha256 (v2 catalogs). */
+function catalogCacheCombinedOk(cacheDir, v, coreName) {
+  try {
+    const hash = crypto.createHash("sha256");
+    hash.update(fs.readFileSync(path.join(cacheDir, coreName)));
+    for (const p of Array.isArray(v.parts) ? v.parts : []) {
+      if (!p || typeof p.file !== "string" || !SAFE_CATALOG_FILE_RE.test(p.file)) continue;
+      hash.update(fs.readFileSync(path.join(cacheDir, p.file)));
+    }
+    return hash.digest("hex") === String(v.partsSha256).toLowerCase();
+  } catch {
+    return false;
+  }
+}
+
+/** Downloads/refreshes the local catalog cache. Incremental: files with a
+ *  per-file sha256 (parts always; the core since coreSha256 exists) are only
+ *  re-fetched when the publisher says they changed. version.json is written
+ *  LAST so a torn run always leaves a self-consistent (old) manifest. */
+async function ensureCatalogCache(catalogUrl, cacheDir) {
+  const vBody = await catalogFetchBuffer(catalogSiblingUrl(catalogUrl, "version.json"), 20000);
+  const v = JSON.parse(vBody.toString("utf8"));
+  if (!v || v.format !== "nama-catalog-version" || !/^[0-9a-f]{64}$/i.test(v.sha256 || "")) {
+    throw new Error("bad version.json payload");
+  }
+  const coreName = decodeURIComponent(new URL(catalogUrl).pathname.split("/").pop() || "catalog-core.json");
+  if (!SAFE_CATALOG_FILE_RE.test(coreName)) throw new Error("bad catalog file name");
+  const hasParts = Array.isArray(v.parts) && v.parts.some((p) => p && typeof p.file === "string");
+  const coreSha = String(v.coreSha256 || (hasParts ? "" : v.sha256) || "").toLowerCase() || null;
+  const files = [{ name: coreName, sha: coreSha }];
+  for (const p of hasParts ? v.parts : []) {
+    if (!p || typeof p.file !== "string" || !SAFE_CATALOG_FILE_RE.test(p.file)) continue;
+    files.push({ name: p.file, sha: typeof p.sha256 === "string" ? p.sha256.toLowerCase() : null });
+  }
+  fs.mkdirSync(cacheDir, { recursive: true });
+  let downloaded = 0;
+  const fetchOne = async (f) => {
+    const dest = path.join(cacheDir, f.name);
+    const marker = dest + ".sha256";
+    if (f.sha && fs.existsSync(dest) && fs.existsSync(marker) &&
+        fs.readFileSync(marker, "utf8").trim().toLowerCase() === f.sha) return false;
+    const body = await catalogFetchBuffer(catalogSiblingUrl(catalogUrl, f.name), 15 * 60 * 1000);
+    const bodySha = sha256OfBuffer(body);
+    if (f.sha && bodySha !== f.sha) throw new Error(`sha mismatch for ${f.name}`);
+    const tmp = dest + ".tmp";
+    fs.writeFileSync(tmp, body);
+    fs.renameSync(tmp, dest);
+    fs.writeFileSync(marker, bodySha);
+    downloaded += body.length;
+    return true;
+  };
+  for (const f of files) await fetchOne(f);
+  /* Transitional integrity net: while the live version.json predates
+   * coreSha256, the core file carries no per-file hash — its marker proves
+   * nothing after a publisher-side core change. The combined hash catches
+   * that: on a mismatch re-fetch every unhashed file once, then re-check. */
+  if (/^[0-9a-f]{64}$/i.test(v.partsSha256 || "") && !catalogCacheCombinedOk(cacheDir, v, coreName)) {
+    log.warn("[catalog-cache] combined hash mismatch – re-fetching unhashed files");
+    for (const f of files) {
+      if (f.sha) continue;
+      const dest = path.join(cacheDir, f.name);
+      try { fs.rmSync(dest + ".sha256", { force: true }); } catch {}
+      await fetchOne(f);
+    }
+    if (!catalogCacheCombinedOk(cacheDir, v, coreName)) throw new Error("catalog cache failed the combined hash check");
+  }
+  const vTmp = path.join(cacheDir, "version.json.tmp");
+  fs.writeFileSync(vTmp, vBody);
+  fs.renameSync(vTmp, path.join(cacheDir, "version.json"));
+  return { files: files.length, downloaded };
+}
+
+/** Asks the embedded server to re-run its (cache-first) catalog sync. */
+async function triggerCatalogSync() {
+  if (!serverUrl) return null;
+  try {
+    const res = await electronNet.fetch(serverUrl + "/api/catalog/sync", {
+      method: "POST",
+      signal: AbortSignal.timeout(15 * 60 * 1000), // a full merge can take minutes
+    });
+    return await res.json().catch(() => null);
+  } catch (e) {
+    return { ok: false, error: (e && e.message) || String(e) };
+  }
+}
+
+function scheduleCatalogCacheRefresh(catalogUrl, cacheDir) {
+  if (!catalogUrl || catalogCacheScheduled) return;
+  catalogCacheScheduled = true;
+  const run = async (why) => {
+    try {
+      const r = await ensureCatalogCache(catalogUrl, cacheDir);
+      log.info(`[catalog-cache] refreshed (${why}): ${r.files} files, ${(r.downloaded / 1048576).toFixed(1)}MB downloaded`);
+      const sync = await triggerCatalogSync();
+      if (sync && sync.ok) {
+        log.info(
+          `[catalog-sync] ${sync.skipped ? "skip (content unchanged)" : "applied"}: ` +
+            `+${sync.created ?? 0} new, ~${sync.updated ?? 0} updated, -${sync.removed ?? 0} removed`
+        );
+      } else {
+        log.warn("[catalog-sync] failed:", (sync && sync.error) || "no response");
+      }
+    } catch (e) {
+      log.warn("[catalog-cache] refresh failed:", (e && e.message) || e);
+    }
+  };
+  setTimeout(() => { void run("boot"); }, CATALOG_CACHE_BOOT_DELAY_MS).unref?.();
+  setInterval(() => { void run("6h"); }, CATALOG_CACHE_INTERVAL_MS).unref?.();
+}
+
 async function startServer() {
   if (isDev && process.env.NAMA_USE_DEV_SERVER !== "0") {
     // `npm run dev` is expected to be running
@@ -630,6 +794,10 @@ const DEFAULT_CATALOG_URL = "https://github.com/pvwvuow/frame/releases/latest/do
     NAMA_CATALOG_SEED: fs.existsSync(seed) ? seed : "",
     NAMA_CATALOG_URL: catalogUrl,
   };
+  /* v0.34.3 — the server reads the shell-downloaded catalog cache FIRST
+   * (proxy-aware, see the block above); Node-fetch remote sync stays as the
+   * fallback for hosts where it works. */
+  if (catalogUrl) env.NAMA_CATALOG_CACHE_DIR = catalogCacheDir();
 
   /* Cover-light packages (v0.10.1+): when covers are not bundled, root-relative
      asset paths (/covers/…) must resolve against the hosted site root. The
@@ -652,7 +820,13 @@ const DEFAULT_CATALOG_URL = "https://github.com/pvwvuow/frame/releases/latest/do
   try {
     const vf = path.join(path.dirname(seed), "seed-version.json");
     if (fs.existsSync(vf)) {
-      const vHash = (JSON.parse(fs.readFileSync(vf, "utf8")).sha256 || "").toLowerCase();
+      /* v0.34.3 — prefer partsSha256: that is the combined core+parts identity
+       * the remote sync actually compares (probe.partsSha256 ?? probe.sha256).
+       * The old code stored the LEGACY frozen-index sha256, which can never
+       * match a v2 probe → every fresh install re-downloaded the whole
+       * ~130MB catalog for content the seed had just delivered offline. */
+      const vJson = JSON.parse(fs.readFileSync(vf, "utf8"));
+      const vHash = String(vJson.partsSha256 || vJson.sha256 || "").toLowerCase();
       if (/^[0-9a-f]{64}$/.test(vHash)) env.NAMA_CATALOG_SEED_VERSION_HASH = vHash;
     }
   } catch (e) {
@@ -734,6 +908,10 @@ const DEFAULT_CATALOG_URL = "https://github.com/pvwvuow/frame/releases/latest/do
   }
   homeProbeDigest = await probeHomePage(serverUrl);
   if (homeProbeDigest) log.error("home page SSR error, digest:", homeProbeDigest);
+  /* v0.34.3 — keep the proxy-aware catalog cache fresh (boot + 6h) and let
+   * the server merge from it; no-op when remote sync is disabled via
+   * catalog-url.txt (catalogUrl empty). */
+  scheduleCatalogCacheRefresh(catalogUrl, env.NAMA_CATALOG_CACHE_DIR || catalogCacheDir());
   return serverUrl;
 }
 

@@ -277,6 +277,55 @@ console.log("\n[F] remote-ahead DB (newer remote hash) + older seed → skip, no
   await c.$disconnect();
 }
 
+console.log("\n[G] v0.34.3 — remote-ahead DB with NON-OD extras the seed lacks → skip (data-loss guard)");
+{
+  const live = freshDb("live-g.db");
+  const c = client(live);
+  // a newer f2m-wave title exists on this device that the (older) installer's
+  // seed does not know — a full seed merge would DELETE it + its user rows
+  await makeCatalog(c, [...RELEASE, { s: "n1", source: "f2m" }]);
+  const remoteHash = "d".repeat(64);
+  await c.syncState.create({ data: { key: "catalog.hash", value: remoteHash } });
+  await c.favorite.create({ data: { userKey: "u1", titleId: (await c.title.findFirst({ where: { slug: slugOf("n1") } })).id } });
+  const seedPath = await makeSeedFile();
+  const m = await loadModule(live);
+  const r = await m.refreshCatalogOnce(seedPath);
+  check(
+    "guard fires on unknown non-od titles: skip, no proof, user rows survive",
+    r.ok === true &&
+      r.skipped === true &&
+      (await c.title.count()) === 9 &&
+      (await proofOf(c)) === null &&
+      (await c.favorite.count({ where: { userKey: "u1" } })) === 1 &&
+      (await c.syncState.findUnique({ where: { key: "catalog.hash" } }))?.value === remoteHash,
+    JSON.stringify(r)
+  );
+  await c.$disconnect();
+}
+
+console.log("\n[H] v0.34.3 — stale FIELD content (cover drift) + od-only extras → repair merge");
+{
+  const live = freshDb("live-h.db");
+  const c = client(live);
+  // the SVG-posters device: same titles/counts as the seed but cover paths
+  // frozen at the old generated-SVG state; remote sync never succeeded.
+  await makeCatalog(c, RELEASE);
+  await c.title.update({ where: { slug: slugOf("a1") }, data: { poster: "/api/cover/t-a1.svg" } });
+  await c.syncState.create({ data: { key: "catalog.hash", value: "e".repeat(64) } });
+  const seedPath = await makeSeedFile();
+  const m = await loadModule(live);
+  const r = await m.refreshCatalogOnce(seedPath);
+  const a1 = await c.title.findFirst({ where: { slug: slugOf("a1") }, select: { poster: true } });
+  check(
+    "drift detected → full merge ran (not skipped)",
+    r.ok === true && r.skipped !== true && r.updated === 8,
+    JSON.stringify(r)
+  );
+  check("stale SVG poster repaired from the seed", a1?.poster === "/covers/tt0a1/poster.jpg", a1?.poster);
+  check("proof written (merge completed)", (await proofOf(c)) === sha256(fs.readFileSync(seedPath)));
+  await c.$disconnect();
+}
+
 /* ---- summary -------------------------------------------------------------- */
 fs.rmSync(TMP, { recursive: true, force: true });
 console.log(`\n${passed} passed, ${failed} failed`);

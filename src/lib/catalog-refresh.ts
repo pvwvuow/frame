@@ -1,6 +1,8 @@
 import { PrismaClient } from "@prisma/client";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { readFile as readFileAsync } from "node:fs/promises";
+import * as nodePath from "node:path";
 import { db } from "@/lib/db";
 import { ensureSeeded } from "@/db/seed";
 
@@ -408,23 +410,38 @@ async function refreshCatalog(seedPath: string): Promise<CatalogRefreshResult> {
      *    older DB) that must fall through to the full merge below. */
     const [seedCount, dbCount] = [await seed.title.count(), await db.title.count()];
 
-    /* 3a) A-2 — remote-ahead guard. اگر HASH_KEY در دیتابیس هست (یعنی این
-     *     دستگاه قبلاً کاتالوگ ریموت را اعمال کرده) و با هشِ انتشارِ این
-     *     seed یکی نیست و تعداد عنوان‌ها هم از seed کمتر نیست، این seed
-     *     قدیمی‌تر از محتوای فعلی دستگاه است؛ ادغام کامل آن، عنوان‌ها و
-     *     ردیف‌های کاربرِ گرفته‌شده از ریموت را حذف می‌کرد. پس ادغام را کلاً
-     *     رد می‌کنیم — و چون «رد شدن تأییدشده» است، هیچ اثر اتمام
-     *     (SEED_PROOF_KEY) ثبت نمی‌کنیم تا ترمیم‌های مشروع بعدی (سناریوی
-     *     نیمه‌کاره) گرسنه نمانند. دیتابیس تازه (بدون HASH_KEY) و سناریوی
-     *     نیمه‌کاره‌ی واقعی (بدون HASH_KEY، تعداد برابر، فلگ‌های قاطی) مثل
-     *     قبل به merge کامل می‌رسند. */
+    /* 3a) A-2 — remote-ahead guard, v0.34.3 REFINED. اگر HASH_KEY در دیتابیس
+     *     هست و با هشِ انتشارِ این seed یکی نیست، پیش‌تر ادغام کلاً رد می‌شد —
+     *     حتی وقتی محتوای دستگاه فقط «کهنه» بود، نه «جدیدتر». آن ردِ کورکورانه
+     *     دستگاه‌هایی را که سینک ریموتشان (مثلاً پشت پروکسی) همیشه شکست
+     *     می‌خورد برای همیشه روی کاتالوگ کهنه قفل می‌کرد. حالا ردِ محافظ فقط
+     *     وقتی اعمال می‌شود که دستگاه واقعاً عنوان‌های non-od داشته باشد که
+     *     در seed نیستند (موجِ جدیدِ ریموت — حذف‌شدنی و همراهِ ردیف‌های
+     *     کاربر). عنوان‌های od اضافی به سیاست v0.32.0 از حذف مصون‌اند، پس
+     *     اجازه‌ی ادغام برایشان بی‌خطر است و merge می‌تواند محتوای کهنه‌ی
+     *     فیلدها (مثلاً پوسترهای SVG) را ترمیم کند. */
     const appliedHash = await db.syncState.findUnique({ where: { key: HASH_KEY } });
+    const seedRows = await seed.title.findMany({
+      select: { slug: true, poster: true, backdrop: true },
+    });
+    const seedSlugs = new Set(seedRows.map((r) => r.slug));
     if (appliedHash?.value && dbCount >= seedCount && appliedHash.value !== versionHash) {
+      const dbNonOdSlugs = (
+        await db.title.findMany({ where: { source: { not: "od" } }, select: { slug: true } })
+      ).map((r) => r.slug);
+      const extra = dbNonOdSlugs.filter((s) => !seedSlugs.has(s));
+      if (extra.length > 0) {
+        console.info(
+          `[catalog] seed merge skipped: DB already carries a different (likely newer) remote catalog ` +
+            `(hash=${appliedHash.value.slice(0, 12)}…, titles=${dbCount} >= seed ${seedCount}, ` +
+            `${extra.length} non-od titles unknown to this seed) — no downgrade, no proof written`
+        );
+        return { ok: true, skipped: true, titles: dbCount, episodes: 0, created: 0, updated: 0, removed: 0 };
+      }
       console.info(
-        `[catalog] seed merge skipped: DB already carries a different (likely newer) remote catalog ` +
-          `(hash=${appliedHash.value.slice(0, 12)}…, titles=${dbCount} >= seed ${seedCount}) — no downgrade, no proof written`
+        `[catalog] remote-ahead guard relaxed: DB holds no non-od titles outside this seed — ` +
+          `proceeding (stale field content, e.g. cover paths, gets repaired offline)`
       );
-      return { ok: true, skipped: true, titles: dbCount, episodes: 0, created: 0, updated: 0, removed: 0 };
     }
     const featuredSlugs = (client: PrismaClient) =>
       client.title.findMany({ where: { featured: true }, select: { slug: true }, orderBy: { slug: "asc" } });
@@ -433,14 +450,36 @@ async function refreshCatalog(seedPath: string): Promise<CatalogRefreshResult> {
       seedFeatured.length === dbFeatured.length &&
       seedFeatured.every((t, i) => t.slug === dbFeatured[i].slug);
     if (dbCount >= seedCount && sameFeatured) {
-      if (dbCount === seedCount) {
-        await db.syncState.upsert({
-          where: { key: SEED_PROOF_KEY },
-          update: { value: seedSha },
-          create: { key: SEED_PROOF_KEY, value: seedSha },
-        });
+      /* v0.34.3 — the count+featured proof could not see FIELD-level drift
+       * (poster/backdrop paths), so a device whose catalog was stale at the
+       * field level (the SVG-posters report) fast-skipped forever. Compare
+       * the cover-path maps: identical (after normalising relative/rebased
+       * shapes) → the seed's content really is in place → skip; any drift →
+       * fall through to the full repair merge. */
+      const dbRows = await db.title.findMany({ select: { slug: true, poster: true, backdrop: true } });
+      const dbBySlug = new Map(dbRows.map((r) => [r.slug, r]));
+      const drift = seedRows.find((r) => {
+        const d = dbBySlug.get(r.slug);
+        return (
+          !d ||
+          normAssetPath(d.poster) !== normAssetPath(r.poster) ||
+          normAssetPath(d.backdrop) !== normAssetPath(r.backdrop)
+        );
+      });
+      if (!drift) {
+        if (dbCount === seedCount) {
+          await db.syncState.upsert({
+            where: { key: SEED_PROOF_KEY },
+            update: { value: seedSha },
+            create: { key: SEED_PROOF_KEY, value: seedSha },
+          });
+        }
+        return { ok: true, skipped: true, titles: dbCount, episodes: 0, created: 0, updated: 0, removed: 0 };
       }
-      return { ok: true, skipped: true, titles: dbCount, episodes: 0, created: 0, updated: 0, removed: 0 };
+      console.info(
+        `[catalog] seed repair merge: cover/backdrop drift detected (first: ${drift.slug}) — ` +
+          `full merge instead of the fast skip`
+      );
     }
 
     /* Cover-light packages: root-relative asset paths of the bundled seed
@@ -635,6 +674,107 @@ async function probeVersion(catalogUrl: string): Promise<{
   return null;
 }
 
+/* v0.34.3 — LOCAL-FIRST CATALOG SOURCE (the proxy fix).
+ *
+ * The embedded Next server fetches the remote catalog with Node's fetch,
+ * which IGNORES the system proxy. On machines where GitHub is only reachable
+ * through a system proxy (the typical Iranian VPN setup: system proxy on,
+ * TUN off), every probe/download failed silently → the catalog froze at
+ * whatever the bundled seed last delivered (the "SVG posters" report).
+ * Meanwhile app updates (electron-updater → Chromium net stack) and poster
+ * images (WebView → Chromium net stack) worked fine on the same machines.
+ *
+ * Fix: the Electron shell now downloads version.json + core + parts with
+ * net.fetch (Chromium stack, proxy-aware — the SAME stack that provably
+ * downloads app updates) into <userData>/catalog-cache/, and passes the dir
+ * via NAMA_CATALOG_CACHE_DIR. syncCatalog() below reads that cache FIRST and
+ * only touches the network when the cache is missing/invalid. All hash
+ * gating (partsSha256 skip / probeUnknown skip) keeps its exact semantics.
+ */
+const SAFE_CATALOG_NAME_RE = /^[A-Za-z0-9._-]{1,100}$/;
+
+/** Normalises a poster/backdrop URL for content comparison: the tail from
+ *  /covers/ or /api/ onwards, so relative seed paths, rebased site-root URLs
+ *  and (garbage) GitHub-rebased URLs all collapse to the same key. */
+function normAssetPath(u: unknown): string {
+  const s = String(u ?? "");
+  if (!s) return "";
+  const c = s.indexOf("/covers/");
+  if (c >= 0) return s.slice(c);
+  const a = s.indexOf("/api/");
+  if (a >= 0) return s.slice(a);
+  return s;
+}
+
+/** Reads <NAMA_CATALOG_CACHE_DIR>/version.json + every advertised file from
+ *  disk, verifying integrity (per-part sha256 when advertised, plus the
+ *  authoritative combined partsSha256 — or the plain body sha256 for
+ *  single-file catalogs). Returns null on ANY missing/invalid/tampered file
+ *  so the caller falls back to the classic remote path. */
+async function readLocalCatalogCache(catalogUrl: string): Promise<{
+  knownHash: string;
+  coreBody: string;
+  partBodies: string[];
+} | null> {
+  const cacheDir = (process.env.NAMA_CATALOG_CACHE_DIR || "").trim();
+  if (!cacheDir) return null;
+  try {
+    const vRaw = await readFileAsync(nodePath.join(cacheDir, "version.json"), "utf8");
+    const v = JSON.parse(vRaw) as {
+      format?: string;
+      sha256?: string;
+      coreSha256?: string;
+      partsSha256?: string;
+      parts?: Array<{ file?: string; sha256?: string }>;
+    };
+    if (v.format !== "nama-catalog-version" || !/^[0-9a-f]{64}$/i.test(v.sha256 ?? "")) return null;
+    const parts = (Array.isArray(v.parts) ? v.parts : []).filter(
+      (p): p is { file: string; sha256?: string } =>
+        !!p && typeof p.file === "string" && SAFE_CATALOG_NAME_RE.test(p.file)
+    );
+    const partsSha = /^[0-9a-f]{64}$/i.test(v.partsSha256 ?? "") ? (v.partsSha256 as string).toLowerCase() : null;
+    const knownHash = partsSha ?? (v.sha256 as string).toLowerCase();
+
+    const coreName = (() => {
+      try {
+        return decodeURIComponent(new URL(catalogUrl).pathname.split("/").pop() || "catalog-core.json");
+      } catch {
+        return catalogUrl.split("/").pop() || "catalog-core.json";
+      }
+    })();
+    if (!SAFE_CATALOG_NAME_RE.test(coreName)) return null;
+
+    const readVerified = async (name: string, expected: string | null): Promise<string | null> => {
+      try {
+        const body = await readFileAsync(nodePath.join(cacheDir, name), "utf8");
+        if (expected && sha256(body) !== expected.toLowerCase()) return null;
+        return body;
+      } catch {
+        return null;
+      }
+    };
+
+    const coreBody = await readVerified(coreName, v.coreSha256 ?? null);
+    if (coreBody === null) return null;
+    const partBodies: string[] = [];
+    for (const p of parts) {
+      const b = await readVerified(p.file, p.sha256 ?? null);
+      if (b === null) return null;
+      partBodies.push(b);
+    }
+
+    // authoritative content identity (mirrors export-catalog.mjs)
+    if (partsSha) {
+      if (sha256(coreBody + partBodies.join("")) !== partsSha) return null;
+    } else if (sha256(coreBody) !== (v.sha256 as string).toLowerCase()) {
+      return null;
+    }
+    return { knownHash, coreBody, partBodies };
+  } catch {
+    return null; // no cache / torn write / bad json → classic remote path
+  }
+}
+
 async function syncCatalog(catalogUrl: string): Promise<CatalogRefreshResult> {
   // v0.10.26: never merge against an unhealed schema – ensureSeeded() runs the
   // schema-drift healer (seed.ts) so legacy databases gain Title.sources &
@@ -642,10 +782,13 @@ async function syncCatalog(catalogUrl: string): Promise<CatalogRefreshResult> {
   // → "catalog sync watcher timed out" on every boot of upgraded old installs)
   await ensureSeeded();
   const prev = await db.syncState.findUnique({ where: { key: HASH_KEY } });
-  const probe = await probeVersion(catalogUrl);
+  const local = await readLocalCatalogCache(catalogUrl);
+  // v0.34.3 — with a valid local cache the remote probe (and ALL network) is
+  // skipped entirely; the cache refresh is owned by the Electron shell.
+  const probe = local ? null : await probeVersion(catalogUrl);
   // v0.34.0 — track the combined core+parts identity; single-file catalogs
   // (or a probe from an older host) fall back to the plain sha256.
-  const knownHash = probe ? (probe.partsSha256 ?? probe.sha256) : null;
+  const knownHash = local ? local.knownHash : probe ? (probe.partsSha256 ?? probe.sha256) : null;
 
   // v0.23.1 — PROOF-OF-CHANGE GUARD. The version.json probe is the only cheap
   // way to know the remote changed. When the probe itself is unreachable
@@ -670,18 +813,25 @@ async function syncCatalog(catalogUrl: string): Promise<CatalogRefreshResult> {
     }
   }
 
-  const res = await fetch(catalogUrl, {
-    headers: { "User-Agent": "Nama-Catalog-Sync" },
-    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-  });
-  if (!res.ok) throw new Error(`catalog fetch failed: HTTP ${res.status}`);
-  const body = await res.text();
+  // v0.34.3 — local cache (verified above) replaces the ~111MB core download
+  let body: string;
+  const partBodies: string[] = [];
+  if (local) {
+    body = local.coreBody;
+    partBodies.push(...local.partBodies);
+  } else {
+    const res = await fetch(catalogUrl, {
+      headers: { "User-Agent": "Nama-Catalog-Sync" },
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
+    if (!res.ok) throw new Error(`catalog fetch failed: HTTP ${res.status}`);
+    body = await res.text();
+  }
 
   // v0.34.0 — the remote may advertise part files (the catalog outgrew the
   // 100MB raw-file cap). Fetch ALL parts BEFORE merging: a truncated union
   // would make applyCatalog delete the titles the missing parts carry.
-  const partBodies: string[] = [];
-  if (probe?.parts.length) {
+  if (!local && probe?.parts.length) {
     for (const part of probe.parts) {
       const pUrl = part.file.startsWith("http") ? part.file : siblingUrl(catalogUrl, part.file);
       const pRes = await fetch(pUrl, {
