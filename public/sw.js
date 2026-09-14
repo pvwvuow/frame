@@ -1,4 +1,14 @@
-/* v0.34.4 (IMG-CACHE-1) — Frame's image-only service worker.
+/* v0.35.1 (IMG-CACHE-2) — Frame's image-only service worker.
+ *
+ * IMG-CACHE-2 hardens what v0.34.4 shipped: metahub art is cached as
+ * OPAQUE (no-cors) responses, and Chromium pads opaque entries with up to
+ * ~15MB of phantom size in its quota math — on devices with small disks
+ * (32GB Android tablets are common) the padded estimate blew past the
+ * origin quota and every later cache.put() silently failed, which looked
+ * EXACTLY like "no cache": art re-downloaded on every navigation even
+ * though earlier puts had succeeded. put() is now quota-resilient: on the
+ * first failure the bucket is evicted down to a quarter of the cap and the
+ * put is retried once from a second clone of the response.
  *
  * The user-facing problem this fixes: posters/covers used to re-download
  * every time the user left a page and came back («کافیه یک لحظه بره به یک
@@ -24,8 +34,9 @@
  * metahub are cacheable exactly like same-origin ones.
  */
 
-const VERSION = "frame-img-v1";
+const VERSION = "frame-img-v2";
 const MAX_ENTRIES = 5000;
+const EVICT_FLOOR = 1250; // put()-failure eviction target (MAX_ENTRIES / 4)
 
 /* Artwork allowlist — keep in sync with posterSrc/backdropSrc (src/lib/covers.ts)
  * and the IMG_FALLBACK chain (src/app/layout.tsx):
@@ -101,7 +112,27 @@ self.addEventListener("fetch", (event) => {
         // Only cache real artwork; a 404/error would poison the bucket for
         // the fallback chain (metahub 404 → webp retry → SVG placeholder).
         if (fresh && (fresh.ok || fresh.type === "opaque")) {
-          cache.put(request, fresh.clone()).then(() => trimCache(VERSION), () => {});
+          // Two independent clones BEFORE anything consumes the body: the
+          // first satisfies the normal put, the second exists only for the
+          // quota-failure retry (a Response body can be cloned while still
+          // unread; after cache.put() consumed the first clone it is gone).
+          const primary = fresh.clone();
+          const spare = fresh.clone();
+          cache
+            .put(request, primary)
+            .then(() => trimCache(VERSION))
+            .catch(async () => {
+              // QuotaExceededError (padded opaque entries) or an aborted
+              // write: evict down to EVICT_FLOOR and retry exactly once.
+              try {
+                const keys = await cache.keys();
+                const excess = keys.length - EVICT_FLOOR;
+                for (let i = 0; i < excess; i++) await cache.delete(keys[i]);
+                await cache.put(request, spare);
+              } catch {
+                /* a failed trim must never break a response */
+              }
+            });
         }
         return fresh;
       } catch (e) {

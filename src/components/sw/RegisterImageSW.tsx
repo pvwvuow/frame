@@ -20,12 +20,24 @@ export default function RegisterImageSW() {
       if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) return;
       const proto = window.location.protocol;
       if (proto !== "http:" && proto !== "https:") return;
-      const id = window.setTimeout(() => {
+      // v0.35.1: the first attempt fires after hydration settles; if it
+      // fails (startup race, busy main thread) ONE silent retry runs 10s
+      // later. Both timers are cleaned up; every failure stays swallowed —
+      // an environment without SW support simply keeps the old behavior.
+      let retryId = 0;
+      const register = () =>
         navigator.serviceWorker.register("/sw.js", { scope: "/" }).catch(() => {
-          /* no SW is fine — the old network path still works */
+          retryId = window.setTimeout(() => {
+            navigator.serviceWorker.register("/sw.js", { scope: "/" }).catch(() => {
+              /* no SW is fine — the old network path still works */
+            });
+          }, 10000);
         });
-      }, 2500);
-      return () => window.clearTimeout(id);
+      const id = window.setTimeout(register, 2500);
+      return () => {
+        window.clearTimeout(id);
+        window.clearTimeout(retryId);
+      };
     } catch {
       /* storage disabled / private mode — ignore */
     }
