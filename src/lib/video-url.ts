@@ -160,13 +160,26 @@ export function needsNativePlayer(url: string): boolean {
 }
 
 /** Media src for a raw catalog URL – via the proxy for MKV (and any URL
- *  whose container the proxy must sniff), direct for plain video files. */
+ *  whose container the proxy must sniff), direct for plain video files.
+ *
+ *  v0.35.0 — OPAQUE PLAYBACK HANDLES first: when the sources of the current
+ *  content were registered with the local proxy (internalizeSources), the
+ *  raw archive URL NEVER reaches the <video> element — the src becomes the
+ *  nama-internal `${proxyBase}/s/<id>` («آدرس ما»: an address that exists
+ *  nowhere else, session-scoped, random id). The proxy resolves it
+ *  server-side and pipes the SAME bytes from the SAME archive host, so
+ *  nothing in the catalog (or the legacy paths below) changes. */
 export function mediaSrc(rawUrl: string, proxyBase: string | null | undefined): string {
   if (!rawUrl) return rawUrl;
   // v0.12.0 — offline downloads carry a "local:" marker; the native player
   // consumes the path directly, the web player must never touch it
   if (rawUrl.startsWith("local:")) return rawUrl;
   if (!proxyBase) return rawUrl;
+  // already an opaque handle → pass through untouched (no double-wrap)
+  if (rawUrl.startsWith(proxyBase)) return rawUrl;
+  // registered this session → the internal handle form
+  const h = handleFor(rawUrl, proxyBase);
+  if (h) return h;
   if (isMkvUrl(rawUrl)) return `${proxyBase}/stream?u=${encodeURIComponent(rawUrl)}`;
   // extension-less / token URLs: let the proxy sniff the real container so
   // embedded subtitles survive disguise (its pipe is byte-transparent for
@@ -177,16 +190,92 @@ export function mediaSrc(rawUrl: string, proxyBase: string | null | undefined): 
   return rawUrl;
 }
 
-/** Poll endpoint for the subtitle data of a raw catalog URL. */
+/** Poll endpoint for the subtitle data of a raw catalog URL.
+ *  v0.35.0 — registered URLs are addressed by their opaque handle (h=<id>);
+ *  the raw form stays as the fallback until registration lands. */
 export function subsUrl(rawUrl: string, proxyBase: string | null | undefined): string | null {
   if (!proxyBase || !rawUrl) return null;
+  const id = handleByRaw.get(rawUrl);
+  if (id) return `${proxyBase}/subs?h=${id}`;
   return `${proxyBase}/subs?u=${encodeURIComponent(rawUrl)}`;
 }
 
-/** One-shot header probe (tracks/codecs) of a raw catalog URL. */
+/** One-shot header probe (tracks/codecs) of a raw catalog URL.
+ *  v0.35.0 — same handle rewrite as subsUrl. */
 export function probeUrl(rawUrl: string, proxyBase: string | null | undefined): string | null {
   if (!proxyBase || !rawUrl) return null;
+  const id = handleByRaw.get(rawUrl);
+  if (id) return `${proxyBase}/probe?h=${id}`;
   return `${proxyBase}/probe?u=${encodeURIComponent(rawUrl)}`;
+}
+
+/* ────────────────────────────────────────────────────────────────────
+ * v0.35.0 — handle registration («آدرس ما»)
+ *
+ * The viewer-visible playback address must be nama's OWN — a localhost URL
+ * that exists nowhere else — while the app keeps pulling bytes from the
+ * Film2Media / DonyayeSerial archive hosts. The catalog links stay exactly
+ * as they are; only the renderer stops holding a raw URL:
+ *
+ *   1. the player calls internalizeSources(list, proxyBase) ONCE per
+ *      content — POST /map hands every raw url to the main process and
+ *      gets a random session-scoped handle back (u → /s/<id>);
+ *   2. mediaSrc / subsUrl / probeUrl (the choke points EVERY consumer —
+ *      Player, PipClient, subs-engine, audio-guard — already go through)
+ *      transparently rewrite raw → handle;
+ *   3. until registration lands (or if it fails) every helper falls back
+ *      to the legacy ?u=<raw> forms — playback never waits on it and never
+ *      breaks without it.
+ * ──────────────────────────────────────────────────────────────── */
+
+/** session map raw url → opaque handle id (mirrors the proxy's registry) */
+const handleByRaw = new Map<string, string>();
+
+function handleFor(rawUrl: string, proxyBase: string | null | undefined): string | null {
+  if (!proxyBase) return null;
+  const id = handleByRaw.get(rawUrl);
+  return id ? `${proxyBase}/s/${id}` : null;
+}
+
+/** True when a URL is already one of our opaque proxy handles. */
+export function isInternalSrc(url: string, proxyBase: string | null | undefined): boolean {
+  return Boolean(proxyBase) && url.startsWith(proxyBase as string);
+}
+
+/** Register the current content's sources with the local proxy and remember
+ *  their opaque handles. Resolves false on any failure (proxy down, bad
+ *  answer) — callers treat that as "keep the legacy forms", never as an
+ *  error the user should see. */
+export async function internalizeSources(
+  list: Array<{ url?: string }>,
+  proxyBase: string
+): Promise<boolean> {
+  const urls = Array.from(
+    new Set(
+      list
+        .map((s) => (s?.url || "").trim())
+        .filter((u) => /^https?:\/\//i.test(u) && !u.startsWith(proxyBase))
+    )
+  );
+  if (!urls.length) return true;
+  try {
+    const r = await fetch(`${proxyBase}/map`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ urls }),
+      cache: "no-store",
+    });
+    if (!r.ok) return false;
+    const data = (await r.json()) as { handles?: string[] };
+    if (!Array.isArray(data.handles) || data.handles.length !== urls.length) return false;
+    urls.forEach((u, i) => {
+      const id = data.handles?.[i];
+      if (id) handleByRaw.set(u, id);
+    });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** Cached proxy base ("" = electron but proxy down, undefined = unknown). */

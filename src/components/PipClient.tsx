@@ -17,7 +17,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { formatClock, fa } from "@/lib/format";
-import { loadProxyBase, mediaSrc } from "@/lib/video-url";
+import { internalizeSources, loadProxyBase, mediaSrc } from "@/lib/video-url";
 import { stopMediaEl } from "@/lib/media";
 import { useSubs } from "@/lib/subs-engine";
 import SubOverlay from "./SubOverlay";
@@ -88,6 +88,24 @@ export default function PipClient() {
   const errCountRef = useRef(0);
 
   const sources = useMemo(() => state?.sources ?? [], [state]);
+  // v0.35.0 — «آدرس ما»: same opaque-handle discipline as the theater —
+  // register the sources with the local proxy, keep the <video> unmounted
+  // until the handles exist (or until registration fails → legacy forms).
+  const [privReady, setPrivReady] = useState(false);
+  useEffect(() => {
+    if (!proxyBase) {
+      setPrivReady(true);
+      return;
+    }
+    let dead = false;
+    setPrivReady(false);
+    void internalizeSources(sources, proxyBase).finally(() => {
+      if (!dead) setPrivReady(true);
+    });
+    return () => {
+      dead = true;
+    };
+  }, [proxyBase, sources]);
   const rawActive = sources[Math.min(srcIdx, Math.max(0, sources.length - 1))]?.url || state?.src || "";
   const activeSrc = mediaSrc(rawActive, proxyBase);
   // v0.10.18 Subs v3 — shared engine, position-aware polls, overlay rendering
@@ -464,7 +482,7 @@ export default function PipClient() {
         togglePlay();
       }}
     >
-      {proxyBase !== undefined && (
+      {proxyBase !== undefined && privReady && (
         <video
           ref={(el) => {
             videoRef.current = el;

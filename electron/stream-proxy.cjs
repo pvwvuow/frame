@@ -40,6 +40,23 @@
  * opts in with { requireToken: true }. NAMA_PROXY_DISABLE_TOKEN=1 or
  * { disableToken: true } force the open mode anywhere.
  *
+ * v0.35.0 – OPAQUE PLAYBACK HANDLES («آدرس ما»). The user-facing ask: the
+ * address a viewer can see/copy must be NAMA's own — a localhost URL that
+ * exists nowhere else — while the bytes keep flowing from the same archive
+ * hosts (Film2Media / DonyayeSerial releases). The catalog keeps the real
+ * links untouched; only the RENDERER stops ever holding one:
+ *
+ *   POST /map {urls:[raw…]}      → {handles:[id…]}  (token-required)
+ *   GET  /s/<id>                 → the same 1:1 Range pipe as /stream
+ *
+ *   /stream /probe /subs accept  u=<raw> (legacy) | u=<full handle url>
+ *   | u=<bare id> | h=<bare id>  — so every existing client call site keeps
+ *   working unchanged while video-url.ts rewrites raw → handle at its choke
+ *   points. Handles live only in THIS process (random 96-bit ids, LRU
+ *   8192, die with the session); an unknown/dead id → 400/404. The scanner
+ *   per-URL store stays keyed on the RESOLVED raw url, so a title played via
+ *   a handle shares cue state with any legacy ?u= access of the same file.
+ *
  * v0.10.18 – COMPLETE REWRITE of the extraction pipeline. The passive
  * scanner of v0.10.5–0.10.17 had four structural failure modes that kept
  * producing the «زیرنویس پخش نمی‌شود» reports no matter how many patches
@@ -1008,6 +1025,39 @@ function startStreamProxy(log, opts = {}) {
     return h;
   };
 
+  /* v0.35.0 – opaque playback handles. Registry lives ONLY inside this
+   * process: random 96-bit ids, LRU-capped, session-scoped. The renderer
+   * registers the current title's sources once (POST /map) and from then on
+   * every <video src> / fetch carries /s/<id> — never the archive URL. */
+  const HANDLES_CAP = 8192;
+  const urlByHandle = new Map(); // id → raw upstream url
+  const handleByUrl = new Map(); // raw upstream url → id (session dedupe)
+  function handleIdFor(rawUrl) {
+    const known = handleByUrl.get(rawUrl);
+    if (known) return known;
+    const id = crypto.randomBytes(12).toString("hex");
+    urlByHandle.set(id, rawUrl);
+    handleByUrl.set(rawUrl, id);
+    if (urlByHandle.size > HANDLES_CAP) {
+      const oldest = urlByHandle.keys().next().value;
+      const oldUrl = urlByHandle.get(oldest);
+      urlByHandle.delete(oldest);
+      if (handleByUrl.get(oldUrl) === oldest) handleByUrl.delete(oldUrl);
+    }
+    return id;
+  }
+  /** Accepts ALL four target spellings (see header): raw url (legacy), a
+   *  full handle url (…/s/<id>), a bare id via h= or u=. Unknown/dead id
+   *  resolves to "" → the caller's http(s) guard answers 400. */
+  function resolveTargetParam(v) {
+    const s = String(v || "").trim();
+    if (!s) return "";
+    let m = /^https?:\/\/[^/]+(?:\/k\/[0-9a-f]{16,64})?\/s\/([0-9a-f]{8,64})/i.exec(s);
+    if (m) return urlByHandle.get(m[1].toLowerCase()) || "";
+    if (/^[0-9a-f]{8,64}$/i.test(s)) return urlByHandle.get(s.toLowerCase()) || "";
+    return s;
+  }
+
   const server = http.createServer((req, res) => {
     const peer = req.socket.remoteAddress || "";
     if (!/^(127\.0\.0\.1|::1|::ffff:127\.0\.0\.1)$/.test(peer)) {
@@ -1036,13 +1086,17 @@ function startStreamProxy(log, opts = {}) {
         endpoint = m[2] || "/";
       }
     }
-    const needsToken = endpoint === "/stream" || endpoint === "/probe" || endpoint === "/subs";
+    /* v0.35.0 — /s/<id> IS a stream: same pipe, opaque target. */
+    const handleMatch = /^\/s\/([0-9a-f]{8,64})$/i.exec(endpoint);
+    if (handleMatch) endpoint = "/stream";
+    const needsToken =
+      endpoint === "/stream" || endpoint === "/probe" || endpoint === "/subs" || endpoint === "/map";
 
     // CORS preflight — same origin echo, token header allowed
     if (req.method === "OPTIONS") {
       res.writeHead(204, {
         ...corsHeaders(),
-        "access-control-allow-methods": "GET, OPTIONS",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
         "access-control-allow-headers": "x-nama-proxy-token, range, content-type",
         "access-control-max-age": "600",
       });
@@ -1057,6 +1111,52 @@ function startStreamProxy(log, opts = {}) {
       return;
     }
 
+    /* v0.35.0 — POST /map: register raw urls, get opaque handles back.
+     * Token-required (needsToken above); the renderer reaches it through the
+     * same /k/<token> prefix as every other endpoint. */
+    if (endpoint === "/map") {
+      if (req.method !== "POST") {
+        res.writeHead(405, { "content-type": "application/json", ...corsHeaders() }).end(
+          JSON.stringify({ error: "POST only" })
+        );
+        return;
+      }
+      let body = "";
+      let tooBig = false;
+      req.on("data", (c) => {
+        if (tooBig) return;
+        body += c;
+        if (body.length > 262144) tooBig = true; // 256KB — hundreds of urls is already generous
+      });
+      req.on("end", () => {
+        if (res.writableEnded) return;
+        if (tooBig) {
+          res.writeHead(413, { "content-type": "application/json", ...corsHeaders() }).end(
+            JSON.stringify({ error: "payload too large" })
+          );
+          return;
+        }
+        let urls = [];
+        try {
+          const parsed = JSON.parse(body || "{}");
+          if (Array.isArray(parsed.urls)) urls = parsed.urls;
+        } catch {
+          /* treated as empty → all-"" handles */
+        }
+        const handles = urls.map((raw) => {
+          const s = String(raw || "").trim();
+          return /^https?:\/\/./i.test(s) ? handleIdFor(s) : "";
+        });
+        res.writeHead(200, {
+          "content-type": "application/json; charset=utf-8",
+          ...corsHeaders(),
+          "cache-control": "no-store",
+        });
+        res.end(JSON.stringify({ ok: true, handles }));
+      });
+      return;
+    }
+
     if (endpoint === "/subs" || endpoint === "/ping") {
       res.writeHead(200, {
         "content-type": "application/json; charset=utf-8",
@@ -1064,7 +1164,8 @@ function startStreamProxy(log, opts = {}) {
         "cache-control": "no-store",
       });
       if (endpoint === "/ping") return res.end(JSON.stringify({ ok: true, stats }));
-      const target = u.searchParams.get("u") || "";
+      /* v0.35.0 — u= (raw | full handle url | bare id) or h=<bare id> */
+      const target = resolveTargetParam(u.searchParams.get("u") || u.searchParams.get("h") || "");
       const store = stores.get(target);
       const posSec = Number(u.searchParams.get("pos") || 0) || 0;
       const durSec = Number(u.searchParams.get("dur") || 0) || 0;
@@ -1185,7 +1286,8 @@ function startStreamProxy(log, opts = {}) {
      * shared per-URL store, so a later /stream pass keeps accumulating cues
      * without redoing the work. Responds as soon as Tracks is parsed. */
     if (endpoint === "/probe") {
-      const target = u.searchParams.get("u") || "";
+      /* v0.35.0 — u= (raw | full handle url | bare id) or h=<bare id> */
+      const target = resolveTargetParam(u.searchParams.get("u") || u.searchParams.get("h") || "");
       if (!/^https?:\/\//i.test(target)) {
         res.writeHead(400, { "content-type": "application/json", ...corsHeaders() }).end(JSON.stringify({ error: "bad url" }));
         return;
@@ -1295,7 +1397,11 @@ function startStreamProxy(log, opts = {}) {
       return;
     }
 
-    const target = u.searchParams.get("u") || "";
+    /* v0.35.0 — /s/<id> resolves server-side; every other spelling lands in
+       resolveTargetParam (raw | full handle url | bare id | h=). */
+    const target = handleMatch
+      ? urlByHandle.get(handleMatch[1].toLowerCase()) || ""
+      : resolveTargetParam(u.searchParams.get("u") || u.searchParams.get("h") || "");
     if (!/^https?:\/\//i.test(target)) {
       res.writeHead(400, { "content-type": "text/plain; charset=utf-8", ...corsHeaders() }).end("bad url");
       return;

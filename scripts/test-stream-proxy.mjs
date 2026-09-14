@@ -678,6 +678,84 @@ await withUpstream(async (upstreamUrl) => {
   }
 
   proxy.close();
+});
+
+/* ------------------------------------------------ v0.35.0 opaque handles
+ * «آدرس ما»: POST /map registers raw urls → random session handles; /s/<id>
+ * pipes the same bytes; /subs + /probe + /stream accept h=/bare id/nested
+ * handle urls; unknown ids die with a clean 400; the legacy raw ?u= forms
+ * keep working; token enforcement covers the new endpoints too. */
+await withUpstream(async (upstreamUrl) => {
+  const proxy = await startStreamProxy(logStub, { token: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa00", requireToken: true });
+  const base = proxy.base;
+  const kb = `${base}/k/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa00`;
+
+  // 1) /map — method + token enforcement
+  const mapGet = await fetch(`${kb}/map`);
+  check("map: GET rejected", mapGet.status === 405, `got ${mapGet.status}`);
+  const mapNoTok = await fetch(`${base}/map`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ urls: [upstreamUrl] }),
+  });
+  check("map: tokenless POST rejected", mapNoTok.status === 403, `got ${mapNoTok.status}`);
+
+  // 2) /map — registration, dedupe, non-http filtering
+  const mapRes = await fetch(`${kb}/map`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ urls: [upstreamUrl, upstreamUrl, "file:///etc/passwd", "not a url"] }),
+  });
+  const mapBody = await mapRes.json();
+  check("map: 200 with handles", mapRes.status === 200 && Array.isArray(mapBody.handles));
+  check("map: one handle per input", mapBody.handles.length === 4);
+  check("map: duplicate url → same handle", mapBody.handles[0] === mapBody.handles[1]);
+  check("map: non-http filtered to empty", mapBody.handles[2] === "" && mapBody.handles[3] === "");
+  const h = mapBody.handles[0];
+  check("map: handle is opaque hex id", /^[0-9a-f]{24}$/.test(h), h);
+
+  // 3) /s/<id> — the same 1:1 pipe
+  const rFull = await fetch(`${kb}/s/${h}`);
+  const bufFull = Buffer.from(await rFull.arrayBuffer());
+  check("handle stream: 200 + byte-identical", rFull.status === 200 && bufFull.equals(mkv));
+  check("handle stream: content-type forwarded", (rFull.headers.get("content-type") || "").includes("matroska"));
+  const rRange = await fetch(`${kb}/s/${h}`, { headers: { range: `bytes=${CLUSTER2_OFFSET}-` } });
+  const bufRange = Buffer.from(await rRange.arrayBuffer());
+  check("handle stream: range 206 slice", rRange.status === 206 && bufRange.equals(mkv.subarray(CLUSTER2_OFFSET)));
+
+  // 4) token enforcement on /s/<id> too
+  const sNoTok = await fetch(`${base}/s/${h}`);
+  check("handle stream: tokenless rejected", sNoTok.status === 403, `got ${sNoTok.status}`);
+
+  // 5) /subs + /probe via h=<id> — scanner keyed on the RESOLVED raw url
+  await new Promise((r) => setTimeout(r, 150));
+  const subsH = await getJson(`${kb}/subs?h=${h}`);
+  check("subs via h: found srt track", subsH.body.found === true);
+  check("subs via h: 2 cues", subsH.body.cues === 2, `got ${subsH.body.cues}`);
+  check("subs via h: persian line", (subsH.body.vtt || "").includes("سلام دنیا"));
+  const probeH = await getJson(`${kb}/probe?h=${h}`);
+  check("probe via h: tracks reported", Array.isArray(probeH.body.audio) && probeH.body.audio.length >= 1);
+
+  // 6) legacy spellings still resolve: bare id in u=, nested full handle url
+  const subsBare = await getJson(`${kb}/subs?u=${h}`);
+  check("subs via bare id in u=: works", subsBare.body.found === true);
+  const nestedUrl = `${kb}/s/${h}`;
+  const rNested = await fetch(`${kb}/stream?u=${encodeURIComponent(nestedUrl)}`);
+  const bufNested = Buffer.from(await rNested.arrayBuffer());
+  check("stream via nested handle url: byte-identical", rNested.status === 200 && bufNested.equals(mkv));
+
+  // 7) unknown / dead handle → clean 400 (never a crash, never an open relay)
+  const dead = await fetch(`${kb}/s/deadbeefdeadbeefdeadbeef`);
+  check("handle stream: unknown id → 400", dead.status === 400, `got ${dead.status}`);
+  const deadProbe = await getJson(`${kb}/probe?h=deadbeefdeadbeefdeadbeef`);
+  check("probe via dead id → 400", deadProbe.status === 400);
+
+  // 8) legacy raw ?u= keeps flowing (regression on the tokened proxy)
+  const rLegacy = await fetch(`${kb}/stream?u=${encodeURIComponent(upstreamUrl)}`);
+  const bufLegacy = Buffer.from(await rLegacy.arrayBuffer());
+  check("legacy raw u=: still byte-identical", rLegacy.status === 200 && bufLegacy.equals(mkv));
+
+  proxy.close();
   console.log(`\n${passed} passed, ${failed} failed`);
   process.exit(failed ? 1 : 0);
 });

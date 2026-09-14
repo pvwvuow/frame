@@ -37,7 +37,7 @@ import {
 } from "./Icons";
 import FavoriteButton from "./FavoriteButton";
 import WatchlistButton from "./WatchlistButton";
-import { isMkvUrl, loadProxyBase, mediaSrc } from "@/lib/video-url";
+import { internalizeSources, isMkvUrl, loadProxyBase, mediaSrc } from "@/lib/video-url";
 import { parseVtt, srtToVtt, stopMediaEl, type ParsedCue } from "@/lib/media";
 import { useSubs } from "@/lib/subs-engine";
 import SubOverlay from "./SubOverlay";
@@ -104,6 +104,29 @@ export default function Player() {
   useEffect(() => {
     void loadProxyBase().then((b) => setProxyBase(b || null));
   }, []);
+  // v0.35.0 — «آدرس ما»: register this content's sources with the local
+  // proxy (POST /map) and let mediaSrc/subsUrl/probeUrl rewrite every raw
+  // archive URL into the nama-internal /s/<id> handle. The <video> stays
+  // unmounted until this settles (same tri-state discipline as proxyBase)
+  // so the mounted src is ALREADY the handle — no double-start re-key. If
+  // the registration fails, privReady flips on anyway and the legacy
+  // ?u=<raw> forms keep playback alive (nothing new can break).
+  const [privReady, setPrivReady] = useState(false);
+  useEffect(() => {
+    if (!proxyBase) {
+      // no proxy at all (web / proxy down) → legacy direct srcs, mount now
+      setPrivReady(true);
+      return;
+    }
+    let dead = false;
+    setPrivReady(false);
+    void internalizeSources(srcList, proxyBase).finally(() => {
+      if (!dead) setPrivReady(true);
+    });
+    return () => {
+      dead = true;
+    };
+  }, [proxyBase, contentKey, srcList]);
   const rawActive = srcList[Math.min(srcIdx, srcList.length - 1)]?.url || src;
   const activeSrc = mediaSrc(rawActive, proxyBase);
   const [qMenu, setQMenu] = useState(false);
@@ -931,7 +954,7 @@ export default function Player() {
       onDoubleClick={toggleFs}
       dir="rtl"
     >
-      {proxyBase !== undefined && !nativeActive && (
+      {proxyBase !== undefined && privReady && !nativeActive && (
         <video
           ref={(el) => {
             videoRef.current = el;
