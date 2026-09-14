@@ -425,11 +425,23 @@ async function refreshCatalog(seedPath: string): Promise<CatalogRefreshResult> {
       select: { slug: true, poster: true, backdrop: true },
     });
     const seedSlugs = new Set(seedRows.map((r) => r.slug));
+    const seedTts = new Set(seedRows.map((r) => ttOfPoster(r.poster)).filter(Boolean));
+
+    /* v0.34.4 (DEDUPE-1) — classify the device's non-od rows against the
+     * seed ONCE (cheap query, reused by both skip guards below):
+     *   • tt-covered extras: slug missing from the seed but its /covers/<tt>/
+     *     identity IS in the seed → a DUPLICATE the dedupe release merged
+     *     away. Not "newer content" — the thing this seed intentionally
+     *     removes (user rows ride to the surviving tt twin in applyCatalog).
+     *     Must NOT trigger a skip, or the dedupe would never reach devices.
+     *   • twinless extras: unknown to the seed in any identity → possibly a
+     *     genuinely newer remote wave → the downgrade guard must fire. */
+    const dbNonOd = await db.title.findMany({ where: { source: { not: "od" } }, select: { slug: true, poster: true } });
+    const dedupeExtras = dbNonOd.filter((r) => !seedSlugs.has(r.slug) && seedTts.has(ttOfPoster(r.poster)));
+    const twinlessExtras = dbNonOd.filter((r) => !seedSlugs.has(r.slug) && !seedTts.has(ttOfPoster(r.poster))).map((r) => r.slug);
+
     if (appliedHash?.value && dbCount >= seedCount && appliedHash.value !== versionHash) {
-      const dbNonOdSlugs = (
-        await db.title.findMany({ where: { source: { not: "od" } }, select: { slug: true } })
-      ).map((r) => r.slug);
-      const extra = dbNonOdSlugs.filter((s) => !seedSlugs.has(s));
+      const extra = twinlessExtras;
       if (extra.length > 0) {
         console.info(
           `[catalog] seed merge skipped: DB already carries a different (likely newer) remote catalog ` +
@@ -439,7 +451,7 @@ async function refreshCatalog(seedPath: string): Promise<CatalogRefreshResult> {
         return { ok: true, skipped: true, titles: dbCount, episodes: 0, created: 0, updated: 0, removed: 0 };
       }
       console.info(
-        `[catalog] remote-ahead guard relaxed: DB holds no non-od titles outside this seed — ` +
+        `[catalog] remote-ahead guard relaxed: DB holds no twinless non-od titles outside this seed — ` +
           `proceeding (stale field content, e.g. cover paths, gets repaired offline)`
       );
     }
@@ -449,7 +461,7 @@ async function refreshCatalog(seedPath: string): Promise<CatalogRefreshResult> {
     const sameFeatured =
       seedFeatured.length === dbFeatured.length &&
       seedFeatured.every((t, i) => t.slug === dbFeatured[i].slug);
-    if (dbCount >= seedCount && sameFeatured) {
+    if (dbCount >= seedCount && sameFeatured && dedupeExtras.length === 0) {
       /* v0.34.3 — the count+featured proof could not see FIELD-level drift
        * (poster/backdrop paths), so a device whose catalog was stale at the
        * field level (the SVG-posters report) fast-skipped forever. Compare
@@ -943,11 +955,121 @@ async function syncCatalog(catalogUrl: string): Promise<CatalogRefreshResult> {
 /* shared merge core                                                  */
 /* ------------------------------------------------------------------ */
 
+/** /covers/<tt>/… → the tt identity (the dedupe twin key). */
+const ttOfPoster = (p: string | null | undefined): string =>
+  /^\/covers\/(tt\d+)\//.exec(p || "")?.[1] ?? "";
+
+/* DEDUPE-1 — move every user row of the departing duplicate onto the
+ * surviving tt twin. Uniqueness rules decide move vs merge-vs-delete:
+ *   favorite/watchlist/userRating  (userKey,titleId)      → move | drop
+ *   watchProgress                  (userKey,titleId)      → keep the more
+ *   watchEpisodeProgress           (userKey,titleId,episodeId) advanced row
+ *   review (no unique)                                    → re-point all
+ *   userCollectionItem             (collectionId,titleId) → move | drop
+ * Tables the running schema may not have yet are skipped defensively —
+ * ensureRuntimeSchema owns that lifecycle and a failed reconcile must never
+ * abort the whole merge (the caller falls back to plain removal). */
+/** Minimal structural view of the (userKey,titleId)-unique tables — the three
+ *  Prisma delegates share these exact call shapes. */
+type TwinUserTable = {
+  findMany(args: { where: { titleId: number } }): Promise<{ id: number; userKey: string }[]>;
+  findFirst(args: { where: { userKey: string; titleId: number } }): Promise<{ id: number } | null>;
+  update(args: { where: { id: number }; data: { titleId: number } }): Promise<unknown>;
+  delete(args: { where: { id: number } }): Promise<unknown>;
+};
+
+/** move | drop for one (userKey,titleId)-unique table. */
+async function reconcileTwinUniqueTable(table: TwinUserTable, goneId: number, twinId: number): Promise<number> {
+  const rows = await table.findMany({ where: { titleId: goneId } });
+  let moved = 0;
+  for (const r of rows) {
+    const twinRow = await table.findFirst({ where: { userKey: r.userKey, titleId: twinId } });
+    if (!twinRow) {
+      await table.update({ where: { id: r.id }, data: { titleId: twinId } });
+      moved++;
+    } else {
+      await table.delete({ where: { id: r.id } });
+    }
+  }
+  return moved;
+}
+
+async function reconcileTwinUserRows(goneId: number, twinId: number): Promise<number> {
+  let moved = 0;
+
+  for (const table of [db.favorite, db.watchlist, db.userRating].map((d) => d as unknown as TwinUserTable)) {
+    moved += await reconcileTwinUniqueTable(table, goneId, twinId);
+  }
+
+  // «ادامه تماشا» pointer — one row per (userKey,titleId): the twin's row
+  // survives, but if the departing copy was further along, it wins.
+  const ptrs = await db.watchProgress.findMany({ where: { titleId: goneId } });
+  for (const p of ptrs) {
+    const twin = await db.watchProgress
+      .findUnique({ where: { userKey_titleId: { userKey: p.userKey, titleId: twinId } } })
+      .catch(() => null);
+    if (!twin) {
+      await db.watchProgress.update({ where: { id: p.id }, data: { titleId: twinId } });
+      moved++;
+    } else {
+      if (p.position > twin.position) {
+        await db.watchProgress.update({
+          where: { id: twin.id },
+          data: { position: p.position, duration: p.duration, episodeId: p.episodeId, updatedAt: new Date() },
+        });
+      }
+      await db.watchProgress.delete({ where: { id: p.id } });
+    }
+  }
+
+  try {
+    // per-episode positions (v0.27.0 additive table)
+    const eps = await db.watchEpisodeProgress.findMany({ where: { titleId: goneId } });
+    for (const p of eps) {
+      const twin = await db.watchEpisodeProgress.findFirst({
+        where: { userKey: p.userKey, titleId: twinId, episodeId: p.episodeId },
+      });
+      if (!twin) {
+        await db.watchEpisodeProgress.update({ where: { id: p.id }, data: { titleId: twinId } });
+        moved++;
+      } else {
+        if (p.position > twin.position) {
+          await db.watchEpisodeProgress.update({ where: { id: twin.id }, data: { position: p.position, duration: p.duration } });
+        }
+        await db.watchEpisodeProgress.delete({ where: { id: p.id } });
+      }
+    }
+  } catch {
+    /* older schema without the table — nothing to move */
+  }
+
+  moved += (await db.review.updateMany({ where: { titleId: goneId }, data: { titleId: twinId } })).count;
+
+  try {
+    const cis = await db.userCollectionItem.findMany({ where: { titleId: goneId } });
+    for (const ci of cis) {
+      const twin = await db.userCollectionItem
+        .findUnique({ where: { collectionId_titleId: { collectionId: ci.collectionId, titleId: twinId } } })
+        .catch(() => null);
+      if (!twin) {
+        await db.userCollectionItem.update({ where: { id: ci.id }, data: { titleId: twinId } });
+        moved++;
+      } else {
+        await db.userCollectionItem.delete({ where: { id: ci.id } });
+      }
+    }
+  } catch {
+    /* older schema without the table — nothing to move */
+  }
+
+  return moved;
+}
+
 async function applyCatalog(items: CatalogItem[]): Promise<CatalogRefreshResult> {
   const stats = { created: 0, updated: 0, removed: 0 };
   const seedSlugs = new Set(items.map((t) => t.slug));
 
-  const current = await db.title.findMany({ select: { id: true, slug: true, source: true } });
+  const current = await db.title.findMany({ select: { id: true, slug: true, source: true, poster: true } });
   const idBySlug = new Map(current.map((t) => [t.slug, t.id]));
   // v0.32.0 — عنوان‌هایی که کاربر خودش از منبع دایرکتوری سینک کرده
   // (source=od — که کاتالوگ میزبان هم همین برچسب را دارد) دیگر در هر
@@ -955,7 +1077,31 @@ async function applyCatalog(items: CatalogItem[]): Promise<CatalogRefreshResult>
   // «حذف عنوانِ خارج‌شده» فقط برای ردیف‌های demo/seed اعمال می‌شود.
   // پیامد: عنوان od حذف‌شده از کاتالوگ میزبان روی دستگاه می‌ماند —
   // تا وقتی فایلش بالاست هنوز پخش می‌شود و سینک بعدی خودش سر و مرتبش می‌کند.
-  const goneIds = current.filter((t) => !seedSlugs.has(t.slug) && t.source !== "od").map((t) => t.id);
+  const goneTitles = current.filter((t) => !seedSlugs.has(t.slug) && t.source !== "od");
+  const goneIds = goneTitles.map((t) => t.id);
+
+  // v0.34.4 (DEDUPE-1) — tt-twin reconciliation: the catalog-side dedupe
+  // merged duplicate tt rows, so a device may hold a favorite/list/progress
+  // on the copy that is ABOUT TO LEAVE the catalog. Before the removal
+  // detach below, every user row of a departing title rides over to the
+  // surviving twin (same /covers/<tt>/ identity) — «حفظ علاقه‌مندی‌ها».
+  const twinIdByTt = new Map<string, number>();
+  for (const t of current) {
+    if (!seedSlugs.has(t.slug)) continue;
+    const tt = ttOfPoster(t.poster);
+    if (tt && !twinIdByTt.has(tt)) twinIdByTt.set(tt, t.id);
+  }
+  let twinMoves = 0;
+  for (const g of goneTitles) {
+    const twinId = twinIdByTt.get(ttOfPoster(g.poster));
+    if (!twinId) continue;
+    try {
+      twinMoves += await reconcileTwinUserRows(g.id, twinId);
+    } catch (e) {
+      console.error("[catalog] tt-twin reconcile failed (kept removal path):", e instanceof Error ? e.message : e);
+    }
+  }
+  if (twinMoves) console.log(`[catalog] dedupe: ${twinMoves} user rows moved to surviving tt twins`);
 
   // 1. detach user rows from titles that are about to leave the catalog
   if (goneIds.length) {

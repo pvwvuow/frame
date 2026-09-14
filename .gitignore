@@ -89,6 +89,10 @@ server.log
 !/scripts/test-hero-pick.mjs
 !/scripts/test-catalog-repair.mjs
 !/scripts/test-ondemand.mjs
+!/scripts/test-catalog-cache.mjs
+!/scripts/test-split-catalog.mjs
+!/scripts/merge-duplicate-tts.mjs
+!/scripts/enrich-genres.mjs
 /scripts/mock-od/tree/
 /electron/dist/
 /upload/

@@ -11,6 +11,7 @@ import WelcomeAuth from "@/components/auth/WelcomeAuth";
 import CloudAutoSync from "@/components/auth/CloudAutoSync";
 import MobileUpdater from "@/components/mobile/MobileUpdater";
 import ElectronBridge from "@/components/electron/ElectronBridge";
+import RegisterImageSW from "@/components/sw/RegisterImageSW";
 import NotificationActionsHost from "@/components/NotificationActionsHost";
 import HideOnPip from "@/components/HideOnPip";
 import GlobalPlayer from "@/components/GlobalPlayer";
@@ -144,6 +145,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
                   <Navbar />
                   <CommandPalette />
                   <ElectronBridge />
+                  <RegisterImageSW />
                   <NotificationActionsHost />
                   <GlobalPlayer />
                 </HideOnPip>

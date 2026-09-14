@@ -91,7 +91,7 @@ const sha256 = (buf) => require("crypto").createHash("sha256").update(buf).diges
 const slugOf = (s) => `t-${s}`;
 
 async function makeCatalog(db2, spec) {
-  // spec: [{ s: "a1", featured, episodes?, newer? }] — deterministic slugs
+  // spec: [{ s: "a1", featured, episodes?, newer?, tt? }] — deterministic slugs
   for (const item of spec) {
     const t = await db2.title.create({
       data: {
@@ -102,8 +102,10 @@ async function makeCatalog(db2, spec) {
         year: 2020,
         rating: item.rating ?? 8.0,
         description: "d",
-        poster: "/covers/tt0" + item.s + "/poster.jpg",
-        backdrop: "/covers/tt0" + item.s + "/backdrop.jpg",
+        // v0.34.4 — an explicit `tt` makes the row a DUPLICATE of another
+        // row sharing the same /covers/<tt>/ identity (the dedupe key)
+        poster: item.tt ? `/covers/${item.tt}/poster.jpg` : "/covers/tt0" + item.s + "/poster.jpg",
+        backdrop: item.tt ? `/covers/${item.tt}/backdrop.jpg` : "/covers/tt0" + item.s + "/backdrop.jpg",
         videoUrl: "https://x/" + item.s + ".mkv",
         featured: !!item.featured,
         trendingScore: item.featured ? 90 : 50,
@@ -139,10 +141,10 @@ const RELEASE = [
 ];
 const SEED_FEATURED = ["t-a1", "t-a2", "t-a3", "t-a4"];
 
-async function makeSeedFile() {
+async function makeSeedFile(spec = RELEASE) {
   const p = freshDb("seed.db");
   const c = client(p);
-  await makeCatalog(c, RELEASE);
+  await makeCatalog(c, spec);
   await c.$disconnect();
   return p;
 }
@@ -323,6 +325,43 @@ console.log("\n[H] v0.34.3 — stale FIELD content (cover drift) + od-only extra
   );
   check("stale SVG poster repaired from the seed", a1?.poster === "/covers/tt0a1/poster.jpg", a1?.poster);
   check("proof written (merge completed)", (await proofOf(c)) === sha256(fs.readFileSync(seedPath)));
+  await c.$disconnect();
+}
+
+console.log("\n[I] v0.34.4 — dedupe: tt-covered duplicate removed, user rows ride to the surviving twin");
+{
+  const live = freshDb("live-i.db");
+  const c = client(live);
+  // NOTE: tt ids must match the production regex (tt\d+), so a1/d1 share the
+  // numeric identity tt011 in BOTH the device db and this scenario's seed.
+  const RELEASE_A1_TT = RELEASE.map((r) => (r.s === "a1" ? { ...r, tt: "tt011" } : r));
+  // the device's copy: d1 is an f2m duplicate of the od title a1 (same tt).
+  // A stale HASH_KEY is set on purpose: under the pre-0.34.4 guard this
+  // combination skipped the merge forever (d1 = "non-od extra") and the
+  // duplicate lived on — the dedupe release must reach this device.
+  await makeCatalog(c, [...RELEASE_A1_TT, { s: "d1", source: "f2m", tt: "tt011", episodes: 1 }]);
+  const a1 = await c.title.findFirst({ where: { slug: slugOf("a1") } });
+  const d1 = await c.title.findFirst({ where: { slug: slugOf("d1") } });
+  await c.syncState.create({ data: { key: "catalog.hash", value: "d".repeat(64) } });
+  // user data on the doomed copy
+  await c.favorite.create({ data: { userKey: "u1", titleId: d1.id } }); // moves
+  await c.favorite.create({ data: { userKey: "u2", titleId: d1.id } }); // collision → dropped
+  await c.favorite.create({ data: { userKey: "u2", titleId: a1.id } }); // twin's own
+  await c.watchlist.create({ data: { userKey: "u1", titleId: d1.id, status: "watching" } });
+  await c.userRating.create({ data: { userKey: "u1", titleId: d1.id, score: 9 } });
+  await c.watchProgress.create({ data: { userKey: "u1", titleId: d1.id, position: 40, duration: 100 } });
+  await c.review.create({ data: { titleId: d1.id, author: "a", rating: 8, body: "b" } });
+  const seedPath = await makeSeedFile(RELEASE_A1_TT);
+  const m = await loadModule(live);
+  const r = await m.refreshCatalogOnce(seedPath);
+  check("merge ran (tt-covered duplicate is not 'newer content')", r.ok === true && r.skipped !== true, JSON.stringify(r));
+  check("duplicate removed", r.removed === 1 && (await c.title.count()) === 8, `removed=${r.removed} count=${await c.title.count()}`);
+  check("favorite moved to the twin", (await c.favorite.count({ where: { userKey: "u1", titleId: a1.id } })) === 1);
+  check("collision favorite dropped (u2 keeps one)", (await c.favorite.count({ where: { userKey: "u2" } })) === 1);
+  check("watchlist moved", (await c.watchlist.count({ where: { userKey: "u1", titleId: a1.id } })) === 1);
+  check("rating moved", (await c.userRating.count({ where: { userKey: "u1", titleId: a1.id } })) === 1);
+  check("progress pointer moved", (await c.watchProgress.count({ where: { userKey: "u1", titleId: a1.id } })) === 1);
+  check("review re-pointed", (await c.review.count({ where: { titleId: a1.id } })) === 1);
   await c.$disconnect();
 }
 

@@ -12,8 +12,10 @@ export async function GET(_req: Request, { params }: { params: Promise<{ file: s
   const f = decodeURIComponent(file);
   const hit = readCover(f);
   if (hit) {
+    // v0.34.4 — generated key art is slug-addressed and stable; cache a full
+    // year (the SW keeps it warm across sessions either way)
     return new Response(hit.body, {
-      headers: { "content-type": hit.type, "cache-control": "public, max-age=86400" },
+      headers: { "content-type": hit.type, "cache-control": "public, max-age=31536000, immutable" },
     });
   }
   // on-demand: <slug>.svg (poster) or <slug>-wide.svg (backdrop)
@@ -27,7 +29,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ file: s
       if (t) {
         const svg = artSvgFor(t.title || t.titleEn, Boolean(m[2]));
         return new Response(svg, {
-          headers: { "content-type": "image/svg+xml; charset=utf-8", "cache-control": "public, max-age=86400" },
+          headers: { "content-type": "image/svg+xml; charset=utf-8", "cache-control": "public, max-age=31536000, immutable" },
         });
       }
     } catch {
