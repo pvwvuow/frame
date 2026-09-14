@@ -11,6 +11,19 @@ const nextConfig: NextConfig = {
     ignoreBuildErrors: true,
   },
   reactStrictMode: false,
+  /* v0.35.2 (IMG-CACHE-3) — the router-cache half of the artwork fix.
+   * Next defaults to staleTimes.dynamic = 0: every client navigation to a
+   * dynamic route (home/movies/series are force-dynamic) re-runs the RSC
+   * round-trip and shows loading.tsx skeletons, UNMOUNTING every <img> the
+   * user just saw — so returning to home always looked like «عکسا لود شده
+   * نیستن» even when the service worker had every byte cached. With a 60s
+   * dynamic stale window, back-navigation inside a minute reuses the
+   * rendered tree as-is: zero refetch, zero skeleton, images never even
+   * remount. Catalog/user rows behind the page keep updating via their own
+   * client providers, so the staleness is invisible in practice. */
+  experimental: {
+    staleTimes: { dynamic: 60, static: 300 },
+  },
   /* v0.35.1 (IMG-CACHE-2) — the HTTP-cache half of the artwork fix.
    * The image service worker (public/sw.js) is the primary cache, but it
    * mounts ~2.5s after hydration and can be absent entirely (file://,

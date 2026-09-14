@@ -100,6 +100,44 @@ const IMG_FALLBACK_SCRIPT = String.raw`(function(){
   }, true);
 })();`;
 
+/* v0.35.2 (IMG-CACHE-3) — renderer-memory art warmer (the LAST cache layer,
+ * independent of the service worker and the HTTP cache):
+ * every artwork <img> that finishes loading gets pinned as a live Image
+ * element in a module-level LRU (800 entries ≈ tens of MB of encoded art).
+ * A referenced element keeps its resource inside the renderer for the whole
+ * session, so if an <img> with the same src ever remounts (stale router
+ * window passed, filter change, view switch) Chromium paints it from RAM on
+ * the very first frame — no network, no SW round-trip, no decode flash.
+ * Works everywhere: Electron, Android WebView, browsers, with or without
+ * service-worker support. Capture-phase 'load' listener covers every <img>
+ * the app ever renders, server-rendered or client-mounted. */
+const ART_WARMER_SCRIPT = String.raw`(function(){
+  if (window.__namaArtWarm) return; window.__namaArtWarm = 1;
+  var MAX = 800, m = new Map();
+  function ok(u){
+    if (typeof u !== 'string') return false;
+    if (u.indexOf('data:') === 0 || u.indexOf('blob:') === 0) return false;
+    return /^https?:\/\//i.test(u) || u.charAt(0) === '/';
+  }
+  function warm(u){
+    if (!ok(u)) return;
+    var hit = m.get(u);
+    if (hit) { m.delete(u); m.set(u, hit); return; }
+    try {
+      var img = new Image();
+      img.decoding = 'async';
+      img.src = u;
+      m.set(u, img);
+      if (m.size > MAX) { var first = m.keys().next().value; if (first) m.delete(first); }
+    } catch (e) {}
+  }
+  window.__warmArt = warm;
+  document.addEventListener('load', function(e){
+    var t = e.target;
+    if (t && t.tagName === 'IMG') warm(t.currentSrc || t.src);
+  }, true);
+})();`;
+
 /* Audio unlock: prime the audio pipeline on the first user gesture. */
 const AUDIO_UNLOCK_SCRIPT = String.raw`(function(){
   if (window.__namaAudioUnlock) return; window.__namaAudioUnlock = 1;
@@ -134,6 +172,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
     <html lang={LOCALE_META[locale].htmlLang} dir={dirOf(locale)} data-locale={locale} data-scroll-behavior="smooth" suppressHydrationWarning>
       <body className="min-h-screen bg-ink text-zinc-100 antialiased">
         <script id="nama-img-fallback" dangerouslySetInnerHTML={{ __html: IMG_FALLBACK_SCRIPT }} />
+        <script id="nama-art-warmer" dangerouslySetInnerHTML={{ __html: ART_WARMER_SCRIPT }} />
         <script id="nama-audio-unlock" dangerouslySetInnerHTML={{ __html: AUDIO_UNLOCK_SCRIPT }} />
         <ThemeProvider>
           <LocaleProvider initial={locale}>
