@@ -84,13 +84,13 @@ for (const rel of REQUIRED) {
 
 /* 4 ─ seed DB --------------------------------------------------------- */
 section("4. Seed database (db/custom.db)");
+const seed = path.join(ROOT, "db", "custom.db");
 const seedXz = path.join(ROOT, "db", "custom.db.xz");
 /* v0.34.0 — the SQLite seed outgrew GitHub's 100MB blob cap, so the repo
  * ships db/custom.db.xz and CI/dev decompresses it before the build. */
 if (!fs.existsSync(seed) && fs.existsSync(seedXz)) {
   ok("db/custom.db.xz present (decompress with: xz -dk db/custom.db.xz)");
 }
-const seed = path.join(ROOT, "db", "custom.db");
 if (fs.existsSync(seed)) {
   const sz = fs.statSync(seed).size;
   const head = Buffer.alloc(16);
