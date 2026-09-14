@@ -83,6 +83,9 @@ server.log
 !/scripts/export-catalog.mjs
 !/scripts/feature-new-hero.mjs
 !/scripts/publish-catalog.mjs
+!/scripts/import-film2media.mjs
+!/scripts/resolve-f2m-covers.mjs
+!/scripts/f2m-tail-resolve.mjs
 !/scripts/test-hero-pick.mjs
 !/scripts/test-catalog-repair.mjs
 !/scripts/test-ondemand.mjs
