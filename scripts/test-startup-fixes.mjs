@@ -69,6 +69,7 @@ const sandbox = {
     if (m === "./stream-proxy.cjs") return require(path.join(ROOT, "electron", "stream-proxy.cjs"));
     if (m === "./pip.cjs") return require(path.join(ROOT, "electron", "pip.cjs"));
     if (m === "./downloads.cjs") return require(path.join(ROOT, "electron", "downloads.cjs"));
+    if (m === "./covers-sync.cjs") return require(path.join(ROOT, "electron", "covers-sync.cjs"));
     return require(m);
   },
   module: { exports: {} },
