@@ -55,7 +55,9 @@ const EVICT_FLOOR = 1250; // put()-failure eviction target (MAX_ENTRIES / 4)
  *   • images.metahub.space  — remote poster/background streams (default)
  *   • live.metahub.space    — the 307 target some metahub variants use
  *   • /covers/…             — locally-merged cover packs + fallback SVGs
- *   • /api/cover/…          — on-demand generated SVG key art */
+ *   • /api/cover/…          — on-demand generated SVG key art
+ *   • /api/art?u=…          — v0.35.5 PACED server-side metahub relay
+ *                             (real statuses — basic, non-opaque responses) */
 const ART_HOST_RE = /(^|\.)metahub\.space$/i;
 
 function isArtRequest(request) {
@@ -70,7 +72,7 @@ function isArtRequest(request) {
   if (url.protocol !== "http:" && url.protocol !== "https:") return false;
   if (ART_HOST_RE.test(url.hostname)) return true;
   if (url.origin === self.location.origin) {
-    return url.pathname.startsWith("/covers/") || url.pathname.startsWith("/api/cover/");
+    return url.pathname.startsWith("/covers/") || url.pathname.startsWith("/api/cover/") || url.pathname === "/api/art";
   }
   return false;
 }
@@ -166,8 +168,8 @@ self.addEventListener("fetch", (event) => {
         // heal on its very first failure and never re-written by the retry,
         // so poison cannot survive a render pass.
         if (fresh && (fresh.ok || fresh.type === "opaque")) {
-          // Two independent clones BEFORE anything consumes the body: the
-          // first satisfies the normal put, the second exists only for the
+          // Independent clones BEFORE anything consumes the body: the first
+          // satisfies the normal put, the second exists only for the
           // quota-failure retry (a Response body can be cloned while still
           // unread; after cache.put() consumed the first clone it is gone).
           const primary = fresh.clone();
@@ -187,6 +189,26 @@ self.addEventListener("fetch", (event) => {
                 /* a failed trim must never break a response */
               }
             });
+          /* IMG-CACHE-6 (v0.35.5): a successful /api/art relay response is
+           * ALSO written back under the CLEAN metahub url it stands for.
+           * The page-side heal deletes the poisoned opaque entry for that
+           * url and swaps the <img> to the relay; the relay's good, readable
+           * (basic) bytes then repopulate the clean key — so every LATER
+           * direct-src mount hits a healthy cached entry with no error
+           * beat, and the quota padding that plagues opaque entries never
+           * applies to it. */
+          try {
+            const reqUrl = new URL(request.url);
+            if (reqUrl.pathname === "/api/art") {
+              const inner = reqUrl.searchParams.get("u");
+              if (inner && ART_HOST_RE.test(new URL(inner).hostname)) {
+                const spare2 = fresh.clone();
+                cache.put(new Request(inner), spare2).catch(() => {});
+              }
+            }
+          } catch {
+            /* the double-write is an optimization — never break a response */
+          }
         }
         return fresh;
       } catch (e) {

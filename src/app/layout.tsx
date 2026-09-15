@@ -12,6 +12,7 @@ import CloudAutoSync from "@/components/auth/CloudAutoSync";
 import MobileUpdater from "@/components/mobile/MobileUpdater";
 import ElectronBridge from "@/components/electron/ElectronBridge";
 import RegisterImageSW from "@/components/sw/RegisterImageSW";
+import ArtRescueBanner from "@/components/settings/ArtRescueBanner";
 import NotificationActionsHost from "@/components/NotificationActionsHost";
 import HideOnPip from "@/components/HideOnPip";
 import GlobalPlayer from "@/components/GlobalPlayer";
@@ -75,18 +76,31 @@ const IMG_FALLBACK_SCRIPT = String.raw`(function(){
       '<path d="M ' + (w/2 - r*0.55) + ' ' + (cy - r*0.8) + ' L ' + (w/2 + r*0.9) + ' ' + cy + ' L ' + (w/2 - r*0.55) + ' ' + (cy + r*0.8) + ' Z" fill="#e5b84b" fill-opacity="0.5"/>' +
       txt + '</svg>';
   }
-  /* v0.35.3 (IMG-CACHE-4) — the fallback chain is now SELF-HEALING. The
-   * image SW caches metahub art as OPAQUE responses, and an opaque response
-   * hides its HTTP status — a metahub 404/429/503 error page gets cached
-   * exactly like a real image, then cache-first serves that garbage forever
-   * («تصاویر دیگر اصلاً لود نمی‌شوند»). Heal protocol (worker half in
-   * public/sw.js): 1) on the first <img> error for a metahub url, DELETE
-   * the cached entry and retry once with ?_rw=<ts>; 2) the worker treats
-   * ?_rw as network-first and stores the fresh copy under the CLEAN url;
-   * 3) if the retry also fails, the old chain runs: webp → metahub →
-   * background→poster swap (NEW) → SVG placeholder. One heal per element
-   * (dataset.rw) — no loops, no unbounded retries. */
+  /* v0.35.5 (IMG-CACHE-6) — the heal now routes through the PACED server
+   * relay (/api/art?u=<clean>, desktop standalone) instead of re-hitting
+   * metahub directly: metahub throttles BURSTS on some networks — direct
+   * posterSrc mounts fire ~100 requests at once and mostly fail, while the
+   * few staggered chain requests slip through (the user's screenshots:
+   * exactly the chain-fed images alive, every direct one dark). The relay
+   * fetches server-side with real status codes (nothing opaque is stored),
+   * a 4-concurrency gate, one 429/5xx retry, and — worker half in sw.js —
+   * a successful relay is ALSO written back under the CLEAN metahub url,
+   * so later direct-src mounts hit a good cached entry with no error beat.
+   * The chain still ends in the SVG placeholder when the relay itself
+   * cannot reach metahub (hard-blocked network), and every metahub failure
+   * increments a counter; at 6 the page fires 'frame-art-down' so the
+   * ArtRescueBanner can offer the metahub-independent offline cover packs
+   * (GitHub releases — reachable wherever the updater works). */
   var MH_RE = /(^|\.)metahub\.space$/i;
+  var failCount = 0, artDownFired = false;
+  window.__artFailStat = function(){ return { fails: failCount, down: artDownFired }; };
+  function noteFail(clean){
+    failCount++;
+    if (failCount >= 6 && !artDownFired) {
+      artDownFired = true;
+      try { window.dispatchEvent(new CustomEvent('frame-art-down', { detail: { failures: failCount } })); } catch(e) {}
+    }
+  }
   function heal(el, src){
     if (el.dataset.rw) return false;
     try {
@@ -98,8 +112,8 @@ const IMG_FALLBACK_SCRIPT = String.raw`(function(){
       if ('caches' in window) {
         caches.open('frame-img-v3').then(function(c){ return c.delete(clean); }).catch(function(){});
       }
-      u.searchParams.set('_rw', String(Date.now()));
-      el.src = u.toString();
+      noteFail(clean);
+      el.src = '/api/art?u=' + encodeURIComponent(clean);
       return true;
     } catch(e) { return false; }
   }
@@ -108,6 +122,13 @@ const IMG_FALLBACK_SCRIPT = String.raw`(function(){
     if (!el || el.tagName !== 'IMG' || !el.dataset || el.dataset.fb) return;
     var src = el.currentSrc || el.src || '';
     if (heal(el, src)) return;
+    /* a relayed url failed too (relay cannot reach metahub either): note it
+     * and keep the remaining chain steps working against the INNER url */
+    var inner = '';
+    if (src.indexOf('/api/art?u=') > -1) {
+      try { inner = decodeURIComponent((new URL(src, location.href)).searchParams.get('u') || ''); } catch(err) { inner = ''; }
+      if (inner) noteFail(inner);
+    }
     if (!el.dataset.fb2 && /\.jpe?g$/i.test(src)) {
       el.dataset.fb2 = '1';
       el.src = src.replace(/\.jpe?g$/i, '.webp');
@@ -123,7 +144,8 @@ const IMG_FALLBACK_SCRIPT = String.raw`(function(){
       }
     }
     if (!el.dataset.mhp) {
-      var m2 = src.match(/metahub\.space\/background\/(?:medium|large)\/(tt\d+)\//i);
+      var probe = inner || src;
+      var m2 = probe.match(/metahub\.space\/background\/(?:medium|large)\/(tt\d+)\//i);
       if (m2) {
         el.dataset.mhp = '1';
         el.src = 'https://images.metahub.space/poster/medium/' + m2[1] + '/img';
@@ -241,6 +263,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
                   <CommandPalette />
                   <ElectronBridge />
                   <RegisterImageSW />
+                  <ArtRescueBanner />
                   <NotificationActionsHost />
                   <GlobalPlayer />
                 </HideOnPip>

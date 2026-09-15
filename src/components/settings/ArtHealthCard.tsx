@@ -26,6 +26,10 @@ const IMG_BUCKETS = "frame-img-";
 const PROBE_SAME_ORIGIN = "/api/cover/steins-448447.svg"; // seed title (Steins;Gate) → generated SVG
 const PROBE_METAHUB_POSTER = "https://images.metahub.space/poster/small/tt0898266/img";
 const PROBE_METAHUB_BACKDROP = "https://images.metahub.space/background/medium/tt1910272/img";
+/* v0.35.5: the paced server relay (the path the heal swaps failed metahub
+ * art to) — success here proves the artwork rescue works even when the
+ * direct metahub burst is throttled on this network. */
+const PROBE_RELAY = `/api/art?u=${encodeURIComponent("https://images.metahub.space/poster/small/tt0898266/img")}`;
 
 type RowState = "idle" | "run" | "ok" | "fail";
 type Row = { label: string; state: RowState; detail: string };
@@ -60,8 +64,9 @@ export default function ArtHealthCard() {
   const [tested, setTested] = useState(false);
   const [rows, setRows] = useState<Row[]>([
     { label: "تصویر داخلی (سرور خود فریم)", state: "idle", detail: "" },
-    { label: "پوستر از سرور متاهاب", state: "idle", detail: "" },
-    { label: "بک‌دراپ از سرور متاهاب", state: "idle", detail: "" },
+    { label: "پوستر از سرور متاهاب (مستقیم)", state: "idle", detail: "" },
+    { label: "بک‌دراپ از سرور متاهاب (مستقیم)", state: "idle", detail: "" },
+    { label: "مسیر جایگزین (سرور واسط فریم)", state: "idle", detail: "" },
   ]);
 
   const refresh = useCallback(async () => {
@@ -119,8 +124,9 @@ export default function ArtHealthCard() {
     setRows((rs) => rs.map((r) => ({ ...r, state: "run", detail: "" })));
     const targets = [
       { label: "تصویر داخلی (سرور خود فریم)", url: PROBE_SAME_ORIGIN },
-      { label: "پوستر از سرور متاهاب", url: PROBE_METAHUB_POSTER },
-      { label: "بک‌دراپ از سرور متاهاب", url: PROBE_METAHUB_BACKDROP },
+      { label: "پوستر از سرور متاهاب (مستقیم)", url: PROBE_METAHUB_POSTER },
+      { label: "بک‌دراپ از سرور متاهاب (مستقیم)", url: PROBE_METAHUB_BACKDROP },
+      { label: "مسیر جایگزین (سرور واسط فریم)", url: PROBE_RELAY },
     ];
     for (let i = 0; i < targets.length; i++) {
       const r = await imgProbe(targets[i].url);
@@ -145,6 +151,8 @@ export default function ArtHealthCard() {
   const metaOk = rows[1]?.state === "ok" || rows[2]?.state === "ok";
   const metaFail = rows[1]?.state === "fail" || rows[2]?.state === "fail";
   const localOk = rows[0]?.state === "ok";
+  const relayOk = rows[3]?.state === "ok";
+  const relayFail = rows[3]?.state === "fail";
 
   return (
     <div className="glass mt-4 rounded-2xl p-4" dir="rtl">
@@ -219,12 +227,18 @@ export default function ArtHealthCard() {
             ))}
           </div>
 
-          {tested && metaFail && localOk && (
+          {tested && metaFail && localOk && relayOk && (
+            <p className="rounded-xl border border-emerald-400/20 bg-emerald-400/5 p-3 text-[12px] leading-6 text-emerald-200">
+              مسیر مستقیم متاهاب از این شبکه محدود شده، ولی مسیر جایگزین فریم کار می‌کند — عکس‌هایی که
+              لود نمی‌شدند خودکار از همین مسیر گرفته می‌شوند و در کش می‌مانند. چند ثانیه بمانید یا صفحه
+              را رفرش کنید تا پوسترها یکی‌یکی پر شوند.
+            </p>
+          )}
+          {tested && relayFail && localOk && (
             <p className="rounded-xl border border-amber-400/20 bg-amber-400/5 p-3 text-[12px] leading-6 text-amber-200">
-              سرور خودِ فریم سالم است ولی سرور تصاویر (متاهاب) از شبکه‌ی فعلی در دسترس نیست.
-              راه‌حل: از بخش «تصاویر آفلاین» در همین صفحه استفاده کنید تا عکس‌ها روی دستگاه ذخیره شوند،
-              یا اتصال اینترنت را عوض کنید و بعد دوباره تست بگیرید. اگر وصل‌کردن فیلترشکن تصاویر را درست می‌کند،
-              مشکل از مسیر شبکه تا متاهاب است — کش فریم خودش را با نسخه‌ی جدید ترمیم می‌کند.
+              سرور خودِ فریم سالم است ولی سرور تصاویر (متاهاب) از شبکه‌ی فعلی به هیچ شکلی در دسترس
+              نیست — نه مستقیم و نه از مسیر واسط. راه‌حل: اتصال اینترنت را عوض کنید یا فیلترشکن را
+              روشن/خاموش کنید و بعد دوباره تست بگیرید.
             </p>
           )}
           {tested && metaOk && localOk && (
