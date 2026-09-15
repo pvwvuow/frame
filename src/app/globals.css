@@ -609,3 +609,291 @@ html[data-electron="1"][data-platform="darwin"][dir="ltr"] .nav-inner { padding-
 @media (prefers-reduced-motion: reduce) {
   .u-veil { transition: none; }
 }
+
+/* ---------- Cinema hero (v0.37.0) ----------
+ * The approved preview-v7 slider ported into the app. Layers (bottom→top):
+ * scene-dark(1) scene-lit(2) fades(3) design/poster-plate(4) slides(5)
+ * dust(6) grain(7) vignette(8) curtain-veils(9). The light transition MODES
+ * are picked per out+in pair by Hero.tsx (normal 50%); --ch-out/--ch-in carry
+ * the mode durations, --chu is the stage unit (1% of stage width) and --chs
+ * the design-space scale (= the scene's object-cover scale, so the plate is
+ * pixel-glued to the scene at every aspect ratio). */
+.ch-stage {
+  --chu: 10px;
+  --chs: 1;
+  --ch-out: 850ms;
+  --ch-in: 1150ms;
+  user-select: none;
+}
+.ch-scene {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  pointer-events: none;
+}
+.ch-scene-off { z-index: 1; }
+.ch-scene-lit { z-index: 2; opacity: 0; }
+
+/* light transition modes — one mode per out+in pair */
+.ch-stage[data-mode="normal"].lit .ch-scene-lit { animation: ch-on-normal var(--ch-in) cubic-bezier(0.33, 0.5, 0.25, 1) both, ch-breathe 4.6s var(--ch-in) ease-in-out infinite; }
+.ch-stage[data-mode="flicker"].lit .ch-scene-lit { animation: ch-on-flicker var(--ch-in) linear both, ch-breathe 4.6s var(--ch-in) ease-in-out infinite; }
+.ch-stage[data-mode="surge"].lit .ch-scene-lit { animation: ch-on-surge var(--ch-in) linear both, ch-breathe 4.6s var(--ch-in) ease-in-out infinite; }
+.ch-stage[data-mode="filament"].lit .ch-scene-lit { animation: ch-on-filament var(--ch-in) ease-in-out both, ch-breathe 4.6s var(--ch-in) ease-in-out infinite; }
+.ch-stage[data-mode="pulse"].lit .ch-scene-lit { animation: ch-on-pulse var(--ch-in) cubic-bezier(0.4, 0.3, 0.4, 1) both, ch-breathe 4.6s var(--ch-in) ease-in-out infinite; }
+.ch-stage[data-mode="normal"].goodnight .ch-scene-lit { animation: ch-out-normal var(--ch-out) ease-in both; }
+.ch-stage[data-mode="flicker"].goodnight .ch-scene-lit { animation: ch-out-flicker var(--ch-out) linear both; }
+.ch-stage[data-mode="surge"].goodnight .ch-scene-lit { animation: ch-out-surge var(--ch-out) linear both; }
+.ch-stage[data-mode="filament"].goodnight .ch-scene-lit { animation: ch-out-filament var(--ch-out) ease-in-out both; }
+.ch-stage[data-mode="pulse"].goodnight .ch-scene-lit { animation: ch-out-pulse var(--ch-out) cubic-bezier(0.4, 0.3, 0.4, 1) both; }
+
+/* fixed design space + poster plate (box/matrix inline in Hero.tsx) */
+.ch-design {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 1671px;
+  height: 941px;
+  transform: translate(-50%, -50%) scale(var(--chs));
+  transform-origin: center;
+  z-index: 4;
+  pointer-events: none;
+}
+.ch-poster-wrap {
+  position: absolute;
+  overflow: hidden;
+  box-shadow: 0 34px 80px rgba(0, 0, 0, 0.5);
+}
+.ch-poster-wrap img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  filter: brightness(0.05) saturate(0.5);
+}
+.ch-stage.lit .ch-poster-wrap img { animation: ch-poster-in var(--ch-in) 0.08s both; }
+.ch-stage.goodnight .ch-poster-wrap img { animation: ch-poster-out var(--ch-out) both; }
+.ch-tint {
+  position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(112deg, rgba(255, 224, 172, 0.13), rgba(255, 224, 172, 0.035) 36%, transparent 56%, rgba(6, 3, 1, 0.26) 98%);
+}
+.ch-base {
+  position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.42), transparent 15%);
+}
+.ch-glass {
+  position: absolute; inset: 0; pointer-events: none; border-radius: 10px; opacity: 0;
+  border: 2.5px solid rgba(255, 243, 224, 0.34);
+  box-shadow: inset 0 0 22px rgba(255, 236, 200, 0.15), inset 0 1.5px 0 rgba(255, 248, 235, 0.5), inset 0 -1px 0 rgba(255, 238, 210, 0.14), 0 0 34px rgba(255, 215, 150, 0.1);
+  background: linear-gradient(112deg, rgba(255, 248, 238, 0.085), rgba(255, 255, 255, 0.018) 34%, transparent 55%, rgba(255, 246, 230, 0.05));
+}
+.ch-stage.lit .ch-glass { animation: ch-glass-in var(--ch-in) 0.05s both; }
+.ch-stage.goodnight .ch-glass { animation: ch-glass-out var(--ch-out) both; }
+.ch-glint {
+  position: absolute; inset: -2% -38%; pointer-events: none;
+  transform: translateX(-130%) skewX(-14deg); opacity: 0;
+  background: linear-gradient(97deg, transparent 42%, rgba(255, 244, 228, 0.05) 48%, rgba(255, 250, 240, 0.16) 51%, rgba(255, 244, 228, 0.05) 54%, transparent 60%);
+}
+.ch-stage.lit .ch-glint { animation: ch-glint 1.7s 1s cubic-bezier(0.4, 0.15, 0.3, 1) both; }
+
+/* slides + info block (mirrors the app Hero, floats on the scene) */
+.ch-slides { position: absolute; inset: 0; z-index: 5; }
+.ch-slide { position: absolute; inset: 0; visibility: hidden; }
+.ch-slide.active, .ch-slide.leaving { visibility: visible; }
+.ch-slide.leaving .ch-info { animation: ch-info-out 0.4s ease-in both; }
+.ch-stage.goodnight .ch-slide.active .ch-info { animation: ch-info-out 0.55s ease-in both; }
+.ch-info {
+  position: absolute;
+  left: 53.5%;
+  width: 37.5%;
+  bottom: calc(var(--chu) * 6.7);
+  color: #f2ecdf;
+}
+.ch-slide.active .ch-info > * { opacity: 0; animation: ch-rise 0.8s cubic-bezier(0.16, 0.8, 0.3, 1) both; }
+.ch-slide.active .ch-chips { animation-delay: 0.5s; }
+.ch-slide.active .ch-title { animation-delay: 0.6s; }
+.ch-slide.active .ch-subtitle { animation-delay: 0.7s; }
+.ch-slide.active .ch-meta { animation-delay: 0.8s; }
+.ch-slide.active .ch-desc { animation-delay: 0.9s; }
+.ch-slide.active .ch-ctas { animation-delay: 1.02s; }
+
+.ch-chips { display: flex; align-items: center; gap: calc(var(--chu) * 0.48); flex-wrap: wrap; }
+.ch-chip {
+  font-size: calc(var(--chu) * 0.72);
+  font-weight: 600;
+  border-radius: calc(var(--chu) * 0.36);
+  padding: calc(var(--chu) * 0.26) calc(var(--chu) * 0.5);
+}
+.ch-chip-brand { background: var(--color-brand); color: #fff; box-shadow: 0 0 calc(var(--chu) * 1.2) var(--color-brand-glow); }
+.ch-chip-glass { border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.4); color: #e4e4e7; -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); }
+.ch-title {
+  margin-top: calc(var(--chu) * 0.95);
+  font-family: var(--font-display, "Estedad"), "Vazirmatn", sans-serif;
+  font-size: calc(var(--chu) * 3.3);
+  font-weight: 900;
+  line-height: 1.2;
+  color: #fff;
+  text-shadow: 0 2px 30px rgba(0, 0, 0, 0.8);
+}
+.ch-subtitle { margin-top: calc(var(--chu) * 0.5); font-size: calc(var(--chu) * 0.88); font-weight: 500; letter-spacing: 0.03em; color: #a1a1aa; }
+.ch-meta {
+  margin-top: calc(var(--chu) * 0.95);
+  font-size: calc(var(--chu) * 0.88);
+  font-weight: 500;
+  color: #e4e4e7;
+  display: flex;
+  align-items: center;
+  gap: calc(var(--chu) * 0.96);
+  flex-wrap: wrap;
+}
+.ch-rating { display: inline-flex; align-items: center; gap: 0.35em; font-weight: 700; color: #fbbf24; }
+.ch-genr { color: #a1a1aa; }
+.ch-desc {
+  margin-top: calc(var(--chu) * 0.95);
+  font-size: calc(var(--chu) * 0.98);
+  font-weight: 500;
+  line-height: 1.78;
+  color: #d4d4d8;
+  max-width: calc(var(--chu) * 34.5);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.ch-ctas { margin-top: calc(var(--chu) * 1.65); display: flex; align-items: center; gap: calc(var(--chu) * 0.72); flex-wrap: wrap; }
+
+/* readability gradients (from-ink equivalents) */
+.ch-fade-side {
+  position: absolute; inset: 0; z-index: 3; pointer-events: none;
+  background: linear-gradient(to left, rgba(9, 9, 12, 0.82), rgba(9, 9, 12, 0.42) 42%, rgba(9, 9, 12, 0) 68%);
+}
+.ch-fade-bottom {
+  position: absolute; inset: 0; z-index: 3; pointer-events: none;
+  background: linear-gradient(to top, rgba(9, 9, 12, 0.72), rgba(9, 9, 12, 0.18) 30%, rgba(0, 0, 0, 0.22) 100%);
+}
+
+/* atmosphere */
+.ch-dust {
+  position: absolute; inset: 0; z-index: 6; pointer-events: none; opacity: 0;
+  transition: opacity 1.2s; mix-blend-mode: screen;
+}
+.ch-stage.lit .ch-dust { opacity: 0.85; }
+.ch-stage.goodnight .ch-dust { opacity: 0; transition: opacity 0.6s; }
+.ch-dust i {
+  position: absolute; border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 236, 200, 0.9), rgba(255, 200, 120, 0.25) 60%, transparent 75%);
+  animation: ch-float var(--d) ease-in-out var(--dl) infinite alternate, ch-twinkle calc(var(--d) * 0.55) ease-in-out infinite;
+}
+.ch-grain {
+  position: absolute; inset: -25%; z-index: 7; pointer-events: none; opacity: 0.05; mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+  animation: ch-grain 1.3s steps(8) infinite;
+}
+.ch-vig {
+  position: absolute; inset: 0; z-index: 8; pointer-events: none;
+  background: radial-gradient(ellipse 120% 100% at 50% 42%, transparent 52%, rgba(0, 0, 0, 0.5) 100%), linear-gradient(to top, rgba(0, 0, 0, 0.5), transparent 16%);
+}
+
+/* curtain veils — clip-path polygons (the measured fabric silhouette) are
+ * applied INLINE on .ch-pane/.ch-sw so the backdrop-filter samples the scene
+ * correctly (clip on the same element, not an ancestor) */
+.ch-curt { position: absolute; inset: 0; z-index: 9; pointer-events: none; }
+.ch-pane {
+  position: absolute; inset: 0; opacity: 0; transition: opacity 0.4s ease; display: block;
+  -webkit-backdrop-filter: blur(2.2px) saturate(1.16) brightness(1.06);
+  backdrop-filter: blur(2.2px) saturate(1.16) brightness(1.06);
+}
+.ch-curt-l .ch-pane {
+  background:
+    radial-gradient(60% 95% at 5% 36%, rgba(255, 242, 218, 0.14), rgba(255, 242, 218, 0.05) 52%, transparent 76%),
+    linear-gradient(97deg, rgba(255, 238, 210, 0.11), rgba(255, 244, 226, 0.04) 9%, transparent 17%);
+}
+.ch-curt-r .ch-pane {
+  background:
+    radial-gradient(60% 95% at 95% 36%, rgba(255, 242, 218, 0.14), rgba(255, 242, 218, 0.05) 52%, transparent 76%),
+    linear-gradient(-97deg, rgba(255, 238, 210, 0.11), rgba(255, 244, 226, 0.04) 9%, transparent 17%);
+}
+.ch-curt.on .ch-pane { opacity: 1; }
+.ch-sw {
+  position: absolute; top: -2%; bottom: -2%; left: -62%; right: -62%; display: block;
+  transform: translateX(-135%) skewX(-16deg); opacity: 0;
+  background: linear-gradient(97deg, transparent 40%, rgba(255, 242, 220, 0.06) 47%, rgba(255, 250, 238, 0.24) 51%, rgba(255, 242, 220, 0.06) 55%, transparent 62%);
+}
+.ch-curt-r .ch-sw { transform: translateX(135%) skewX(-16deg); }
+.ch-curt.sweeping .ch-sw { animation: ch-curt-sweep 0.62s cubic-bezier(0.35, 0.15, 0.3, 1) both; }
+.ch-curt-r.sweeping .ch-sw { animation-name: ch-curt-sweep-rev; }
+
+/* visibilitychange pauses the whole show without any visible control */
+.ch-paused *, .ch-stage.ch-paused * { animation-play-state: paused !important; }
+/* reduced motion: everything lands instantly, the stage stays lit (Hero.tsx
+ * also skips the auto-rotate timers in this mode) */
+.ch-reduce *, .ch-stage.ch-reduce * {
+  animation-duration: 1ms !important;
+  animation-delay: 0ms !important;
+  transition-duration: 1ms !important;
+}
+
+/* ---------- cinema keyframes ---------- */
+@keyframes ch-on-normal { 0% { opacity: 0; } 100% { opacity: 1; } }
+@keyframes ch-on-flicker {
+  0% { opacity: 0; } 6% { opacity: 0.38; } 10% { opacity: 0.12; } 16% { opacity: 0.62; } 22% { opacity: 0.28; }
+  34% { opacity: 0.9; } 42% { opacity: 0.55; } 55% { opacity: 1; } 62% { opacity: 0.82; } 72% { opacity: 1; } 100% { opacity: 1; }
+}
+@keyframes ch-on-surge {
+  0% { opacity: 0; } 14% { opacity: 0; } 18% { opacity: 0.95; } 24% { opacity: 0.04; } 38% { opacity: 0.85; } 44% { opacity: 0.06; } 58% { opacity: 1; } 100% { opacity: 1; }
+}
+@keyframes ch-on-filament {
+  0% { opacity: 0; } 28% { opacity: 0.22; } 55% { opacity: 0.48; } 80% { opacity: 0.82; } 100% { opacity: 1; }
+}
+@keyframes ch-on-pulse {
+  0% { opacity: 0; } 22% { opacity: 0.5; } 36% { opacity: 0.24; } 55% { opacity: 0.8; } 66% { opacity: 0.55; } 100% { opacity: 1; }
+}
+@keyframes ch-out-normal { 0% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes ch-out-flicker {
+  0% { opacity: 1; } 28% { opacity: 0.8; } 44% { opacity: 0.18; } 58% { opacity: 0.5; } 78% { opacity: 0.07; } 100% { opacity: 0; }
+}
+@keyframes ch-out-surge {
+  0% { opacity: 1; } 52% { opacity: 1; } 58% { opacity: 0; } 72% { opacity: 0.1; } 100% { opacity: 0; }
+}
+@keyframes ch-out-filament {
+  0% { opacity: 1; } 30% { opacity: 0.66; } 55% { opacity: 0.4; } 80% { opacity: 0.15; } 100% { opacity: 0; }
+}
+@keyframes ch-out-pulse {
+  0% { opacity: 1; } 18% { opacity: 0.6; } 32% { opacity: 0.72; } 55% { opacity: 0.28; } 70% { opacity: 0.38; } 100% { opacity: 0; }
+}
+@keyframes ch-breathe { 0%, 100% { opacity: 1; } 50% { opacity: 0.95; } }
+@keyframes ch-poster-in { 0% { filter: brightness(0.05) saturate(0.5); } 100% { filter: brightness(1) saturate(1); } }
+@keyframes ch-poster-out { 0% { filter: brightness(1) saturate(1); } 100% { filter: brightness(0.05) saturate(0.5); } }
+@keyframes ch-glass-in { 0% { opacity: 0; } 55% { opacity: 0.75; } 100% { opacity: 1; } }
+@keyframes ch-glass-out { 0% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes ch-glint {
+  0% { transform: translateX(-130%) skewX(-14deg); opacity: 0; }
+  18% { opacity: 1; }
+  82% { opacity: 1; }
+  100% { transform: translateX(130%) skewX(-14deg); opacity: 0; }
+}
+@keyframes ch-rise {
+  from { opacity: 0; transform: translateY(calc(var(--chu) * 0.75)); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes ch-info-out { to { opacity: 0; transform: translateY(calc(var(--chu) * -0.9)); } }
+@keyframes ch-float { from { transform: translate(0, 0); } to { transform: translate(calc(var(--chu) * 1.3), calc(var(--chu) * -2.4)); } }
+@keyframes ch-twinkle { 0%, 100% { opacity: 0.1; } 50% { opacity: 0.6; } }
+@keyframes ch-grain {
+  0% { transform: translate(0, 0); } 12.5% { transform: translate(-2%, 1.5%); } 25% { transform: translate(1.5%, -2%); }
+  37.5% { transform: translate(-1%, -1%); } 50% { transform: translate(2%, 1%); } 62.5% { transform: translate(-2%, 2%); }
+  75% { transform: translate(1%, 2%); } 87.5% { transform: translate(2%, -1.5%); } 100% { transform: translate(0, 0); }
+}
+@keyframes ch-curt-sweep {
+  0% { transform: translateX(-135%) skewX(-16deg); opacity: 0; }
+  14% { opacity: 1; } 78% { opacity: 1; }
+  100% { transform: translateX(135%) skewX(-16deg); opacity: 0; }
+}
+@keyframes ch-curt-sweep-rev {
+  0% { transform: translateX(135%) skewX(-16deg); opacity: 0; }
+  14% { opacity: 1; } 78% { opacity: 1; }
+  100% { transform: translateX(-135%) skewX(-16deg); opacity: 0; }
+}
