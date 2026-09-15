@@ -6,6 +6,7 @@ import LoadErrorCard from "@/components/LoadErrorCard";
 import AppUpdateCard from "@/components/settings/AppUpdateCard";
 import { MobileUpdateCard } from "@/components/mobile/MobileUpdater";
 import CoverPackCard from "@/components/settings/CoverPackCard";
+import ArtHealthCard from "@/components/settings/ArtHealthCard";
 import { SettingsIcon, HelpIcon, ShieldIcon, KeyboardIcon, InfoIcon, MailIcon } from "@/components/Icons";
 import { getProfile } from "@/lib/mobile/userdata";
 import { useAsyncData } from "@/lib/use-async-data";
@@ -68,6 +69,7 @@ export default function SettingsPage() {
         <AppUpdateCard />
         <MobileUpdateCard />
         <CoverPackCard />
+        <ArtHealthCard />
 
         {/* support — merged into settings (menu only links here) */}
         <section id="support" className="mt-8 scroll-mt-28 rounded-3xl border border-white/5 bg-ink-700/40 p-5 sm:p-6">

@@ -1,4 +1,4 @@
-/* v0.35.1 (IMG-CACHE-2) — Frame's image-only service worker.
+/* v0.35.3 (IMG-CACHE-4) — Frame's image-only service worker.
  *
  * IMG-CACHE-2 hardens what v0.34.4 shipped: metahub art is cached as
  * OPAQUE (no-cors) responses, and Chromium pads opaque entries with up to
@@ -28,13 +28,25 @@
  * fresh one, and skipping revalidation is what makes back-navigation paint
  * instantly from disk instead of hitting the network.
  *
+ * IMG-CACHE-4 (v0.35.3) adds the poison-heal protocol: opaque responses
+ * hide their HTTP status, so a metahub 404/429/503 error page used to be
+ * cached exactly like a real image and served FOREVER by cache-first —
+ * the reported «تصاویر دیگر اصلاً لود نمی‌شوند». Two halves:
+ *   • page-side (layout.tsx IMG_FALLBACK): on <img> error for a metahub
+ *     url, delete the cached entry and retry once with ?_rw=<ts>;
+ *   • worker-side (below): _rw requests are a pure network pass-through —
+ *     they are NEVER written to the bucket, so the heal cannot re-poison
+ *     the key it just cleaned. A url that recovers is re-cached by the
+ *     next normal fetch. The v2→v3 bucket bump also wipes every existing
+ *     poisoned entry in one move.
+ *
  * Storage: one Cache API bucket, trimmed to MAX_ENTRIES (oldest-inserted
  * first). ~500 posters/page × 54KB ⇒ tens of MB in normal use; the cap is
  * only a safety net for binge sessions. Opaque (no-cors) responses from
  * metahub are cacheable exactly like same-origin ones.
  */
 
-const VERSION = "frame-img-v2";
+const VERSION = "frame-img-v3";
 const MAX_ENTRIES = 5000;
 const EVICT_FLOOR = 1250; // put()-failure eviction target (MAX_ENTRIES / 4)
 
@@ -96,9 +108,34 @@ self.addEventListener("fetch", (event) => {
   const request = event.request;
   if (!isArtRequest(request)) return;
 
+  /* IMG-CACHE-4: ?_rw=<ts> marks a HEAL retry. The page-side error chain
+   * adds it after deleting a poisoned entry (an opaque response hides its
+   * status — status, headers and body are ALL redacted, and even
+   * `redirected` reads false for opaque responses, so the worker CANNOT
+   * tell a poster from a metahub 404/429/503 error page at fetch time).
+   * The heal contract is therefore: a _rw request is a pure NETWORK
+   * PASS-THROUGH that is NEVER written to the bucket. Combined with the
+   * page-side delete-before-retry, the invariant is:
+   *   after any <img> decode failure the failing url is OUT of the bucket,
+   *   and poison can never be (re)written by the heal itself. A url that
+   *   recovered while we were away is re-cached by the next normal fetch
+   *   (which finds the bucket empty for it) — self-repair, one fetch. */
+  let heal = false;
+  try {
+    heal = new URL(request.url).searchParams.has("_rw");
+  } catch {
+    heal = false;
+  }
+
+  if (heal) {
+    event.respondWith(fetch(request));
+    return;
+  }
+
   event.respondWith(
     (async () => {
       const cache = await caches.open(VERSION);
+
       let hit = null;
       try {
         hit = await cache.match(request, { ignoreVary: true });
@@ -109,8 +146,12 @@ self.addEventListener("fetch", (event) => {
 
       try {
         const fresh = await fetch(request);
-        // Only cache real artwork; a 404/error would poison the bucket for
-        // the fallback chain (metahub 404 → webp retry → SVG placeholder).
+        // Cache only plausible artwork: same-origin responses carry a real
+        // status (ok=false on 404/500 → never stored). Opaque responses are
+        // indistinguishable from errors at this layer — accepted here,
+        // because any entry that fails to DECODE is deleted by the page-side
+        // heal on its very first failure and never re-written by the retry,
+        // so poison cannot survive a render pass.
         if (fresh && (fresh.ok || fresh.type === "opaque")) {
           // Two independent clones BEFORE anything consumes the body: the
           // first satisfies the normal put, the second exists only for the

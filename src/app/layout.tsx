@@ -75,10 +75,39 @@ const IMG_FALLBACK_SCRIPT = String.raw`(function(){
       '<path d="M ' + (w/2 - r*0.55) + ' ' + (cy - r*0.8) + ' L ' + (w/2 + r*0.9) + ' ' + cy + ' L ' + (w/2 - r*0.55) + ' ' + (cy + r*0.8) + ' Z" fill="#e5b84b" fill-opacity="0.5"/>' +
       txt + '</svg>';
   }
+  /* v0.35.3 (IMG-CACHE-4) — the fallback chain is now SELF-HEALING. The
+   * image SW caches metahub art as OPAQUE responses, and an opaque response
+   * hides its HTTP status — a metahub 404/429/503 error page gets cached
+   * exactly like a real image, then cache-first serves that garbage forever
+   * («تصاویر دیگر اصلاً لود نمی‌شوند»). Heal protocol (worker half in
+   * public/sw.js): 1) on the first <img> error for a metahub url, DELETE
+   * the cached entry and retry once with ?_rw=<ts>; 2) the worker treats
+   * ?_rw as network-first and stores the fresh copy under the CLEAN url;
+   * 3) if the retry also fails, the old chain runs: webp → metahub →
+   * background→poster swap (NEW) → SVG placeholder. One heal per element
+   * (dataset.rw) — no loops, no unbounded retries. */
+  var MH_RE = /(^|\.)metahub\.space$/i;
+  function heal(el, src){
+    if (el.dataset.rw) return false;
+    try {
+      var u = new URL(src, location.href);
+      if (!MH_RE.test(u.hostname)) return false;
+      el.dataset.rw = '1';
+      u.searchParams.delete('_rw');
+      var clean = u.toString();
+      if ('caches' in window) {
+        caches.open('frame-img-v3').then(function(c){ return c.delete(clean); }).catch(function(){});
+      }
+      u.searchParams.set('_rw', String(Date.now()));
+      el.src = u.toString();
+      return true;
+    } catch(e) { return false; }
+  }
   document.addEventListener('error', function(e){
     var el = e.target;
     if (!el || el.tagName !== 'IMG' || !el.dataset || el.dataset.fb) return;
     var src = el.currentSrc || el.src || '';
+    if (heal(el, src)) return;
     if (!el.dataset.fb2 && /\.jpe?g$/i.test(src)) {
       el.dataset.fb2 = '1';
       el.src = src.replace(/\.jpe?g$/i, '.webp');
@@ -93,6 +122,14 @@ const IMG_FALLBACK_SCRIPT = String.raw`(function(){
         return;
       }
     }
+    if (!el.dataset.mhp) {
+      var m2 = src.match(/metahub\.space\/background\/(?:medium|large)\/(tt\d+)\//i);
+      if (m2) {
+        el.dataset.mhp = '1';
+        el.src = 'https://images.metahub.space/poster/medium/' + m2[1] + '/img';
+        return;
+      }
+    }
     el.dataset.fb = '1';
     var t = el.getAttribute('data-ph-title') || '';
     if (t) { el.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(phSvg(t, /backdrop|-wide/.test(src))); return; }
@@ -100,8 +137,8 @@ const IMG_FALLBACK_SCRIPT = String.raw`(function(){
   }, true);
 })();`;
 
-/* v0.35.2 (IMG-CACHE-3) — renderer-memory art warmer (the LAST cache layer,
- * independent of the service worker and the HTTP cache):
+/* v0.35.2/3 (IMG-CACHE-3 + IMG-CACHE-4) — renderer-memory art warmer (the
+ * LAST cache layer, independent of the service worker and the HTTP cache):
  * every artwork <img> that finishes loading gets pinned as a live Image
  * element in a module-level LRU (800 entries ≈ tens of MB of encoded art).
  * A referenced element keeps its resource inside the renderer for the whole
@@ -110,13 +147,19 @@ const IMG_FALLBACK_SCRIPT = String.raw`(function(){
  * the very first frame — no network, no SW round-trip, no decode flash.
  * Works everywhere: Electron, Android WebView, browsers, with or without
  * service-worker support. Capture-phase 'load' listener covers every <img>
- * the app ever renders, server-rendered or client-mounted. */
+ * the app ever renders, server-rendered or client-mounted.
+ *
+ * IMG-CACHE-4: heal-retry urls (?_rw=<ts>) are never pinned (they would
+ * pollute the LRU under a key nothing re-requests); instead the CLEAN url
+ * is warmed, so the RAM layer holds the healed copy too. __warmArtStat()
+ * exposes the LRU size to the settings artwork-health probe. */
 const ART_WARMER_SCRIPT = String.raw`(function(){
   if (window.__namaArtWarm) return; window.__namaArtWarm = 1;
   var MAX = 800, m = new Map();
   function ok(u){
     if (typeof u !== 'string') return false;
     if (u.indexOf('data:') === 0 || u.indexOf('blob:') === 0) return false;
+    if (u.indexOf('_rw=') !== -1) return false;
     return /^https?:\/\//i.test(u) || u.charAt(0) === '/';
   }
   function warm(u){
@@ -132,9 +175,17 @@ const ART_WARMER_SCRIPT = String.raw`(function(){
     } catch (e) {}
   }
   window.__warmArt = warm;
+  window.__warmArtStat = function(){ return { size: m.size, max: MAX }; };
   document.addEventListener('load', function(e){
     var t = e.target;
-    if (t && t.tagName === 'IMG') warm(t.currentSrc || t.src);
+    if (t && t.tagName === 'IMG') {
+      var u = t.currentSrc || t.src;
+      if (typeof u === 'string' && u.indexOf('_rw=') > -1) {
+        try { var c = new URL(u); c.searchParams.delete('_rw'); u = c.toString(); }
+        catch(err) { u = u.split('?')[0]; }
+      }
+      warm(u);
+    }
   }, true);
 })();`;
 

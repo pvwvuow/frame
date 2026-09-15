@@ -118,6 +118,9 @@ db/*.db-shm
 !/public/covers/*/
 !/public/covers/**/*.jpg
 !/public/covers/**/*.png
+# v0.35.3 (IMG-CACHE-4): the chain's last-resort placeholders ARE shipped
+!/public/covers/_fallback.svg
+!/public/covers/_fallback-wide.svg
 /scripts/*.png
 /scripts/*.txt
 /scripts/*.log
