@@ -20,6 +20,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
+import { fetchCoversManifest } from "@/lib/desktop-covers";
 import { CameraIcon } from "../Icons";
 
 const IMG_BUCKETS = "frame-img-";
@@ -62,6 +63,8 @@ export default function ArtHealthCard() {
   const [warmer, setWarmer] = useState("…");
   const [busy, setBusy] = useState(false);
   const [tested, setTested] = useState(false);
+  /* ART-3.0 — local store numbers (covers-store + relay art-cache) */
+  const [store, setStore] = useState<{ files: number; bytes: number; artFiles: number; artBytes: number } | null>(null);
   const [rows, setRows] = useState<Row[]>([
     { label: "تصویر داخلی (سرور خود فریم)", state: "idle", detail: "" },
     { label: "پوستر از سرور متاهاب (مستقیم)", state: "idle", detail: "" },
@@ -117,6 +120,20 @@ export default function ArtHealthCard() {
   useEffect(() => {
     if (open) void refresh();
   }, [open, refresh]);
+
+  /* ART-3.0 — one manifest call whenever the panel opens */
+  useEffect(() => {
+    if (!open) return;
+    void fetchCoversManifest().then((m) => {
+      if (!m) return setStore(null);
+      setStore({
+        files: m.files ?? 0,
+        bytes: m.bytes ?? 0,
+        artFiles: (m as { art?: { files: number } }).art?.files ?? 0,
+        artBytes: (m as { art?: { bytes: number } }).art?.bytes ?? 0,
+      });
+    });
+  }, [open]);
 
   const runTest = async () => {
     setBusy(true);
@@ -186,6 +203,22 @@ export default function ArtHealthCard() {
               <p className="text-zinc-500">حافظه‌ی موقت نشست</p>
               <p className="mt-1 font-bold text-zinc-200">{warmer}</p>
             </div>
+            <div className="rounded-xl border border-white/5 bg-white/[0.03] p-3">
+              <p className="text-zinc-500">تصاویر آفلاین (دیسک)</p>
+              <p className="mt-1 font-bold text-zinc-200">
+                {store && store.files > 0
+                  ? `${store.files.toLocaleString("fa-IR")} تصویر · ${(store.bytes / 1048576).toFixed(0)} مگابایت`
+                  : "در حال آماده‌سازی…"}
+              </p>
+            </div>
+            <div className="rounded-xl border border-white/5 bg-white/[0.03] p-3">
+              <p className="text-zinc-500">کش واسط تصویر (دیسک)</p>
+              <p className="mt-1 font-bold text-zinc-200">
+                {store && store.artFiles > 0
+                  ? `${store.artFiles.toLocaleString("fa-IR")} تصویر · ${(store.artBytes / 1048576).toFixed(0)} مگابایت`
+                  : "خالی"}
+              </p>
+            </div>
           </div>
 
           <div className="flex flex-wrap gap-2">
@@ -239,6 +272,9 @@ export default function ArtHealthCard() {
               سرور خودِ فریم سالم است ولی سرور تصاویر (متاهاب) از شبکه‌ی فعلی به هیچ شکلی در دسترس
               نیست — نه مستقیم و نه از مسیر واسط. راه‌حل: اتصال اینترنت را عوض کنید یا فیلترشکن را
               روشن/خاموش کنید و بعد دوباره تست بگیرید.
+              {store && store.files > 0
+                ? " بستهٔ تصاویر آفلاین روی این دستگاه نصب است و پوسترها بدون متاهاب هم لود می‌شوند."
+                : " با «تصاویر آفلاین» در همین صفحه، بستهٔ پوسترها را یک‌بار دانلود کنید تا عکس‌ها دیگر به این شبکه وابسته نباشند."}
             </p>
           )}
           {tested && metaOk && localOk && (

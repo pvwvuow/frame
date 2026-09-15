@@ -86,6 +86,24 @@ export type NamaDownloadsBridge = {
   onState: (cb: (s: DownloadState) => void) => () => void;
 };
 
+export type CoversSyncState = {
+  phase: "idle" | "check" | "download" | "merge" | "done" | "error" | "up-to-date";
+  part: number;
+  totalParts: number;
+  received: number;
+  total: number;
+  message: string;
+  error: string;
+  rev: number;
+  updatedAt: string | null;
+};
+
+export type NamaCoversBridge = {
+  status: () => Promise<CoversSyncState>;
+  syncNow: () => Promise<{ started: boolean; state: CoversSyncState }>;
+  onProgress: (cb: (s: CoversSyncState) => void) => () => void;
+};
+
 export type NamaBridge = {
   isElectron: true;
   platform: NodeJS.Platform;
@@ -101,6 +119,8 @@ export type NamaBridge = {
   window: { minimize: () => void; maximize: () => void; close: () => void; isMaximized: () => Promise<boolean>; toggleFullscreen: () => void };
   onNavigate: (cb: (path: string) => void) => () => void;
   onUpdateStatus: (cb: (s: { status: string; version?: string; percent?: number; message?: string }) => void) => () => void;
+  /* ART-3.0 (v0.36.0) — desktop coverpack sync (absent in older builds) */
+  covers?: NamaCoversBridge;
   setBadge: (count: number) => void;
 };
 

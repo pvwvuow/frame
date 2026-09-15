@@ -19,6 +19,7 @@ import GlobalPlayer from "@/components/GlobalPlayer";
 import CatalogGate from "@/components/mobile/CatalogGate";
 import { makeT, LOCALE_META, dirOf, DEFAULT_LOCALE } from "@/lib/i18n";
 import { getLocale } from "@/lib/i18n/server";
+import { serverCoversRev, stampCoversRev } from "@/lib/cover-store";
 import "./globals.css";
 
 /* Metadata stays module-scope (static default); the per-request locale that
@@ -139,7 +140,15 @@ const IMG_FALLBACK_SCRIPT = String.raw`(function(){
       var m = src.match(/\/covers\/(tt\d+)\//i);
       if (m) {
         var wide = /backdrop|-wide/i.test(src);
-        el.src = 'https://images.metahub.space/' + (wide ? 'background/medium/' : 'poster/medium/') + m[1] + '/img';
+        var mu = 'https://images.metahub.space/' + (wide ? 'background/medium/' : 'poster/medium/') + m[1] + '/img';
+        /* ART-3.0: on the desktop the direct metahub mount is the WORST hop
+         * (burst-throttled on Iranian routes) — the paced same-origin relay
+         * takes over; Android has no server, keep the direct mount there. */
+        if (window.nama && window.nama.isElectron) {
+          el.src = '/api/art?u=' + encodeURIComponent(mu);
+        } else {
+          el.src = mu;
+        }
         return;
       }
     }
@@ -148,14 +157,19 @@ const IMG_FALLBACK_SCRIPT = String.raw`(function(){
       var m2 = probe.match(/metahub\.space\/background\/(?:medium|large)\/(tt\d+)\//i);
       if (m2) {
         el.dataset.mhp = '1';
-        el.src = 'https://images.metahub.space/poster/medium/' + m2[1] + '/img';
+        var pu = 'https://images.metahub.space/poster/medium/' + m2[1] + '/img';
+        el.src = window.nama && window.nama.isElectron ? '/api/art?u=' + encodeURIComponent(pu) : pu;
         return;
       }
     }
     el.dataset.fb = '1';
     var t = el.getAttribute('data-ph-title') || '';
     if (t) { el.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(phSvg(t, /backdrop|-wide/.test(src))); return; }
-    el.src = '/covers/_fallback' + (/backdrop|-wide/.test(src) ? '-wide' : '') + '.svg';
+    /* ART-3.0: the packaged (cover-light) app ships NO public/covers, so the
+     * old /covers/_fallback.svg terminal 404'd INTO a broken-image glyph —
+     * cards looked dark even when the placeholder "worked". The terminal is
+     * now a self-contained inline SVG data URI. */
+    el.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(phSvg('فریم', /backdrop|-wide/.test(src)));
   }, true);
 })();`;
 
@@ -216,6 +230,12 @@ const ART_WARMER_SCRIPT = String.raw`(function(){
   }, true);
 })();`;
 
+/* ART-3.0 — the SERVER knows the local covers-store state (see
+ * cover-store.serverCoversRev): it is stamped into the SSR render global and
+ * inlined pre-hydration, so the SSR markup and the first client render both
+ * mount /covers/... local paths. No async manifest fetch race, no hydration
+ * mismatch: local-first from the first paint. */
+
 /* Audio unlock: prime the audio pipeline on the first user gesture. */
 const AUDIO_UNLOCK_SCRIPT = String.raw`(function(){
   if (window.__namaAudioUnlock) return; window.__namaAudioUnlock = 1;
@@ -246,9 +266,19 @@ const AUDIO_UNLOCK_SCRIPT = String.raw`(function(){
  * exactly as before). This makes the root layout dynamic — accepted. */
 export default async function RootLayout({ children }: { children: ReactNode }) {
   const locale = await getLocale();
+  /* ART-3.0 — stamp the server-side store rev BEFORE children render, so
+   * every SSR'd posterSrc/backdropSrc resolves local-first, and inline the
+   * same value pre-hydration so the first client render matches. */
+  const coversRev = await serverCoversRev();
+  stampCoversRev(coversRev);
+  /* the localStorage write is GUARDED (rev>0): on Android the export-time rev
+   * is 0 and must never clobber the rev the self-update bookkeeping wrote —
+   * the pack the user already merged would otherwise be "forgotten". */
+  const COVERS_REV_BOOT = `window.__coversRev=${coversRev};try{${coversRev > 0 ? `localStorage.setItem('frame.covers.rev','${coversRev}')` : ""}}catch(e){}`;
   return (
     <html lang={LOCALE_META[locale].htmlLang} dir={dirOf(locale)} data-locale={locale} data-scroll-behavior="smooth" suppressHydrationWarning>
       <body className="min-h-screen bg-ink text-zinc-100 antialiased">
+        <script id="nama-covers-rev" dangerouslySetInnerHTML={{ __html: COVERS_REV_BOOT }} />
         <script id="nama-img-fallback" dangerouslySetInnerHTML={{ __html: IMG_FALLBACK_SCRIPT }} />
         <script id="nama-art-warmer" dangerouslySetInnerHTML={{ __html: ART_WARMER_SCRIPT }} />
         <script id="nama-audio-unlock" dangerouslySetInnerHTML={{ __html: AUDIO_UNLOCK_SCRIPT }} />

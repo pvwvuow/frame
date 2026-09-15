@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { bridge, isElectron } from "@/lib/platform";
+import { watchCoversSync } from "@/lib/desktop-covers";
 import UpdaterPopup, { pushUpdaterStatus } from "./UpdaterPopup";
 
 /** Pages that only make sense on the public website (marketing / legal / contact). */
@@ -32,6 +33,16 @@ export default function ElectronBridge() {
     const target = WEB_ONLY_ROUTES[pathname];
     if (target) router.replace(target);
   }, [pathname, router]);
+
+  useEffect(() => {
+    if (!isElectron()) return;
+    /* ART-3.0 — flip the local-first artwork switch as coverpack parts merge
+     * (localStorage rev + frame-covers-rev event; see desktop-covers.ts) */
+    const offCovers = watchCoversSync();
+    return () => {
+      offCovers();
+    };
+  }, []);
 
   useEffect(() => {
     if (!isElectron()) return;

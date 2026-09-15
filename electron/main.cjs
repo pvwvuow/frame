@@ -23,6 +23,8 @@ const log = require("electron-log");
 const { startStreamProxy } = require("./stream-proxy.cjs");
 const { setupPip, pipOpen } = require("./pip.cjs");
 const { setupDownloads } = require("./downloads.cjs");
+/* ART-3.0 (v0.36.0) — desktop coverpack sync (local-first artwork) */
+const { startCoversSync, startSync: startCoversSyncNow, coversState } = require("./covers-sync.cjs");
 
 log.transports.file.level = "info";
 log.initialize?.();
@@ -799,6 +801,15 @@ const DEFAULT_CATALOG_URL = "https://github.com/pvwvuow/frame/releases/latest/do
    * fallback for hosts where it works. */
   if (catalogUrl) env.NAMA_CATALOG_CACHE_DIR = catalogCacheDir();
 
+  /* ART-3.0 (v0.36.0) — the LOCAL ARTWORK stores live in userData (writable
+   * across updates, unlike the install dir): the covers-store the /covers
+   * rewrite serves, the coverpack-cache the shell downloads parts into, and
+   * the art-cache the /api/art relay persists to. Unset in dev → the server
+   * falls back to cwd-relative dev dirs. */
+  env.FRAME_COVERS_STORE = path.join(app.getPath("userData"), "covers-store");
+  env.FRAME_COVERPACK_CACHE = path.join(app.getPath("userData"), "coverpack-cache");
+  env.FRAME_ART_CACHE = path.join(app.getPath("userData"), "art-cache");
+
   /* Cover-light packages (v0.10.1+): when covers are not bundled, root-relative
      asset paths (/covers/…) must resolve against the hosted site root. The
      server rebases them – both on the fast fresh-seed adoption path and on the
@@ -1122,6 +1133,12 @@ async function offerRepair(kind, detail) {
       buildMenu();
       mainWindow = createWindow();
       setupUpdater();
+      startCoversSync({
+        serverUrl,
+        userData: app.getPath("userData"),
+        send: coversSendToWindow,
+        netFetch: electronNet.fetch.bind(electronNet),
+      });
       return;
     }
   } catch (e) {
@@ -1445,6 +1462,16 @@ async function checkForUpdates(interactive = false) {
 /* ------------------------------------------------------------------ */
 /* ipc                                                                */
 /* ------------------------------------------------------------------ */
+/** ART-3.0 — fan a covers-sync event out to the live window (null-safe:
+ * the sync outlives window rebuilds). */
+function coversSendToWindow(channel, payload) {
+  try {
+    const w = mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents : null;
+    if (w) w.send(channel, payload);
+  } catch {
+    /* window gone */
+  }
+}
 ipcMain.handle("nama:info", () => ({
   version: app.getVersion(),
   electron: process.versions.electron,
@@ -1456,6 +1483,12 @@ ipcMain.handle("nama:info", () => ({
   dbPath: userDbPath(),
 }));
 ipcMain.handle("nama:proxy-url", () => proxyBase || "");
+/* ART-3.0 — covers sync status / manual run */
+ipcMain.handle("covers:status", () => coversState());
+ipcMain.handle("covers:sync-now", () => {
+  const started = startCoversSyncNow();
+  return { started, state: coversState() };
+});
 ipcMain.handle("nama:check-updates", () => checkForUpdates(false));
 ipcMain.handle("nama:install-update", () => {
   if (!autoUpdater) return false;
@@ -1580,6 +1613,16 @@ if (!gotLock) {
       buildMenu();
       mainWindow = createWindow();
       setupUpdater();
+      /* ART-3.0 — the shell downloads the release coverpack parts through the
+       * proxy-aware Chromium stack and hands each landed zip to the local
+       * server /api/covers/merge (stores grow part by part). Boot auto-run
+       * after 25s; the renderer can trigger more via covers:sync-now. */
+      startCoversSync({
+        serverUrl,
+        userData: app.getPath("userData"),
+        send: coversSendToWindow,
+        netFetch: electronNet.fetch.bind(electronNet),
+      });
       if (dbProbeError && FATAL_DB_RE.test(dbProbeError)) {
         // locked/corrupt database → let the user repair in one click
         offerRepair("خطای دیتابیس", dbProbeError);

@@ -33,6 +33,12 @@ contextBridge.exposeInMainWorld("nama", {
   },
   onNavigate: (cb) => on("nama:navigate", cb),
   onUpdateStatus: (cb) => on("nama:update-status", cb),
+  /* ART-3.0 (v0.36.0) — local-first artwork: coverpack sync status/progress */
+  covers: {
+    status: () => ipcRenderer.invoke("covers:status"),
+    syncNow: () => ipcRenderer.invoke("covers:sync-now"),
+    onProgress: (cb) => on("covers:progress", cb),
+  },
   setBadge: (count) => ipcRenderer.send("nama:badge", count),
   /* desktop floating players (real OS windows) — v0.10.19 multi-window */
   pip: {

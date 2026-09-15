@@ -55,6 +55,20 @@ const nextConfig: NextConfig = {
             (source) => ({ source, headers: artCache }),
           );
         },
+        /* ART-3.0 (v0.36.0) — /covers/:path* now ALSO serves the desktop
+         * LOCAL covers-store: static public/covers files (dev, bundled-cover
+         * installs, the Android web root) always win; when they are absent —
+         * the packaged cover-light installer — the request falls through to
+         * /api/covers/file/... which streams from userData/covers-store.
+         * posterSrc can therefore mount /covers/<tt>/poster.webp everywhere
+         * without caring which backend is behind it. */
+        async rewrites() {
+          return {
+            beforeFiles: [],
+            afterFiles: [{ source: "/covers/:path*", destination: "/api/covers/file/:path*" }],
+            fallback: [],
+          };
+        },
       }
     : {}),
 };
