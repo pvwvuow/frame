@@ -33,7 +33,7 @@ function PeopleInner() {
   const sp = useSearchParams();
   const role = sp.get("role") ?? undefined;
   const sort = sp.get("sort") ?? "rating";
-  const { data: all, error, retry } = useAsyncData(() => getPeopleIndex(), []);
+  const { data: all, error, retry } = useAsyncData(() => getPeopleIndex(), [], { cacheKey: "people:v1" });
   const [rawQ, setRawQ] = useState("");
   const q = useDeferredValue(rawQ).trim();
   const [limit, setLimit] = useState(CHUNK);

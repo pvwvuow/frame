@@ -176,6 +176,11 @@ const ART_WARMER_SCRIPT = String.raw`(function(){
   }
   window.__warmArt = warm;
   window.__warmArtStat = function(){ return { size: m.size, max: MAX }; };
+  /* IMG-CACHE-5: lets client components ask "has THIS session already
+   * loaded this artwork once?" — remounted cards drop loading="lazy" for
+   * warm srcs (see src/lib/art-warm.ts) so back-navigation paints them
+   * from renderer RAM on the first frame. */
+  window.__warmHas = function(u){ return m.has(u); };
   document.addEventListener('load', function(e){
     var t = e.target;
     if (t && t.tagName === 'IMG') {

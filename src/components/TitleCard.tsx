@@ -14,6 +14,7 @@ import { titleNames } from "@/lib/title-name";
 import TitleName from "./TitleName";
 import { watchHref } from "@/lib/mobile-links";
 import { posterSrc } from "@/lib/covers";
+import { warmArtHas } from "@/lib/art-warm";
 import { genreLabel } from "@/lib/genres";
 
 /** Shape needed by the card grid — list endpoints may ship the lightweight
@@ -61,6 +62,12 @@ export default function TitleCard({
   const pct = progress && progress.duration > 0 ? Math.min(100, (progress.position / progress.duration) * 100) : 0;
   const w = size === "sm" ? "w-[130px] sm:w-[150px]" : size === "lg" ? "w-[190px] sm:w-[230px]" : "w-[150px] sm:w-[190px]";
 
+  /* IMG-CACHE-5: a poster this session already loaded once is pinned in the
+   * renderer RAM warmer — drop loading="lazy" so a remounted card paints it
+   * on the first frame instead of waiting for the lazy-intersection beat. */
+  const artSrc = posterSrc(t);
+  const artWarm = warmArtHas(artSrc);
+
   return (
     <div className={`group relative block shrink-0 ${w} snap-start`}>
       <button
@@ -72,9 +79,9 @@ export default function TitleCard({
         <div className="relative aspect-[2/3] overflow-hidden rounded-xl bg-ink-700 ring-1 ring-white/5 transition-all duration-300 group-hover:-translate-y-1.5 group-hover:shadow-[0_20px_50px_rgba(0,0,0,0.6),0_0_0_1px_rgba(255,255,255,0.14)] group-focus-visible:ring-2 group-focus-visible:ring-brand">
           { }
           <img
-            src={posterSrc(t)}
+            src={artSrc}
             alt={names.label}
-            loading="lazy"
+            loading={artWarm ? "eager" : "lazy"}
             decoding="async"
             data-ph-title={names.label}
             className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"

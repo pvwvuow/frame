@@ -11,7 +11,7 @@ import { useI18n } from "@/components/i18n/LocaleProvider";
 
 export default function FavoritesPage() {
   const { t: tr } = useI18n();
-  const { data: rows, error, retry } = useAsyncData(() => getFavoriteRows(), []);
+  const { data: rows, error, retry } = useAsyncData(() => getFavoriteRows(), [], { cacheKey: "favorites:v1" });
 
   const movies = rows?.filter((r) => r.title.type === "movie").length ?? 0;
   const avg = rows && rows.length ? (rows.reduce((a, r) => a + r.title.rating, 0) / rows.length).toFixed(1) : "—";

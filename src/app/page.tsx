@@ -208,7 +208,7 @@ export default function HomePage() {
       ...Object.fromEntries(Array.from(progressMap.entries()).map(([k, v]) => [String(k), v])),
     };
     return { featured, trending, newest, topRated, series, action, scifi, watchlistIds, continueItems, favRows, listRows };
-  }, []);
+  }, [], { cacheKey: "home:v1" });
 
   if (error) {
     return (

@@ -27,7 +27,7 @@ function RankingsInner() {
   const sp = useSearchParams();
   const typeParam = sp.get("type");
   const valid = typeParam === "movie" || typeParam === "series" ? (typeParam as "movie" | "series") : undefined;
-  const { data: rows, error, retry } = useAsyncData(() => getRankings(valid, 100), [valid]);
+  const { data: rows, error, retry } = useAsyncData(() => getRankings(valid, 100), [valid], { cacheKey: `rankings:v1:${valid ?? "all"}` });
 
   if (error) {
     return (

@@ -75,10 +75,22 @@ function isArtRequest(request) {
   return false;
 }
 
+/* IMG-CACHE-5 (v0.35.4) — a burst of a hundred+ remounted posters used to
+ * each await their own caches.open() IPC round-trip inside the worker
+ * before a single cache.match could run; on slower machines that queue was
+ * a visible slice of the «بازگشت به صفحه = یکی دو ثانیه» delay. Open the
+ * bucket ONCE per worker lifetime and share the promise. The activate
+ * handler resets it so a bucket bump (v2→v3…) re-opens cleanly. */
+let bucketPromise = null;
+function openBucket() {
+  if (!bucketPromise) bucketPromise = caches.open(VERSION);
+  return bucketPromise;
+}
+
 /** Keep the bucket bounded: drop the oldest half when over budget. */
-async function trimCache(cacheName) {
+async function trimCache() {
   try {
-    const cache = await caches.open(cacheName);
+    const cache = await openBucket();
     const keys = await cache.keys();
     if (keys.length <= MAX_ENTRIES) return;
     const excess = keys.length - Math.floor(MAX_ENTRIES / 2);
@@ -99,6 +111,7 @@ self.addEventListener("activate", (event) => {
     (async () => {
       const names = await caches.keys();
       await Promise.all(names.filter((n) => n !== VERSION).map((n) => caches.delete(n)));
+      bucketPromise = null;
       await self.clients.claim();
     })(),
   );
@@ -134,7 +147,7 @@ self.addEventListener("fetch", (event) => {
 
   event.respondWith(
     (async () => {
-      const cache = await caches.open(VERSION);
+      const cache = await openBucket();
 
       let hit = null;
       try {
@@ -161,7 +174,7 @@ self.addEventListener("fetch", (event) => {
           const spare = fresh.clone();
           cache
             .put(request, primary)
-            .then(() => trimCache(VERSION))
+            .then(() => trimCache())
             .catch(async () => {
               // QuotaExceededError (padded opaque entries) or an aborted
               // write: evict down to EVICT_FLOOR and retry exactly once.

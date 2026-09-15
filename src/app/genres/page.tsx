@@ -10,7 +10,7 @@ import { useAsyncData } from "@/lib/use-async-data";
 const HUES = [350, 265, 200, 150, 35, 320, 15, 230, 100, 45, 280, 180, 0, 210];
 
 export default function GenresPage() {
-  const { data: genres, error, retry } = useAsyncData(() => getGenreSummaries(), []);
+  const { data: genres, error, retry } = useAsyncData(() => getGenreSummaries(), [], { cacheKey: "genres:v1" });
 
   if (error) {
     return (

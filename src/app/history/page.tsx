@@ -10,7 +10,7 @@ import { useI18n } from "@/components/i18n/LocaleProvider";
 
 export default function HistoryPage() {
   const { t: tr } = useI18n();
-  const { data: rows, error, retry } = useAsyncData(() => getHistory(), []);
+  const { data: rows, error, retry } = useAsyncData(() => getHistory(), [], { cacheKey: "history:v1" });
 
   const minutes = rows ? Math.round(rows.reduce((a, r) => a + r.position, 0) / 60) : 0;
   const finished = rows?.filter((r) => r.finished).length ?? 0;

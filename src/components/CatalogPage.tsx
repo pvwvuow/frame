@@ -9,6 +9,7 @@ import CatalogLoadMore from "@/components/CatalogLoadMore";
 import { PlayIcon, StarIcon, InfoIcon, FilmIcon, TvIcon, EyeIcon } from "@/components/Icons";
 import { GENRES, getCatalogPage, getCatalogStats, getYears, type TitleListItem } from "@/lib/mobile/db";
 import { getProgressMap } from "@/lib/mobile/userdata";
+import { useAsyncData } from "@/lib/use-async-data";
 import { fa, formatDuration, formatViews } from "@/lib/format";
 import { genreLabel } from "@/lib/genres";
 import { useI18n } from "./i18n/LocaleProvider";
@@ -37,25 +38,30 @@ function CatalogPageInner({ type }: { type: "movie" | "series" }) {
   const sort = sp.get("sort") ?? "trending";
   const year = sp.get("year") ? Number(sp.get("year")) : undefined;
   const minRating = sp.get("rating") ? Number(sp.get("rating")) : undefined;
-  const [st, setSt] = useState<CatalogState | null>(null);
+  /* IMG-CACHE-5 (v0.35.4): the initial catalog query now goes through the
+   * SWR data layer — a remount (router.refresh() invalidation, stale window
+   * expiry, back-navigation) paints the last-good page for THIS exact filter
+   * combination immediately and revalidates underneath, instead of always
+   * starting from CatalogSkeleton + empty posters. The lazy useState
+   * initializer reads the cached payload on the very first render (zero
+   * skeleton flash); an uncached first visit stays on CatalogSkeleton while
+   * the lite-index query runs, exactly like before. */
+  const { data: stSwr } = useAsyncData<CatalogState>(async () => {
+    const [{ items, total }, stats, years] = await Promise.all([
+      getCatalogPage(type, { genre, sort, year, minRating }, 0, PAGE_SIZE),
+      getCatalogStats(type),
+      getYears(type),
+    ]);
+    const progress = await getProgressMap(items.map((t) => t.id));
+    return { items, total, stats, years, progress };
+  }, [type, genre, sort, year, minRating], {
+    cacheKey: `catalog:v1:${type}:${sp.toString()}`,
+  });
+  const [st, setSt] = useState<CatalogState | null>(stSwr);
 
   useEffect(() => {
-    let alive = true;
-    setSt(null);
-    (async () => {
-      const [{ items, total }, stats, years] = await Promise.all([
-        getCatalogPage(type, { genre, sort, year, minRating }, 0, PAGE_SIZE),
-        getCatalogStats(type),
-        getYears(type),
-      ]);
-      const progress = await getProgressMap(items.map((t) => t.id));
-      if (!alive) return;
-      setSt({ items, total, stats, years, progress });
-    })();
-    return () => {
-      alive = false;
-    };
-  }, [type, genre, sort, year, minRating]);
+    if (stSwr) setSt(stSwr);
+  }, [stSwr]);
 
   if (!st) return <CatalogSkeleton />;
 

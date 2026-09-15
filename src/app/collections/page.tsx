@@ -28,7 +28,7 @@ import { useAsyncData } from "@/lib/use-async-data";
 function MyCollectionsSection() {
   /* B-2: failures no longer hang on skeletons — retry() doubles as the
    * post-mutation refetch (create/delete call it after a successful write). */
-  const { data: cols, error, retry } = useAsyncData(() => fetchUserCollections(), []);
+  const { data: cols, error, retry } = useAsyncData(() => fetchUserCollections(), [], { cacheKey: "userCollections:v1" });
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
@@ -176,7 +176,7 @@ function MyCollectionsSection() {
 }
 
 export default function CollectionsPage() {
-  const { data: collections, error, retry } = useAsyncData(() => getCollections(12), []);
+  const { data: collections, error, retry } = useAsyncData(() => getCollections(12), [], { cacheKey: "collectionsRow:v1" });
 
   if (error) {
     return (

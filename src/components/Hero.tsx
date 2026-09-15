@@ -11,6 +11,7 @@ import { useI18n } from "./i18n/LocaleProvider";
 import { titleNames } from "@/lib/title-name";
 import { titleHref, watchHref } from "@/lib/mobile-links";
 import { posterSrc, backdropSrc } from "@/lib/covers";
+import { warmArtHas } from "@/lib/art-warm";
 import { genreListLabel } from "@/lib/genres";
 import { useLibrary } from "./library/LibraryProvider";
 import { GlassButton } from "./ui/glass";
@@ -65,6 +66,7 @@ export default function Hero({ items, watchlistIds }: { items: TitleView[]; watc
                 src={backdropSrc(t)}
                 alt=""
                 loading={dist === 0 ? "eager" : "lazy"}
+                fetchPriority={dist === 0 ? "high" : undefined}
                 decoding="async"
                 data-ph-title={titleNames(t, locale).primary}
                 className={`h-full w-full object-cover ${i === idx ? "animate-ken" : ""}`}
@@ -167,7 +169,7 @@ export default function Hero({ items, watchlistIds }: { items: TitleView[]; watc
               }`}
             >
               { }
-              <img src={posterSrc(t)} alt={titleNames(t, locale).primary} loading="lazy" decoding="async" className="h-full w-full object-cover" />
+              <img src={posterSrc(t)} alt={titleNames(t, locale).primary} loading={warmArtHas(posterSrc(t)) ? "eager" : "lazy"} decoding="async" className="h-full w-full object-cover" />
             </button>
           ))}
         </div>
