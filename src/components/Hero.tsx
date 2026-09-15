@@ -19,7 +19,7 @@
  * ===================================================================================== */
 
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import type { TitleView } from "@/lib/mobile/db";
 import { fa, formatDuration, typeLabel } from "@/lib/format";
 import { InfoIcon, PlayIcon, StarIcon } from "./Icons";
@@ -28,7 +28,7 @@ import FavoriteButton from "./FavoriteButton";
 import { useI18n } from "./i18n/LocaleProvider";
 import { titleNames } from "@/lib/title-name";
 import { titleHref, watchHref } from "@/lib/mobile-links";
-import { posterSrc, backdropSrc } from "@/lib/covers";
+import { backdropSrc, posterLadder, posterSrc } from "@/lib/covers";
 import { genreListLabel } from "@/lib/genres";
 import { useLibrary } from "./library/LibraryProvider";
 import { GlassButton } from "./ui/glass";
@@ -79,7 +79,25 @@ export default function Hero({ items, watchlistIds }: { items: TitleView[]; watc
   const stageRef = useRef<HTMLElement | null>(null);
   const litRef = useRef<HTMLImageElement | null>(null);
   const posterRef = useRef<HTMLImageElement | null>(null);
+  /* ART-3.1 — the CURRENT slide's healing ladder (relay → direct metahub →
+   * titled placeholder). The hero reuses ONE poster element for every slide;
+   * the layout's global img-fallback chain is per-element once-only, so after
+   * one exhausted slide it would leave every later slide a permanent
+   * broken-image glyph. This ladder re-runs per swap instead — and the img
+   * opts out of the global chain with data-fb="1" so the two never fight. */
+  const ladderRef = useRef<string[]>([]);
   const dustRef = useRef<HTMLDivElement | null>(null);
+
+  /* ART-3.1 — ladder walker: on a failed mount, try the next route for THIS
+   * slide (relay → direct metahub → titled placeholder). Stable callback; the
+   * ladder itself lives in a ref so slide swaps never re-bind the handler. */
+  const onPosterError = useCallback(() => {
+    const img = posterRef.current;
+    const ladder = ladderRef.current;
+    if (!img || !ladder.length) return;
+    const step = Math.max(1, ladder.indexOf(img.getAttribute("src") || "") + 1);
+    if (step < ladder.length) img.src = ladder[step];
+  }, []);
 
   useEffect(() => {
     const stage = stageRef.current;
@@ -152,7 +170,20 @@ export default function Hero({ items, watchlistIds }: { items: TitleView[]; watc
       stage.classList.remove("lit", "goodnight");
       void stage.offsetWidth;
       stage.classList.add("lit");
-      if (posterRef.current) posterRef.current.src = posterSrc(items[idx]);
+      /* ART-3.1: mount the slide's ladder head and keep the ref current so
+       * onPosterError can walk it. Same-src swaps never re-trigger a failure
+       * loop; posterSrc never yields "" so the plate can't go glyph-dark. */
+      const ladder = posterLadder(items[idx], titleNames(items[idx], locale).primary);
+      ladderRef.current = ladder;
+      const img = posterRef.current;
+      if (!img) return;
+      if (img.getAttribute("src") !== ladder[0]) {
+        img.src = ladder[0];
+      } else if (img.complete && img.naturalWidth === 0 && !(img.getAttribute("src") || "").startsWith("data:")) {
+        /* the head src already FAILED before the engine booted (the walker had
+         * no ladder yet) — resume the walk instead of sitting on a broken img */
+        onPosterError();
+      }
     };
     const scheduleOut = () => {
       /* the mode for this out+next-in pair is picked in the SAME tick as .goodnight */
@@ -296,7 +327,7 @@ export default function Hero({ items, watchlistIds }: { items: TitleView[]; watc
       slides.forEach((s) => s.classList.remove("active", "leaving"));
     };
      
-  }, [items, profile.reduceMotion]);
+  }, [items, profile.reduceMotion, locale]);
 
   /* first poster is mounted by React so the plate is never empty on the first light */
   const firstPoster = items[0] ? posterSrc(items[0]) : undefined;
@@ -377,7 +408,15 @@ export default function Hero({ items, watchlistIds }: { items: TitleView[]; watc
             style={{ left: POSTER_BOX.left, top: POSTER_BOX.top, width: POSTER_BOX.width, height: POSTER_BOX.height, transform: POSTER_MATRIX, transformOrigin: "0 0" }}
           >
             { }
-            <img ref={posterRef} src={firstPoster} alt="" aria-hidden decoding="async" />
+            <img
+              ref={posterRef}
+              src={firstPoster}
+              alt=""
+              aria-hidden
+              decoding="async"
+              data-fb="1"
+              onError={onPosterError}
+            />
             <div className="ch-tint" />
             <div className="ch-base" />
             <div className="ch-glass" />
@@ -458,6 +497,7 @@ function MobileHero({
                 loading={dist === 0 ? "eager" : "lazy"}
                 fetchPriority={dist === 0 ? "high" : undefined}
                 decoding="async"
+                data-ph-title={t.title}
                 className="h-full w-full object-cover"
               />
             )}

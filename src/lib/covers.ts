@@ -1,30 +1,42 @@
-/* ART-3.0 (v0.36.0) — LOCAL-FIRST artwork resolution, rebuilt from scratch.
+/* ART-3.1 (v0.37.1) — LOCAL-FIRST artwork resolution, hardened.
  *
- * The old pipeline was NETWORK-FIRST: posterSrc streamed metahub per-<img>
- * (or the rebased raw.githubusercontent cover path on cover-light desktop
- * installs) and only FELL BACK to local files after a pack was installed.
- * On Iranian networks both remote hosts fail in bulk — the user saw dark
- * cards while the same artwork sat in the release coverpacks on GitHub,
- * unreachable for no good reason.
+ * The ART-3.0 ladder (v0.36.0) fixed network-first bulk failures on Iranian
+ * networks. v0.37.0's cinema hero then exposed TWO residual holes:
  *
- * The resolution order is now LOCAL-FIRST, and every remote hop goes
- * through the paced same-origin relay so nothing opaque ever reaches the
- * service worker:
+ *   HOLE 1 — the empty src. The desktop bridge (/api/x → liteOf) derives
+ *   posterUrl/backdropUrl from the DB poster/backdrop via an ANCHORED
+ *   /^\/covers\/(tt\d+)\// match; rebased-absolute or empty rows produced
+ *   posterUrl:"" — and when the poster column itself is empty, posterSrc
+ *   returned "" → <img src=""> renders Chromium's broken-image GLYPH and
+ *   fires NO error event, so the layout IMG_FALLBACK chain (which always
+ *   ends on a placeholder) never sees it. The user's screenshot: a black
+ *   hero plate with the tiny glyph and no placeholder.
+ *
+ *   HOLE 2 — the direct metahub mount. posterSrc mounted posterUrl
+ *   (liteOf's DIRECT images.metahub.space url) as-is, while every card that
+ *   FAILED into the chain got healed onto the paced same-origin relay
+ *   (/api/art). Result on Iranian routes: chain-fed images alive, direct
+ *   mounts dark — the exact asymmetry the user keeps screenshotting.
+ *
+ * The ladder is now (never returns "" — the terminal is an inline-SVG
+ * placeholder in the same key-art language as the chain's):
  *
  *   1. coversLocalRev() > 0  →  /covers/<tt>/poster|backdrop.webp
- *      (the desktop covers-store served through the /covers rewrite →
- *      /api/covers/file, or the Android web root after applyCoverPack)
- *   2. mobile lite records  →  posterUrl/backdropUrl (metahub, direct)
- *   3. desktop cover-light  →  absolute rebased poster (raw.githubusercontent)
- *      is never mounted directly; the tt id is derived and the request goes
- *      through /api/art?u=<metahub> — paced server-side, real statuses,
- *      disk-cached (FRAME_ART_CACHE) so it survives restarts
- *   4. root-relative /covers/…  (bundled-cover installs) unchanged
+ *      (desktop covers-store via the /covers rewrite → /api/covers/file,
+ *      or the Android web root after applyCoverPack)
+ *   2. posterUrl/backdropUrl — mounted through relayed() UNCONDITIONALLY,
+ *      mirroring ART-3.0's case-3 semantics: the paced relay on desktop and
+ *      web deploys; on Android the fetch shim 404s it and the IMG_FALLBACK
+ *      chain rescues to the direct metahub mount (no server there — same
+ *      as v0.36).
+ *   3. poster field absolute http(s) → the tt's metahub art via relayed();
+ *      a non-metahub absolute WITHOUT any tt stays direct (source-CDN art).
+ *   4. root-relative /covers/…  (bundled-cover installs) unchanged.
+ *   5. NOTHING known → inline-SVG placeholder (never "", never a glyph).
  *
- * rev bookkeeping (localStorage «frame.covers.rev») flips to >0 as soon as
- * the FIRST coverpack part merges on desktop (CoversSyncBridge) or the boot
- * script reads /api/covers/manifest — new <img> mounts then hit the local
- * store; store misses fall through the IMG_FALLBACK chain to the relay.
+ * The tt is resolved from ANY identifying field (poster, posterUrl,
+ * backdrop, backdropUrl, slug) — a row whose poster is empty but whose
+ * backdrop/slug carries the IMDb id still names its metahub art.
  */
 
 const COVERS_REV_KEY = "frame.covers.rev"; // written by self-update.ts (Android), CoversSyncBridge (desktop)
@@ -85,27 +97,95 @@ const relayed = (u: string) => `/api/art?u=${encodeURIComponent(u)}`;
 const localPoster = (tt: string) => `/covers/${tt}/poster.webp`;
 const localBackdrop = (tt: string) => `/covers/${tt}/backdrop.webp`;
 
+/* ART-3.1 — desktop renderer? The Electron preload injects window.nama
+ * before any page script, and every posterSrc consumer mounts client-side
+ * (the home page is a client component; its imgs never exist in SSR HTML),
+ * so this needs no SSR bookkeeping. On the desktop every REMOTE metahub
+ * mount goes through the paced same-origin relay — the direct mount is the
+ * burst-throttled hop the relay was built to eliminate. Android/browser
+ * keep the direct mount first-try (the IMG_FALLBACK chain remains the
+ * safety net). */
+const desktopRelay = (): boolean =>
+  typeof window !== "undefined" &&
+  !!(window as { nama?: { isElectron?: boolean } }).nama?.isElectron;
+const artSrc = (metahubUrl: string): string => (desktopRelay() ? relayed(metahubUrl) : metahubUrl);
+
+/* ---- ART-3.1 terminal placeholder (never-"" guarantee) --------------------
+ * The same «فریم» key-art the layout IMG_FALLBACK chain ends on, as static
+ * data URIs. An empty <img src> fires NO error event, so the chain cannot
+ * rescue it — the src helpers therefore never emit "". */
+
+const phSvg = (title: string, wide: boolean): string => {
+  const w = wide ? 640 : 300;
+  const h = wide ? 360 : 450;
+  const ls = title.length <= 20 ? [title] : (() => {
+    const mid = Math.floor(title.length / 2);
+    let best = -1;
+    for (let i = 0; i < title.length; i++) {
+      if (title[i] === " ") {
+        if (best < 0 || Math.abs(i - mid) < Math.abs(best - mid)) best = i;
+      }
+    }
+    return best < 0 ? [title] : [title.slice(0, best), title.slice(best + 1)];
+  })();
+  const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const fs = ls.length > 1 ? 17 : title.length > 14 ? 15 : 19;
+  const ty = h * 0.6 - (ls.length - 1) * fs * 0.65;
+  const txt = ls
+    .map((l, i) => `<text x="${w / 2}" y="${ty + i * fs * 1.3}" text-anchor="middle" font-family="Vazirmatn,Tahoma,sans-serif" font-size="${fs}" font-weight="700" fill="#cfc9bd" direction="rtl">${esc(l)}</text>`)
+    .join("");
+  const r = w * (wide ? 0.075 : 0.1);
+  const cy = h * 0.36;
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}">` +
+    `<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">` +
+    `<stop offset="0" stop-color="#191320"/><stop offset="0.55" stop-color="#0d0b12"/><stop offset="1" stop-color="#231a10"/>` +
+    `</linearGradient></defs>` +
+    `<rect width="${w}" height="${h}" fill="url(#g)"/>` +
+    `<circle cx="${w / 2}" cy="${cy}" r="${r}" fill="none" stroke="#e5b84b" stroke-opacity="0.45" stroke-width="2"/>` +
+    `<path d="M ${w / 2 - r * 0.55} ${cy - r * 0.8} L ${w / 2 + r * 0.9} ${cy} L ${w / 2 - r * 0.55} ${cy + r * 0.8} Z" fill="#e5b84b" fill-opacity="0.5"/>` +
+    txt +
+    `</svg>`
+  );
+};
+
+/** The terminal key-art placeholder — the same visual the layout
+ *  IMG_FALLBACK chain ends on. `title` personalizes it («کیهان: یک سفر
+ *  شخصی» instead of a bare «فریم»). Never fails, never empty. */
+export function artPlaceholder(title?: string | null, wide = false): string {
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(phSvg(title || "فریم", wide))}`;
+}
+const POSTER_PLACEHOLDER = artPlaceholder(null, false);
+const BACKDROP_PLACEHOLDER = artPlaceholder(null, true);
+
 type CoverSource = {
   poster?: string | null;
   backdrop?: string | null;
   posterUrl?: string | null;
   backdropUrl?: string | null;
+  /* lite rows and full records both carry the slug; tt-slugs (tt…-hash) name
+   * the art when every cover field is empty (v0.37.1) */
+  slug?: string | null;
 };
 
-/** Poster URL for <img src> — the ART-3.0 ladder (see module doc). */
+/** The IMDb id from ANY identifying field of the row (ART-3.1 cross-field
+ *  tt): poster, posterUrl, backdrop, backdropUrl, slug. A row whose poster
+ *  is empty but whose backdrop carries /covers/tt… still names its art. */
+export function artTtOf(t: CoverSource): string {
+  return ttIdOf(t.poster, t.posterUrl, t.backdrop, t.backdropUrl, t.slug);
+}
+
+/** Poster URL for <img src> — the ART-3.1 ladder (see module doc). */
 export function posterSrc(t: CoverSource): string {
-  if (coversLocalRev() > 0) {
-    const tt = ttIdOf(t.poster, t.posterUrl);
-    if (tt) return localPoster(tt);
-  }
-  if (t.posterUrl) return t.posterUrl;
+  const tt = artTtOf(t);
+  if (coversLocalRev() > 0 && tt) return localPoster(tt);
+  if (t.posterUrl) return artSrc(t.posterUrl);
   const poster = t.poster || "";
-  if (!poster) return "";
+  if (!poster) return tt ? artSrc(metahubPoster(tt)) : POSTER_PLACEHOLDER;
   if (/^https?:\/\//i.test(poster)) {
     /* cover-light desktop / self-host: the rebased raw.githubusercontent
      * path is the WORST remote hop on Iranian networks — reroute the tt's
      * metahub art through the paced same-origin relay instead. */
-    const tt = ttIdOf(poster, t.backdrop);
     if (tt) return relayed(metahubPoster(tt));
     return poster;
   }
@@ -114,17 +194,62 @@ export function posterSrc(t: CoverSource): string {
 
 /** Backdrop URL for <img src> — same ladder as posterSrc. */
 export function backdropSrc(t: CoverSource): string {
-  if (coversLocalRev() > 0) {
-    const tt = ttIdOf(t.backdrop, t.backdropUrl);
-    if (tt) return localBackdrop(tt);
-  }
-  if (t.backdropUrl) return t.backdropUrl;
+  const tt = artTtOf(t);
+  if (coversLocalRev() > 0 && tt) return localBackdrop(tt);
+  if (t.backdropUrl) return artSrc(t.backdropUrl);
   const backdrop = t.backdrop || "";
-  if (!backdrop) return "";
+  if (!backdrop) return tt ? artSrc(metahubBackdrop(tt)) : BACKDROP_PLACEHOLDER;
   if (/^https?:\/\//i.test(backdrop)) {
-    const tt = ttIdOf(backdrop, t.poster);
     if (tt) return relayed(metahubBackdrop(tt));
     return backdrop;
   }
   return backdrop;
+}
+
+/* ---- ART-3.1 healing ladders (per-swap, self-contained) -------------------
+ * The layout IMG_FALLBACK chain is PER-ELEMENT once-only (data-rw/fb2/mh/
+ * mhp/fb flags): an <img> that RE-MOUNTS different srcs over its lifetime —
+ * the cinema hero reuses ONE poster element for every slide and re-points
+ * it on every light-on — is healed exactly once, after which every later
+ * failure stays a permanent broken-image glyph. v0.37.0's hero shipped
+ * exactly that signature.
+ *
+ * The ladder is the same chain as data, re-runnable per swap:
+ *   1. posterSrc(t)        — local pack → paced relay → direct (platform rules)
+ *   2. the direct metahub mount (or the relay, when step 1 was local) —
+ *      a different route than step 1
+ *   3. the terminal title-keyed SVG placeholder — never fails, never empty
+ * Elements driven by a ladder opt OUT of the global chain with
+ * data-fb="1" so the two systems never fight over the same element. */
+
+export function posterLadder(t: CoverSource, title?: string | null): string[] {
+  const out: string[] = [];
+  const first = posterSrc(t);
+  if (first) out.push(first);
+  const tt = artTtOf(t);
+  if (tt) {
+    const second = first.startsWith("/covers/")
+      ? relayed(metahubPoster(tt))
+      : metahubPoster(tt);
+    if (!out.includes(second)) out.push(second);
+  }
+  const terminal = artPlaceholder(title, false);
+  if (!out.includes(terminal)) out.push(terminal);
+  return out;
+}
+
+export function backdropLadder(t: CoverSource, title?: string | null): string[] {
+  const out: string[] = [];
+  const first = backdropSrc(t);
+  if (first) out.push(first);
+  const tt = artTtOf(t);
+  if (tt) {
+    const second = first.startsWith("/covers/")
+      ? relayed(metahubBackdrop(tt))
+      : metahubBackdrop(tt);
+    if (!out.includes(second)) out.push(second);
+  }
+  const terminal = artPlaceholder(title, true);
+  if (!out.includes(terminal)) out.push(terminal);
+  return out;
 }

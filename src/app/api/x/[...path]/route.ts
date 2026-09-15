@@ -46,17 +46,27 @@ const J = (s: string): string[] => {
   }
 };
 
-/** /covers/{tt}/… → metahub URL (the desktop installer ships no covers, so
- *  the client's posterSrc/backdropSrc stream artwork remotely by default). */
-const ttOf = (p: string): string => {
-  const m = /^\/covers\/(tt\d+)\//.exec(p || "");
-  return m ? m[1] : "";
+/** The tt id from ANY cover-ish value — ART-3.1: the old ANCHORED
+ *  /^\/covers\/(tt\d+)\// silently missed rebased-absolute URLs
+ *  (https://host/covers/tt…/…) and metahub paths, which emptied
+ *  posterUrl/backdropUrl and starved the client ladder. Substring match,
+ *  same semantics as the client's ttIdOf (src/lib/covers.ts). */
+const ttOf = (p: string | null | undefined): string => {
+  const m = /(tt\d{5,})/i.exec(p || "");
+  return m ? m[1].toLowerCase() : "";
 };
 const metahub = (tt: string, kind: string): string =>
   tt ? `https://images.metahub.space/${kind}/${tt}/img` : "";
 
-/** Project a full DbTitle row to the "lite" list shape the mobile layer uses. */
-const liteOf = (t: DbTitle) => ({
+/** Project a full DbTitle row to the "lite" list shape the mobile layer uses.
+ *  ART-3.1: the tt is cross-field (poster → backdrop → slug) so a row with an
+ *  empty/rebased poster still names its metahub art — posterUrl:"" combined
+ *  with an empty poster column is what produced <img src=""> on the v0.37.0
+ *  hero (a broken-image glyph NO error event — the fallback chain never saw
+ *  it). */
+const liteOf = (t: DbTitle) => {
+  const tt = ttOf(t.poster) || ttOf(t.backdrop) || ttOf(t.slug);
+  return ({
   id: t.id,
   slug: t.slug,
   title: t.title,
@@ -69,9 +79,11 @@ const liteOf = (t: DbTitle) => ({
   genres: J(t.genres),
   poster: t.poster,
   backdrop: t.backdrop,
-  // v0.25.0 — remote cover URLs (posterSrc/backdropSrc prefer them)
-  posterUrl: metahub(ttOf(t.poster), "poster/small"),
-  backdropUrl: metahub(ttOf(t.backdrop), "background/medium"),
+  // v0.25.0 — remote cover URLs (posterSrc/backdropSrc prefer them);
+  // v0.37.1 — derived from the cross-field tt instead of the anchored
+  // poster-only match, and "" only when the row carries NO tt anywhere
+  posterUrl: metahub(tt, "poster/small"),
+  backdropUrl: metahub(tt, "background/medium"),
   quality: t.quality,
   country: t.country,
   ageRating: t.ageRating,
@@ -85,7 +97,8 @@ const liteOf = (t: DbTitle) => ({
   sources: "[]",
   // real add-date when the DB row has one (null rows → ""), «جدیدترین‌ها» sort
   createdAt: t.createdAt ? new Date(t.createdAt).toISOString() : "",
-});
+  });
+};
 
 const noStore = { "Cache-Control": "no-store" };
 const ok = (data: unknown) => Response.json(data, { headers: noStore });
