@@ -110,6 +110,8 @@ export type NamaBridge = {
   version: string;
   getInfo: () => Promise<{ version: string; electron: string; chrome: string; node: string; platform: string; arch: string; dataDir: string; dbPath: string }>;
   checkForUpdates: () => Promise<{ status: "available" | "not-available" | "error" | "disabled"; version?: string; message?: string }>;
+  /* v0.38.1 — consent-based download: bytes move only after this call */
+  startUpdateDownload?: () => Promise<{ status: "downloading" | "error" | "disabled"; message?: string }>;
   installUpdate?: () => Promise<boolean>;
   openDataDir: () => Promise<void>;
   openExternal: (url: string) => Promise<void>;
@@ -118,7 +120,7 @@ export type NamaBridge = {
   downloads?: NamaDownloadsBridge;
   window: { minimize: () => void; maximize: () => void; close: () => void; isMaximized: () => Promise<boolean>; toggleFullscreen: () => void };
   onNavigate: (cb: (path: string) => void) => () => void;
-  onUpdateStatus: (cb: (s: { status: string; version?: string; percent?: number; message?: string }) => void) => () => void;
+  onUpdateStatus: (cb: (s: { status: string; version?: string; percent?: number; transferred?: number; total?: number; size?: number; mode?: "delta" | "full"; deltaArmed?: boolean; message?: string }) => void) => () => void;
   /* ART-3.0 (v0.36.0) — desktop coverpack sync (absent in older builds) */
   covers?: NamaCoversBridge;
   setBadge: (count: number) => void;

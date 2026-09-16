@@ -26,15 +26,27 @@ type UpdState = {
    * failed and the whole installer came over the wire. */
   mode?: "delta" | "full";
   deltaArmed?: boolean;
-  push: (s: { status: UpdStatus; version?: string; percent?: number; message?: string; mode?: "delta" | "full"; deltaArmed?: boolean }) => void;
+  /* v0.38.1 — consent-based download: the installer size on "available",
+   * live transferred/total bytes while downloading. */
+  size?: number;
+  transferred?: number;
+  total?: number;
+  push: (s: {
+    status: UpdStatus; version?: string; percent?: number; message?: string;
+    mode?: "delta" | "full"; deltaArmed?: boolean;
+    size?: number; transferred?: number; total?: number;
+  }) => void;
   dismiss: () => void;
 };
 
 const useUpdStore = create<UpdState>((set) => ({
   status: "idle",
   push: (s) => set({ ...s }),
-  dismiss: () => set({ status: "idle", percent: undefined, message: undefined, mode: undefined, deltaArmed: undefined }),
+  dismiss: () => set({ status: "idle", percent: undefined, message: undefined, mode: undefined, deltaArmed: undefined, size: undefined, transferred: undefined, total: undefined }),
 }));
+
+const fmtMB = (n?: number) =>
+  typeof n === "number" && n > 0 ? (n / 1048576).toFixed(n < 104857600 ? 1 : 0) : null;
 
 export default function UpdaterPopup() {
   const { t } = useI18n();
@@ -44,6 +56,9 @@ export default function UpdaterPopup() {
   const message = useUpdStore((s) => s.message);
   const mode = useUpdStore((s) => s.mode);
   const deltaArmed = useUpdStore((s) => s.deltaArmed);
+  const size = useUpdStore((s) => s.size);
+  const transferred = useUpdStore((s) => s.transferred);
+  const total = useUpdStore((s) => s.total);
   const dismiss = useUpdStore((s) => s.dismiss);
   const [mounted, setMounted] = useState(false);
 
@@ -60,7 +75,8 @@ export default function UpdaterPopup() {
   // auto-dismiss the transient states
   useEffect(() => {
     if (status === "available") {
-      const id = setTimeout(dismiss, 7000);
+      // v0.38.1 — consent flow: keep the «دانلود» button reachable a bit longer
+      const id = setTimeout(dismiss, 30000);
       return () => clearTimeout(id);
     }
     if (status === "error") {
@@ -84,6 +100,10 @@ export default function UpdaterPopup() {
   const retry = () => {
     void bridge()?.checkForUpdates?.();
     dismiss();
+  };
+  /* v0.38.1 — consent-based download: bytes only move after this click */
+  const download = () => {
+    void bridge()?.startUpdateDownload?.();
   };
   const install = () => {
     void bridge()?.installUpdate?.();
@@ -136,10 +156,24 @@ export default function UpdaterPopup() {
                             : t("upd.downloading")}
                   </p>
 
-                  {/* v0.34.2 — honest expectation when the updater cache was
+                  {/* v0.38.1 — honest expectation when the updater cache was
                       cold and this update necessarily comes in full. */}
                   {(downloading || status === "available") && deltaArmed === false && (
                     <p className="mt-1.5 text-[12px] leading-6 text-amber-300/90">{t("upd.fullThisTime")}</p>
+                  )}
+
+                  {/* v0.38.1 — the real megabytes, so a slow download never
+                      looks stuck: transferred / total while downloading, and
+                      the size up-front on the consent card. */}
+                  {downloading && fmtMB(total ?? size) && (
+                    <p className="mt-1 text-[11px] font-bold text-zinc-400 num" dir="ltr">
+                      {fmtMB(transferred) ? `${fmtMB(transferred)} / ` : ""}{fmtMB(total ?? size)} MB
+                    </p>
+                  )}
+                  {status === "available" && !downloading && fmtMB(size) && (
+                    <p className="mt-1 text-[11px] font-bold text-zinc-400 num" dir="ltr">
+                      {fmtMB(size)} MB
+                    </p>
                   )}
 
                   {downloading && showBar && (
@@ -159,13 +193,21 @@ export default function UpdaterPopup() {
                   )}
 
                   {/* actions — liquid-glass pills (Button Example) */}
-                  {(downloaded || error) && (
+                  {(downloaded || error || status === "available") && (
                     <div className="mt-4 flex flex-wrap items-center gap-2.5">
                       {downloaded && (
                         <GlassButton onClick={install}>
                           <span className="flex h-11 items-center gap-2 px-6 text-sm font-extrabold text-white">
                             <DownloadIcon width={16} height={16} />
                             {t("upd.installNow")}
+                          </span>
+                        </GlassButton>
+                      )}
+                      {status === "available" && (
+                        <GlassButton onClick={download}>
+                          <span className="flex h-11 items-center gap-2 px-6 text-sm font-extrabold text-white">
+                            <DownloadIcon width={16} height={16} />
+                            {t("upd.downloadNow")}
                           </span>
                         </GlassButton>
                       )}
@@ -179,7 +221,7 @@ export default function UpdaterPopup() {
                       )}
                       <GlassButton onClick={dismiss}>
                         <span className="flex h-11 items-center px-5 text-sm font-bold text-white/70">
-                          {downloaded ? t("upd.later") : t("upd.dismiss")}
+                          {downloaded || status === "available" ? t("upd.later") : t("upd.dismiss")}
                         </span>
                       </GlassButton>
                     </div>
@@ -202,6 +244,9 @@ export function pushUpdaterStatus(s: {
   message?: string;
   mode?: "delta" | "full";
   deltaArmed?: boolean;
+  size?: number;
+  transferred?: number;
+  total?: number;
 }) {
   if (s.status === "available" || s.status === "downloading" || s.status === "downloaded" || s.status === "error") {
     useUpdStore.getState().push({
@@ -211,6 +256,9 @@ export function pushUpdaterStatus(s: {
       message: s.message,
       mode: s.mode,
       deltaArmed: s.deltaArmed,
+      size: s.size,
+      transferred: s.transferred,
+      total: s.total,
     });
   }
 }

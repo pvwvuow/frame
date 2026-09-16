@@ -20,6 +20,11 @@ const require = createRequire(import.meta.url);
 import { fileURLToPath } from "node:url";
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "nama-test-"));
+/* v0.38.1 — redirect the updater-cache root (LOCALAPPDATA drives
+ * updaterCacheDir()) into the sandbox so tests never touch the real
+ * per-user cache. Must happen BEFORE main.cjs executes in the vm. */
+process.env.LOCALAPPDATA = path.join(tmp, "localappdata");
+fs.mkdirSync(process.env.LOCALAPPDATA, { recursive: true });
 const userData = path.join(tmp, "Frame"); // v0.10.7: renamed with the product
 fs.mkdirSync(userData, { recursive: true });
 
@@ -197,6 +202,45 @@ check("pid file still cleared", !fs.existsSync(path.join(userData, "server.pid")
 try {
   process.kill(sleeper.pid, "SIGKILL");
 } catch {}
+
+/* ---- Test 4: v0.38.1 armUpdaterCacheFromDisk ---------------------- */
+/* The differential cache must self-arm from the setup the user already has
+ * on disk (Downloads/Desktop), so manually-installed apps stop paying the
+ * full-download price on their first in-app update. The sandboxed cache dir
+ * is redirected via LOCALAPPDATA (shared process.env) BEFORE main.cjs ran —
+ * the updater cache lives under <LOCALAPPDATA>/frame-updater. */
+console.log("\n[4] armUpdaterCacheFromDisk arms the differential cache from the local setup");
+const cacheDir = path.join(process.env.LOCALAPPDATA || "", "frame-updater");
+const cacheInstaller = path.join(cacheDir, "installer.exe");
+const setupName = `Frame-0.10.2-test-win-x64-setup.exe`; // app.getVersion() in the stub
+const rmCache = () => {
+  for (const f of [cacheInstaller, cacheInstaller + ".tmp"]) {
+    try { fs.rmSync(f, { force: true }); } catch { /* ignore */ }
+  }
+};
+// the stub's app.getPath("home") resolves to `tmp` — the scan candidates are
+// therefore tmp/<name> and tmp/Downloads/<name>
+const homeDir = tmp;
+fs.mkdirSync(path.join(homeDir, "Downloads"), { recursive: true });
+const fixture = Buffer.alloc(9 * 1048576, 7); // 9MB > the 8MB sanity floor
+const setupPath = path.join(homeDir, "Downloads", setupName);
+fs.writeFileSync(setupPath, fixture);
+
+rmCache();
+await sandbox.armUpdaterCacheFromDisk("win32");
+check("installer.exe seeded from the local setup", fs.existsSync(cacheInstaller) && fs.statSync(cacheInstaller).size === fixture.length);
+check("no .tmp leftovers in the cache", !fs.existsSync(cacheInstaller + ".tmp"));
+
+console.log("\n[4b] armUpdaterCacheFromDisk keeps an existing cache untouched");
+fs.writeFileSync(cacheInstaller, "already-armed");
+await sandbox.armUpdaterCacheFromDisk("win32");
+check("existing installer.exe NOT overwritten", fs.readFileSync(cacheInstaller, "utf8") === "already-armed");
+
+console.log("\n[4c] armUpdaterCacheFromDisk without any local setup stays disarmed");
+rmCache();
+try { fs.rmSync(setupPath, { force: true }); } catch { /* ignore */ }
+await sandbox.armUpdaterCacheFromDisk("win32");
+check("no installer.exe appears", !fs.existsSync(cacheInstaller));
 
 console.log(`\n${failures === 0 ? "ALL TESTS PASSED ✅" : failures + " TEST(S) FAILED ❌"}`);
 try { fs.rmSync(tmp, { recursive: true, force: true }); } catch { /* best effort */ }

@@ -1390,13 +1390,70 @@ function seedUpdaterCacheFromPending() {
   }
 }
 
+/* v0.38.1 — rescue the differential cache from the installer the user ALREADY
+ * has on disk. The delta downloader needs the RUNNING version's setup at
+ * <cacheDir>/installer.exe; a manually-installed app never has it and pays a
+ * full ~150MB download on its first in-app update. The setup we shipped sits
+ * in Downloads/Desktop under a DETERMINISTIC name (artifactName in
+ * electron-builder.yml), so scan the common folders and arm the cache from
+ * it. Safety: a wrong file costs nothing — the differential splice verifies
+ * every chunk checksum and the assembled installer against the release
+ * sha512, and falls back to the same full download as before. */
+const ARM_SCAN_MIN_BYTES = 8 * 1048576; // a real setup is never smaller
+/* `platform` seam: tests force "win32" on non-Windows CI runners. */
+function armUpdaterCacheFromDisk(platform = process.platform) {
+  if (platform !== "win32") return;
+  try {
+    if (updaterCacheState().installer > 0) return; // already armed
+    const fsp = require("node:fs");
+    const want = `Frame-${app.getVersion()}-win-x64-setup.exe`;
+    const dirs = new Set();
+    for (const key of ["home", "desktop", "documents"]) {
+      try { dirs.add(app.getPath(key)); } catch { /* profile without it */ }
+    }
+    dirs.add(process.env.USERPROFILE || path.join(require("node:os").homedir()));
+    let hit = null;
+    for (const dir of dirs) {
+      const candidates = [path.join(dir, want), path.join(dir, "Downloads", want)];
+      for (const p of candidates) {
+        try {
+          const st = fsp.statSync(p);
+          if (st.isFile() && st.size >= ARM_SCAN_MIN_BYTES) { hit = p; break; }
+        } catch { /* not here */ }
+      }
+      if (hit) break;
+    }
+    if (!hit) {
+      log.info("updater cache disarmed and no local setup found — the next update downloads in full (once), then arms");
+      return;
+    }
+    const cacheDir = updaterCacheDir();
+    fsp.mkdirSync(cacheDir, { recursive: true });
+    const tmp = path.join(cacheDir, "installer.exe.tmp");
+    fsp.copyFileSync(hit, tmp);
+    fsp.renameSync(tmp, path.join(cacheDir, "installer.exe"));
+    log.info(`updater cache armed from the local setup on disk (${hit}) — the next update downloads differentially`);
+  } catch (e) {
+    log.warn("updater cache arm-from-disk skipped:", e?.message || e);
+  }
+}
+
+async function updateCheckPipeline() {
+  await armUpdaterCacheFromDisk();
+  return autoUpdater.checkForUpdates();
+}
+
 function setupUpdater() {
   if (!app.isPackaged) return;
   seedUpdaterCacheFromPending();
   try {
     ({ autoUpdater } = require("electron-updater"));
     autoUpdater.logger = log;
-    autoUpdater.autoDownload = true;
+    // v0.38.1 — consent-based download: the check still runs automatically at
+    // boot, but the bytes only move when the user clicks «دانلود» in the
+    // popup. A surprise ~150MB background grab (the disarmed-cache case) is
+    // exactly the behavior that made users kill the app mid-download.
+    autoUpdater.autoDownload = false;
     autoUpdater.autoInstallOnAppQuit = true;
     // v0.34.2 — know whether the next download is a real delta or a full
     // fallback (the method returns true when it FAILED and the caller must
@@ -1419,11 +1476,23 @@ function setupUpdater() {
     autoUpdater.on("update-available", (i) => {
       updateRetryCount = 0;
       const armed = deltaArmed();
-      log.info(`update ${i.version} available — differential ${armed ? "armed" : "NOT armed"}`);
-      updateSend({ status: "available", version: i.version, deltaArmed: armed });
+      const exe = (Array.isArray(i.files) && i.files.find((f) => String(f.url || "").toLowerCase().endsWith(".exe"))) || null;
+      log.info(`update ${i.version} available — differential ${armed ? "armed" : "NOT armed"}${exe ? `, installer ${(exe.size / 1048576).toFixed(0)}MB` : ""}`);
+      updateSend({
+        status: "available",
+        version: i.version,
+        deltaArmed: armed,
+        size: exe ? exe.size : undefined,
+      });
     });
     autoUpdater.on("update-not-available", () => { updateRetryCount = 0; updateSend({ status: "not-available" }); });
-    autoUpdater.on("download-progress", (p) => updateSend({ status: "downloading", percent: p.percent }));
+    autoUpdater.on("download-progress", (p) =>
+      updateSend({
+        status: "downloading",
+        percent: p.percent,
+        transferred: p.transferred,
+        total: p.total,
+      }));
     autoUpdater.on("update-downloaded", (i) => {
       seedUpdaterCache(i);
       const fullSize = (Array.isArray(i.files) && i.files.find((f) => String(f.url || "").toLowerCase().endsWith(".exe")))?.size || (Array.isArray(i.files) ? i.files[0]?.size : null);
@@ -1436,7 +1505,7 @@ function setupUpdater() {
       if (isReleasePublishing(e)) { scheduleUpdateRetry(); return; }
       updateSend({ status: "error", message: friendlyUpdateError(e) });
     });
-    setTimeout(() => autoUpdater.checkForUpdates().catch((e) => log.warn("update check failed", e)), 8000);
+    setTimeout(() => updateCheckPipeline().catch((e) => log.warn("update check failed", e)), 8000);
   } catch (e) {
     log.warn("electron-updater unavailable", e);
   }
@@ -1448,11 +1517,23 @@ async function checkForUpdates(interactive = false) {
     return { status: "disabled" };
   }
   try {
-    const r = await autoUpdater.checkForUpdates();
+    const r = await updateCheckPipeline();
     const latest = r?.updateInfo?.version;
     const available = !!latest && latest !== app.getVersion();
     if (interactive && !available) dialog.showMessageBox({ type: "info", title: APP_NAME, message: "شما آخرین نسخه را دارید." });
     return available ? { status: "available", version: latest } : { status: "not-available" };
+  } catch (e) {
+    if (isReleasePublishing(e)) scheduleUpdateRetry();
+    return { status: "error", message: friendlyUpdateError(e) };
+  }
+}
+
+/* v0.38.1 — the user clicked «دانلود» in the update popup. */
+async function startUpdateDownload() {
+  if (!autoUpdater) return { status: "disabled" };
+  try {
+    await autoUpdater.downloadUpdate();
+    return { status: "downloading" };
   } catch (e) {
     if (isReleasePublishing(e)) scheduleUpdateRetry();
     return { status: "error", message: friendlyUpdateError(e) };
@@ -1490,6 +1571,7 @@ ipcMain.handle("covers:sync-now", () => {
   return { started, state: coversState() };
 });
 ipcMain.handle("nama:check-updates", () => checkForUpdates(false));
+ipcMain.handle("nama:start-update-download", () => startUpdateDownload());
 ipcMain.handle("nama:install-update", () => {
   if (!autoUpdater) return false;
   setImmediate(() => autoUpdater.quitAndInstall(false, true));
