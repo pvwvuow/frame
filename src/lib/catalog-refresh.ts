@@ -299,17 +299,18 @@ function scheduleResync(url: string) {
  * so a full merge (or a ~69MB remote download) would be pure overhead. All
  * that is needed:
  *
- *   1. rebase root-relative cover paths (/covers/…) in-place against the
- *      hosted site root (NAMA_CATALOG_SITE_ROOT) – covers are not bundled
- *      anymore, they stream from GitHub raw;
- *   2. pre-store the release catalog hash (NAMA_CATALOG_SEED_VERSION_HASH,
+ *   1. pre-store the release catalog hash (NAMA_CATALOG_SEED_VERSION_HASH,
  *      written by afterPack as seed-version.json) in SyncState, so the
  *      boot-time remote sync fast-paths via its version.json probe instead
  *      of downloading the full index.json for identical content.
  *
- * Idempotent: rows already rebased (or absolute) never match the UPDATE
- * predicates, so a re-run never double-prefixes. Offline first runs are fine
- * too – the rebase is local, covers simply load once the network is back.
+ * v0.38.2 — the old step 2 (rebase /covers/… in-place against
+ * NAMA_CATALOG_SITE_ROOT, "covers stream from GitHub raw") is GONE: the
+ * releases host serves no covers at all (every rebased URL 404s), and since
+ * ART-3.0 the app-local /covers route (covers-store + metahub relay chain)
+ * is the real art path on cover-light packages. Rebasing corrupted every
+ * fresh install's art columns and starved the hero pick / tt-twin dedupe
+ * of their /covers identities.
  */
 export async function adoptFreshSeed(): Promise<CatalogRefreshResult> {
   await ensureSeeded(); // heal legacy schemas before touching Title/Episode
@@ -317,27 +318,9 @@ export async function adoptFreshSeed(): Promise<CatalogRefreshResult> {
   if (!/^[0-9a-f]{64}$/.test(versionHash)) {
     return { ...EMPTY, error: "fresh-seed adoption skipped: no seed-version hash" };
   }
-  const siteRoot = (process.env.NAMA_CATALOG_SITE_ROOT || "").trim();
-  const root = /^https?:\/\//i.test(siteRoot) ? siteRoot.replace(/\/+$/, "") : "";
-  let rebased = 0;
-  if (root) {
-    // Title.poster / Title.backdrop / Episode.thumbnail – local root-relative
-    // paths only (skip absolute URLs, /api/… endpoints and already-rebased rows)
-    const cols = [
-      ['"Title"', '"poster"'],
-      ['"Title"', '"backdrop"'],
-      ['"Episode"', '"thumbnail"'],
-    ];
-    for (const [table, col] of cols) {
-      rebased += await db.$executeRawUnsafe(
-        `UPDATE ${table} SET ${col} = ? || ${col}
-         WHERE ${col} LIKE '/%' AND ${col} NOT LIKE '/api/%' AND ${col} NOT LIKE ? AND ${col} NOT LIKE ?`,
-        root,
-        "http%",
-        root + "%"
-      );
-    }
-  }
+  // v0.38.2: NAMA_CATALOG_SITE_ROOT is no longer read here — art columns are
+  // NOT rewritten on first run (see the doc block above); the app-local
+  // /covers route + chain owns art on cover-light packages.
   await db.syncState.upsert({
     where: { key: HASH_KEY },
     update: { value: versionHash },
@@ -601,12 +584,20 @@ function siteRootOf(catalogUrl: string): string {
 /**
  * Rebases root-relative asset paths (poster/backdrop/thumbnail) against the
  * catalog's site root, so a remote catalog can also serve its own images.
- * Absolute URLs (CDN) and app-local endpoints (/api/cover/*.svg fallback –
- * served by this app itself) pass through untouched.
+ * Absolute URLs (CDN) and app-local endpoints pass through untouched:
+ *   /api/cover/*.svg — the generated-SVG fallback, served by this app itself;
+ *   /covers/** (v0.38.2) — the app-local art route on EVERY platform
+ *     (desktop rewrite → covers-store, Android own layer). Rebased copies
+ *     (https://site-root/covers/tt…/poster.jpg) never existed on any remote
+ *     host — every one of them 404s — and the leading-slash shape is also
+ *     the identity the hero pick and the tt-twin dedupe key off. Writing it
+ *     corrupted synced devices' art columns (Cosmos-forever hero + dead
+ *     direct mounts); /covers values now land verbatim, exactly as the
+ *     export writes them.
  */
 function rebaseAsset(url_: string, siteRoot: string): string {
   if (!url_ || !siteRoot || !/^https?:\/\//i.test(siteRoot)) return url_;
-  if (!url_.startsWith("/") || url_.startsWith("/api/")) return url_;
+  if (!url_.startsWith("/") || url_.startsWith("/api/") || url_.startsWith("/covers/")) return url_;
   return siteRoot.replace(/\/+$/, "") + url_;
 }
 
@@ -955,9 +946,16 @@ async function syncCatalog(catalogUrl: string): Promise<CatalogRefreshResult> {
 /* shared merge core                                                  */
 /* ------------------------------------------------------------------ */
 
-/** /covers/<tt>/… → the tt identity (the dedupe twin key). */
+/** /covers/<tt>/… → the tt identity (the dedupe twin key).
+ *  v0.38.2: rows written by older syncs carry rebased-absolute art
+ *  (https://host/.../covers/tt…/…) or metahub paths — the anchored match
+ *  returned "" for those and silently disabled the tt-twin reconciliation
+ *  on every synced device. Falls back to the same loose substring the
+ *  client uses (covers.ts TT_RE / api/x ttOf / hero-pick ttFromArt). */
 const ttOfPoster = (p: string | null | undefined): string =>
-  /^\/covers\/(tt\d+)\//.exec(p || "")?.[1] ?? "";
+  /^\/covers\/(tt\d+)\//.exec(p || "")?.[1] ??
+  /(?:^|[^a-zA-Z0-9])(tt\d{5,})(?!\d)/i.exec(p || "")?.[1]?.toLowerCase() ??
+  "";
 
 /* DEDUPE-1 — move every user row of the departing duplicate onto the
  * surviving tt twin. Uniqueness rules decide move vs merge-vs-delete:

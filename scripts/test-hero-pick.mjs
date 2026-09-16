@@ -174,6 +174,53 @@ console.log("\n[pickHero] knobs");
   check("seriesCount honored", pickHero(lite, { movieCount: 0, seriesCount: 5 }).length === 5);
 }
 
+console.log("\n[pickHero] v0.38.2 — synced-device art shapes (the Cosmos-forever fix)");
+{
+  /* Exactly what a device DB holds after the boot-time catalog sync /
+   * fresh-seed adoption: applyCatalog wrote the export's values through
+   * rebaseAsset, so posters were REBASED ABSOLUTE urls (not /covers/…) —
+   * the v0.38.0 anchored /^\/covers\/tt\d+\// emptied the pool on every
+   * synced device → featured-flag fallback → Cosmos stayed forever. */
+  const GH = "https://github.com/pvwvuow/frame/releases/latest/download/covers";
+  const RAW = "https://raw.githubusercontent.com/pvwvuow/frame/main/public/covers";
+  const MH = "https://images.metahub.space";
+  const lite = [
+    // rebased releases-host shape (v0.34+ syncs) — the user's machine
+    t({ id: 71, type: "movie", rating: 9.5, poster: `${GH}/tt0903747/poster.jpg`, backdrop: `${GH}/tt0903747/backdrop.jpg` }),
+    // rebased raw.githubusercontent shape (v0.23–v0.33 era syncs)
+    t({ id: 72, type: "movie", rating: 9.0, poster: `${RAW}/tt0111161/poster.jpg`, backdrop: `${RAW}/tt0111161/backdrop.jpg` }),
+    // metahub shape (mobile posterUrl era rows)
+    t({ id: 73, rating: 8.9, poster: `${MH}/poster/small/tt0993846/img`, backdrop: `${MH}/background/medium/tt0993846/img` }),
+    // root-relative /covers keeps working (repo rows, v0.38.2+ syncs)
+    t({ id: 74, rating: 8.8 }),
+    // identity mismatch → OUT (junk pair)
+    t({ id: 75, type: "movie", rating: 9.9, poster: `${GH}/tt1111111/poster.jpg`, backdrop: `${GH}/tt2222222/backdrop.jpg` }),
+    // SVG placeholder art → OUT (no tt identity)
+    t({ id: 76, type: "movie", rating: 9.8, poster: "/api/cover/some-slug.svg", backdrop: "/api/cover/some-slug-wide.svg" }),
+    // "tt" glued into a word → no identity → OUT
+    t({ id: 77, type: "movie", rating: 9.7, poster: "/p/matrixtt1234567.jpg", backdrop: `${GH}/tt3333333/backdrop.jpg` }),
+  ];
+  const picks = pickHero(lite, {});
+  const ids = picks.map((x) => x.id);
+  check("rebased releases-host urls eligible (71)", ids.includes(71), JSON.stringify(ids));
+  check("rebased raw.githubusercontent urls eligible (72)", ids.includes(72));
+  check("metahub urls eligible (73)", ids.includes(73));
+  check("root-relative /covers still eligible (74)", ids.includes(74));
+  check("poster/backdrop tt mismatch excluded (75)", !ids.includes(75));
+  check("svg placeholder excluded (76)", !ids.includes(76));
+  check("glued-tt junk excluded (77)", !ids.includes(77));
+  check("lineup assembled from a fully rebased pool", picks.length === 4, `got ${picks.length}`);
+
+  /* the regression itself: a synced device where EVERY row is rebased —
+   * v0.38.0 returned [] here (→ featured flags → Cosmos). */
+  const rebasedPool = Array.from({ length: 40 }, (_, i) =>
+    t({ id: 90 + i, type: i % 2 ? "movie" : "series", rating: 9.0 - i * 0.05,
+        poster: `${GH}/tt0${(7000000 + i * 37)}/poster.jpg`, backdrop: `${GH}/tt0${(7000000 + i * 37)}/backdrop.jpg` })
+  );
+  const fromRebased = pickHero(rebasedPool, {});
+  check("all-rebased catalog yields the full 5-slide lineup (was 0 → Cosmos)", fromRebased.length === 5, `got ${fromRebased.length}`);
+}
+
 /* ---- summary ----------------------------------------------------------- */
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

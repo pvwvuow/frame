@@ -10,8 +10,15 @@
  *      dependence — a catalog without any createdAt still gets a lineup);
  *   2. documentaries («مستند») are excluded completely — the hero is a
  *      fictional-showcase surface, however high a doc rates;
- *   3. the plate needs real art: tt-shaped poster AND backdrop (the same
- *      isTtCover proxy the pipeline always used);
+ *   3. the plate needs real art: a tt identity present in BOTH the poster and
+ *      the backdrop, and the SAME one on both sides. v0.38.2: the tt is read
+ *      from ANY cover-ish shape — root-relative (/covers/tt…/), rebased
+ *      absolute (https://host/.../covers/tt…/… — exactly what the boot-time
+ *      catalog sync writes on every synced device, see rebaseAsset), or
+ *      metahub paths. The v0.38.0 anchored /^\/covers\/tt\d+\// test emptied
+ *      the candidate pool on every synced device and silently fell back to
+ *      the featured flags (Cosmos stayed) — the same class of bug ART-3.1
+ *      already fixed in covers.ts and api/x.
  *   4. top `movieCount` (3) movies + top `seriesCount` (2) series, each side
  *      ranked rating → trendingScore → id;
  *   5. display order = the merged five by rating — the best title opens the
@@ -34,7 +41,21 @@ export type HeroCandidate = {
   createdAt?: string; // kept for LiteTitle shape-compat (no longer used)
 };
 
-const isTtCover = (p: string) => /^\/covers\/tt\d+\//.test(p || "");
+/**
+ * The tt id from ANY cover-ish string — root-relative (/covers/tt…/…),
+ * rebased-absolute (https://host/.../covers/tt…/…), or metahub
+ * (…/poster/small/tt…/img). Boundary-guarded so a "tt" glued into another
+ * word cannot match. Same semantics as covers.ts's TT_RE / api/x's ttOf.
+ */
+const TT_IN_URL = /(?:^|[^a-zA-Z0-9])(tt\d{5,})(?!\d)/i;
+const ttFromArt = (p: string): string => TT_IN_URL.exec(p || "")?.[1]?.toLowerCase() ?? "";
+
+/** Real-art identity for one candidate: poster and backdrop must both carry
+ *  the SAME tt. Mismatch = junk pair, no identity = placeholder/SVG art. */
+const hasTtArt = (poster: string, backdrop: string): boolean => {
+  const p = ttFromArt(poster);
+  return !!p && p === ttFromArt(backdrop);
+};
 
 /** Documentaries never belong on the hero billboard (user rule, v0.38.0). */
 const DOCUMENTARY = "مستند";
@@ -61,7 +82,7 @@ export function pickHero(
   const seriesCount = opts.seriesCount ?? 2;
 
   const pool = lite.filter(
-    (t) => isTtCover(t.poster) && isTtCover(t.backdrop) && !(t.genres || []).includes(DOCUMENTARY)
+    (t) => hasTtArt(t.poster, t.backdrop) && !(t.genres || []).includes(DOCUMENTARY)
   );
   const series = pool.filter((t) => t.type === "series").sort(byQuality).slice(0, seriesCount);
   const movies = pool.filter((t) => t.type !== "series").sort(byQuality).slice(0, movieCount);
