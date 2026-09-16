@@ -91,7 +91,9 @@ export function ttIdOf(...vals: Array<string | null | undefined>): string {
   return "";
 }
 
-const metahubPoster = (tt: string) => `https://images.metahub.space/poster/small/${tt}/img`;
+const metahubPosterSize = (tt: string, size: "small" | "medium" | "large") =>
+  `https://images.metahub.space/poster/${size}/${tt}/img`;
+const metahubPoster = (tt: string) => metahubPosterSize(tt, "small");
 const metahubBackdrop = (tt: string) => `https://images.metahub.space/background/medium/${tt}/img`;
 const relayed = (u: string) => `/api/art?u=${encodeURIComponent(u)}`;
 const localPoster = (tt: string) => `/covers/${tt}/poster.webp`;
@@ -251,5 +253,47 @@ export function backdropLadder(t: CoverSource, title?: string | null): string[] 
   }
   const terminal = artPlaceholder(title, true);
   if (!out.includes(terminal)) out.push(terminal);
+  return out;
+}
+
+/* ---- v0.38.0 — the HERO plate ladder (high-res) ---------------------------
+ * The cinema hero projects the poster onto a ~490–650 CSS-px plate (bigger on
+ * high-DPI), while every art source the regular ladder reaches is sized for
+ * CARDS: the local pack poster is width 300 (scripts/mobile-covers.cjs) and
+ * the metahub small variant is 300×450 — measured soft by the user
+ * («یکم بی‌کیفیت هستن حس میکنم پوسترها»). Metahub variants, probed live:
+ * small 300×450 / medium 500×750 / large 780×1170 — the plate gets LARGE.
+ *
+ * Five hero images, paced relay + SW + relay disk-cache: the first boot pays
+ * ~250KB per title once, every later light-on is local. Cards keep the
+ * regular ladder (small/medium is right for a 150px card) — this ladder is
+ * for the big plate only.
+ *
+ *   desktop: relay(large) → direct large → relay(medium) → posterSrc head
+ *            (local pack / platform rules / source-CDN) → titled placeholder
+ *   web/Android: large → medium → posterSrc head → placeholder
+ * (direct-after-relay covers a dead relay; the medium rung covers a title
+ * whose large variant is missing upstream; posterSrc is the offline floor.) */
+export function heroPosterLadder(t: CoverSource, title?: string | null): string[] {
+  const out: string[] = [];
+  const push = (u?: string | null) => {
+    if (u && !out.includes(u)) out.push(u);
+  };
+  const tt = artTtOf(t);
+  if (tt) {
+    const large = metahubPosterSize(tt, "large");
+    const medium = metahubPosterSize(tt, "medium");
+    if (desktopRelay()) {
+      push(relayed(large));
+      push(large);
+      push(relayed(medium));
+    } else {
+      push(large);
+      push(medium);
+    }
+  }
+  push(posterSrc(t));
+  const terminal = artPlaceholder(title, false);
+  push(terminal);
   return out;
 }

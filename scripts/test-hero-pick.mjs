@@ -1,11 +1,13 @@
-/* Unit tests for src/lib/hero-pick.ts (v0.24.0) — the runtime auto-hero.
+/* Unit tests for src/lib/hero-pick.ts (v0.38.0 — the «برترین‌ها» billboard).
  *
- * Guards the exact rules the publish pipeline (scripts/feature-new-hero.mjs)
- * applies when it recuts the featured flags: newest add-wave (72h), rating
- * ≥ 8.5, real tt poster AND backdrop, series-first with movie fill,
- * rating → trendingScore order, hard cap. The client re-derives the lineup
- * from these rules on every device, so the hero can no longer go stale the
- * way the featured flags did (the frozen mixed-hero report).
+ * Guards the curation rules the user recut for v0.38:
+ *   «فعلا میخام ۳ تا فیلم برتر و ۲ تا سریال برتر رو اونجا بزاریم..
+ *    مستند ها رو هم بردار کلا»
+ *   — top 3 movies + top 2 series by rating over the WHOLE catalog,
+ *     documentaries («مستند») excluded completely, real tt poster AND
+ *     backdrop required, display order = the merged five by rating.
+ * No wave window, no add-date dependence: a catalog without any createdAt
+ * still gets a lineup (the old v0.24 rules required fresh add-dates).
  *
  * The module is pure TypeScript with no imports — transpiled in-process with
  * the repo's own typescript package (no build step, no ts-node dependency).
@@ -27,7 +29,7 @@ const js = ts.transpileModule(src, {
 }).outputText;
 const module_ = { exports: {} };
 new Function("module", "exports", "require", js)(module_, module_.exports, require);
-const { pickHero, addedOf } = module_.exports;
+const { pickHero } = module_.exports;
 
 let passed = 0;
 let failed = 0;
@@ -42,101 +44,134 @@ function check(name, cond, extra = "") {
 }
 
 /* ---- fixtures --------------------------------------------------------- */
-const NOW = Date.parse("2026-09-10T12:00:00Z");
-const h = (hours) => new Date(NOW - hours * 3600_000).toISOString();
-const days = (d) => h(d * 24);
-
 let seq = 1000;
 const t = (over = {}) => ({
   id: seq++,
   type: "series",
   rating: 9.0,
   trendingScore: 80,
-  poster: "/covers/tt0000123/poster.jpg",
-  backdrop: "/covers/tt0000123/backdrop.jpg",
-  createdAt: h(10),
+  poster: `/covers/tt0000${seq}/poster.jpg`,
+  backdrop: `/covers/tt0000${seq}/backdrop.jpg`,
+  genres: ["درام"],
+  createdAt: "2026-09-10T12:00:00.000Z",
   ...over,
 });
 
-/* ---- addedOf ---------------------------------------------------------- */
-console.log("\n[addedOf] add-date parsing");
-check("ISO string parses", addedOf({ createdAt: "2026-09-10T08:00:00.000Z" }) === Date.parse("2026-09-10T08:00:00.000Z"));
-check("date-only string parses", addedOf({ createdAt: "2026-09-10" }) > 0);
-check("empty → 0", addedOf({ createdAt: "" }) === 0);
-check("undefined → 0", addedOf({}) === 0);
-check("garbage → 0", addedOf({ createdAt: "not-a-date" }) === 0);
-
-/* ---- wave + rules ------------------------------------------------------ */
-console.log("\n[pickHero] wave window + quality rules");
+/* ---- the billboard shape ----------------------------------------------- */
+console.log("\n[pickHero] top-3 movies + top-2 series by rating");
 {
   const lite = [
-    t({ id: 1, title: "old-but-9.9", rating: 9.9, createdAt: days(5) }),   // outside wave
-    t({ id: 2, rating: 9.3, createdAt: h(20) }),                           // in, series
-    t({ id: 3, type: "movie", rating: 9.0, createdAt: h(30) }),            // in, movie
-    t({ id: 4, rating: 8.0, createdAt: h(5) }),                            // rating below floor
-    t({ id: 5, rating: 9.1, poster: "/posters/x.jpg", createdAt: h(6) }),  // no tt poster
-    t({ id: 6, rating: 9.1, backdrop: "", createdAt: h(7) }),              // no backdrop
-    t({ id: 7, rating: 8.5, createdAt: h(71) }),                           // boundary rating + inside window
-    t({ id: 8, rating: 9.0, createdAt: h(93) }),                           // anchor − 73h → just outside 72h
-    t({ id: 9, rating: 9.2, createdAt: "" }),                              // no date → outside
+    t({ id: 1, type: "movie", rating: 9.1 }), // movie #1
+    t({ id: 2, type: "movie", rating: 8.8 }), // movie #2
+    t({ id: 3, type: "movie", rating: 8.7 }), // movie #3
+    t({ id: 4, type: "movie", rating: 8.6 }), // movie #4 → capped out
+    t({ id: 5, type: "movie", rating: 8.5 }), // movie #5 → capped out
+    t({ id: 6, rating: 9.2 }), // series #1
+    t({ id: 7, rating: 9.0 }), // series #2
+    t({ id: 8, rating: 8.9 }), // series #3 → capped out
   ];
   const picks = pickHero(lite, {});
   const ids = picks.map((x) => x.id);
-  check("wave excludes titles older than 72h (ids 1, 8 out)", !ids.includes(1) && !ids.includes(8));
-  check("rating floor excludes 8.0 (id 4 out)", !ids.includes(4));
-  check("non-tt covers excluded (ids 5, 6 out)", !ids.includes(5) && !ids.includes(6));
-  check("dateless titles excluded (id 9 out)", !ids.includes(9));
-  check("8.5 boundary included (id 7 in)", ids.includes(7));
-  check("series before movies regardless of movie rating", ids.indexOf(2) < ids.indexOf(3));
-  check("within pools ordered by rating desc", ids.indexOf(2) < ids.indexOf(7));
+  check("exactly five slides", picks.length === 5, `got ${picks.length}`);
+  check("top 3 movies taken (1,2,3)", ids.includes(1) && ids.includes(2) && ids.includes(3));
+  check("4th movie capped out", !ids.includes(4) && !ids.includes(5));
+  check("top 2 series taken (6,7)", ids.includes(6) && ids.includes(7));
+  check("3rd series capped out", !ids.includes(8));
+  check("display order = rating desc (6 → 1 → 7 → 2 → 3)", JSON.stringify(ids) === JSON.stringify([6, 1, 7, 2, 3]), JSON.stringify(ids));
 }
 
-console.log("\n[pickHero] ordering + cap");
+console.log("\n[pickHero] documentaries are excluded completely");
 {
   const lite = [
-    t({ id: 11, rating: 9.0, trendingScore: 50, createdAt: h(1) }),
-    t({ id: 12, rating: 9.0, trendingScore: 90, createdAt: h(2) }),        // same rating → higher ts first
-    t({ id: 13, rating: 9.0, trendingScore: 90, createdAt: h(3) }),        // same both → higher id first
-    t({ id: 14, rating: 8.9, createdAt: h(4) }),
-    t({ id: 15, rating: 8.8, createdAt: h(5) }),
-    t({ id: 16, rating: 8.7, createdAt: h(6) }),
-    t({ id: 17, rating: 8.6, createdAt: h(7) }),
-    t({ id: 18, rating: 8.6, createdAt: h(8) }),
-    t({ id: 19, rating: 8.5, createdAt: h(9) }),                           // lowest rated → capped out
+    t({ id: 11, type: "movie", rating: 9.9, genres: ["مستند"] }), // highest rated doc → OUT
+    t({ id: 12, type: "movie", rating: 9.5, genres: ["تاریخی", "مستند"] }), // doc hybrid → OUT
+    t({ id: 13, rating: 9.8, genres: ["مستند", "تاریخی"] }), // doc series → OUT
+    t({ id: 14, type: "movie", rating: 7.0 }), // lower-rated fiction still wins the slot
+    t({ id: 15, type: "movie", rating: 6.5 }),
+    t({ id: 16, type: "movie", rating: 6.0 }),
+    t({ id: 17, rating: 8.0 }),
+    t({ id: 18, rating: 7.5 }),
   ];
   const picks = pickHero(lite, {});
-  check("default cap = 8", picks.length === 8, `got ${picks.length}`);
   const ids = picks.map((x) => x.id);
-  check("tie broken by trendingScore (12 before 11)", ids.indexOf(12) < ids.indexOf(11));
-  check("full tie broken by id (13 before 12)", ids.indexOf(13) < ids.indexOf(12));
-  check("rating order preserved (14 before 15)", ids.indexOf(14) < ids.indexOf(15));
-  check("19th candidate capped out", !ids.includes(19));
+  check("no documentary in the lineup", !ids.includes(11) && !ids.includes(12) && !ids.includes(13));
+  check("low-rated fiction fills the movie slots instead", ids.includes(14) && ids.includes(15) && ids.includes(16));
+  check("fiction series keep their slots", ids.includes(17) && ids.includes(18));
 }
 
-console.log("\n[pickHero] series-first fill");
+console.log("\n[pickHero] art requirement + missing genres field");
 {
   const lite = [
-    t({ id: 21, type: "movie", rating: 9.9, createdAt: h(1) }),
-    t({ id: 22, type: "movie", rating: 9.8, createdAt: h(2) }),
-    t({ id: 23, rating: 8.5, createdAt: h(3) }),
+    t({ id: 21, type: "movie", rating: 9.9, poster: "/posters/x.jpg" }), // non-tt poster → OUT
+    t({ id: 22, type: "movie", rating: 9.8, backdrop: "" }), // no backdrop → OUT
+    t({ id: 23, rating: 9.7, genres: undefined }), // no genres field → treated as fiction
+    t({ id: 24, rating: 9.6, genres: undefined }),
+    t({ id: 25, type: "movie", rating: 9.5 }),
+    t({ id: 26, type: "movie", rating: 9.4 }),
+    t({ id: 27, type: "movie", rating: 9.3 }),
   ];
   const picks = pickHero(lite, {});
-  check("lone series leads even with lower rating", picks[0].id === 23);
-  check("movies fill after", picks[1].id === 21 && picks[2].id === 22);
+  const ids = picks.map((x) => x.id);
+  check("non-tt poster excluded", !ids.includes(21));
+  check("missing backdrop excluded", !ids.includes(22));
+  check("undefined genres tolerated (23, 24 in)", ids.includes(23) && ids.includes(24));
+  check("five slides still assembled", picks.length === 5, `got ${picks.length}`);
+}
+
+console.log("\n[pickHero] ranking tie-breaks");
+{
+  const lite = [
+    t({ id: 31, rating: 9.0, trendingScore: 50 }),
+    t({ id: 32, rating: 9.0, trendingScore: 90 }), // same rating → higher ts first
+    t({ id: 33, type: "movie", rating: 9.0, trendingScore: 90 }), // full tie → higher id first
+    t({ id: 34, type: "movie", rating: 9.0, trendingScore: 90 }),
+    t({ id: 35, type: "movie", rating: 9.0, trendingScore: 90 }),
+    t({ id: 36, type: "movie", rating: 8.8 }), // lowest → capped out of the movie slots
+  ];
+  const picks = pickHero(lite, {});
+  const ids = picks.map((x) => x.id);
+  check("tie broken by trendingScore (32 before 31)", ids.indexOf(32) < ids.indexOf(31));
+  check("full tie broken by id (35 before 34 before 33)", ids.indexOf(35) < ids.indexOf(34) && ids.indexOf(34) < ids.indexOf(33));
+  check("lowest-ranked movie capped out", !ids.includes(36));
+}
+
+console.log("\n[pickHero] short sides stay strict (no cross-fill)");
+{
+  const lite = [
+    t({ id: 41, type: "movie", rating: 9.9 }),
+    t({ id: 42, type: "movie", rating: 9.8 }),
+    t({ id: 43, type: "movie", rating: 9.7 }),
+    t({ id: 44, type: "movie", rating: 9.6 }),
+  ];
+  const picks = pickHero(lite, {});
+  check("no series in catalog → 3 movie slides only", picks.length === 3 && picks.every((x) => x.type !== "series"));
+}
+
+console.log("\n[pickHero] add-date independence");
+{
+  const lite = [
+    t({ id: 51, type: "movie", rating: 9.1, createdAt: "" }),
+    t({ id: 52, rating: 9.0, createdAt: undefined }),
+    t({ id: 53, type: "movie", rating: 8.9, createdAt: "2020-01-01" }), // ancient still eligible
+    t({ id: 54, type: "movie", rating: 8.8 }),
+    t({ id: 55, rating: 8.7 }),
+  ];
+  const picks = pickHero(lite, {});
+  check("no add-dates at all still yields the full lineup", picks.length === 5);
 }
 
 console.log("\n[pickHero] degenerate catalogs → caller falls back");
-check("no add-dates at all → []", pickHero([t({ createdAt: "" }), t({ id: 2, createdAt: undefined })]).length === 0);
 check("empty catalog → []", pickHero([]).length === 0);
-check("wave exists but nothing qualifies → []", pickHero([t({ rating: 7.9 }), t({ id: 2, rating: 8.4 })]).length === 0);
+check("no tt art at all → []", pickHero([t({ poster: "", backdrop: "" }), t({ id: 2, poster: "/p.jpg" })]).length === 0);
 
 console.log("\n[pickHero] knobs");
 {
-  const lite = Array.from({ length: 12 }, (_, i) => t({ id: 40 + i, rating: 9.5 - i * 0.05, createdAt: h(1 + i) }));
-  check("HERO_COUNT honored", pickHero(lite, { count: 5 }).length === 5);
-  check("HERO_MIN_RATING honored", pickHero(lite, { minRating: 9.3 }).every((x) => x.rating >= 9.3));
-  const wide = pickHero(lite, { waveWindowH: 24 * 30, count: 12 });
-  check("wider window pulls older titles in", wide.length === 12);
+  const lite = Array.from({ length: 12 }, (_, i) =>
+    t({ id: 60 + i, type: i % 2 ? "movie" : "series", rating: 9.5 - i * 0.05 })
+  );
+  check("defaults = 3 movies + 2 series", pickHero(lite).length === 5);
+  check("movieCount honored", pickHero(lite, { movieCount: 5, seriesCount: 0 }).length === 5);
+  check("seriesCount honored", pickHero(lite, { movieCount: 0, seriesCount: 5 }).length === 5);
 }
 
 /* ---- summary ----------------------------------------------------------- */

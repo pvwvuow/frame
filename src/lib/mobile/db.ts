@@ -611,18 +611,18 @@ async function hydrateLineup(candidates: LiteTitle[], want = 8): Promise<TitleVi
 
 export async function getFeatured(): Promise<TitleView[]> {
   await ensureReady();
-  // 1) AUTO: re-derive the lineup from the local add-dates (the wave rules of
-  //    scripts/feature-new-hero.mjs). This is the primary source — it cannot
-  //    go stale the way the `featured` flags do (a half-applied catalog merge
-  //    used to freeze a mixed hero on devices; see src/lib/hero-pick.ts).
-  const wave = pickHero(lite);
-  if (wave.length) {
-    const lineup = await hydrateLineup(wave as LiteTitle[]);
+  // 1) AUTO: the v0.38.0 «برترین‌ها» billboard — top 3 movies + top 2 series
+  //    by rating over the WHOLE catalog, documentaries excluded (see
+  //    src/lib/hero-pick.ts). Deterministic per catalog, no add-date
+  //    dependence, cannot go stale the way the featured flags did.
+  const picks = pickHero(lite);
+  if (picks.length) {
+    const lineup = await hydrateLineup(picks as LiteTitle[], 5);
     if (lineup.length >= 3) return lineup;
   }
-  // 2) FALLBACK: the featured flags (hand pin via HERO_TT, pre-add-date
-  //    catalogs, tiny demo/test data where the wave rules find nothing).
-  const rows = lite.filter((t) => t.featured).sort(bySort("trending")).slice(0, 8);
+  // 2) FALLBACK: the featured flags (hand pin via HERO_TT, catalogs with no
+  //    tt art at all, tiny demo/test data).
+  const rows = lite.filter((t) => t.featured).sort(bySort("trending")).slice(0, 5);
   if (!rows.length) return [];
   const lineup = await hydrateLineup(rows);
   if (lineup.length) return lineup;

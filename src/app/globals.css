@@ -665,6 +665,12 @@ html[data-electron="1"][data-platform="darwin"][dir="ltr"] .nav-inner { padding-
   overflow: hidden;
   box-shadow: 0 34px 80px rgba(0, 0, 0, 0.5);
 }
+/* v0.38.0 — the plate is a SCREEN, not a ghost: base state = screen OFF
+ * (opacity 0). v0.37.0 only dimmed the poster to brightness(0.05), so a dark
+ * ghost of the outgoing art stayed visible through the whole swap — the user:
+ * «تصویر کمرنگ و تاریک میشه ولی کامل محو شده نیست لحظه آخرش». The out
+ * animation now dims the screen first, then drops it to opacity 0, so the
+ * src swap happens on a FULLY black plate and the change is seamless. */
 .ch-poster-wrap img {
   position: absolute;
   inset: 0;
@@ -672,7 +678,8 @@ html[data-electron="1"][data-platform="darwin"][dir="ltr"] .nav-inner { padding-
   height: 100%;
   object-fit: cover;
   display: block;
-  filter: brightness(0.05) saturate(0.5);
+  opacity: 0;
+  filter: brightness(0.02) saturate(0.3);
 }
 .ch-stage.lit .ch-poster-wrap img { animation: ch-poster-in var(--ch-in) 0.08s both; }
 .ch-stage.goodnight .ch-poster-wrap img { animation: ch-poster-out var(--ch-out) both; }
@@ -865,8 +872,18 @@ html[data-electron="1"][data-platform="darwin"][dir="ltr"] .nav-inner { padding-
   0% { opacity: 1; } 18% { opacity: 0.6; } 32% { opacity: 0.72; } 55% { opacity: 0.28; } 70% { opacity: 0.38; } 100% { opacity: 0; }
 }
 @keyframes ch-breathe { 0%, 100% { opacity: 1; } 50% { opacity: 0.95; } }
-@keyframes ch-poster-in { 0% { filter: brightness(0.05) saturate(0.5); } 100% { filter: brightness(1) saturate(1); } }
-@keyframes ch-poster-out { 0% { filter: brightness(1) saturate(1); } 100% { filter: brightness(0.05) saturate(0.5); } }
+/* v0.38.0 — in: the screen powers up from black (opacity + brightness ramp);
+ * out: dims like a real screen first (opacity holds at 1 while brightness
+ * falls), then vanishes COMPLETELY — the swap lands on an invisible plate. */
+@keyframes ch-poster-in {
+  0% { opacity: 0; filter: brightness(0.02) saturate(0.3); }
+  100% { opacity: 1; filter: brightness(1) saturate(1); }
+}
+@keyframes ch-poster-out {
+  0% { opacity: 1; filter: brightness(1) saturate(1); }
+  55% { opacity: 1; filter: brightness(0.14) saturate(0.6); }
+  100% { opacity: 0; filter: brightness(0.02) saturate(0.3); }
+}
 @keyframes ch-glass-in { 0% { opacity: 0; } 55% { opacity: 0.75; } 100% { opacity: 1; } }
 @keyframes ch-glass-out { 0% { opacity: 1; } 100% { opacity: 0; } }
 @keyframes ch-glint {

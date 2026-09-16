@@ -28,7 +28,7 @@ import FavoriteButton from "./FavoriteButton";
 import { useI18n } from "./i18n/LocaleProvider";
 import { titleNames } from "@/lib/title-name";
 import { titleHref, watchHref } from "@/lib/mobile-links";
-import { backdropSrc, posterLadder, posterSrc } from "@/lib/covers";
+import { backdropSrc, heroPosterLadder } from "@/lib/covers";
 import { genreListLabel } from "@/lib/genres";
 import { useLibrary } from "./library/LibraryProvider";
 import { GlassButton } from "./ui/glass";
@@ -79,12 +79,15 @@ export default function Hero({ items, watchlistIds }: { items: TitleView[]; watc
   const stageRef = useRef<HTMLElement | null>(null);
   const litRef = useRef<HTMLImageElement | null>(null);
   const posterRef = useRef<HTMLImageElement | null>(null);
-  /* ART-3.1 — the CURRENT slide's healing ladder (relay → direct metahub →
-   * titled placeholder). The hero reuses ONE poster element for every slide;
-   * the layout's global img-fallback chain is per-element once-only, so after
-   * one exhausted slide it would leave every later slide a permanent
-   * broken-image glyph. This ladder re-runs per swap instead — and the img
-   * opts out of the global chain with data-fb="1" so the two never fight. */
+  /* ART-3.1 — the CURRENT slide's healing ladder (v0.38.0 head: HIGH-RES
+   * poster/large through the paced relay — the plate is ~490–650 CSS px, the
+   * card-sized 300px art read soft; then direct large → relay medium →
+   * posterSrc (local pack floor) → titled placeholder). The hero reuses ONE
+   * poster element for every slide; the layout's global img-fallback chain is
+   * per-element once-only, so after one exhausted slide it would leave every
+   * later slide a permanent broken-image glyph. This ladder re-runs per swap
+   * instead — and the img opts out of the global chain with data-fb="1" so
+   * the two never fight. */
   const ladderRef = useRef<string[]>([]);
   const dustRef = useRef<HTMLDivElement | null>(null);
 
@@ -135,10 +138,11 @@ export default function Hero({ items, watchlistIds }: { items: TitleView[]; watc
     fit();
 
     /* warm-decode every poster once so slide swaps (esp. the 5→1 wrap, where
-     * slide 1's art is the coldest cache entry) never stall on decode */
+     * slide 1's art is the coldest cache entry) never stall on decode — the
+     * v0.38.0 HIGH-RES head is what warms (the plate mounts the large art) */
     items.forEach((t) => {
       const im = new Image();
-      im.src = posterSrc(t);
+      im.src = heroPosterLadder(t, titleNames(t, locale).primary)[0];
       im.decode?.().catch(() => {});
     });
 
@@ -153,6 +157,7 @@ export default function Hero({ items, watchlistIds }: { items: TitleView[]; watc
     const clearTimers = () => {
       timers.forEach(clearTimeout);
       timers = [];
+      clearSwap(); // the animationend listener + slack safety ride with the timers (declared below; runs post-init only)
     };
     const pickMode = (): Mode => {
       if (Math.random() < 0.5) return "normal";
@@ -172,8 +177,8 @@ export default function Hero({ items, watchlistIds }: { items: TitleView[]; watc
       stage.classList.add("lit");
       /* ART-3.1: mount the slide's ladder head and keep the ref current so
        * onPosterError can walk it. Same-src swaps never re-trigger a failure
-       * loop; posterSrc never yields "" so the plate can't go glyph-dark. */
-      const ladder = posterLadder(items[idx], titleNames(items[idx], locale).primary);
+       * loop; the ladder never yields "" so the plate can't go glyph-dark. */
+      const ladder = heroPosterLadder(items[idx], titleNames(items[idx], locale).primary);
       ladderRef.current = ladder;
       const img = posterRef.current;
       if (!img) return;
@@ -185,20 +190,56 @@ export default function Hero({ items, watchlistIds }: { items: TitleView[]; watc
         onPosterError();
       }
     };
+    /* v0.38.0 — the swap is driven by the out animation ITSELF, not by a
+     * wall-clock timer. v0.37.0 scheduled the swap at OUT_START + out on the
+     * TIMER clock while the animation ran on the COMPOSITOR clock from its
+     * first rendered frame — any main-thread jank between the .goodnight add
+     * and that first frame started the animation LATE, so the timer fired
+     * mid-fade and the half-dark old poster was visibly replaced: the
+     * «کامل محو شده نیست لحظه آخرش» report (rAF probes measured swaps at
+     * opacity 0.33–0.48 under decode jank). animationend fires exactly when
+     * opacity is 0; a slack safety timer only covers a dead event path
+     * (worst case: a slightly longer dark hold — never a visible cut). */
+    let disarmSwap: (() => void) | null = null;
+    const clearSwap = () => {
+      const d = disarmSwap;
+      disarmSwap = null;
+      d?.();
+    };
+    const armSwap = () => {
+      clearSwap();
+      const img = posterRef.current;
+      let fired = false;
+      const swap = () => {
+        if (fired) return;
+        fired = true;
+        stage.classList.remove("lit", "goodnight");
+        void stage.offsetWidth;
+        go(idx + 1, true);
+      };
+      const onEnd = (e: AnimationEvent) => {
+        if (e.animationName !== "ch-poster-out" || e.target !== img) return;
+        clearSwap();
+        swap();
+      };
+      img?.addEventListener("animationend", onEnd);
+      const safety = window.setTimeout(() => {
+        clearSwap();
+        swap();
+      }, MODES[lastMode ?? "normal"].out + 1600);
+      disarmSwap = () => {
+        img?.removeEventListener("animationend", onEnd);
+        clearTimeout(safety);
+      };
+    };
     const scheduleOut = () => {
       /* the mode for this out+next-in pair is picked in the SAME tick as .goodnight */
       timers.push(
         window.setTimeout(() => {
           setMode(pickMode());
           stage.classList.add("goodnight");
+          armSwap();
         }, OUT_START),
-      );
-      timers.push(
-        window.setTimeout(() => {
-          stage.classList.remove("lit", "goodnight");
-          void stage.offsetWidth;
-          go(idx + 1, true);
-        }, OUT_START + MODES[lastMode ?? "normal"].out),
       );
     };
     const go = (i: number, keepMode = false) => {
@@ -237,16 +278,12 @@ export default function Hero({ items, watchlistIds }: { items: TitleView[]; watc
       const remain = Math.max(0, OUT_START - (pausedAt - slideStart));
       timers.push(
         window.setTimeout(() => {
-          setMode(pickMode());
+          /* mid-goodnight pause: keep the RUNNING out mode (re-picking would
+           * restart its animation); otherwise pick the pair's mode now */
+          if (!stage.classList.contains("goodnight")) setMode(pickMode());
           stage.classList.add("goodnight");
+          armSwap();
         }, remain),
-      );
-      timers.push(
-        window.setTimeout(() => {
-          stage.classList.remove("lit", "goodnight");
-          void stage.offsetWidth;
-          go(idx + 1, true);
-        }, remain + MODES[lastMode ?? "normal"].out),
       );
     };
 
@@ -329,8 +366,11 @@ export default function Hero({ items, watchlistIds }: { items: TitleView[]; watc
      
   }, [items, profile.reduceMotion, locale]);
 
-  /* first poster is mounted by React so the plate is never empty on the first light */
-  const firstPoster = items[0] ? posterSrc(items[0]) : undefined;
+  /* first poster is mounted by React so the plate is never empty on the first
+   * light — the v0.38.0 high-res ladder head (SSR/web resolves to the direct
+   * large variant; the Electron client re-points to the relay on the first
+   * lightOn, one warm-up fetch on the very first boot only) */
+  const firstPoster = items[0] ? heroPosterLadder(items[0], titleNames(items[0], locale).primary)[0] : undefined;
 
   if (!items.length) return null;
 
