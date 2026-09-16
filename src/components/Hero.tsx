@@ -236,10 +236,10 @@ export default function Hero({ items, watchlistIds }: { items: TitleView[]; watc
     ro.observe(stage);
     fit();
 
-    /* v0.40.0/v0.41.0 — warm the DAY pair off the hot path: both boards decode
+    /* v0.40.0/v0.40.1 — warm the DAY pair off the hot path: both boards decode
      * AND raster once at idle (a 0.001-opacity beat forces the compositor to
      * upload both layers while nothing is happening) so flip #1 crossfades
-     * exactly as smoothly as every later flip. v0.41.0: the beat fires at
+     * exactly as smoothly as every later flip. v0.40.1: the beat fires at
      * ~600ms (was 1800ms — a user flipping the theme inside the first 3s
      * paid the first-time raster of two full-screen boards INSIDE the flip
      * frame), and the pairs are will-change layers now, so this beat only
@@ -255,7 +255,13 @@ export default function Hero({ items, watchlistIds }: { items: TitleView[]; watc
       });
       if (dayPair) {
         dayPair.classList.add("ch-warm");
-        warmClean = window.setTimeout(() => dayPair.classList.remove("ch-warm"), 260);
+        /* v0.40.1 — the same beat pre-rasters the light gradient twins so the
+         * flip frame never paints a full-stage gradient for the first time */
+        stage.classList.add("ch-warm-ramps");
+        warmClean = window.setTimeout(() => {
+          dayPair.classList.remove("ch-warm");
+          stage.classList.remove("ch-warm-ramps");
+        }, 260);
       }
     }, 600);
 
