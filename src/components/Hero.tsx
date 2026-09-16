@@ -16,6 +16,18 @@
  * خط قرمز و چیزایی ک نشون میده اسلاید چندومه رو حذف کن»).
  *
  * Mobile (<lg): the previous crossfade hero, with the same controls stripped.
+ *
+ * v0.38.3 — THE PROJECTOR GATE. v0.38.0 lit the stage the moment a slide
+ * swapped and let the new src load async — but an <img> keeps its OLD bitmap
+ * while a new src loads, so on a slow route the lights came back on the
+ * PREVIOUS film's poster under the new title's info (the «اگه لود بشه اشتباه
+ * لود میکنه» report), and the serial error-walk could keep slides dark for
+ * the whole timeout chain («پوسترهاش لود نمیاد»). The gate: every title's
+ * art is raced OFF-DOM through ALL ladder rungs at once (bounded by the
+ * fastest working route, memoized per session), the lights come back only on
+ * DECODED current-slide art (warm = instant, cold = a bounded dark beat),
+ * and the expiry state is the title's OWN placeholder — upgraded in place
+ * when the real art lands. Another film's poster can never be lit again.
  * ===================================================================================== */
 
 import { useRouter } from "next/navigation";
@@ -28,7 +40,7 @@ import FavoriteButton from "./FavoriteButton";
 import { useI18n } from "./i18n/LocaleProvider";
 import { titleNames } from "@/lib/title-name";
 import { titleHref, watchHref } from "@/lib/mobile-links";
-import { backdropSrc, heroPosterLadder } from "@/lib/covers";
+import { artPlaceholder, backdropSrc, heroPosterLadder } from "@/lib/covers";
 import { genreListLabel } from "@/lib/genres";
 import { useLibrary } from "./library/LibraryProvider";
 import { GlassButton } from "./ui/glass";
@@ -55,6 +67,92 @@ const MODES = {
 } as const;
 type Mode = keyof typeof MODES;
 const SPECIAL: Mode[] = ["flicker", "surge", "filament", "pulse"];
+
+/* ---- v0.38.3 — the ART RACE (off-DOM, per-title, session-memoized) --------
+ * Every ladder rung decodes in PARALLEL on detached <img>s; the best decoded
+ * rung wins by ladder position (smaller index = higher-quality route). A slow
+ * head no longer serializes the walk (relay 12s timeout × rungs = minutes);
+ * the plate is bounded by the FASTEST working route. Winners memoize per
+ * session and keep upgrading (local/medium → large) as better rungs land. */
+const HERO_DARK_HOLD_MS = 1600;
+type HeroArtEntry = {
+  src: string;
+  rank: number;
+  cbs: Set<(src: string) => void>;
+};
+const heroArt = new Map<number, HeroArtEntry>();
+
+const decodeRung = (src: string) =>
+  new Promise<void>((resolve, reject) => {
+    const im = new Image();
+    im.decoding = "async";
+    im.onload = () => {
+      if (im.naturalWidth > 0) {
+        if (im.decode) im.decode().then(resolve, () => reject(new Error("decode")));
+        else resolve();
+      } else reject(new Error("empty"));
+    };
+    im.onerror = () => reject(new Error("error"));
+    im.src = src;
+  });
+
+/** Best decoded art known for a title ("" while nothing settled yet). */
+function heroArtBest(id: number): string {
+  const e = heroArt.get(id);
+  return e && e.rank < Infinity && e.src ? e.src : "";
+}
+
+/** Race one title's full hero ladder off-DOM. `cb` fires on every improvement
+ * (first settle reveals; later settles upgrade in place). The terminal
+ * placeholder never races — all rungs failing is what yields it. */
+function raceHeroArt(t: TitleView, title: string, cb?: (src: string) => void): void {
+  const entry = heroArt.get(t.id);
+  if (entry) {
+    const best = heroArtBest(t.id);
+    if (best) cb?.(best);
+    else if (cb) entry.cbs.add(cb);
+    return;
+  }
+  const ladder = heroPosterLadder(t, title);
+  const terminal = ladder[ladder.length - 1];
+  const rungs = ladder.slice(0, -1).filter((u) => !u.startsWith("data:"));
+  const fresh: HeroArtEntry = { src: "", rank: Infinity, cbs: new Set() };
+  if (cb) fresh.cbs.add(cb);
+  heroArt.set(t.id, fresh);
+  const settle = (src: string, rank: number) => {
+    if (rank >= fresh.rank) return;
+    fresh.src = src;
+    fresh.rank = rank;
+    const cbs = [...fresh.cbs];
+    if (rank === 0) fresh.cbs.clear(); // the head cannot be beaten — done
+    cbs.forEach((f) => f(src));
+  };
+  if (!rungs.length) {
+    fresh.src = terminal;
+    fresh.rank = ladder.length - 1;
+    const cbs = [...fresh.cbs];
+    fresh.cbs.clear();
+    cbs.forEach((f) => f(terminal));
+    return;
+  }
+  let pending = rungs.length;
+  rungs.forEach((u, i) => {
+    decodeRung(u).then(
+      () => settle(u, i),
+      () => {
+        pending -= 1;
+        if (pending === 0 && fresh.rank === Infinity) {
+          /* every route failed — the titled placeholder is the final answer */
+          fresh.src = terminal;
+          fresh.rank = ladder.length - 1;
+          const cbs = [...fresh.cbs];
+          fresh.cbs.clear();
+          cbs.forEach((f) => f(terminal));
+        }
+      },
+    );
+  });
+}
 
 /** ray-cast point-in-polygon over the measured curtain silhouettes (stage-%) */
 function inPoly(p: readonly (readonly [number, number])[], x: number, y: number): boolean {
@@ -137,13 +235,13 @@ export default function Hero({ items, watchlistIds }: { items: TitleView[]; watc
     ro.observe(stage);
     fit();
 
-    /* warm-decode every poster once so slide swaps (esp. the 5→1 wrap, where
-     * slide 1's art is the coldest cache entry) never stall on decode — the
-     * v0.38.0 HIGH-RES head is what warms (the plate mounts the large art) */
-    items.forEach((t) => {
-      const im = new Image();
-      im.src = heroPosterLadder(t, titleNames(t, locale).primary)[0];
-      im.decode?.().catch(() => {});
+    /* v0.38.3 — race EVERY title's art off-DOM at boot (staggered), not just
+     * the head rung: the winners memoize per session, so the first swaps are
+     * warm and the 5→1 wrap (slide 1 = the coldest entry) is covered too */
+    items.forEach((t, k) => {
+      window.setTimeout(() => {
+        if (!dead) raceHeroArt(t, titleNames(t, locale).primary);
+      }, 120 * k);
     });
 
     const slides = Array.from(stage.querySelectorAll<HTMLElement>(".ch-slide"));
@@ -153,6 +251,10 @@ export default function Hero({ items, watchlistIds }: { items: TitleView[]; watc
     let pausedAt = 0;
     let paused = false;
     let lastMode: Mode | null = null;
+    /* v0.38.3 — swap generation + dead flag: async reveals from an aborted
+     * swap (curtain spam, unmount) must never touch the stage or the img */
+    let swapGen = 0;
+    let dead = false;
 
     const clearTimers = () => {
       timers.forEach(clearTimeout);
@@ -170,25 +272,57 @@ export default function Hero({ items, watchlistIds }: { items: TitleView[]; watc
       stage.style.setProperty("--ch-in", MODES[m].in + "ms");
       stage.setAttribute("data-mode", m);
     };
+    /* v0.38.3 — the PROJECTOR GATE. The lights come back only on art that is
+     * DECODED for the CURRENT slide: warm art = instant, cold art = a bounded
+     * dark beat while the off-DOM race runs, expiry = the title's OWN titled
+     * placeholder. The plate then upgrades in place as better rungs land.
+     * The previous film's poster can never be lit under a new title again. */
     const lightOn = () => {
-      /* restart .lit so the light entrance + poster reveal replay every entry */
-      stage.classList.remove("lit", "goodnight");
-      void stage.offsetWidth;
-      stage.classList.add("lit");
-      /* ART-3.1: mount the slide's ladder head and keep the ref current so
-       * onPosterError can walk it. Same-src swaps never re-trigger a failure
-       * loop; the ladder never yields "" so the plate can't go glyph-dark. */
-      const ladder = heroPosterLadder(items[idx], titleNames(items[idx], locale).primary);
-      ladderRef.current = ladder;
+      const t = items[idx];
+      const title = titleNames(t, locale).primary;
       const img = posterRef.current;
-      if (!img) return;
-      if (img.getAttribute("src") !== ladder[0]) {
-        img.src = ladder[0];
-      } else if (img.complete && img.naturalWidth === 0 && !(img.getAttribute("src") || "").startsWith("data:")) {
-        /* the head src already FAILED before the engine booted (the walker had
-         * no ladder yet) — resume the walk instead of sitting on a broken img */
-        onPosterError();
+      if (!img) {
+        stage.classList.add("lit");
+        return;
       }
+      const gen = swapGen;
+      const ladder = heroPosterLadder(t, title);
+      let hold = 0;
+      let didReveal = false;
+      const reveal = (src: string) => {
+        if (dead || gen !== swapGen) return;
+        if (!didReveal) {
+          didReveal = true;
+          clearTimeout(hold);
+          /* the safety walker stays pointed at the revealed rung and beyond */
+          ladderRef.current = ladder.slice(Math.max(0, ladder.indexOf(src)));
+          if (img.getAttribute("src") !== src) img.src = src;
+          /* restart .lit so the light entrance + poster reveal replay */
+          stage.classList.remove("goodnight");
+          void stage.offsetWidth;
+          stage.classList.add("lit");
+          slideStart = performance.now();
+          if (!paused && !reduce) scheduleOut();
+        } else if (
+          stage.dataset.idx === String(idx) &&
+          !stage.classList.contains("goodnight") &&
+          img.getAttribute("src") !== src
+        ) {
+          /* a better rung (the hi-res large) landed after the plate lit —
+           * both srcs are decoded AND both belong to THIS title, so the
+           * in-place upgrade is seamless and can never show another film */
+          img.src = src;
+        }
+      };
+      const warm = heroArtBest(t.id);
+      if (warm) reveal(warm);
+      else hold = window.setTimeout(() => reveal(artPlaceholder(title, false)), HERO_DARK_HOLD_MS);
+      raceHeroArt(t, title, (src) => reveal(src));
+      /* pre-warm the NEXT title mid-slide so its swap lights warm too */
+      const nxt = items[(idx + 1) % items.length];
+      window.setTimeout(() => {
+        if (!dead) raceHeroArt(nxt, titleNames(nxt, locale).primary);
+      }, 1400);
     };
     /* v0.38.0 — the swap is driven by the out animation ITSELF, not by a
      * wall-clock timer. v0.37.0 scheduled the swap at OUT_START + out on the
@@ -259,10 +393,10 @@ export default function Hero({ items, watchlistIds }: { items: TitleView[]; watc
       stage.dataset.idx = String(idx);
       slides.forEach((s, k) => s.toggleAttribute("inert", k !== next));
       slides[idx].classList.add("active");
-      lightOn();
-      slideStart = performance.now();
       paused = false;
-      if (!reduce) scheduleOut();
+      /* v0.38.3: the out timer is armed by the REVEAL — the lit window starts
+       * when the art is actually on the plate, not when the swap began */
+      lightOn();
     };
     const pause = () => {
       if (paused) return;
@@ -353,6 +487,8 @@ export default function Hero({ items, watchlistIds }: { items: TitleView[]; watc
     }
 
     return () => {
+      dead = true;
+      swapGen += 1;
       clearTimers();
       ro.disconnect();
       stage.removeEventListener("mousemove", onMove);
