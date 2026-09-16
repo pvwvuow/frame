@@ -236,13 +236,20 @@ export default function Hero({ items, watchlistIds }: { items: TitleView[]; watc
     ro.observe(stage);
     fit();
 
-    /* v0.40.0 — warm the DAY pair off the hot path: both boards decode AND
-     * raster once at idle (a 0.001-opacity beat forces the compositor to
+    /* v0.40.0/v0.41.0 — warm the DAY pair off the hot path: both boards decode
+     * AND raster once at idle (a 0.001-opacity beat forces the compositor to
      * upload both layers while nothing is happening) so flip #1 crossfades
-     * exactly as smoothly as every later flip */
+     * exactly as smoothly as every later flip. v0.41.0: the beat fires at
+     * ~600ms (was 1800ms — a user flipping the theme inside the first 3s
+     * paid the first-time raster of two full-screen boards INSIDE the flip
+     * frame), and the pairs are will-change layers now, so this beat only
+     * has to fill their raster cache once. */
     const dayPair = stage.querySelector(".ch-pair-day");
     let warmClean: number | undefined;
     const warmDay = window.setTimeout(() => {
+      /* already-light boot: the day pair is the LIVE pair (fully painted from
+       * frame one) — the 0.001-opacity beat would make it FLICKER for nothing */
+      if (document.documentElement.classList.contains("light")) return;
       stage.querySelectorAll<HTMLImageElement>(".ch-pair-day img").forEach((im) => {
         if (im.decode) im.decode().catch(() => {});
       });
@@ -250,7 +257,7 @@ export default function Hero({ items, watchlistIds }: { items: TitleView[]; watc
         dayPair.classList.add("ch-warm");
         warmClean = window.setTimeout(() => dayPair.classList.remove("ch-warm"), 260);
       }
-    }, 1800);
+    }, 600);
 
     /* v0.38.3 — race EVERY title's art off-DOM at boot (staggered), not just
      * the head rung: the winners memoize per session, so the first swaps are
@@ -588,10 +595,14 @@ export default function Hero({ items, watchlistIds }: { items: TitleView[]; watc
         className="ch-stage relative hidden h-[82vh] min-h-[560px] w-full overflow-hidden bg-black lg:block"
         aria-roledescription="carousel"
       >
-        {/* scene boards — the dark pair is the default; the day pair (v0.40.0
-            boards, re-aligned onto the SAME POSTER_BOX plate) fades in ABOVE
-            it on html.light over 900ms — a real crossfade, not a display
-            flip — so the theme swap breathes instead of snapping */}
+        {/* scene boards — the dark pair is the default; the day pair fades in
+            ABOVE it on html.light over 900ms (explicit pair z-indexes keep the
+            day unit over the dark unit at every opacity — the v0.40.0
+            stacking bug painted the crossfade UNDER the opaque dark boards,
+            so the day boards snapped in only after the ramp, showing the
+            night-lit board through the whole fade). Once faded in, the dark
+            pair retires (visibility hidden) — no night layers stay composited
+            under the day boards. */}
         <div className="ch-pair ch-pair-dark" aria-hidden>
           <img src="/images/hero/scene-dark.jpg" alt="" aria-hidden className="ch-scene ch-scene-off ch-scene-dark" />
           <img ref={litRef} src="/images/hero/scene-lit.jpg" alt="" aria-hidden className="ch-scene ch-scene-lit ch-scene-dark" />
