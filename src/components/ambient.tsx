@@ -249,7 +249,10 @@ export function AmbientGhost({
           "--vip-o": slot.o,
           "--vip-tilt": slot.tilt,
           animation: `vip-ambient ${slot.dur}s linear ${slot.delay}s infinite`,
-          willChange: "opacity, transform",
+          /* v0.40.0: willChange dropped — 14 permanently-promoted blurred +
+           * masked layers kept VRAM pinned for nothing; the infinite
+           * animation promotes the layer anyway, and the host layer pauses
+           * the whole family whenever it is gated off (HomeGhosts). */
         } as React.CSSProperties}
       />
     </div>

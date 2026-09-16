@@ -143,6 +143,80 @@
   --toast-fg: #18181b;
 }
 
+/* =====================================================================================
+   v0.40.0 — SOFT THEME MORPH (the whole app, not just the cinema)
+   The day/night switch used to snap: one frame the palette resolved dark,
+   the next it resolved light (body's own bg/color excepted — that already
+   had a small transition). The palette tokens are now REGISTERED custom
+   properties (@property), so the .light class flip on <html> TRANSITIONS
+   them — and every color, glass surface, gradient rim, scrollbar and toast
+   in the app re-resolves smoothly over 800ms. One block, zero per-component
+   churn. The global reduce-motion kill (0.01ms) covers html too, so motion-
+   sensitive users still get an instant flip.
+   Gradient tokens (--glass-rim/--glass-sheen) interpolate because their dark
+   and light values already share the same stop structure (Chromium 117+).
+   ===================================================================================== */
+@property --color-white { syntax: "<color>"; inherits: true; initial-value: #ffffff; }
+@property --color-black { syntax: "<color>"; inherits: true; initial-value: #000000; }
+@property --color-zinc-50 { syntax: "<color>"; inherits: true; initial-value: #fafafa; }
+@property --color-zinc-100 { syntax: "<color>"; inherits: true; initial-value: #f4f4f5; }
+@property --color-zinc-200 { syntax: "<color>"; inherits: true; initial-value: #e4e4e7; }
+@property --color-zinc-300 { syntax: "<color>"; inherits: true; initial-value: #d4d4d8; }
+@property --color-zinc-400 { syntax: "<color>"; inherits: true; initial-value: #a1a1aa; }
+@property --color-zinc-500 { syntax: "<color>"; inherits: true; initial-value: #71717a; }
+@property --color-zinc-600 { syntax: "<color>"; inherits: true; initial-value: #52525b; }
+@property --color-zinc-700 { syntax: "<color>"; inherits: true; initial-value: #3f3f46; }
+@property --color-zinc-800 { syntax: "<color>"; inherits: true; initial-value: #27272a; }
+@property --color-zinc-900 { syntax: "<color>"; inherits: true; initial-value: #18181b; }
+@property --color-zinc-950 { syntax: "<color>"; inherits: true; initial-value: #09090b; }
+@property --color-ink { syntax: "<color>"; inherits: true; initial-value: #070709; }
+@property --color-ink-800 { syntax: "<color>"; inherits: true; initial-value: #0e0e12; }
+@property --color-ink-700 { syntax: "<color>"; inherits: true; initial-value: #16161c; }
+@property --color-ink-600 { syntax: "<color>"; inherits: true; initial-value: #1f1f27; }
+@property --color-mist { syntax: "<color>"; inherits: true; initial-value: #a1a1aa; }
+@property --color-brand { syntax: "<color>"; inherits: true; initial-value: #e50914; }
+@property --color-brand-600 { syntax: "<color>"; inherits: true; initial-value: #c40812; }
+@property --color-brand-glow { syntax: "<color>"; inherits: true; initial-value: rgba(229, 9, 20, 0.45); }
+@property --color-gold { syntax: "<color>"; inherits: true; initial-value: #f5b81b; }
+@property --glass-bg { syntax: "<color>"; inherits: true; initial-value: rgba(20, 20, 28, 0.58); }
+@property --glass-bg-strong { syntax: "<color>"; inherits: true; initial-value: rgba(12, 12, 18, 0.93); }
+@property --glass-border { syntax: "<color>"; inherits: true; initial-value: rgba(255, 255, 255, 0.12); }
+@property --glass-hl { syntax: "<color>"; inherits: true; initial-value: rgba(255, 255, 255, 0.22); }
+@property --glass-tint { syntax: "<color>"; inherits: true; initial-value: rgba(120, 160, 255, 0.06); }
+@property --glass-rim { syntax: "<image>"; inherits: true; initial-value: linear-gradient(155deg, rgba(255, 255, 255, 0.65) 0%, rgba(170, 205, 255, 0.14) 24%, rgba(255, 170, 220, 0.07) 42%, rgba(255, 255, 255, 0) 58%, rgba(255, 215, 175, 0.1) 84%, rgba(255, 255, 255, 0.35) 100%); }
+@property --glass-sheen { syntax: "<image>"; inherits: true; initial-value: linear-gradient(135deg, rgba(255, 255, 255, 0.18) 0%, rgba(255, 255, 255, 0.04) 30%, rgba(255, 255, 255, 0) 55%, rgba(255, 255, 255, 0.08) 100%); }
+@property --overlay { syntax: "<color>"; inherits: true; initial-value: rgba(0, 0, 0, 0.72); }
+@property --scrollbar { syntax: "<color>"; inherits: true; initial-value: #2a2a33; }
+@property --skeleton-a { syntax: "<color>"; inherits: true; initial-value: #16161c; }
+@property --skeleton-b { syntax: "<color>"; inherits: true; initial-value: #1f1f27; }
+@property --stroke { syntax: "<color>"; inherits: true; initial-value: rgba(255, 255, 255, 0.35); }
+@property --toast-bg { syntax: "<color>"; inherits: true; initial-value: rgba(18, 18, 26, 0.6); }
+@property --toast-border { syntax: "<color>"; inherits: true; initial-value: rgba(255, 255, 255, 0.1); }
+@property --toast-fg { syntax: "<color>"; inherits: true; initial-value: #f4f4f5; }
+
+html {
+  transition:
+    --color-white 800ms ease, --color-black 800ms ease,
+    --color-zinc-50 800ms ease, --color-zinc-100 800ms ease, --color-zinc-200 800ms ease,
+    --color-zinc-300 800ms ease, --color-zinc-400 800ms ease, --color-zinc-500 800ms ease,
+    --color-zinc-600 800ms ease, --color-zinc-700 800ms ease, --color-zinc-800 800ms ease,
+    --color-zinc-900 800ms ease, --color-zinc-950 800ms ease,
+    --color-ink 800ms ease, --color-ink-800 800ms ease, --color-ink-700 800ms ease,
+    --color-ink-600 800ms ease, --color-mist 800ms ease,
+    --color-brand 800ms ease, --color-brand-600 800ms ease, --color-brand-glow 800ms ease,
+    --color-gold 800ms ease,
+    --glass-bg 800ms ease, --glass-bg-strong 800ms ease, --glass-border 800ms ease,
+    --glass-hl 800ms ease, --glass-tint 800ms ease, --glass-rim 800ms ease, --glass-sheen 800ms ease,
+    --overlay 800ms ease, --scrollbar 800ms ease, --skeleton-a 800ms ease, --skeleton-b 800ms ease,
+    --stroke 800ms ease, --toast-bg 800ms ease, --toast-border 800ms ease, --toast-fg 800ms ease;
+}
+
+/* v0.40.0 — the ambient ghost wall (home/vip) PAUSES while its layer is
+ * gated off (the user is looking at the hero): 14 blurred+masked looping
+ * covers used to keep cycling behind an opacity-0 layer for nothing */
+.ghost-layer[data-on="false"] .vip-ambient-img,
+.ghost-layer[data-on="false"] .ghost-in { animation-play-state: paused !important; }
+
 /* Areas that must always stay dark (video player, media headers). */
 .force-dark,
 .light .force-dark {
@@ -624,6 +698,8 @@ html[data-electron="1"][data-platform="darwin"][dir="ltr"] .nav-inner { padding-
   --ch-out: 850ms;
   --ch-in: 1150ms;
   user-select: none;
+  /* v0.40.0 — the theme swap morphs the stage backdrop too */
+  transition: background-color 900ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 .ch-scene {
   position: absolute;
@@ -636,12 +712,15 @@ html[data-electron="1"][data-platform="darwin"][dir="ltr"] .nav-inner { padding-
 .ch-scene-off { z-index: 1; }
 .ch-scene-lit { z-index: 2; opacity: 0; }
 
-/* light transition modes — one mode per out+in pair */
-.ch-stage[data-mode="normal"].lit .ch-scene-lit { animation: ch-on-normal var(--ch-in) cubic-bezier(0.33, 0.5, 0.25, 1) both, ch-breathe 4.6s var(--ch-in) ease-in-out infinite; }
-.ch-stage[data-mode="flicker"].lit .ch-scene-lit { animation: ch-on-flicker var(--ch-in) linear both, ch-breathe 4.6s var(--ch-in) ease-in-out infinite; }
-.ch-stage[data-mode="surge"].lit .ch-scene-lit { animation: ch-on-surge var(--ch-in) linear both, ch-breathe 4.6s var(--ch-in) ease-in-out infinite; }
-.ch-stage[data-mode="filament"].lit .ch-scene-lit { animation: ch-on-filament var(--ch-in) ease-in-out both, ch-breathe 4.6s var(--ch-in) ease-in-out infinite; }
-.ch-stage[data-mode="pulse"].lit .ch-scene-lit { animation: ch-on-pulse var(--ch-in) cubic-bezier(0.4, 0.3, 0.4, 1) both, ch-breathe 4.6s var(--ch-in) ease-in-out infinite; }
+/* light transition modes — one mode per out+in pair (v0.40.0: the infinite
+ * ch-breathe is GONE — a full-stage opacity loop kept the compositor busy
+ * every frame for an imperceptible 0.95 dip; the stage now rests between
+ * swaps — part of the idle-lag diet) */
+.ch-stage[data-mode="normal"].lit .ch-scene-lit { animation: ch-on-normal var(--ch-in) cubic-bezier(0.33, 0.5, 0.25, 1) both; }
+.ch-stage[data-mode="flicker"].lit .ch-scene-lit { animation: ch-on-flicker var(--ch-in) linear both; }
+.ch-stage[data-mode="surge"].lit .ch-scene-lit { animation: ch-on-surge var(--ch-in) linear both; }
+.ch-stage[data-mode="filament"].lit .ch-scene-lit { animation: ch-on-filament var(--ch-in) ease-in-out both; }
+.ch-stage[data-mode="pulse"].lit .ch-scene-lit { animation: ch-on-pulse var(--ch-in) cubic-bezier(0.4, 0.3, 0.4, 1) both; }
 .ch-stage[data-mode="normal"].goodnight .ch-scene-lit { animation: ch-out-normal var(--ch-out) ease-in both; }
 .ch-stage[data-mode="flicker"].goodnight .ch-scene-lit { animation: ch-out-flicker var(--ch-out) linear both; }
 .ch-stage[data-mode="surge"].goodnight .ch-scene-lit { animation: ch-out-surge var(--ch-out) linear both; }
@@ -663,7 +742,10 @@ html[data-electron="1"][data-platform="darwin"][dir="ltr"] .nav-inner { padding-
 .ch-poster-wrap {
   position: absolute;
   overflow: hidden;
-  box-shadow: 0 34px 80px rgba(0, 0, 0, 0.5);
+  /* v0.40.0: two shadows in BOTH themes (matched lists interpolate) + a
+   * 900ms morph so the plate's shadow softens with the theme swap */
+  box-shadow: 0 34px 80px rgba(0, 0, 0, 0.5), 0 6px 18px rgba(0, 0, 0, 0.12);
+  transition: box-shadow 900ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 /* v0.38.0 — the plate is a SCREEN, not a ghost: base state = screen OFF
  * (opacity 0). v0.37.0 only dimmed the poster to brightness(0.05), so a dark
@@ -686,16 +768,19 @@ html[data-electron="1"][data-platform="darwin"][dir="ltr"] .nav-inner { padding-
 .ch-tint {
   position: absolute; inset: 0; pointer-events: none;
   background: linear-gradient(112deg, rgba(255, 224, 172, 0.13), rgba(255, 224, 172, 0.035) 36%, transparent 56%, rgba(6, 3, 1, 0.26) 98%);
+  transition: background 900ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 .ch-base {
   position: absolute; inset: 0; pointer-events: none;
   background: linear-gradient(to top, rgba(0, 0, 0, 0.42), transparent 15%);
+  transition: background 900ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 .ch-glass {
   position: absolute; inset: 0; pointer-events: none; border-radius: 10px; opacity: 0;
   border: 2.5px solid rgba(255, 243, 224, 0.34);
   box-shadow: inset 0 0 22px rgba(255, 236, 200, 0.15), inset 0 1.5px 0 rgba(255, 248, 235, 0.5), inset 0 -1px 0 rgba(255, 238, 210, 0.14), 0 0 34px rgba(255, 215, 150, 0.1);
   background: linear-gradient(112deg, rgba(255, 248, 238, 0.085), rgba(255, 255, 255, 0.018) 34%, transparent 55%, rgba(255, 246, 230, 0.05));
+  transition: background 900ms cubic-bezier(0.4, 0, 0.2, 1), border-color 900ms cubic-bezier(0.4, 0, 0.2, 1), box-shadow 900ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 .ch-stage.lit .ch-glass { animation: ch-glass-in var(--ch-in) 0.05s both; }
 .ch-stage.goodnight .ch-glass { animation: ch-glass-out var(--ch-out) both; }
@@ -772,42 +857,66 @@ html[data-electron="1"][data-platform="darwin"][dir="ltr"] .nav-inner { padding-
 }
 .ch-ctas { margin-top: calc(var(--chu) * 1.65); display: flex; align-items: center; gap: calc(var(--chu) * 0.72); flex-wrap: wrap; }
 
-/* readability gradients (from-ink equivalents) */
+/* v0.40.0 — the info block re-inks SMOOTHLY on the theme swap (the values
+ * themselves flip via the html.light rules + the @property tokens below) */
+.ch-info { transition: color 900ms cubic-bezier(0.4, 0, 0.2, 1); }
+.ch-title { transition: color 900ms cubic-bezier(0.4, 0, 0.2, 1), text-shadow 900ms cubic-bezier(0.4, 0, 0.2, 1); }
+.ch-subtitle, .ch-genr, .ch-meta, .ch-rating, .ch-desc { transition: color 900ms cubic-bezier(0.4, 0, 0.2, 1); }
+.ch-chip-glass { transition: color 900ms cubic-bezier(0.4, 0, 0.2, 1), background-color 900ms cubic-bezier(0.4, 0, 0.2, 1), border-color 900ms cubic-bezier(0.4, 0, 0.2, 1); }
+
+/* readability gradients (from-ink equivalents) — v0.40.0: the dark bottom
+ * fade carries the SAME 5-stop shape as its light twin so the theme swap
+ * can interpolate the gradient (extra stops sit ON the original ramp — the
+ * dark look is pixel-identical) */
 .ch-fade-side {
   position: absolute; inset: 0; z-index: 3; pointer-events: none;
   background: linear-gradient(to left, rgba(9, 9, 12, 0.82), rgba(9, 9, 12, 0.42) 42%, rgba(9, 9, 12, 0) 68%);
+  transition: background 900ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 .ch-fade-bottom {
   position: absolute; inset: 0; z-index: 3; pointer-events: none;
-  background: linear-gradient(to top, rgba(9, 9, 12, 0.72), rgba(9, 9, 12, 0.18) 30%, rgba(0, 0, 0, 0.22) 100%);
+  background: linear-gradient(to top, rgba(9, 9, 12, 0.72) 0%, rgba(9, 9, 12, 0.558) 9%, rgba(9, 9, 12, 0.342) 21%, rgba(9, 9, 12, 0.187) 42%, rgba(0, 0, 0, 0.22) 100%);
+  transition: background 900ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* atmosphere */
+/* atmosphere — v0.40.0: the dust layer sits ABOVE the grain/vignette (top
+ * of the stage's paint order) with plain source-over blending: its looping
+ * particles used to sit UNDER a screen-blended grain layer, forcing the
+ * whole blend stack to re-composite every frame (idle-lag diet) */
 .ch-dust {
-  position: absolute; inset: 0; z-index: 6; pointer-events: none; opacity: 0;
-  transition: opacity 1.2s; mix-blend-mode: screen;
+  position: absolute; inset: 0; z-index: 10; pointer-events: none; opacity: 0;
+  transition: opacity 1.2s;
 }
 .ch-stage.lit .ch-dust { opacity: 0.85; }
 .ch-stage.goodnight .ch-dust { opacity: 0; transition: opacity 0.6s; }
 .ch-dust i {
   position: absolute; border-radius: 50%;
   background: radial-gradient(circle, rgba(255, 236, 200, 0.9), rgba(255, 200, 120, 0.25) 60%, transparent 75%);
+  transition: background 900ms cubic-bezier(0.4, 0, 0.2, 1);
   animation: ch-float var(--d) ease-in-out var(--dl) infinite alternate, ch-twinkle calc(var(--d) * 0.55) ease-in-out infinite;
 }
+/* v0.40.0 — the film grain is STATIC: the 8-step transform loop over a
+ * 150%-size blended layer re-composited the whole hero every frame for a
+ * flicker no one could see at opacity 0.05 — the texture stays, the
+ * perpetual cost goes (part of the idle-lag diet) */
 .ch-grain {
   position: absolute; inset: -25%; z-index: 7; pointer-events: none; opacity: 0.05; mix-blend-mode: overlay;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
-  animation: ch-grain 1.3s steps(8) infinite;
 }
 .ch-vig {
   position: absolute; inset: 0; z-index: 8; pointer-events: none;
-  background: radial-gradient(ellipse 120% 100% at 50% 42%, transparent 52%, rgba(0, 0, 0, 0.5) 100%), linear-gradient(to top, rgba(0, 0, 0, 0.5), transparent 16%);
+  /* v0.40.0: same 2-layer shape as the light twin so the swap interpolates */
+  background: radial-gradient(ellipse 120% 100% at 50% 42%, transparent 0%, transparent 52%, rgba(0, 0, 0, 0.5) 100%), linear-gradient(to top, rgba(0, 0, 0, 0.5) 0%, transparent 16%);
+  transition: background 900ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /* curtain veils — clip-path polygons (the measured fabric silhouette) are
  * applied INLINE on .ch-pane/.ch-sw so the backdrop-filter samples the scene
- * correctly (clip on the same element, not an ancestor) */
-.ch-curt { position: absolute; inset: 0; z-index: 9; pointer-events: none; }
+ * correctly (clip on the same element, not an ancestor) — v0.40.0: the
+ * veils are also VISIBILITY-gated so their backdrop-filter chain costs
+ * nothing while no curtain is hovered */
+.ch-curt { position: absolute; inset: 0; z-index: 9; pointer-events: none; visibility: hidden; }
+.ch-curt.on, .ch-curt.sweeping { visibility: visible; }
 .ch-pane {
   position: absolute; inset: 0; opacity: 0; transition: opacity 0.4s ease; display: block;
   -webkit-backdrop-filter: blur(2.2px) saturate(1.16) brightness(1.06);
@@ -834,24 +943,37 @@ html[data-electron="1"][data-platform="darwin"][dir="ltr"] .nav-inner { padding-
 .ch-curt-r.sweeping .ch-sw { animation-name: ch-curt-sweep-rev; }
 
 /* =====================================================================================
-   v0.39.0 — CINEMA DAY MODE (html.light)
+   v0.39.0/v0.40.0 — CINEMA DAY MODE (html.light)
    The user shipped two day boards (white curtains, bright wall, wooden stage,
    red seats) and asked for the seats to «فید سفید بگیره و با محیط پایین نرم‌افزار
    مخلوط بشه». Both boards were aligned onto the SAME POSTER_BOX plate in
    design space, so this whole theme swap is pure CSS — the poster, the
    homography and the light-transition engine are untouched:
-   - scene pair: dark boards hidden, day boards shown (off = flat daylight,
-     lit = god rays — the same off/lit mechanic)
+   - scene pair: the day boards (off = flat, lit = beam — v0.40.0 re-renders
+     whose green plate lands within ~5px of the night plate) CROSSFADE in
+     over 900ms — both pairs stay mounted, only opacity/visibility trade
+     places, so the swap breathes instead of snapping
    - the seats melt into the page via a bottom fade to var(--color-ink)
      (the EXACT light-theme page background, so the seam is invisible)
    - the info block re-inks (dark text, white glow) and the glass/chips/vig
-     family flips to its light-language equivalents
+     family morphs to its light-language equivalents (matched gradient
+     shapes + transitions — see the dark twins above)
    - the plate's «screen off» state washes WHITE instead of black so the
      poster's out-beat dissolves into the light board, not a black slab
    ===================================================================================== */
-.ch-scene-day { display: none; }
-html.light .ch-scene-dark { display: none; }
-html.light .ch-scene-day { display: block; }
+.ch-pair { position: absolute; inset: 0; pointer-events: none; }
+.ch-pair-day {
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 900ms cubic-bezier(0.4, 0, 0.2, 1), visibility 0s linear 900ms;
+}
+/* the idle warm-up beat: one invisible paint so flip #1 never stalls */
+.ch-pair-day.ch-warm { visibility: visible; opacity: 0.001; transition: none; }
+html.light .ch-pair-day {
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 900ms cubic-bezier(0.4, 0, 0.2, 1);
+}
 html.light .ch-stage { background: var(--color-ink); }
 
 /* the user's seats fade — bottom melts into the page background */
@@ -883,7 +1005,9 @@ html.light .ch-glass {
   box-shadow: inset 0 0 22px rgba(255, 255, 255, 0.38), inset 0 1.5px 0 rgba(255, 255, 255, 0.85), inset 0 -1px 0 rgba(255, 255, 255, 0.4), 0 0 30px rgba(255, 255, 255, 0.3);
   background: linear-gradient(112deg, rgba(255, 255, 255, 0.17), rgba(255, 255, 255, 0.05) 34%, transparent 55%, rgba(255, 255, 255, 0.11));
 }
-html.light .ch-vig { background: radial-gradient(ellipse 120% 100% at 50% 42%, transparent 60%, rgba(70, 70, 95, 0.16) 100%); }
+html.light .ch-vig {
+  background: radial-gradient(ellipse 120% 100% at 50% 42%, transparent 0%, transparent 52%, rgba(70, 70, 95, 0.16) 100%), linear-gradient(to top, rgba(70, 70, 95, 0.08) 0%, transparent 16%);
+}
 html.light .ch-dust { mix-blend-mode: normal; }
 html.light .ch-dust i { background: radial-gradient(circle, rgba(255, 255, 255, 0.95), rgba(255, 240, 200, 0.35) 60%, transparent 75%); }
 
@@ -936,7 +1060,8 @@ html.light .ch-dust i { background: radial-gradient(circle, rgba(255, 255, 255, 
 @keyframes ch-out-pulse {
   0% { opacity: 1; } 18% { opacity: 0.6; } 32% { opacity: 0.72; } 55% { opacity: 0.28; } 70% { opacity: 0.38; } 100% { opacity: 0; }
 }
-@keyframes ch-breathe { 0%, 100% { opacity: 1; } 50% { opacity: 0.95; } }
+/* v0.40.0: ch-breathe removed — the lit scene no longer loops an opacity
+ * wobble forever; the stage rests between swaps (idle-lag diet) */
 /* v0.38.0 — in: the screen powers up from black (opacity + brightness ramp);
  * out: dims like a real screen first (opacity holds at 1 while brightness
  * falls), then vanishes COMPLETELY — the swap lands on an invisible plate. */
@@ -964,11 +1089,7 @@ html.light .ch-dust i { background: radial-gradient(circle, rgba(255, 255, 255, 
 @keyframes ch-info-out { to { opacity: 0; transform: translateY(calc(var(--chu) * -0.9)); } }
 @keyframes ch-float { from { transform: translate(0, 0); } to { transform: translate(calc(var(--chu) * 1.3), calc(var(--chu) * -2.4)); } }
 @keyframes ch-twinkle { 0%, 100% { opacity: 0.1; } 50% { opacity: 0.6; } }
-@keyframes ch-grain {
-  0% { transform: translate(0, 0); } 12.5% { transform: translate(-2%, 1.5%); } 25% { transform: translate(1.5%, -2%); }
-  37.5% { transform: translate(-1%, -1%); } 50% { transform: translate(2%, 1%); } 62.5% { transform: translate(-2%, 2%); }
-  75% { transform: translate(1%, 2%); } 87.5% { transform: translate(2%, -1.5%); } 100% { transform: translate(0, 0); }
-}
+/* v0.40.0: ch-grain keyframes removed with the animation (static texture) */
 @keyframes ch-curt-sweep {
   0% { transform: translateX(-135%) skewX(-16deg); opacity: 0; }
   14% { opacity: 1; } 78% { opacity: 1; }

@@ -208,10 +208,11 @@ export default function Hero({ items, watchlistIds }: { items: TitleView[]; watc
     const reduce =
       profile.reduceMotion || window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-    /* dust motes inside the light cone (built once) */
+    /* dust motes inside the light cone (built once; v0.40.0: 8 — fewer
+     * layers, same life — part of the idle-lag diet) */
     const dust = dustRef.current;
     if (dust && !dust.childElementCount) {
-      for (let k = 0; k < 16; k++) {
+      for (let k = 0; k < 8; k++) {
         const p = document.createElement("i");
         p.style.left = 18 + Math.random() * 36 + "%";
         p.style.top = 18 + Math.random() * 56 + "%";
@@ -234,6 +235,22 @@ export default function Hero({ items, watchlistIds }: { items: TitleView[]; watc
     const ro = new ResizeObserver(fit);
     ro.observe(stage);
     fit();
+
+    /* v0.40.0 — warm the DAY pair off the hot path: both boards decode AND
+     * raster once at idle (a 0.001-opacity beat forces the compositor to
+     * upload both layers while nothing is happening) so flip #1 crossfades
+     * exactly as smoothly as every later flip */
+    const dayPair = stage.querySelector(".ch-pair-day");
+    let warmClean: number | undefined;
+    const warmDay = window.setTimeout(() => {
+      stage.querySelectorAll<HTMLImageElement>(".ch-pair-day img").forEach((im) => {
+        if (im.decode) im.decode().catch(() => {});
+      });
+      if (dayPair) {
+        dayPair.classList.add("ch-warm");
+        warmClean = window.setTimeout(() => dayPair.classList.remove("ch-warm"), 260);
+      }
+    }, 1800);
 
     /* v0.38.3 — race EVERY title's art off-DOM at boot (staggered), not just
      * the head rung: the winners memoize per session, so the first swaps are
@@ -490,6 +507,8 @@ export default function Hero({ items, watchlistIds }: { items: TitleView[]; watc
       dead = true;
       swapGen += 1;
       clearTimers();
+      clearTimeout(warmDay);
+      clearTimeout(warmClean);
       ro.disconnect();
       stage.removeEventListener("mousemove", onMove);
       stage.removeEventListener("mouseleave", onLeave);
@@ -569,13 +588,18 @@ export default function Hero({ items, watchlistIds }: { items: TitleView[]; watc
         className="ch-stage relative hidden h-[82vh] min-h-[560px] w-full overflow-hidden bg-black lg:block"
         aria-roledescription="carousel"
       >
-        {/* scene boards — the dark pair is the default; html.light swaps to
-            the day pair (v0.39.0, same geometry: the day boards were aligned
-            onto the same POSTER_BOX plate, so the poster never jumps) */}
-        <img src="/images/hero/scene-dark.jpg" alt="" aria-hidden className="ch-scene ch-scene-off ch-scene-dark" />
-        <img ref={litRef} src="/images/hero/scene-lit.jpg" alt="" aria-hidden className="ch-scene ch-scene-lit ch-scene-dark" />
-        <img src="/images/hero/scene-day-off.jpg" alt="" aria-hidden className="ch-scene ch-scene-off ch-scene-day" />
-        <img src="/images/hero/scene-day-lit.jpg" alt="" aria-hidden className="ch-scene ch-scene-lit ch-scene-day" />
+        {/* scene boards — the dark pair is the default; the day pair (v0.40.0
+            boards, re-aligned onto the SAME POSTER_BOX plate) fades in ABOVE
+            it on html.light over 900ms — a real crossfade, not a display
+            flip — so the theme swap breathes instead of snapping */}
+        <div className="ch-pair ch-pair-dark" aria-hidden>
+          <img src="/images/hero/scene-dark.jpg" alt="" aria-hidden className="ch-scene ch-scene-off ch-scene-dark" />
+          <img ref={litRef} src="/images/hero/scene-lit.jpg" alt="" aria-hidden className="ch-scene ch-scene-lit ch-scene-dark" />
+        </div>
+        <div className="ch-pair ch-pair-day" aria-hidden>
+          <img src="/images/hero/scene-day-off.jpg" alt="" aria-hidden className="ch-scene ch-scene-off ch-scene-day" />
+          <img src="/images/hero/scene-day-lit.jpg" alt="" aria-hidden className="ch-scene ch-scene-lit ch-scene-day" />
+        </div>
 
         {/* readability gradients (from-ink equivalents) */}
         <div className="ch-fade-side" />

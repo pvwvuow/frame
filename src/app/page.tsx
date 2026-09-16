@@ -126,7 +126,8 @@ function HomeGhosts() {
   if (covers.length < HOME_GHOST_SLOTS.length || variants.length < HOME_GHOST_SLOTS.length) return null;
   return (
     <div
-      className="pointer-events-none fixed inset-0 -z-10 overflow-hidden"
+      className="pointer-events-none fixed inset-0 -z-10 overflow-hidden ghost-layer"
+      data-on={on ? "true" : "false"}
       aria-hidden="true"
       style={{ opacity: on ? 1 : 0, transition: "opacity 1100ms ease" }}
     >
