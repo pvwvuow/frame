@@ -837,12 +837,12 @@ html[data-electron="1"][data-platform="darwin"][dir="ltr"] .nav-inner { padding-
    instead of once per frame). Dark look is byte-identical (::after at 0). */
 .ch-tint {
   position: absolute; inset: 0; pointer-events: none;
-  background: linear-gradient(112deg, rgba(255, 224, 172, 0.13), rgba(255, 224, 172, 0.035) 36%, transparent 56%, rgba(6, 3, 1, 0.26) 98%);
 }
 .ch-base {
   position: absolute; inset: 0; pointer-events: none;
-  background: linear-gradient(to top, rgba(0, 0, 0, 0.42), transparent 15%);
 }
+.ch-tint::before { background: linear-gradient(112deg, rgba(255, 224, 172, 0.13), rgba(255, 224, 172, 0.035) 36%, transparent 56%, rgba(6, 3, 1, 0.26) 98%); }
+.ch-base::before { background: linear-gradient(to top, rgba(0, 0, 0, 0.42), transparent 15%); }
 .ch-glass {
   position: absolute; inset: 0; pointer-events: none; border-radius: 10px; opacity: 0;
   border: 2.5px solid rgba(255, 243, 224, 0.34);
@@ -947,12 +947,26 @@ html.light .ch-glass::after { opacity: 1; }
  * dark look is pixel-identical) */
 .ch-fade-side {
   position: absolute; inset: 0; z-index: 3; pointer-events: none;
-  background: linear-gradient(to left, rgba(9, 9, 12, 0.82), rgba(9, 9, 12, 0.42) 42%, rgba(9, 9, 12, 0) 68%);
 }
 .ch-fade-bottom {
   position: absolute; inset: 0; z-index: 3; pointer-events: none;
-  background: linear-gradient(to top, rgba(9, 9, 12, 0.72) 0%, rgba(9, 9, 12, 0.558) 9%, rgba(9, 9, 12, 0.342) 21%, rgba(9, 9, 12, 0.187) 42%, rgba(0, 0, 0, 0.22) 100%);
 }
+/* v0.41.0 — the DARK scrims move onto ::before twins. The element's own
+ * background painted them through the WHOLE light crossfade (the ::after
+ * light twins only ever add on top), veiling the bright day boards to ~65%
+ * (measured wall 235 -> 158). ::before fades OUT in light while ::after
+ * fades IN: one 900ms clock, zero snap, dark look byte-identical. */
+.ch-fade-side::before,
+.ch-fade-bottom::before,
+.ch-tint::before,
+.ch-base::before,
+.ch-vig::before {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  opacity: 1;
+  transition: opacity 900ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+.ch-fade-side::before { background: linear-gradient(to left, rgba(9, 9, 12, 0.82), rgba(9, 9, 12, 0.42) 42%, rgba(9, 9, 12, 0) 68%); }
+.ch-fade-bottom::before { background: linear-gradient(to top, rgba(9, 9, 12, 0.72) 0%, rgba(9, 9, 12, 0.558) 9%, rgba(9, 9, 12, 0.342) 21%, rgba(9, 9, 12, 0.187) 42%, rgba(0, 0, 0, 0.22) 100%); }
 
 /* atmosphere — v0.40.0: the dust layer sits ABOVE the grain/vignette (top
  * of the stage's paint order) with plain source-over blending: its looping
@@ -979,7 +993,8 @@ html.light .ch-glass::after { opacity: 1; }
 }
 .ch-vig {
   position: absolute; inset: 0; z-index: 8; pointer-events: none;
-  /* v0.40.0: same 2-layer shape as the light twin so the swap interpolates */
+}
+.ch-vig::before {
   background: radial-gradient(ellipse 120% 100% at 50% 42%, transparent 0%, transparent 52%, rgba(0, 0, 0, 0.5) 100%), linear-gradient(to top, rgba(0, 0, 0, 0.5) 0%, transparent 16%);
 }
 
@@ -1111,6 +1126,13 @@ html.light .ch-fade-bottom::after,
 html.light .ch-tint::after,
 html.light .ch-base::after,
 html.light .ch-vig::after { opacity: 1; }
+/* v0.41.0 — and the dark ::before twins retire in light (they used to keep
+ * painting UNDER the light twins — the gray veil over the day boards) */
+html.light .ch-fade-side::before,
+html.light .ch-fade-bottom::before,
+html.light .ch-tint::before,
+html.light .ch-base::before,
+html.light .ch-vig::before { opacity: 0; }
 /* the idle warm beat also pre-rasters the light twins (one invisible paint
    each) so the flip frame never rasterizes a full-stage gradient — except
    .ch-fade-bottom::after, whose ink stop re-resolves with the theme anyway */
@@ -1118,6 +1140,18 @@ html.light .ch-vig::after { opacity: 1; }
 .ch-stage.ch-warm-ramps .ch-tint::after,
 .ch-stage.ch-warm-ramps .ch-base::after,
 .ch-stage.ch-warm-ramps .ch-vig::after {
+  opacity: 0.001;
+  transition: none;
+}
+/* v0.41.0 — light boots pre-raster the DARK ::before twins instead (the
+ * light→dark flip must not paint five full-stage gradients for the first
+ * time inside the flip frame either). Invisible beat: ::before sits at
+ * opacity 0 in light, so 0.001 cannot flicker anything. */
+html.light .ch-stage.ch-warm-dark .ch-fade-side::before,
+html.light .ch-stage.ch-warm-dark .ch-fade-bottom::before,
+html.light .ch-stage.ch-warm-dark .ch-tint::before,
+html.light .ch-stage.ch-warm-dark .ch-base::before,
+html.light .ch-stage.ch-warm-dark .ch-vig::before {
   opacity: 0.001;
   transition: none;
 }

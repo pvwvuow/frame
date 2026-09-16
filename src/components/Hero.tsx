@@ -247,9 +247,19 @@ export default function Hero({ items, watchlistIds }: { items: TitleView[]; watc
     const dayPair = stage.querySelector(".ch-pair-day");
     let warmClean: number | undefined;
     const warmDay = window.setTimeout(() => {
-      /* already-light boot: the day pair is the LIVE pair (fully painted from
-       * frame one) — the 0.001-opacity beat would make it FLICKER for nothing */
-      if (document.documentElement.classList.contains("light")) return;
+      if (document.documentElement.classList.contains("light")) {
+        /* v0.41.0 — light boot: the DAY pair is live, but the LIGHT→DARK flip
+         * must not first-raster the dark boards + five dark ::before scrims
+         * INSIDE the flip frame either. Decode the dark pair and beat the
+         * dark twins at 0.001 (invisible — ::before sits at opacity 0 here,
+         * so nothing can flicker). */
+        stage.querySelectorAll<HTMLImageElement>(".ch-pair-dark img").forEach((im) => {
+          if (im.decode) im.decode().catch(() => {});
+        });
+        stage.classList.add("ch-warm-dark");
+        warmClean = window.setTimeout(() => stage.classList.remove("ch-warm-dark"), 260);
+        return;
+      }
       stage.querySelectorAll<HTMLImageElement>(".ch-pair-day img").forEach((im) => {
         if (im.decode) im.decode().catch(() => {});
       });
