@@ -833,6 +833,71 @@ html[data-electron="1"][data-platform="darwin"][dir="ltr"] .nav-inner { padding-
 .ch-curt.sweeping .ch-sw { animation: ch-curt-sweep 0.62s cubic-bezier(0.35, 0.15, 0.3, 1) both; }
 .ch-curt-r.sweeping .ch-sw { animation-name: ch-curt-sweep-rev; }
 
+/* =====================================================================================
+   v0.39.0 — CINEMA DAY MODE (html.light)
+   The user shipped two day boards (white curtains, bright wall, wooden stage,
+   red seats) and asked for the seats to «فید سفید بگیره و با محیط پایین نرم‌افزار
+   مخلوط بشه». Both boards were aligned onto the SAME POSTER_BOX plate in
+   design space, so this whole theme swap is pure CSS — the poster, the
+   homography and the light-transition engine are untouched:
+   - scene pair: dark boards hidden, day boards shown (off = flat daylight,
+     lit = god rays — the same off/lit mechanic)
+   - the seats melt into the page via a bottom fade to var(--color-ink)
+     (the EXACT light-theme page background, so the seam is invisible)
+   - the info block re-inks (dark text, white glow) and the glass/chips/vig
+     family flips to its light-language equivalents
+   - the plate's «screen off» state washes WHITE instead of black so the
+     poster's out-beat dissolves into the light board, not a black slab
+   ===================================================================================== */
+.ch-scene-day { display: none; }
+html.light .ch-scene-dark { display: none; }
+html.light .ch-scene-day { display: block; }
+html.light .ch-stage { background: var(--color-ink); }
+
+/* the user's seats fade — bottom melts into the page background */
+html.light .ch-fade-side {
+  background: linear-gradient(to left, rgba(243, 243, 247, 0.88), rgba(243, 243, 247, 0.48) 42%, rgba(243, 243, 247, 0) 68%);
+}
+html.light .ch-fade-bottom {
+  background: linear-gradient(to top, var(--color-ink) 0%, rgba(243, 243, 247, 0.85) 9%, rgba(243, 243, 247, 0.4) 21%, rgba(243, 243, 247, 0) 42%, rgba(243, 243, 247, 0.24) 100%);
+}
+
+/* info block re-inks for the bright wall */
+html.light .ch-info { color: #3f3f46; }
+html.light .ch-title { color: #18181b; text-shadow: 0 1px 26px rgba(255, 255, 255, 0.8), 0 0 2px rgba(255, 255, 255, 0.45); }
+html.light .ch-subtitle, html.light .ch-genr { color: #71717a; }
+html.light .ch-meta { color: #3f3f46; }
+html.light .ch-rating { color: #b45309; }
+html.light .ch-desc { color: #52525b; }
+html.light .ch-chip-glass { border: 1px solid rgba(9, 9, 11, 0.13); background: rgba(255, 255, 255, 0.62); color: #3f3f46; -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); }
+
+/* plate + poster: day-language screen */
+html.light .ch-poster-wrap { box-shadow: 0 26px 60px rgba(30, 30, 60, 0.26), 0 6px 18px rgba(30, 30, 60, 0.13); }
+html.light .ch-poster-wrap img { filter: brightness(2.55) saturate(0.22); }
+html.light .ch-stage.lit .ch-poster-wrap img { animation-name: ch-poster-in-day; }
+html.light .ch-stage.goodnight .ch-poster-wrap img { animation-name: ch-poster-out-day; }
+html.light .ch-tint { background: linear-gradient(112deg, rgba(255, 244, 220, 0.22), rgba(255, 244, 220, 0.06) 36%, transparent 56%, rgba(60, 50, 40, 0.1) 98%); }
+html.light .ch-base { background: linear-gradient(to top, rgba(40, 30, 20, 0.22), transparent 15%); }
+html.light .ch-glass {
+  border-color: rgba(255, 255, 255, 0.78);
+  box-shadow: inset 0 0 22px rgba(255, 255, 255, 0.38), inset 0 1.5px 0 rgba(255, 255, 255, 0.85), inset 0 -1px 0 rgba(255, 255, 255, 0.4), 0 0 30px rgba(255, 255, 255, 0.3);
+  background: linear-gradient(112deg, rgba(255, 255, 255, 0.17), rgba(255, 255, 255, 0.05) 34%, transparent 55%, rgba(255, 255, 255, 0.11));
+}
+html.light .ch-vig { background: radial-gradient(ellipse 120% 100% at 50% 42%, transparent 60%, rgba(70, 70, 95, 0.16) 100%); }
+html.light .ch-dust { mix-blend-mode: normal; }
+html.light .ch-dust i { background: radial-gradient(circle, rgba(255, 255, 255, 0.95), rgba(255, 240, 200, 0.35) 60%, transparent 75%); }
+
+/* the plate powers on/off through a WHITE wash on the light board */
+@keyframes ch-poster-in-day {
+  0% { opacity: 0; filter: brightness(2.55) saturate(0.22); }
+  100% { opacity: 1; filter: brightness(1) saturate(1); }
+}
+@keyframes ch-poster-out-day {
+  0% { opacity: 1; filter: brightness(1) saturate(1); }
+  55% { opacity: 1; filter: brightness(2.1) saturate(0.35); }
+  100% { opacity: 0; filter: brightness(2.55) saturate(0.22); }
+}
+
 /* visibilitychange pauses the whole show without any visible control */
 .ch-paused *, .ch-stage.ch-paused * { animation-play-state: paused !important; }
 /* reduced motion: everything lands instantly, the stage stays lit (Hero.tsx

@@ -569,9 +569,13 @@ export default function Hero({ items, watchlistIds }: { items: TitleView[]; watc
         className="ch-stage relative hidden h-[82vh] min-h-[560px] w-full overflow-hidden bg-black lg:block"
         aria-roledescription="carousel"
       >
-        {/* scene boards */}
-        <img src="/images/hero/scene-dark.jpg" alt="" aria-hidden className="ch-scene ch-scene-off" />
-        <img ref={litRef} src="/images/hero/scene-lit.jpg" alt="" aria-hidden className="ch-scene ch-scene-lit" />
+        {/* scene boards — the dark pair is the default; html.light swaps to
+            the day pair (v0.39.0, same geometry: the day boards were aligned
+            onto the same POSTER_BOX plate, so the poster never jumps) */}
+        <img src="/images/hero/scene-dark.jpg" alt="" aria-hidden className="ch-scene ch-scene-off ch-scene-dark" />
+        <img ref={litRef} src="/images/hero/scene-lit.jpg" alt="" aria-hidden className="ch-scene ch-scene-lit ch-scene-dark" />
+        <img src="/images/hero/scene-day-off.jpg" alt="" aria-hidden className="ch-scene ch-scene-off ch-scene-day" />
+        <img src="/images/hero/scene-day-lit.jpg" alt="" aria-hidden className="ch-scene ch-scene-lit ch-scene-day" />
 
         {/* readability gradients (from-ink equivalents) */}
         <div className="ch-fade-side" />

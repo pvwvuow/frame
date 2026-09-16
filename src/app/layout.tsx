@@ -138,7 +138,13 @@ const IMG_FALLBACK_SCRIPT = String.raw`(function(){
     if (!el.dataset.mh) {
       el.dataset.mh = '1';
       var m = src.match(/\/covers\/(tt\d+)\//i);
-      if (m) {
+      /* v0.39.0 — metahub bad-art blocklist (mirrors src/lib/covers.ts):
+       * metahub serves the WRONG film for these tts (tt0185906 «Band of
+       * Brothers» = the Isadora poster) — never route them to metahub;
+       * fall straight to the placeholder (the local pack, when synced,
+       * already won at step 1 and never reaches this swap). */
+      var MH_BAD = { tt0185906: 1 };
+      if (m && !MH_BAD[m[1].toLowerCase()]) {
         var wide = /backdrop|-wide/i.test(src);
         var mu = 'https://images.metahub.space/' + (wide ? 'background/medium/' : 'poster/medium/') + m[1] + '/img';
         /* ART-3.0: on the desktop the direct metahub mount is the WORST hop
@@ -155,7 +161,7 @@ const IMG_FALLBACK_SCRIPT = String.raw`(function(){
     if (!el.dataset.mhp) {
       var probe = inner || src;
       var m2 = probe.match(/metahub\.space\/background\/(?:medium|large)\/(tt\d+)\//i);
-      if (m2) {
+      if (m2 && !MH_BAD[m2[1].toLowerCase()]) {
         el.dataset.mhp = '1';
         var pu = 'https://images.metahub.space/poster/medium/' + m2[1] + '/img';
         el.src = window.nama && window.nama.isElectron ? '/api/art?u=' + encodeURIComponent(pu) : pu;

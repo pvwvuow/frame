@@ -95,6 +95,19 @@ const metahubPosterSize = (tt: string, size: "small" | "medium" | "large") =>
   `https://images.metahub.space/poster/${size}/${tt}/img`;
 const metahubPoster = (tt: string) => metahubPosterSize(tt, "small");
 const metahubBackdrop = (tt: string) => `https://images.metahub.space/background/medium/${tt}/img`;
+
+/* ---- v0.39.0 — METAHUB BAD-ART BLOCKLIST ----------------------------------
+ * metahub serves the WRONG FILM for these tts — verified byte-for-byte on
+ * 2026-09-16: poster/large + poster/medium + background for tt0185906
+ * («Band of Brothers») return the ISADORA poster (identical 66,648B webp
+ * direct AND through the relay; every other probed tt was correct). The
+ * v0.38.3 projector gate faithfully lights whatever the fastest route
+ * decodes — so the only defense is to not ASK: every ladder below skips
+ * metahub for blocked tts and falls through to the local cover-pack art
+ * (curated, correct) and the titled placeholder. Remove an entry only after
+ * re-verifying upstream. */
+const METAHUB_BAD_TTS = new Set(["tt0185906"]);
+const metahubOk = (tt: string) => !METAHUB_BAD_TTS.has(tt.toLowerCase());
 const relayed = (u: string) => `/api/art?u=${encodeURIComponent(u)}`;
 const localPoster = (tt: string) => `/covers/${tt}/poster.webp`;
 const localBackdrop = (tt: string) => `/covers/${tt}/backdrop.webp`;
@@ -183,12 +196,12 @@ export function posterSrc(t: CoverSource): string {
   if (coversLocalRev() > 0 && tt) return localPoster(tt);
   if (t.posterUrl) return artSrc(t.posterUrl);
   const poster = t.poster || "";
-  if (!poster) return tt ? artSrc(metahubPoster(tt)) : POSTER_PLACEHOLDER;
+  if (!poster) return tt && metahubOk(tt) ? artSrc(metahubPoster(tt)) : POSTER_PLACEHOLDER;
   if (/^https?:\/\//i.test(poster)) {
     /* cover-light desktop / self-host: the rebased raw.githubusercontent
      * path is the WORST remote hop on Iranian networks — reroute the tt's
      * metahub art through the paced same-origin relay instead. */
-    if (tt) return relayed(metahubPoster(tt));
+    if (tt && metahubOk(tt)) return relayed(metahubPoster(tt));
     return poster;
   }
   return poster;
@@ -200,9 +213,9 @@ export function backdropSrc(t: CoverSource): string {
   if (coversLocalRev() > 0 && tt) return localBackdrop(tt);
   if (t.backdropUrl) return artSrc(t.backdropUrl);
   const backdrop = t.backdrop || "";
-  if (!backdrop) return tt ? artSrc(metahubBackdrop(tt)) : BACKDROP_PLACEHOLDER;
+  if (!backdrop) return tt && metahubOk(tt) ? artSrc(metahubBackdrop(tt)) : BACKDROP_PLACEHOLDER;
   if (/^https?:\/\//i.test(backdrop)) {
-    if (tt) return relayed(metahubBackdrop(tt));
+    if (tt && metahubOk(tt)) return relayed(metahubBackdrop(tt));
     return backdrop;
   }
   return backdrop;
@@ -229,7 +242,7 @@ export function posterLadder(t: CoverSource, title?: string | null): string[] {
   const first = posterSrc(t);
   if (first) out.push(first);
   const tt = artTtOf(t);
-  if (tt) {
+  if (tt && metahubOk(tt)) {
     const second = first.startsWith("/covers/")
       ? relayed(metahubPoster(tt))
       : metahubPoster(tt);
@@ -245,7 +258,7 @@ export function backdropLadder(t: CoverSource, title?: string | null): string[] 
   const first = backdropSrc(t);
   if (first) out.push(first);
   const tt = artTtOf(t);
-  if (tt) {
+  if (tt && metahubOk(tt)) {
     const second = first.startsWith("/covers/")
       ? relayed(metahubBackdrop(tt))
       : metahubBackdrop(tt);
@@ -280,7 +293,7 @@ export function heroPosterLadder(t: CoverSource, title?: string | null): string[
     if (u && !out.includes(u)) out.push(u);
   };
   const tt = artTtOf(t);
-  if (tt) {
+  if (tt && metahubOk(tt)) {
     const large = metahubPosterSize(tt, "large");
     const medium = metahubPosterSize(tt, "medium");
     if (desktopRelay()) {
