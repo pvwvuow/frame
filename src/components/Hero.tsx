@@ -105,13 +105,16 @@ function heroArtBest(id: number): string {
 /** Race one title's full hero ladder off-DOM. `cb` fires on every improvement
  * (first settle reveals; later settles upgrade in place). The terminal
  * placeholder never races — all rungs failing is what yields it. */
-function raceHeroArt(t: TitleView, title: string, cb?: (src: string) => void): void {
+function raceHeroArt(t: TitleView, title: string, cb?: (src: string) => void): () => void {
   const entry = heroArt.get(t.id);
   if (entry) {
     const best = heroArtBest(t.id);
     if (best) cb?.(best);
     else if (cb) entry.cbs.add(cb);
-    return;
+    // BUG-006 — give the caller a way to detach: callbacks that outlive their
+    // slide used to sit in the set forever (leak) and fired for every later
+    // settle of the SAME title — repainting a stale plate.
+    return entry ? () => { entry.cbs.delete(cb as (src: string) => void); } : () => {};
   }
   const ladder = heroPosterLadder(t, title);
   const terminal = ladder[ladder.length - 1];
@@ -119,6 +122,9 @@ function raceHeroArt(t: TitleView, title: string, cb?: (src: string) => void): v
   const fresh: HeroArtEntry = { src: "", rank: Infinity, cbs: new Set() };
   if (cb) fresh.cbs.add(cb);
   heroArt.set(t.id, fresh);
+  const detach = () => {
+    fresh.cbs.delete(cb as (src: string) => void);
+  };
   const settle = (src: string, rank: number) => {
     if (rank >= fresh.rank) return;
     fresh.src = src;
@@ -133,7 +139,7 @@ function raceHeroArt(t: TitleView, title: string, cb?: (src: string) => void): v
     const cbs = [...fresh.cbs];
     fresh.cbs.clear();
     cbs.forEach((f) => f(terminal));
-    return;
+    return detach;
   }
   let pending = rungs.length;
   rungs.forEach((u, i) => {
@@ -152,6 +158,7 @@ function raceHeroArt(t: TitleView, title: string, cb?: (src: string) => void): v
       },
     );
   });
+  return detach;
 }
 
 /** ray-cast point-in-polygon over the measured curtain silhouettes (stage-%) */
@@ -325,6 +332,11 @@ export default function Hero({ items, watchlistIds }: { items: TitleView[]; watc
         stage.classList.add("lit");
         return;
       }
+      // BUG-006 — detach the PREVIOUS slide's art callback: its settle could
+      // otherwise fire long after the swap and repaint the old film's art
+      // over the new title (plus one leaked closure per slide).
+      activeArtDetach?.();
+      activeArtDetach = null;
       const gen = swapGen;
       const ladder = heroPosterLadder(t, title);
       let hold = 0;
@@ -357,7 +369,7 @@ export default function Hero({ items, watchlistIds }: { items: TitleView[]; watc
       const warm = heroArtBest(t.id);
       if (warm) reveal(warm);
       else hold = window.setTimeout(() => reveal(artPlaceholder(title, false)), HERO_DARK_HOLD_MS);
-      raceHeroArt(t, title, (src) => reveal(src));
+      activeArtDetach = raceHeroArt(t, title, (src) => reveal(src));
       /* pre-warm the NEXT title mid-slide so its swap lights warm too */
       const nxt = items[(idx + 1) % items.length];
       window.setTimeout(() => {
@@ -375,6 +387,10 @@ export default function Hero({ items, watchlistIds }: { items: TitleView[]; watc
      * opacity is 0; a slack safety timer only covers a dead event path
      * (worst case: a slightly longer dark hold — never a visible cut). */
     let disarmSwap: (() => void) | null = null;
+    /* BUG-006 — the current slide's heroArt callback + the swap generation:
+     * every `go()` retires the previous generation so a late reveal from an
+     * aborted swap can never touch the stage (not only on unmount). */
+    let activeArtDetach: (() => void) | null = null;
     const clearSwap = () => {
       const d = disarmSwap;
       disarmSwap = null;
@@ -418,6 +434,10 @@ export default function Hero({ items, watchlistIds }: { items: TitleView[]; watc
     };
     const go = (i: number, keepMode = false) => {
       clearTimers();
+      // BUG-006 — a new slide invalidates every reveal captured for the old
+      // one (the v0.38.3 gate checked the generation but nothing bumped it
+      // outside unmount — the wrong-poster repaint it claimed to prevent).
+      swapGen += 1;
       if (!keepMode && !reduce) setMode(pickMode());
       const wasLit = stage.classList.contains("lit") && !stage.classList.contains("goodnight");
       const next = ((i % slides.length) + slides.length) % slides.length;
@@ -529,6 +549,8 @@ export default function Hero({ items, watchlistIds }: { items: TitleView[]; watc
     return () => {
       dead = true;
       swapGen += 1;
+      activeArtDetach?.();
+      activeArtDetach = null;
       clearTimers();
       clearTimeout(warmDay);
       clearTimeout(warmClean);
@@ -710,7 +732,7 @@ function MobileHero({
   const cur = items[idx];
 
   return (
-    <section className="relative h-[82vh] min-h-[560px] w-full overflow-hidden lg:hidden">
+    <section className="relative h-[82vh] min-h-[560px] w-full overflow-hidden lg:hidden [--chu:4.2px] [--chs:1]">
       {items.map((t, i) => {
         /* v0.25.0 — mount ONLY the active slide ±1 (wrap-aware) */
         const dist = Math.min(Math.abs(i - idx), items.length - Math.abs(i - idx));

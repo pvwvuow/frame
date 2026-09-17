@@ -441,6 +441,9 @@ export async function pushProfile(profileData?: Record<string, unknown>): Promis
     const data: Record<string, unknown> = { ...raw };
     delete data.__tsIdentity;
     delete data.__tsPlayback;
+    delete data.parentalPin; // BUG-001 — the PIN never leaves the device, whatever path fed us
+    delete data.userKey;
+    delete data.id;
     data.playerPrefs = collectPlayerPrefs();
     // v0.29.0 (VERIFY-DATA-6) — `listDetails` (watchlist note/pin/plannedDate)
     // is a CLOUD-MANAGED key written by collectAndPushListDetails(). This
@@ -809,28 +812,22 @@ export async function logEvent(type: string, payload?: Record<string, unknown>) 
 /* slug-level primitives — low level, return success, NO queue side effects */
 
 async function sbFavoriteUpsert(sb: SupabaseClient, uid: string, r: CloudItemRef): Promise<boolean> {
-  const { error } = await sb.from("favorites").upsert({ user_id: uid, slug: r.slug, title: r.title ?? "" });
-  return !error;
+  return sbExecTransient(sb.from("favorites").upsert({ user_id: uid, slug: r.slug, title: r.title ?? "" }));
 }
 async function sbFavoriteDelete(sb: SupabaseClient, uid: string, slug: string): Promise<boolean> {
-  const { error } = await sb.from("favorites").delete().eq("user_id", uid).eq("slug", slug);
-  return !error;
+  return sbExecTransient(sb.from("favorites").delete().eq("user_id", uid).eq("slug", slug));
 }
 async function sbWatchlistUpsert(sb: SupabaseClient, uid: string, r: CloudItemRef, status: string): Promise<boolean> {
-  const { error } = await sb.from("watchlist").upsert({ user_id: uid, slug: r.slug, title: r.title ?? "", status, updated_at: new Date().toISOString() });
-  return !error;
+  return sbExecTransient(sb.from("watchlist").upsert({ user_id: uid, slug: r.slug, title: r.title ?? "", status, updated_at: new Date().toISOString() }));
 }
 async function sbWatchlistDelete(sb: SupabaseClient, uid: string, slug: string): Promise<boolean> {
-  const { error } = await sb.from("watchlist").delete().eq("user_id", uid).eq("slug", slug);
-  return !error;
+  return sbExecTransient(sb.from("watchlist").delete().eq("user_id", uid).eq("slug", slug));
 }
 async function sbRatingUpsert(sb: SupabaseClient, uid: string, r: CloudItemRef, score: number): Promise<boolean> {
-  const { error } = await sb.from("ratings").upsert({ user_id: uid, slug: r.slug, title: r.title ?? "", score, updated_at: new Date().toISOString() });
-  return !error;
+  return sbExecTransient(sb.from("ratings").upsert({ user_id: uid, slug: r.slug, title: r.title ?? "", score, updated_at: new Date().toISOString() }));
 }
 async function sbRatingDelete(sb: SupabaseClient, uid: string, slug: string): Promise<boolean> {
-  const { error } = await sb.from("ratings").delete().eq("user_id", uid).eq("slug", slug);
-  return !error;
+  return sbExecTransient(sb.from("ratings").delete().eq("user_id", uid).eq("slug", slug));
 }
 
 /** Broadcast a deletion (or collection rename) to every OTHER device via the
@@ -994,7 +991,12 @@ export async function syncCloudToLocal(): Promise<MergeResult> {
   try {
     const snap = await pullCloudSnapshot();
     if (!snap) return { ok: false, reason: "no-session" };
-    const deletions = await pullDeletionEvents();
+    // BUG-005 — pullDeletionEvents no longer consumes its own events: the
+    // cursor is advanced ONLY after the merge below succeeds, so a failed
+    // merge re-pulls the same deletions instead of silently skipping them
+    // (which used to resurrect the deleted rows on every device).
+    const pulled = await pullDeletionEvents();
+    const deletions = pulled.events;
     // v0.29.0 (VERIFY-DATA-1/1b) — the desktop merge route runs SERVER-side
     // (Electron main process) and can never see this renderer's localStorage
     // tombstones. Ship them in the body so the merge can (a) skip re-adding
@@ -1010,6 +1012,8 @@ export async function syncCloudToLocal(): Promise<MergeResult> {
     if (!r.ok) return { ok: false, reason: `merge-${r.status}` };
     const d = (await r.json()) as { ok?: boolean; favoritesAdded: number; listAdded: number; listUpdated?: number; ratingsAdded: number; progressApplied?: number; deletionsApplied?: number; skipped?: number };
     if (d && d.ok === false) return { ok: false, reason: "merge-unsupported" };
+    // BUG-005 — merge applied → NOW consume the events
+    if (pulled.lastAt && pulled.uid) writeEvCursor({ uid: pulled.uid, at: pulled.lastAt });
     return { ok: true, favoritesAdded: d.favoritesAdded, listAdded: d.listAdded, ratingsAdded: d.ratingsAdded, progressApplied: d.progressApplied ?? 0, deletionsApplied: d.deletionsApplied ?? 0, skipped: d.skipped ?? 0 };
   } catch (e) {
     return { ok: false, reason: e instanceof Error ? e.message : "network" };
@@ -1029,34 +1033,43 @@ export type DeletionEvent = {
   slug?: string; // collection-item
 };
 
-async function pullDeletionEvents(): Promise<DeletionEvent[]> {
+async function pullDeletionEvents(): Promise<{ events: DeletionEvent[]; lastAt: string | null; uid: string | null }> {
   try {
     const sb = getSupabase();
     const uid = await currentUserId();
-    if (!sb || !uid) return [];
+    if (!sb || !uid) return { events: [], lastAt: null, uid: null };
     let cur = readEvCursor();
     if (cur && cur.uid !== uid) {
       cur = { uid, at: "1970-01-01T00:00:00.000Z" };
       writeEvCursor(cur);
     }
-    const from = cur?.uid === uid ? cur.at : "1970-01-01T00:00:00.000Z";
+    // BUG-064 — strict `gt` at the cursor skipped same-millisecond events
+    // past the 500-row page edge (recordDelEvent batches share one stamp).
+    // Step the window back 1ms and let the idempotent merge re-apply.
+    const curMs = cur?.uid === uid ? Date.parse(cur.at) : NaN;
+    const from = Number.isFinite(curMs) ? new Date(Math.max(0, curMs - 1)).toISOString() : "1970-01-01T00:00:00.000Z";
     const { data, error } = await sb
       .from("user_events")
       .select("payload,created_at")
       .eq("user_id", uid)
       .eq("type", "sync_del")
-      .gt("created_at", from)
+      .gte("created_at", from)
       .order("created_at", { ascending: true })
       .limit(500);
-    if (error || !data) return [];
+    if (error || !data) return { events: [], lastAt: null, uid };
     const rows = data as unknown as { payload: Partial<DeletionEvent> | null; created_at: string }[];
     const last = rows[rows.length - 1];
-    if (last?.created_at) writeEvCursor({ uid, at: last.created_at });
-    return rows
-      .map((r) => ({ ...(r.payload ?? {}), at: r.payload?.at || r.created_at } as DeletionEvent))
-      .filter((d) => d.kind && d.key);
+    // BUG-005 — the cursor is NOT written here anymore; syncCloudToLocal
+    // advances it only after /api/cloud/merge succeeds.
+    return {
+      events: rows
+        .map((r) => ({ ...(r.payload ?? {}), at: r.payload?.at || r.created_at } as DeletionEvent))
+        .filter((d) => d.kind && d.key),
+      lastAt: last?.created_at ?? null,
+      uid,
+    };
   } catch {
-    return [];
+    return { events: [], lastAt: null, uid: null };
   }
 }
 
@@ -1377,6 +1390,12 @@ export function wireFlushListeners(): void {
 }
 
 export async function flushSyncOps(): Promise<{ flushed: number; left: number }> {
+  // BUG-003 — never burn the poison-quarantine budget while offline: every
+  // Supabase call fails offline, and 5 such rounds used to silently DELETE
+  // the whole pending queue (deletes then resurrected on the next pull).
+  if (typeof navigator !== "undefined" && navigator.onLine === false) {
+    return { flushed: 0, left: countSyncOps() };
+  }
   const sb = getSupabase();
   const uid = await currentUserId();
   if (!sb || !uid) return { flushed: 0, left: countSyncOps() };
@@ -1399,12 +1418,37 @@ export async function flushSyncOps(): Promise<{ flushed: number; left: number }>
       done.push(op.id);
       continue;
     }
-    bumpSyncOpAttempts(op.id);
+    // BUG-003 — only a HARD rejection (4xx/RLS denial, classified below)
+    // counts toward the 5-attempt quarantine. Transient failures (offline,
+    // 5xx, timeouts) retry forever at zero cost to the queue.
+    if (lastSbFailureTransient === false) bumpSyncOpAttempts(op.id);
+    lastSbFailureTransient = null;
     // keep going — a failing op no longer starves the ops behind it
     await new Promise((r) => setTimeout(r, OP_RETRY_BACKOFF_MS));
   }
   removeSyncOps(done);
   return { flushed: done.length, left: countSyncOps() };
+}
+
+/** BUG-003 — classification of the most recent Supabase failure, read by the
+ *  flush loop. null = no failure recorded / unknown (never quarantines). */
+let lastSbFailureTransient: boolean | null = null;
+function classifySbError(err: unknown): boolean {
+  const e = err as { message?: string; code?: string; status?: number } | null;
+  if (!e) return true; // unknown → assume transient
+  if (/fetch|network|timed? ?out|abort|socket|offline|load failed/i.test(String(e.message ?? ""))) return true;
+  const st = Number(e.status ?? 0);
+  if (st === 0 || st >= 500 || st === 408 || st === 429) return true;
+  return false; // 4xx (RLS denial, bad request…) → hard rejection
+}
+/** Run one Supabase write, classify its failure, return success. */
+async function sbExecTransient(p: PromiseLike<{ error: unknown }>): Promise<boolean> {
+  const { error } = await p;
+  if (error) {
+    lastSbFailureTransient = classifySbError(error);
+    return false;
+  }
+  return true;
 }
 
 async function replaySyncOp(sb: SupabaseClient, uid: string, op: SyncOp): Promise<boolean> {
@@ -1417,7 +1461,13 @@ async function replaySyncOp(sb: SupabaseClient, uid: string, op: SyncOp): Promis
       const value = Boolean(p.value);
       if (!slug) {
         const k = await cloudKeyFor(Number(p.titleId ?? 0));
-        if (!k) return true; // still unresolvable → nothing stable, drop
+        if (!k) {
+          // BUG-050 — unresolvable ≠ resolved: the contract says raw ops retry
+          // once the catalog can answer, never silently dropped. Keep the op
+          // and count its tries so a garbage titleId still retires eventually.
+          bumpSyncOpAttempts(op.id);
+          return false;
+        }
         slug = k.slug;
         title = k.title;
       }
@@ -1436,7 +1486,11 @@ async function replaySyncOp(sb: SupabaseClient, uid: string, op: SyncOp): Promis
       const status = p.status ? String(p.status) : null;
       if (!slug) {
         const k = await cloudKeyFor(Number(p.titleId ?? 0));
-        if (!k) return true;
+        if (!k) {
+          // BUG-050 — same contract as the favorite case above
+          bumpSyncOpAttempts(op.id);
+          return false;
+        }
         slug = k.slug;
         title = k.title;
       }
@@ -1456,7 +1510,11 @@ async function replaySyncOp(sb: SupabaseClient, uid: string, op: SyncOp): Promis
       const score = rawScore > 0 ? rawScore : null;
       if (!slug) {
         const k = await cloudKeyFor(Number(p.titleId ?? 0));
-        if (!k) return true;
+        if (!k) {
+          // BUG-050 — same contract as the favorite case above
+          bumpSyncOpAttempts(op.id);
+          return false;
+        }
         slug = k.slug;
         title = k.title;
       }
@@ -1481,8 +1539,7 @@ async function replaySyncOp(sb: SupabaseClient, uid: string, op: SyncOp): Promis
       }[];
       if (!rows.length) return true;
       for (let i = 0; i < rows.length; i += 100) {
-        const { error } = await sb.from("watch_progress").upsert(rows.slice(i, i + 100));
-        if (error) return false;
+        if (!(await sbExecTransient(sb.from("watch_progress").upsert(rows.slice(i, i + 100))))) return false;
       }
       return true;
     }
@@ -1490,34 +1547,38 @@ async function replaySyncOp(sb: SupabaseClient, uid: string, op: SyncOp): Promis
       let slug = String(p.slug ?? "");
       if (!slug) {
         const k = await cloudKeyFor(Number(p.titleId ?? 0));
-        if (!k) return true;
+        if (!k) {
+          // BUG-050 — same contract as the favorite case above
+          bumpSyncOpAttempts(op.id);
+          return false;
+        }
         slug = k.slug;
       }
       recordTombstone("progress", slug);
       if (slug === "*") {
-        const { error } = await sb.from("watch_progress").delete().eq("user_id", uid);
-        if (!error) void recordDelEvent(sb, uid, { kind: "progress", key: "*", at: nowAt });
-        return !error;
+        const ok = await sbExecTransient(sb.from("watch_progress").delete().eq("user_id", uid));
+        if (ok) void recordDelEvent(sb, uid, { kind: "progress", key: "*", at: nowAt });
+        return ok;
       }
-      const { error } = await sb.from("watch_progress").delete().eq("user_id", uid).eq("slug", slug);
-      if (!error) void recordDelEvent(sb, uid, { kind: "progress", key: slug, at: nowAt });
-      return !error;
+      const ok = await sbExecTransient(sb.from("watch_progress").delete().eq("user_id", uid).eq("slug", slug));
+      if (ok) void recordDelEvent(sb, uid, { kind: "progress", key: slug, at: nowAt });
+      return ok;
     }
     case "collection-del": {
       const name = String(p.name ?? "").trim();
       if (!name) return true;
       recordTombstone("collection", name);
-      const { error } = await sb.from("user_collections").delete().eq("user_id", uid).eq("name", name);
-      if (!error) void recordDelEvent(sb, uid, { kind: "collection", key: name, action: "delete", at: nowAt });
-      return !error;
+      const ok = await sbExecTransient(sb.from("user_collections").delete().eq("user_id", uid).eq("name", name));
+      if (ok) void recordDelEvent(sb, uid, { kind: "collection", key: name, action: "delete", at: nowAt });
+      return ok;
     }
     case "collection-rename": {
       const from = String(p.from ?? "").trim();
       const to = String(p.to ?? "").trim().slice(0, 60);
       if (!from || !to) return true;
-      const { error } = await sb.from("user_collections").update({ name: to }).eq("user_id", uid).eq("name", from);
-      if (!error) void recordDelEvent(sb, uid, { kind: "collection", key: from, action: "rename", to, at: nowAt });
-      return !error;
+      const ok = await sbExecTransient(sb.from("user_collections").update({ name: to }).eq("user_id", uid).eq("name", from));
+      if (ok) void recordDelEvent(sb, uid, { kind: "collection", key: from, action: "rename", to, at: nowAt });
+      return ok;
     }
     case "collection-item-del": {
       const name = String(p.name ?? "").trim();
@@ -1526,9 +1587,9 @@ async function replaySyncOp(sb: SupabaseClient, uid: string, op: SyncOp): Promis
       const { data: existing } = await sb.from("user_collections").select("id").eq("user_id", uid).eq("name", name).maybeSingle();
       const colId = (existing as { id: string } | null)?.id;
       if (!colId) return true; // collection already gone on the cloud side
-      const { error } = await sb.from("user_collection_items").delete().eq("collection_id", colId).eq("slug", slug);
-      if (!error) void recordDelEvent(sb, uid, { kind: "collection-item", key: name, slug, at: nowAt });
-      return !error;
+      const ok = await sbExecTransient(sb.from("user_collection_items").delete().eq("collection_id", colId).eq("slug", slug));
+      if (ok) void recordDelEvent(sb, uid, { kind: "collection-item", key: name, slug, at: nowAt });
+      return ok;
     }
     default:
       return true; // unknown op kind → drop instead of looping forever

@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { getUserKey } from "@/lib/user";
 import { sameOriginOrThrow } from "@/lib/api-guard";
+import { prismaSafe } from "@/lib/prisma-safe";
 
 export const dynamic = "force-dynamic";
 
@@ -19,10 +20,14 @@ export async function POST(req: Request) {
     await db.userRating.deleteMany({ where: { userKey, titleId } });
     return Response.json({ score: null });
   }
-  await db.userRating.upsert({
-    where: { userKey_titleId: { userKey, titleId } },
-    update: { score },
-    create: { userKey, titleId, score },
-  });
+  // BUG-010 — bogus/deleted title → 404 JSON instead of an unhandled P2003 500
+  const err = await prismaSafe(() =>
+    db.userRating.upsert({
+      where: { userKey_titleId: { userKey, titleId } },
+      update: { score },
+      create: { userKey, titleId, score },
+    }),
+  );
+  if (err) return err;
   return Response.json({ score });
 }

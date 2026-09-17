@@ -106,11 +106,25 @@ export function countSyncOps(): number {
   return getSyncOps().length;
 }
 
+/** BUG-004 — the dedup identity of one pending op. The old signature only
+ *  looked at slug/name/from, so every RAW op (enqueued with only {titleId}
+ *  or {rows} — the offline fallbacks in pushFavorite/pushProgressRows/…)
+ *  collapsed to `favorite:`/`progress:`: two different titles changed while
+ *  offline and the SECOND enqueue silently DELETED the first op from the
+ *  queue. The identity now falls back to titleId, then the row payload. */
+function opSignature(kind: SyncOpKind, payload: Record<string, unknown>): string {
+  const named = payload.slug ?? payload.name ?? payload.from;
+  if (named != null && String(named) !== "") return `${kind}:${String(named)}`;
+  if (payload.titleId != null && payload.titleId !== "") return `${kind}:tid:${String(payload.titleId)}`;
+  if (payload.rows != null) return `${kind}:rows:${JSON.stringify(payload.rows)}`;
+  return `${kind}:${JSON.stringify(payload)}`;
+}
+
 export function enqueueSyncOp(kind: SyncOpKind, uid: string, payload: Record<string, unknown>): void {
   const ops = getSyncOps();
-  // one pending op per (kind,slug/name) — the newest wins (idempotent replay)
-  const sig = `${kind}:${String(payload.slug ?? payload.name ?? payload.from ?? "")}`;
-  const kept = ops.filter((o) => `${o.kind}:${String(o.payload.slug ?? o.payload.name ?? o.payload.from ?? "")}` !== sig);
+  // one pending op per identity — the newest wins (idempotent replay)
+  const sig = opSignature(kind, payload);
+  const kept = ops.filter((o) => opSignature(o.kind, o.payload) !== sig);
   kept.push({
     id: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`,
     kind,

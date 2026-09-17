@@ -63,7 +63,12 @@ export async function getLibrarySnapshot(userKey: string): Promise<LibrarySnapsh
       select: { titleId: true, episodeId: true, position: true, duration: true, updatedAt: true },
     }),
   ]);
-  const { userKey: _uk, id: _id, ...profileFull } = profile as Record<string, unknown>;
+  // BUG-001 — profileFull previously carried `parentalPin` RAW: every
+  // GET /api/library handed the plaintext PIN back to any same-origin
+  // caller, and runFullSync pushed it into the Supabase profiles row.
+  // Strip it exactly like publicProfile() does (hasPin boolean already
+  // covers the UI), while keeping every other profile field the sync needs.
+  const { userKey: _uk, id: _id, parentalPin: _pin, ...profileFull } = profile as Record<string, unknown>;
   return {
     watchlist: wl.map((w) => ({ titleId: w.titleId, status: w.status as ListStatus })),
     favorites: fav.map((f) => f.titleId),

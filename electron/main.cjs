@@ -1036,13 +1036,23 @@ function createWindow() {
   // external links → system browser (http/https/mailto/tel ONLY — see
   // OPEN_EXTERNAL_RE): a remote-controlled catalog page could otherwise push
   // file:/ms-msdt:/search-ms: style target=_blank links at the OS
+  // BUG-002 — the old `url.startsWith(serverUrl)` check was bypassable via
+  // URL userinfo (`http://127.0.0.1:47213@evil.com/` starts with serverUrl
+  // but its real host is evil.com) → the main window could navigate to
+  // attacker content and a spawned child INHERITED the preload. Compare
+  // parsed ORIGINS instead of string prefixes.
+  const allowedOrigin = serverUrl ? new URL(serverUrl).origin : null;
   win.webContents.setWindowOpenHandler(({ url }) => {
-    if (serverUrl && url.startsWith(serverUrl)) return { action: "allow" };
+    let uOrigin = null;
+    try { uOrigin = new URL(url).origin; } catch { /* unparseable → deny below */ }
+    if (allowedOrigin && uOrigin === allowedOrigin) return { action: "allow" };
     openExternalIfSafe(url);
     return { action: "deny" };
   });
   win.webContents.on("will-navigate", (e, url) => {
-    if (serverUrl && url.startsWith(serverUrl)) return;
+    let uOrigin = null;
+    try { uOrigin = new URL(url).origin; } catch { /* unparseable */ }
+    if (allowedOrigin && uOrigin === allowedOrigin) return;
     e.preventDefault();
     openExternalIfSafe(url); // non-http(s)/mailto/tel schemes are dropped
   });

@@ -133,11 +133,14 @@ export function GlassCard({
       className={`relative isolate overflow-hidden ${className}`}
       style={{
         borderRadius: radius,
+        /* BUG-009 — hard-coded dark slab → theme-paired tokens: in light mode
+         * the card is now a frosted-white slab so the inverted text on it
+         * (text-white → ink) stays readable. */
         background:
-          "linear-gradient(160deg, rgba(255,255,255,0.13) 0%, rgba(255,255,255,0.04) 26%, rgba(255,255,255,0.0) 55%, rgba(255,255,255,0.05) 100%), rgba(12,12,18,0.46)",
+          "linear-gradient(160deg, var(--glass-card-sheen) 0%, rgba(255,255,255,0.04) 26%, rgba(255,255,255,0) 55%, var(--glass-card-sheen) 100%), var(--glass-card-bg)",
         WebkitBackdropFilter: "blur(44px) saturate(190%) brightness(1.14)",
         backdropFilter: "blur(44px) saturate(190%) brightness(1.14)",
-        border: "1px solid rgba(255,255,255,0.16)",
+        border: "1px solid var(--glass-card-border)",
         boxShadow:
           "0 30px 90px rgba(0, 0, 0, 0.6), 0 4px 18px rgba(0, 0, 0, 0.35), inset 0 1.5px 0 rgba(255, 255, 255, 0.28), inset 0 -1px 0 rgba(255, 255, 255, 0.07), inset 1.5px 0 0 rgba(255, 255, 255, 0.05), inset -1.5px 0 0 rgba(255, 255, 255, 0.05)",
         ...style,

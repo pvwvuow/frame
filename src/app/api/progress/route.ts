@@ -1,6 +1,7 @@
 import { db, ensureRuntimeSchema } from "@/lib/db";
 import { getUserKey } from "@/lib/user";
 import { sameOriginOrThrow } from "@/lib/api-guard";
+import { prismaSafe } from "@/lib/prisma-safe";
 
 export const dynamic = "force-dynamic";
 
@@ -66,20 +67,28 @@ export async function POST(req: Request) {
     epId = ep?.id ?? null;
   }
 
-  await db.watchProgress.upsert({
-    where: { userKey_titleId: { userKey, titleId } },
-    update: { position: pos, duration: dur, episodeId: epId },
-    create: { userKey, titleId, episodeId: epId, position: pos, duration: dur },
-  });
+  // BUG-010 — a title deleted by the background refresh mid-request used to
+  // surface as an unhandled P2003 → 500 HTML. Clean 404 JSON now.
+  const err = await prismaSafe(() =>
+    db.watchProgress.upsert({
+      where: { userKey_titleId: { userKey, titleId } },
+      update: { position: pos, duration: dur, episodeId: epId },
+      create: { userKey, titleId, episodeId: epId, position: pos, duration: dur },
+    }),
+  );
+  if (err) return err;
 
   // v0.27.0 (DATA-7) — the per-EPISODE row too: finishing S02E01 no longer
   // erases S01E03. The title row above stays the continue-watching pointer.
   if (epId) {
-    await db.watchEpisodeProgress.upsert({
-      where: { userKey_titleId_episodeId: { userKey, titleId, episodeId: epId } },
-      update: { position: pos, duration: dur },
-      create: { userKey, titleId, episodeId: epId, position: pos, duration: dur },
-    });
+    const epErr = await prismaSafe(() =>
+      db.watchEpisodeProgress.upsert({
+        where: { userKey_titleId_episodeId: { userKey, titleId, episodeId: epId } },
+        update: { position: pos, duration: dur },
+        create: { userKey, titleId, episodeId: epId, position: pos, duration: dur },
+      }),
+    );
+    if (epErr) return epErr;
   }
 
   return Response.json({ ok: true });

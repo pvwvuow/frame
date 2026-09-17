@@ -22,6 +22,9 @@ const TRUSTED_ORIGINS = new Set(["https://localhost", "capacitor://localhost"]);
 /** http(s) روی لوپ‌بک با هر پورت — رندرر Electron پورت تصادفی می‌گیرد. */
 const LOOPBACK_ORIGIN_RE = /^https?:\/\/(?:localhost|127\.\d+\.\d+\.\d+|\[::1\]|0\.0\.0\.0)(?::\d+)?$/i;
 
+/** BUG-012 — Host header allowlist (loopback, any port). */
+const LOOPBACK_HOST_RE = /^(?:localhost|127\.\d+\.\d+\.\d+|\[::1\]|0\.0\.0\.0)(?::\d+)?$/i;
+
 /**
  * true یعنی درخواست از مبدأی مجاز آمده (یا اصلاً Origin ندارد). هرگز پرتاب
  * نمی‌کند؛ هندلرها ترجیحاً از sameOriginOrThrow استفاده کنند.
@@ -37,9 +40,14 @@ export function assertSameOrigin(req: Request): boolean {
     return false; // Origin خراب → رد
   }
 
-  // همان مبدأ واقعی درخواست (شامل پورت) — حالت عادی اپ خودمان
+  // BUG-012 — the old "Origin === Host" check echoed an ATTACKER-CONTROLLED
+  // Host back at itself: a rebinding domain (evil.com → 127.0.0.1) sent
+  // Origin: http://evil.com:3000 with Host: evil.com:3000 and passed, making
+  // every mutation (profile wipe, merge, crawler) reachable from any website.
+  // The server is loopback-only — validate the Host against the loopback
+  // allowlist instead of trusting the header.
   const host = req.headers.get("host");
-  if (host && o.host.toLowerCase() === host.toLowerCase()) return true;
+  if (host && LOOPBACK_HOST_RE.test(host.trim()) && LOOPBACK_ORIGIN_RE.test(origin)) return true;
 
   if (TRUSTED_ORIGINS.has(origin.toLowerCase())) return true;
   if (LOOPBACK_ORIGIN_RE.test(origin)) return true;

@@ -66,12 +66,25 @@
 .dark {
   color-scheme: dark;
 
+  /* BUG-007 — cinema-stage unit fallbacks. --chu/--chs used to exist ONLY on
+   * .ch-stage, but the MOBILE hero renders the same .ch-* info classes
+   * outside any stage → every calc(var(--chu)…) was invalid at computed-value
+   * time and the whole block collapsed (16px text, zero paddings). */
+  --chu: 5px;
+  --chs: 1;
+
   /* liquid-glass surface tokens — v0.30.0: richer liquid-glass family look
      (brighter specular rim with faint chromatic fringes, deeper blur, higher
      saturation) applied to EVERY remaining glass surface (search panels,
      menus, dropdowns, settings cards) so the whole family matches the real
      liquid-glass-react components used by the nav / popups / modal. */
   --glass-bg: rgba(20, 20, 28, 0.58);
+  /* BUG-009 — GlassCard's slab (quick-view modal, updater popup) was
+   * hard-coded dark while its CONTENT text is theme-inverted → near-black
+   * title on a dark card in light mode. Theme-paired now. */
+  --glass-card-sheen: rgba(255, 255, 255, 0.13);
+  --glass-card-bg: rgba(12, 12, 18, 0.46);
+  --glass-card-border: rgba(255, 255, 255, 0.16);
   /* 0.93 alpha: popovers (search results, menus, command palette) and the
      solid header must stay readable over bright posters – 0.74 was too
      translucent (user report) */
@@ -136,6 +149,9 @@
   /* liquid-glass surface tokens (v0.30.0 chromatic rim, deeper blur) */
   --glass-bg: rgba(255, 255, 255, 0.55);
   --glass-bg-strong: rgba(255, 255, 255, 0.94);
+  --glass-card-sheen: rgba(255, 255, 255, 0.55);
+  --glass-card-bg: rgba(255, 255, 255, 0.74);
+  --glass-card-border: rgba(255, 255, 255, 0.85);
   --glass-border: rgba(255, 255, 255, 0.75);
   /* v0.40.1: light = punchier stops, same gradient shapes */
   --rim-1: rgba(255, 255, 255, 1);
@@ -398,12 +414,16 @@ body {
    (person page chips, random page, collections, modal, Row arrows)
    inherits this automatically. */
 .glass-btn {
-  background-color: rgb(255 255 255 / 0.06);
-  border: 1px solid rgb(255 255 255 / 0.12);
+  /* BUG-008 — these were hard-coded WHITE alphas: the light theme remaps
+   * --color-white to ink, so raw rgb(255 255 255/…) never inverted and the
+   * buttons vanished on the day-mode page. Tokenized → they flip with the
+   * theme like every other glass surface. */
+  background-color: color-mix(in srgb, var(--color-white) 6%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-white) 12%, transparent);
   transition: transform 0.18s ease, background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease;
   cursor: pointer;
 }
-.glass-btn:hover { background-color: rgb(255 255 255 / 0.12); border-color: rgb(255 255 255 / 0.28); }
+.glass-btn:hover { background-color: color-mix(in srgb, var(--color-white) 12%, transparent); border-color: color-mix(in srgb, var(--color-white) 28%, transparent); }
 .glass-btn:active { transform: scale(0.97); }
 
 .glass-in { animation: var(--animate-glass-in); }

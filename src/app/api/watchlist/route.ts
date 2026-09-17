@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { getUserKey } from "@/lib/user";
 import { sameOriginOrThrow } from "@/lib/api-guard";
+import { prismaSafe, capTitleIds } from "@/lib/prisma-safe";
 import { revalidatePath } from "next/cache";
 
 export const dynamic = "force-dynamic";
@@ -26,13 +27,11 @@ export async function POST(req: Request) {
   });
   const wanted = typeof body?.value === "boolean" ? body.value : !existing;
 
-  if (!wanted && existing) await db.watchlist.delete({ where: { id: existing.id } });
+  // BUG-048 — idempotent delete (a concurrent toggle used to throw P2025 → 500)
+  if (!wanted && existing) await db.watchlist.deleteMany({ where: { id: existing.id, userKey } });
   if (wanted && !existing) {
-    try {
-      await db.watchlist.create({ data: { userKey, titleId } });
-    } catch {
-      /* already exists */
-    }
+    const err = await prismaSafe(() => db.watchlist.create({ data: { userKey, titleId } }));
+    if (err) return err; // BUG-010 — 404 JSON instead of 500 HTML
   }
   bust();
   return Response.json({ inList: wanted });
@@ -60,11 +59,17 @@ export async function PATCH(req: Request) {
     }
   }
 
-  const row = await db.watchlist.upsert({
-    where: { userKey_titleId: { userKey, titleId } },
-    update: data,
-    create: { userKey, titleId, ...data },
-  });
+  // BUG-010 — a title deleted between resolution and the upsert is a clean 404
+  const err = await prismaSafe(() =>
+    db.watchlist.upsert({
+      where: { userKey_titleId: { userKey, titleId } },
+      update: data,
+      create: { userKey, titleId, ...data },
+    }),
+  );
+  if (err) return err;
+  const row = await db.watchlist.findUnique({ where: { userKey_titleId: { userKey, titleId } } });
+  if (!row) return Response.json({ error: "unknown_or_gone_title" }, { status: 404 });
   bust();
   return Response.json({
     ok: true,
@@ -85,15 +90,17 @@ export async function PUT(req: Request) {
   if (body?.titleIds !== undefined && !Array.isArray(body.titleIds)) {
     return Response.json({ error: "bad_request" }, { status: 400 });
   }
-  const ids = (body?.titleIds ?? []).map(Number).filter(Boolean);
+  // BUG-049 — dedupe + cap
+  const ids = capTitleIds(body?.titleIds);
   if (!ids.length) return Response.json({ error: "titleIds required" }, { status: 400 });
 
   if (body?.action === "status" && body.status && STATUSES.has(body.status)) {
     await db.watchlist.updateMany({ where: { userKey, titleId: { in: ids } }, data: { status: body.status } });
   } else {
-    await Promise.all(
-      ids.map((titleId) => db.watchlist.upsert({ where: { userKey_titleId: { userKey, titleId } }, update: {}, create: { userKey, titleId } }))
+    const err = await prismaSafe(() =>
+      db.$transaction(ids.map((titleId) => db.watchlist.upsert({ where: { userKey_titleId: { userKey, titleId } }, update: {}, create: { userKey, titleId } }))),
     );
+    if (err) return err;
   }
   bust();
   return Response.json({ ok: true, count: ids.length });
@@ -108,8 +115,8 @@ export async function DELETE(req: Request) {
   if (body?.titleIds !== undefined && !Array.isArray(body.titleIds)) {
     return Response.json({ error: "bad_request" }, { status: 400 });
   }
-  const ids = body?.titleIds?.map(Number).filter(Boolean);
-  const r = await db.watchlist.deleteMany({ where: { userKey, ...(ids?.length ? { titleId: { in: ids } } : {}) } });
+  const ids = capTitleIds(body?.titleIds);
+  const r = await db.watchlist.deleteMany({ where: { userKey, ...(ids.length ? { titleId: { in: ids } } : {}) } });
   bust();
   return Response.json({ ok: true, removed: r.count });
 }

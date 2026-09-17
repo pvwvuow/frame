@@ -73,11 +73,17 @@ export function writeCoversManifest(m: CoversManifest): void {
 /** Absolute, symlink-free, in-store path for covers/<a>/<b> — throws on any
  *  traversal attempt (zip entries and request segments both funnel here). */
 export function safeStorePath(a: string, b: string): string {
+  // BUG-011 — dots pass the charset regex, so a=".." slipped through the
+  // dirname check (verified: ("..","x.webp") escaped to the store root).
+  // Reject dot segments explicitly, keep the join + containment guard.
+  if (a === "." || a === ".." || b === "." || b === "..") throw new Error("bad path segment");
   if (!/^[A-Za-z0-9._-]{1,64}$/.test(a) || !/^[A-Za-z0-9._-]{1,64}$/.test(b)) {
     throw new Error("bad path segment");
   }
-  const p = path.join(COVERS_STORE_DIR, "covers", a, b);
-  if (path.dirname(p) !== path.join(COVERS_STORE_DIR, "covers", a)) throw new Error("traversal");
+  const root = path.join(COVERS_STORE_DIR, "covers");
+  const p = path.join(root, a, b);
+  const contained = path.relative(root, p);
+  if (!contained || contained.startsWith("..") || path.isAbsolute(contained)) throw new Error("traversal");
   return p;
 }
 
