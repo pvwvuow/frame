@@ -17,6 +17,13 @@ on:
 
 permissions:
   contents: write
+  actions: write
+  # v0.42.5 — actions:write is for the self-heal dispatch below (prepare creates a tag when a main
+  # push bumps package.json without one) needs actions:write, because a tag
+  # pushed with GITHUB_TOKEN does NOT fire the `on: push: tags` event
+  # (GitHub's anti-recursion rule). Without the dispatch, the tag sat on the
+  # remote with NO build ever running — v0.42.4 shipped a day late because of
+  # exactly that deadlock.
 
 concurrency:
   group: desktop-${{ github.ref }}
@@ -71,6 +78,22 @@ jobs:
           git push origin "refs/tags/$TAG"
           # v0.26.0 — the tag push event now triggers the (single) build run.
           # Building here AND on the tag push raced the same release twice.
+          # v0.42.5 — EXCEPT the push above uses GITHUB_TOKEN, whose push
+          # events never trigger workflows. Dispatch the build explicitly on
+          # the fresh tag so prepare-created tags always ship. (Manually
+          # PAT-pushed tags still take the real tag-push path; GITHUB_TOKEN
+          # dispatches are the documented exception to the recursion rule.)
+          DISPATCH_OK=false
+          for _i in 1 2 3; do
+            if gh workflow run desktop.yml --repo "$GITHUB_REPOSITORY" --ref "$TAG"; then
+              DISPATCH_OK=true
+              break
+            fi
+            sleep 5
+          done
+          if [[ "$DISPATCH_OK" != "true" ]]; then
+            echo "::warning::could not dispatch the tag build — push the tag manually or run workflow_dispatch on $TAG"
+          fi
           echo "build=false" >> "$GITHUB_OUTPUT"
 
       # Pre-create the GitHub release so the 3 OS build jobs never race on
