@@ -107,4 +107,16 @@ jobs:
       - run: npm ci --legacy-peer-deps
         env:
           ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
-      - run: npm audit --omit=dev --audit-level=high
+      # BUG-104 — fail on runtime highs that HAVE a fix; upstream-unfixed
+      # advisories (sharp ≤0.35.4 via next, deepmerge-ts via prisma) warn
+      # instead of permanently blocking every release
+      - run: |
+          npm audit --omit=dev --json > audit.json || true
+          node -e "
+            const a = require('./audit.json');
+            const vs = Object.entries(a.vulnerabilities || {});
+            const fixable = vs.filter(([,v]) => (v.severity==='high'||v.severity==='critical') && v.fixAvailable);
+            const unfixed = vs.filter(([,v]) => (v.severity==='high'||v.severity==='critical') && !v.fixAvailable);
+            for (const [k,v] of unfixed) console.warn('::warning::upstream-unfixed', k, v.severity);
+            if (fixable.length) { console.error('fixable runtime highs:', fixable.map(([k])=>k).join(', ')); process.exit(1); }
+          "
