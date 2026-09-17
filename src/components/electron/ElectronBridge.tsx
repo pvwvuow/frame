@@ -50,10 +50,15 @@ export default function ElectronBridge() {
     html.dataset.electron = "1";
     html.dataset.platform = bridge()?.platform ?? "";
 
-    const offNav = bridge()?.onNavigate((p) => router.push(p));
+    // BUG-135 — every bridge call is optional-chained individually: a renderer
+    // that fakes window.nama (embedders, old preload versions, tests) without
+    // a full API surface used to throw `onNavigate is not a function` inside
+    // this effect and drop the WHOLE app into the fatal-error screen.
+    const b = bridge();
+    const offNav = b?.onNavigate?.((p) => router.push(p));
     // v0.10.19: the updater popup replaces the old plain toasts — designed
     // card, brand progress bar, home-style pill buttons
-    const offUpd = bridge()?.onUpdateStatus((s) => pushUpdaterStatus(s));
+    const offUpd = b?.onUpdateStatus?.((s) => pushUpdaterStatus(s));
 
     const onClick = (e: MouseEvent) => {
       const a = (e.target as HTMLElement).closest?.("a[href]") as HTMLAnchorElement | null;
