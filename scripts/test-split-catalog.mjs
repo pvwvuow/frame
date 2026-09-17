@@ -95,7 +95,7 @@ const f2m = await db.title.count({ where: { source: "f2m" } });
 const od = await db.title.count({ where: { source: "od" } });
 check(`db title count ${EXP.titles}`, total === EXP.titles, `count=${total}`);
 check(`f2m titles created (part file)`, f2m === f2mExpected, `f2m=${f2m}`);
-check("od titles intact", od === 14983 || od === 14984, `od=${od}`);
+check(`od titles intact (${EXP.titles - f2mExpected})`, od === EXP.titles - f2mExpected, `od=${od}`);
 
 // sources survival: an od movie with merged f2m links must keep BOTH
 const t = await db.title.findFirst({
