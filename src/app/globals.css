@@ -560,7 +560,11 @@ html[data-electron="1"] body { overscroll-behavior: none; }
 .site-header[data-solid="0"] { background-color: transparent; text-shadow: 0 1px 10px rgb(0 0 0 / 0.45), 0 0 2px rgb(0 0 0 / 0.35); }
 .site-header[data-solid="1"] {
   --hdr-bg: var(--glass-bg-strong);
-  --hdr-border: var(--glass-border);
+  /* v0.41.2 — the user: «یک خطی هست ک نوار بالا داره...اون خط رو چه در تم روز
+     چه در شب وردار» — the scrolled bar's 1px border-bottom read as a hard
+     separator under the nav (both themes). The frosted glass itself is the
+     separator now; the hairline is gone. */
+  --hdr-border: transparent;
   --hdr-blur: var(--glass-blur);
   --hdr-shadow: 0 10px 30px rgb(var(--shadow-color) / 0.25);
   background-image: none;
@@ -948,8 +952,15 @@ html.light .ch-glass::after { opacity: 1; }
 .ch-fade-side {
   position: absolute; inset: 0; z-index: 3; pointer-events: none;
 }
+/* v0.41.2 — the bottom melt now paints ABOVE every atmosphere layer
+ * (grain z7 / vig z8 / curt z9 / dust z10). The melt band is the hero's
+ * handshake with the page: nothing may composite over it — on some GPUs an
+ * overlay/blend layer above the band re-veiled the melted rows (~10% dark)
+ * and that was the visible «برش» the user marked. The cost is zero: the
+ * grain/vignette have no business texturing a band that is meant to be the
+ * page color itself. */
 .ch-fade-bottom {
-  position: absolute; inset: 0; z-index: 3; pointer-events: none;
+  position: absolute; inset: 0; z-index: 11; pointer-events: none;
 }
 /* v0.41.0 — the DARK scrims move onto ::before twins. The element's own
  * background painted them through the WHOLE light crossfade (the ::after
@@ -966,7 +977,11 @@ html.light .ch-glass::after { opacity: 1; }
   transition: opacity 900ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 .ch-fade-side::before { background: linear-gradient(to left, rgba(9, 9, 12, 0.82), rgba(9, 9, 12, 0.42) 42%, rgba(9, 9, 12, 0) 68%); }
-.ch-fade-bottom::before { background: linear-gradient(to top, rgba(9, 9, 12, 0.72) 0%, rgba(9, 9, 12, 0.558) 9%, rgba(9, 9, 12, 0.342) 21%, rgba(9, 9, 12, 0.187) 42%, rgba(0, 0, 0, 0.22) 100%); }
+/* v0.41.2 — the melt must LAND on the page: the old 0% stop was 0.72-alpha
+ * ink, so the hero's last rows stayed ~15 levels off the true page bg and a
+ * faint cut line survived. The 0% stop is now the full page color itself
+ * (var(--color-ink) re-resolves per theme) with a denser first ramp. */
+.ch-fade-bottom::before { background: linear-gradient(to top, var(--color-ink) 0%, rgba(9, 9, 12, 0.9) 4.5%, rgba(9, 9, 12, 0.558) 9%, rgba(9, 9, 12, 0.342) 21%, rgba(9, 9, 12, 0.187) 42%, rgba(0, 0, 0, 0.22) 100%); }
 
 /* atmosphere — v0.40.0: the dust layer sits ABOVE the grain/vignette (top
  * of the stage's paint order) with plain source-over blending: its looping
@@ -994,8 +1009,12 @@ html.light .ch-glass::after { opacity: 1; }
 .ch-vig {
   position: absolute; inset: 0; z-index: 8; pointer-events: none;
 }
+/* v0.41.2 — the dark vignette's bottom linear (0.5 black at the last row)
+ * painted OVER the melt and pulled the hero's bottom edge BELOW the page bg
+ * (measured 4,3,4 vs page 7,7,9) — the ellipse alone keeps the depth, the
+ * bottom now belongs to the melt ramp. */
 .ch-vig::before {
-  background: radial-gradient(ellipse 120% 100% at 50% 42%, transparent 0%, transparent 52%, rgba(0, 0, 0, 0.5) 100%), linear-gradient(to top, rgba(0, 0, 0, 0.5) 0%, transparent 16%);
+  background: radial-gradient(ellipse 120% 100% at 50% 42%, transparent 0%, transparent 52%, rgba(0, 0, 0, 0.5) 100%);
 }
 
 /* curtain veils — clip-path polygons (the measured fabric silhouette) are
@@ -1097,9 +1116,14 @@ html.light .ch-stage { background: var(--color-ink); }
   opacity: 0;
   transition: opacity 900ms cubic-bezier(0.4, 0, 0.2, 1);
 }
+/* v0.41.2 — day-mode melt, rebuilt: the old ramp reached full page-bg only on
+ * the literal last pixel, and the light vignette's bottom veil stacked on top
+ * → the floor ended in a visible cut (strip mean 223 vs page 243, delta 59).
+ * New ramp: dense full-coverage first 5%, smooth hand-off to the scene by
+ * ~44%, same 0.24 top veil for nav readability. */
 .ch-fade-bottom::after {
   content: ""; position: absolute; inset: 0; pointer-events: none;
-  background: linear-gradient(to top, var(--color-ink) 0%, rgba(243, 243, 247, 0.85) 9%, rgba(243, 243, 247, 0.4) 21%, rgba(243, 243, 247, 0) 42%, rgba(243, 243, 247, 0.24) 100%);
+  background: linear-gradient(to top, var(--color-ink) 0%, rgba(243, 243, 247, 0.96) 4.5%, rgba(243, 243, 247, 0.82) 9%, rgba(243, 243, 247, 0.5) 18%, rgba(243, 243, 247, 0.18) 30%, rgba(243, 243, 247, 0) 44%, rgba(243, 243, 247, 0.24) 100%);
   opacity: 0;
   transition: opacity 900ms cubic-bezier(0.4, 0, 0.2, 1);
 }
@@ -1115,9 +1139,14 @@ html.light .ch-stage { background: var(--color-ink); }
   opacity: 0;
   transition: opacity 900ms cubic-bezier(0.4, 0, 0.2, 1);
 }
+/* v0.41.2 — light vignette re-anchored to the TOP: its bottom linear
+ * (rgba(70,70,95,.08)) + bottom-edge ellipse sat above the day melt and
+ * re-darkened the melted rows (223 vs 243) — that was the «واضح از هم جدا
+ * شدن» cut the user marked. Depth stays at the top corners, the bottom
+ * stays clean. */
 .ch-vig::after {
   content: ""; position: absolute; inset: 0; pointer-events: none;
-  background: radial-gradient(ellipse 120% 100% at 50% 42%, transparent 0%, transparent 52%, rgba(70, 70, 95, 0.16) 100%), linear-gradient(to top, rgba(70, 70, 95, 0.08) 0%, transparent 16%);
+  background: radial-gradient(ellipse 120% 82% at 50% 0%, transparent 0%, transparent 56%, rgba(70, 70, 95, 0.14) 100%);
   opacity: 0;
   transition: opacity 900ms cubic-bezier(0.4, 0, 0.2, 1);
 }
