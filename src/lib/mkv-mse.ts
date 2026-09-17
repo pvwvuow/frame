@@ -21,7 +21,7 @@
 
 import {
   computeMseCapability,
-  fetchRange,
+  fetchRangeRetry5xx,
   MkvCueStore,
   MkvScanner,
   sniffEbml,
@@ -160,7 +160,10 @@ export class MkvMseSession {
 
   async start(startSec: number): Promise<void> {
     this.setState("probing");
-    const head = await fetchRange(this.url, 0, HEAD_BYTES - 1);
+    // BUG-027 — the MSE path kept the RAW fetchRange: one transient 503 from
+    // the rate-limiting CDN hosts (the reason fetchRangeRetry5xx exists) was
+    // treated as fatal and burned the ladder for a healthy file.
+    const head = await fetchRangeRetry5xx(this.url, 0, HEAD_BYTES - 1);
     if (this.stopped) return;
     if (!head.ok) {
       this.fail(`head:${head.status}`);
@@ -383,7 +386,7 @@ export class MkvMseSession {
         if (size && this.cursor >= size) break;
         await this.hooks.pace?.();
         if (this.stopped || this.epoch !== myEpoch) return;
-        const r = await fetchRange(this.url, this.cursor, this.cursor + CHUNK - 1);
+        const r = await fetchRangeRetry5xx(this.url, this.cursor, this.cursor + CHUNK - 1);
         if (this.stopped || this.epoch !== myEpoch) return;
         if (!r.ok) {
           if (r.status === 416) break; // EOF
@@ -507,6 +510,12 @@ export class MkvMseSession {
       this.cursor = cursor;
       this.scanner = new MkvScanner(this.store, cursor, (f) => this.onFrame(f));
       this.setState("buffering");
+      // BUG-026 — cleanupMedia() inside seekTo cleared the stall watchdog and
+      // only start() ever re-armed it: after the FIRST seek the 16s
+      // no-progress → fail → ladder/native-fallback safety net was gone, so a
+      // wedged post-seek fetch sat on an infinite spinner.
+      this.lastProgressAt = Date.now();
+      this.startStallWatch();
       void this.pump();
     };
     void run();

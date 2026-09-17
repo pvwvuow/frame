@@ -155,9 +155,13 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: |
           node scripts/export-catalog.mjs
+          # BUG-034 — the split-catalog suite needs the exported assets; this
+          # is the only place they exist. A regression here used to ship.
+          node scripts/test-split-catalog.mjs
+          # BUG-032 — glob the whole family: catalog-part-N.json (waves >60MB)
+          # were never attached while version.json advertised them → 404 syncs
           gh release upload "$TAG" \
-            public/catalog/catalog-core.json \
-            public/catalog/catalog-f2m.json \
+            public/catalog/catalog-*.json \
             public/catalog/version.json \
             --clobber --repo "$GITHUB_REPOSITORY"
           echo "catalog assets attached to $TAG"

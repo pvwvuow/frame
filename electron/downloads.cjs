@@ -203,6 +203,9 @@ function requestUrl(url, headers, cb, redirects = 0) {
     return;
   }
   const mod = u.protocol === "https:" ? https : http;
+  // BUG-029 — Node has NO default request timeout: a server that accepts the
+  // connection but never sends headers wedged the active slot (max 2) AND the
+  // queue forever. Arm the stall timeout before the response exists.
   const req = mod.request(u, { headers, method: "GET" }, (res) => {
     if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
       res.resume();
@@ -221,6 +224,13 @@ function requestUrl(url, headers, cb, redirects = 0) {
       return;
     }
     cb(null, res, req);
+  });
+  req.setTimeout(STALL_TIMEOUT, () => {
+    try {
+      req.destroy(new Error("اتصال بیش از حد طول کشید (پاسخی نیامد)"));
+    } catch {
+      /* ignore */
+    }
   });
   req.on("error", (e) => cb(e));
   req.end();
@@ -256,6 +266,7 @@ function startItem(it) {
   active.set(it.id, ctl);
 
   let settled = false;
+  let resEndedFlag = false; // BUG-030 — visible to halt() (closure above sets it on res 'end')
   let lastTick = Date.now();
   let lastBytes = received;
 
@@ -348,6 +359,14 @@ function startItem(it) {
     } catch {
       /* ignore */
     }
+    // BUG-030 — a pause landing in the window AFTER the body fully arrived
+    // (res 'end') but BEFORE stream 'finish' destroyed streams that had
+    // already ended: no close/error/finish event ever fired, so finish() was
+    // never called and the slot + 1s tick interval leaked forever (and the
+    // item could not even be resumed — startItem early-returns on active).
+    if (resEndedFlag && !settled) {
+      finish(ctl.canceled ? "failed" : "paused");
+    }
   };
 
   const headers = {
@@ -386,6 +405,7 @@ function startItem(it) {
     let resEnded = false;
     res.on("end", () => {
       resEnded = true;
+      resEndedFlag = true; // BUG-030 — let halt() see it too
     });
     res.on("close", () => {
       if (settled || resEnded) return;

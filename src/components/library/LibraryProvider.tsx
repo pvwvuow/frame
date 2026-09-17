@@ -73,8 +73,14 @@ export default function LibraryProvider({ children }: { children: ReactNode }) {
   // hiccup). The failure is now tracked + retried once, and the UI can show it.
   const [libraryError, setLibraryError] = useState(false);
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /* BUG-020 — generation token: responses from a request started under a
+   * PREVIOUS identity (in-flight during sign-out / account switch) must
+   * never land in the state — that was the «after logout the UI mirrors the
+   * previous account» race. */
+  const refreshGen = useRef(0);
 
   const refresh = useCallback(async (): Promise<void> => {
+    const gen = ++refreshGen.current;
     const attempt = async (retry: boolean): Promise<void> => {
       try {
         const d = await call<{
@@ -83,21 +89,23 @@ export default function LibraryProvider({ children }: { children: ReactNode }) {
           ratings: { titleId: number; score: number }[];
           profile: Profile;
         }>("/api/library", "GET");
+        if (gen !== refreshGen.current) return; // stale identity — discard
         setList(new Map(d.watchlist.map((w) => [w.titleId, w.status])));
         setFavorites(new Set(d.favorites));
         setRatings(new Map(d.ratings.map((r) => [r.titleId, r.score])));
         setProfileState(d.profile);
         setLibraryError(false);
       } catch {
+        if (gen !== refreshGen.current) return; // stale identity — discard
         setLibraryError(true);
         // one silent retry — transient hiccups (server restarting) should not
         // flip the whole UI into «error» mode
         if (retry) {
           await new Promise((r) => setTimeout(r, 2500));
-          await attempt(false);
+          if (gen === refreshGen.current) await attempt(false);
         }
       } finally {
-        setReady(true);
+        if (gen === refreshGen.current) setReady(true);
       }
     };
     await attempt(true);
@@ -139,8 +147,16 @@ export default function LibraryProvider({ children }: { children: ReactNode }) {
     // that fails to restore the session would otherwise rotate away and hide
     // the user's data. Only an explicit in-run sign-out (prev was an account)
     // rotates to a fresh guest space.
-    if (prev === undefined && target === null) return;
+    if (prev === undefined && target === null) {
+      // BUG-021 — nothing to rotate on a guest boot, but waiters must not
+      // stall: broadcast a settled identity anyway.
+      window.dispatchEvent(new Event("nama:identity-settled"));
+      return;
+    }
     void attachIdentity(target, session?.access_token ?? null).then((r) => {
+      // BUG-021 — broadcast the rotation so flows that must sequence AFTER it
+      // (sign-out refresh, library pages' refetch) can await it.
+      window.dispatchEvent(new Event("nama:identity-settled"));
       if (r.switched || prev !== undefined) {
         void refresh();
         softRefresh();

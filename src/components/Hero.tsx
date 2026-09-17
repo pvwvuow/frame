@@ -196,6 +196,18 @@ export default function Hero({ items, watchlistIds }: { items: TitleView[]; watc
   const ladderRef = useRef<string[]>([]);
   const dustRef = useRef<HTMLDivElement | null>(null);
 
+  /* BUG-019/086 — live lg+ state. Rendering gates on it so the phone never
+   * downloads the four desktop cinema boards and the desktop never keeps the
+   * mobile crossfade engine alive; the engine effect re-binds when it flips. */
+  const [isLg, setIsLg] = useState<boolean | null>(null);
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 1024px)");
+    const sync = () => setIsLg(mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, []);
+
   /* ART-3.1 — ladder walker: on a failed mount, try the next route for THIS
    * slide (relay → direct metahub → titled placeholder). Stable callback; the
    * ladder itself lives in a ref so slide swaps never re-bind the handler. */
@@ -210,7 +222,10 @@ export default function Hero({ items, watchlistIds }: { items: TitleView[]; watc
   useEffect(() => {
     const stage = stageRef.current;
     if (!stage || !items.length) return;
-    /* the cinematic stage only exists at lg+; below that the legacy branch renders */
+    /* the cinematic stage only exists at lg+; below that the legacy branch renders.
+     * BUG-086 — isLg rides the dep list so a window that OPENS below 1024px and
+     * is later widened re-binds the engine (it used to check the breakpoint
+     * once at mount and leave a permanently black stage). */
     if (!window.matchMedia("(min-width: 1024px)").matches) return;
     const reduce =
       profile.reduceMotion || window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -564,7 +579,7 @@ export default function Hero({ items, watchlistIds }: { items: TitleView[]; watc
       slides.forEach((s) => s.classList.remove("active", "leaving"));
     };
      
-  }, [items, profile.reduceMotion, locale]);
+  }, [items, profile.reduceMotion, locale, isLg]);
 
   /* first poster is mounted by React so the plate is never empty on the first
    * light — the v0.38.0 high-res ladder head (SSR/web resolves to the direct
@@ -624,9 +639,13 @@ export default function Hero({ items, watchlistIds }: { items: TitleView[]; watc
   return (
     <>
       {/* ================= mobile / <lg — previous crossfade hero, controls stripped ================= */}
-      <MobileHero items={items} reduceMotion={!!reduceMotion} renderInfo={info} />
+      {/* BUG-019 — isLg gate: pre-hydration BOTH branches render (SSR parity),
+       * after mount exactly ONE is alive — the phone stops downloading the
+       * four desktop boards and the desktop stops running the mobile slider */}
+      {isLg !== true && <MobileHero items={items} reduceMotion={!!reduceMotion} renderInfo={info} />}
 
       {/* ================= desktop / lg+ — the cinema ================= */}
+      {isLg !== false && (
       <section
         ref={stageRef}
         data-mode="normal"
@@ -702,6 +721,7 @@ export default function Hero({ items, watchlistIds }: { items: TitleView[]; watc
           <span className="ch-sw" style={{ clipPath: CURTAIN_CLIP_R }} />
         </div>
       </section>
+      )}
     </>
   );
 }
@@ -732,7 +752,7 @@ function MobileHero({
   const cur = items[idx];
 
   return (
-    <section className="relative h-[82vh] min-h-[560px] w-full overflow-hidden lg:hidden [--chu:4.2px] [--chs:1]">
+    <section className="relative h-[82dvh] min-h-[560px] w-full overflow-hidden lg:hidden [--chu:4.2px] [--chs:1]">
       {items.map((t, i) => {
         /* v0.25.0 — mount ONLY the active slide ±1 (wrap-aware) */
         const dist = Math.min(Math.abs(i - idx), items.length - Math.abs(i - idx));

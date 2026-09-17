@@ -72,6 +72,7 @@ server.log
 !/scripts/test-cinema-e2e.mjs
 !/scripts/test-mobile-player-e2e.mjs
 !/scripts/preflight.mjs
+!/scripts/covers-rev.txt
 !/scripts/cap-sync.cjs
 !/scripts/mobile-build.cjs
 !/scripts/mobile-covers.cjs
@@ -123,6 +124,8 @@ db/*.db-shm
 !/public/covers/_fallback-wide.svg
 /scripts/*.png
 /scripts/*.txt
+# BUG-031 — the cover-pack revision MUST be tracked (clients compare manifest.rev)
+!/scripts/covers-rev.txt
 /scripts/*.log
 /scripts/mock-od/tree/
 /scripts/standalone.log

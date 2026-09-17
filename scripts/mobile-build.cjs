@@ -160,8 +160,16 @@ function stageCoverPacks(rev) {
 
 function main() {
   if (fs.existsSync(TMP_DIR)) {
-    console.log("restoring stale tmp api dir…");
-    fs.rmSync(TMP_DIR, { recursive: true, force: true });
+    if (!fs.existsSync(API_DIR)) {
+      // BUG-036 — a previous run crashed between the rename and the restore:
+      // TMP_DIR is the ONLY copy of src/app/api — RESTORE it, never rm it
+      // (the old code deleted the API tree and built an APK without routes).
+      fs.renameSync(TMP_DIR, API_DIR);
+      console.log("stale tmp api dir restored (previous run crashed)");
+    } else {
+      fs.rmSync(TMP_DIR, { recursive: true, force: true });
+      console.log("removed stale tmp api dir (both existed)");
+    }
   }
   if (fs.existsSync(API_DIR)) {
     fs.renameSync(API_DIR, TMP_DIR);
@@ -169,7 +177,7 @@ function main() {
   }
   try {
     const APP_VERSION = require(path.join(ROOT, "package.json")).version;
-    execSync("npx next build", {
+    execSync("npx next build --webpack", {
       cwd: ROOT,
       stdio: "inherit",
       env: {

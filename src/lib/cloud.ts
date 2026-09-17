@@ -308,11 +308,25 @@ export function explicitSignOut(): Promise<void> {
   clientUrl = "";
   // best-effort server revoke in the background; supabase's slow internals may
   // write the session back into storage afterwards — re-wipe when it returns
+  // BUG-041 — the revoke had NO timeout: a hung fetch (VPN black-hole) kept
+  // expectingSignOut=true for minutes, DROPPING any SIGNED_IN event (a user
+  // who signed out then immediately signed in stayed signed out until app
+  // restart) and the late cleanup wiped the fresh login. Bound it and make
+  // the post-revoke cleanup conditional on nothing newer having happened.
   return (async () => {
     try {
-      await sb?.auth.signOut();
+      await Promise.race([
+        sb?.auth.signOut() ?? Promise.resolve(),
+        new Promise((r) => setTimeout(r, 5000)),
+      ]);
     } catch {
       /* offline revoke fails → forced cleanup below still runs */
+    }
+    if (client !== null) {
+      // a NEW sign-in landed while the revoke was in flight — its client
+      // replaced ours; the storage/snapshot below now belongs to the fresh
+      // session and must NOT be wiped
+      return;
     }
     forceClearSupabaseStorage();
     clearAuthSnapshot();
@@ -775,6 +789,18 @@ export async function flushProgressOne(titleId?: number): Promise<void> {
     }
   }
   if (!rows.length) return;
+  // BUG-043 — without a session/client the push below returns SILENTLY
+  // (pushProgressRows only queues on network failure): the rows were already
+  // deleted from pendingProgress → the last watched minutes were dropped for
+  // good. Restore them (unless a NEWER row arrived in the meantime) and wait
+  // for the next flush.
+  const noSession = !(getSupabase() && (await currentUserId()));
+  if (noSession) {
+    for (const r of rows) {
+      if (!pendingProgress.has(r.titleId)) pendingProgress.set(r.titleId, r);
+    }
+    return;
+  }
   const now = Date.now();
   for (const r of rows) lastProgressPush.set(r.titleId, now);
   try {
@@ -1815,24 +1841,35 @@ export async function importBackupSnapshot(snap: {
     const k = keys.get(Math.round(Number(id)));
     return k ? { slug: k.slug, title: k.title } : null;
   };
-  const progRows = [...prog, ...epProg]
-    .map((p) => {
-      const r = ref(p?.titleId);
-      if (!r) return null;
-      const position = Number(p?.position ?? 0);
-      if (!Number.isFinite(position)) return null;
-      return {
-        slug: r.slug,
-        title: r.title,
-        season: 0,
-        episode: 0,
-        position,
-        duration: Number(p?.duration ?? 0) || 0,
-        updated_at: typeof p?.updatedAt === "string" ? p.updatedAt : new Date().toISOString(),
-      };
-    })
-    .filter((r): r is NonNullable<typeof r> => !!r)
-    .slice(0, 500);
+  const progRows = await (async () => {
+    const rows = [...prog, ...epProg];
+    // BUG-024 — the backup rows carry episodeId (per-episode progress since
+    // DATA-7) but the importer hardcoded season:0/episode:0, so every restored
+    // series row collapsed to a title-level row: wrong-episode resume + lost
+    // per-episode ticks. Resolve (season, number) from the episode-key cache.
+    const epKeys = await episodeKeysFor(
+      rows.map((p) => Math.round(Number((p as { episodeId?: unknown })?.episodeId ?? 0))).filter((n) => Number.isFinite(n) && n > 0),
+    );
+    return rows
+      .map((p) => {
+        const r = ref(p?.titleId);
+        if (!r) return null;
+        const position = Number(p?.position ?? 0);
+        if (!Number.isFinite(position)) return null;
+        const ep = epKeys.get(Math.round(Number((p as { episodeId?: unknown })?.episodeId ?? 0)));
+        return {
+          slug: r.slug,
+          title: r.title,
+          season: ep?.season ?? 0,
+          episode: ep?.number ?? 0,
+          position,
+          duration: Number(p?.duration ?? 0) || 0,
+          updated_at: typeof p?.updatedAt === "string" ? p.updatedAt : new Date().toISOString(),
+        };
+      })
+      .filter((r): r is NonNullable<typeof r> => !!r)
+      .slice(0, 500);
+  })();
 
   const body = {
     favorites: favs.map(ref).filter((r): r is { slug: string; title: string } => !!r),

@@ -183,7 +183,11 @@ export async function enqueueDownload(input: {
   if (!input.url) return { ok: false, error: "no-source" };
   wire();
   const existing = ((await db.dlitems.where("titleId").equals(input.titleId).toArray()) as unknown as DownloadRecord[]).filter(
-    (r) => (r.episodeId ?? null) === (input.episodeId ?? null)
+    // BUG-025 — the dup-check ignored userKey: account B could never download
+    // what account A had (B's list filtered the row out, but enqueue said
+    // «already exists» forever). Same-space rows only, exactly like the
+    // strict userKey filters in listDownloads/getDownloadFor.
+    (r) => r.userKey === activeUserKey() && (r.episodeId ?? null) === (input.episodeId ?? null)
   );
   if (existing.some((e) => (e as unknown as DownloadRecord).status !== "failed")) return { ok: true, dup: true };
   const ext = (/\.mp4(\?|$)/i.test(input.url) ? ".mp4" : ".mkv");
@@ -270,7 +274,10 @@ export async function resumeQueueOnBoot() {
   let started = 0;
   for (const r of rows) {
     if (started >= MAX_ACTIVE) break;
-    const stat = await b.fileStat({ path: r.dest });
+    // BUG-057 — an unguarded fileStat aborted the whole boot-resume loop
+    // (pumpQueue already swallows this — match it)
+    const stat = await b.fileStat({ path: r.dest }).catch(() => null);
+    if (!stat) continue;
     if (stat.exists && r.total > 0 && stat.size >= r.total) {
       await db.dlitems.update(r.id, { status: "completed" });
       continue;

@@ -174,6 +174,11 @@ export function artCacheTrim(): void {
     const files: { p: string; size: number; m: number }[] = [];
     let total = 0;
     let done = 0;
+    // BUG-046 — `done` only advanced for files matching the strict pattern
+    // while the completion check compared against names.length: ONE stray
+    // entry (.tmp / dotfile / directory) meant the trim NEVER ran and the
+    // 800MB cap was decorative. Count matching entries only.
+    const matching = names.filter((n) => /^[a-f0-9]{40}\.(jpg|png|webp|gif|svg)$/.test(n)).length;
     for (const n of names) {
       if (!/^[a-f0-9]{40}\.(jpg|png|webp|gif|svg)$/.test(n)) continue;
       const p = path.join(ART_CACHE_DIR, n);
@@ -183,7 +188,7 @@ export function artCacheTrim(): void {
           files.push({ p, size: st.size, m: st.mtimeMs });
           total += st.size;
         }
-        if (done === names.length) {
+        if (done === matching) {
           if (total <= ART_CACHE_MAX_BYTES) return;
           files.sort((a, b) => a.m - b.m);
           for (const f of files) {

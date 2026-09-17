@@ -899,11 +899,15 @@ export class MkvScanner {
         q += frameLen;
       }
     } else {
-      // EBML lacing: n-1 vint sizes (marker kept), last = remainder
+      // EBML lacing: n-1 vint sizes — the FIRST is a NORMAL vint (marker
+      // stripped) and each delta is value − (2^(7·len−1) − 1); the last lace
+      // is the remainder. BUG-045 — reading with keepMarker=true inflated the
+      // first size and shifted every delta by the same constant, so the
+      // bounds guard failed and the whole block yielded ZERO frames.
       const lens: number[] = [];
       let prev = 0;
       for (let i = 0; i < n - 1; i++) {
-        const v = peekVint(buf, q, true);
+        const v = peekVint(buf, q, false);
         if (v.st !== "ok") return;
         const sz = i === 0 ? v.value : prev + (v.value - ((1 << (7 * v.len - 1)) - 1));
         if (sz <= 0) return;
@@ -990,6 +994,12 @@ export async function fetchRange(url: string, start: number, endInclusive: numbe
   try {
     const res = await fetch(url, { headers: { Range: range } });
     const buf = new Uint8Array(await res.arrayBuffer());
+    // BUG-044 — a host that ignores Range answers 200 with the WHOLE body:
+    // without this guard the scanner buffered multi-GB files into the WebView
+    // (OOM). Report the un-honored range so callers treat it as failure.
+    if (res.status === 200 && start > 0) {
+      return { ok: false, status: 200, data: new Uint8Array(0), total: headerTotal(Object.fromEntries([...res.headers.entries()])) };
+    }
     return { ok: res.ok, status: res.status, data: buf, total: headerTotal(Object.fromEntries([...res.headers.entries()])) };
   } catch {
     return { ok: false, status: 0, data: new Uint8Array(0), total: 0 };

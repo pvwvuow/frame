@@ -353,8 +353,8 @@ export default function UserMenu() {
                         data-autofocus
                         className={`flex flex-row-reverse items-center gap-3 rounded-2xl px-3.5 py-2.5 text-sm transition ${
                           isActive("/vip")
-                            ? "bg-amber-400/20 text-amber-100"
-                            : "text-amber-300/90 hover:bg-amber-400/10 hover:text-amber-200"
+                            ? "bg-amber-400/20 text-[color:var(--color-gold-ink)]"
+                            : "text-[color:var(--color-gold-ink)] hover:bg-amber-400/10"
                         }`}
                       >
                         <CrownIcon width={17} height={17} className="shrink-0" />
@@ -398,8 +398,26 @@ export default function UserMenu() {
                             }
                             setConfirmArmed(false);
                             setOpen(false);
-                            void explicitSignOut();
                             toast.success(locale === "en" ? "Signed out." : "از حساب خارج شدی.");
+                            // BUG-021 — sign out THEN wait for the data-space
+                            // rotation (attachIdentity(null)) to settle before
+                            // refreshing: a refresh/navigate fired inside the
+                            // rotation window fetched pages through the OLD
+                            // cookie and rendered the previous account's rows.
+                            try {
+                              await explicitSignOut();
+                              await new Promise<void>((resolve) => {
+                                const done = () => {
+                                  window.removeEventListener("nama:identity-settled", done);
+                                  clearTimeout(t);
+                                  resolve();
+                                };
+                                const t = setTimeout(done, 4000);
+                                window.addEventListener("nama:identity-settled", done);
+                              });
+                            } catch {
+                              /* never block sign-out on the handshake */
+                            }
                             router.refresh();
                           }}
                           className={`flex w-full flex-row-reverse items-center gap-3 rounded-2xl px-3.5 py-2.5 text-sm transition ${

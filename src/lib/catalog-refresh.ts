@@ -68,7 +68,7 @@ export type CatalogItem = {
   country: string;
   ageRating: string;
   quality: string;
-  sources: string; // JSON: [{q, v, url, mb?}] — all quality/variant links
+  sources: string | null; // JSON: [{q, v, url, mb?}] — null = remote omitted → keep the device row (BUG-039)
   featured: boolean;
   trendingScore: number;
   views: number;
@@ -82,7 +82,7 @@ export type CatalogItem = {
     synopsis: string;
     duration: number;
     videoUrl: string;
-    sources: string;
+    sources: string | null;
     thumbnail: string;
   }[];
 };
@@ -280,10 +280,16 @@ function scheduleResync(url: string) {
       .then((r) => {
         if (r.ok) {
           triggerAutoEnrich(); // v0.33.0 — auto-enrich after each 6h apply
-          scheduleResync(u);
         }
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => {
+        const u2 = resyncUrl;
+        // BUG-038 — reschedule UNCONDITIONALLY: one failed check (offline at
+        // that moment, GitHub flake, 5xx) used to leave no timer armed and
+        // the catalog froze for the rest of the session.
+        if (u2) scheduleResync(u2);
+      });
   }, RESYNC_INTERVAL_MS);
   resyncTimer.unref?.();
 }
@@ -823,6 +829,12 @@ async function syncCatalog(catalogUrl: string): Promise<CatalogRefreshResult> {
     body = local.coreBody;
     partBodies.push(...local.partBodies);
   } else {
+    // BUG-037 — a parts-capable catalog whose probe FAILED (probeVersion
+    // null after 2 timeouts) still lets the big core fetch succeed. Merging
+    // core-only made applyCatalog treat EVERY part-carried title (the whole
+    // f2m wave) as "left the catalog": titles deleted + user rows detached.
+    // A parts-advertising hash stored locally proves the remote HAS parts —
+    // refuse the core-only merge and wait for a healthy cycle instead.
     const res = await fetch(catalogUrl, {
       headers: { "User-Agent": "Nama-Catalog-Sync" },
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
@@ -868,16 +880,36 @@ async function syncCatalog(catalogUrl: string): Promise<CatalogRefreshResult> {
     throw new Error("not a nama-catalog payload (bad format field)");
   }
 
+  // BUG-037 — probe-failed merges may be CORE-ONLY (the remote actually
+  // advertises parts we could not list): applyCatalog would then delete every
+  // part-carried title and detach its user rows. Precise guard: when the
+  // probe failed AND the incoming payload is missing titles that exist on
+  // this device, refuse the merge and wait for a healthy cycle. A genuine
+  // single-file catalog (payload carries everything) still merges.
+  if (probe === null && partBodies.length === 0 && (await db.title.count()) > 0) {
+    const incoming = new Set(payload.titles.map((t) => String((t as { slug?: unknown }).slug ?? "")));
+    const existingSlugs = (await db.title.findMany({ select: { slug: true } })).map((r) => r.slug);
+    const missing = existingSlugs.filter((s) => !incoming.has(s)).length;
+    if (missing > 0) {
+      const count = await db.title.count();
+      scheduleResync(catalogUrl);
+      return { ok: true, skipped: true, probeUnknown: true, titles: count, episodes: 0, created: 0, updated: 0, removed: 0 };
+    }
+  }
+
   const siteRoot = siteRootOf(catalogUrl);
 
   /* v0.34.0 — the export writes `sources` as a REAL JSON array (safeParse in
    * export-catalog.mjs), but this mapper only accepted JSON STRINGS — every
    * remote merge silently wiped every device's sources down to "[]". Accept
-   * both shapes now (array → stringify, string → keep, else "[]"). Same fix
-   * for the per-episode sources below. */
-  const asSourcesJson = (v: unknown): string => {
+   * both shapes now (array → stringify, string → keep). BUG-039 — a MISSING
+   * or null field (older host / newer client / truncated object) no longer
+   * normalizes to "[]": the caller keeps the existing DB row instead of
+   * erasing every working quality/variant link. */
+  const asSourcesJson = (v: unknown): string | null => {
     if (Array.isArray(v)) return JSON.stringify(v);
     if (typeof v === "string" && v.startsWith("[")) return v;
+    if (v == null) return null; // keep the row's current sources
     return "[]";
   };
 
@@ -1137,7 +1169,10 @@ async function applyCatalog(items: CatalogItem[]): Promise<CatalogRefreshResult>
       country: t.country,
       ageRating: t.ageRating,
       quality: t.quality,
-      sources: t.sources ?? "[]",
+      // BUG-039 — null sources (remote omitted the field) means "KEEP what is
+      // on the device": the update path drops the field, the create path
+      // seeds "[]". Writing "[]" over working rows killed every quality link.
+      ...(t.sources != null ? { sources: t.sources } : {}),
       featured: t.featured,
       trendingScore: t.trendingScore,
       views: t.views,
@@ -1147,12 +1182,14 @@ async function applyCatalog(items: CatalogItem[]): Promise<CatalogRefreshResult>
       // the same hosted date is written every time; empty/invalid → untouched)
       ...(addedAt ? { createdAt: addedAt } : {}),
     };
-    const eps = t.episodes;
+    // BUG-039 — episode rows used for CREATE need a concrete sources value;
+    // the UPDATE path (mergeEpisodes) keeps the device's row when null.
+    const eps = t.episodes.map((e) => ({ ...e, sources: e.sources ?? "[]" }));
     episodeTotal += eps.length;
 
     const existingId = idBySlug.get(t.slug);
     if (existingId === undefined) {
-      await db.title.create({ data: { slug: t.slug, ...data, episodes: { create: eps } } });
+      await db.title.create({ data: { slug: t.slug, ...data, sources: t.sources ?? "[]", episodes: { create: eps } } });
       stats.created++;
       continue;
     }
@@ -1215,14 +1252,14 @@ async function mergeEpisodes(titleId: number, eps: CatalogItem["episodes"]): Pro
       if (existing.synopsis !== e.synopsis) changed.synopsis = e.synopsis;
       if (existing.duration !== e.duration) changed.duration = e.duration;
       if (existing.videoUrl !== e.videoUrl) changed.videoUrl = e.videoUrl;
-      if (existing.sources !== e.sources) changed.sources = e.sources;
+      if (e.sources != null && existing.sources !== e.sources) changed.sources = e.sources;
       if (existing.thumbnail !== e.thumbnail) changed.thumbnail = e.thumbnail;
       if (Object.keys(changed).length) {
         // شناسه‌ی اپیزود عوض نمی‌شود → ردیف‌های WatchProgress زنده می‌مانند
         await db.episode.update({ where: { id: existing.id }, data: changed });
       }
     } else {
-      await db.episode.create({ data: { ...e, titleId } });
+      await db.episode.create({ data: { ...e, sources: e.sources ?? "[]", titleId } });
     }
   }
 

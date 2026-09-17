@@ -374,6 +374,15 @@ export default function PlayerMobile() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  /* BUG-023 — the per-title sub delay is the ONLY per-title pref here, but
+   * the restore above ran exactly once with slug === "" (the player mounts
+   * before any title opens), so a saved delay never came back after a
+   * restart. Re-read it whenever the content actually changes. */
+  useEffect(() => {
+    if (!slug) return;
+    setSubDelayState(getSubDelay(slug));
+  }, [slug]);
+
   // persist the playback rate (was reset to 1× on every open before v0.18.0)
   useEffect(() => {
     setRatePref(rate);
@@ -506,14 +515,21 @@ export default function PlayerMobile() {
 
 
   // lock body scroll behind the player overlay
+  // BUG-028 — the lock keyed on `open` alone: MINI mode (browsing behind a
+  // floating player — its entire purpose) also matched, and since the root
+  // layout scrolls on <body>, the whole app was unscrollable while the mini
+  // card floated. Lock only the fullscreen presentation.
   useEffect(() => {
-    if (!open) return;
+    const isMini =
+      open && !onWatch && mode !== "landscape" && !nativeActive && !fatal && !ended && !guestLock && !ownerUnsupported && !!activeSrc;
+    const lock = open && !isMini;
+    if (!lock) return;
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => {
       document.body.style.overflow = prev;
     };
-  }, [open]);
+  }, [open, onWatch, mode, nativeActive, fatal, ended, guestLock, ownerUnsupported, activeSrc]);
 
   // subtitle prefs — default ON (the extracted MKV subs ARE the experience)
   const [subOn, setSubOn] = useState(false);
@@ -545,9 +561,12 @@ export default function PlayerMobile() {
   // v0.29.0 (NEW-DATA-4) — flush the throttled cloud row on pause / app-hide
   // / pagehide; the last minutes of watching used to never leave the phone
   // when they fell inside the 20s throttle window.
+  // BUG-023 — bind to the element-identity state: at mount videoRef.current
+  // is null (the <video> mounts on first playback) and the whole effect was
+  // dead code for the session (same root cause as BUG-022 on desktop).
   useEffect(() => {
     const flush = () => void flushProgressOne();
-    const v = videoRef.current;
+    const v = videoEl;
     v?.addEventListener("pause", flush);
     const onVis = () => {
       if (document.visibilityState === "hidden") flush();
@@ -560,7 +579,7 @@ export default function PlayerMobile() {
       window.removeEventListener("pagehide", flush);
       flush();
     };
-  }, []);
+  }, [videoEl]);
 
   const bumpUi = useCallback(() => {
     setShowUi(true);

@@ -464,7 +464,7 @@ export default function Navbar() {
                 href="/vip"
                 aria-label={locale === "en" ? "VIP subscription" : "اشتراک ویژه"}
                 title={locale === "en" ? "VIP subscription" : "اشتراک ویژه"}
-                className="app-no-drag flex items-center gap-1.5 rounded-full border border-amber-400/40 bg-gradient-to-l from-amber-400/15 to-amber-500/10 px-3 py-2 text-sm font-black text-amber-300 transition hover:border-amber-300/60 hover:from-amber-400/25"
+                className="app-no-drag flex items-center gap-1.5 rounded-full border border-amber-400/40 bg-gradient-to-l from-amber-400/15 to-amber-500/10 px-3 py-2 text-sm font-black text-[color:var(--color-gold-ink)] transition hover:border-amber-300/60 hover:from-amber-400/25"
               >
                 <CrownIcon width={15} height={15} />
                 <span className="hidden sm:inline">VIP</span>
@@ -496,13 +496,19 @@ export default function Navbar() {
           (rdev/liquid-glass-react) with a dark veil for text readability. */}
       <nav
         aria-label={t("nav.mobileNav")}
-        className={`fixed inset-x-3 bottom-3 z-50 transition-all duration-300 lg:hidden ${
+        // BUG-047 — `transition-all` on a full-width backdrop-filter bar meant
+        // every slide frame re-sampled + re-blurred the moving content behind
+        // it (the drawer/nav lag). Only transform/opacity animate now, and the
+        // glass blur rests at NONE while the bar sits off-screen.
+        className={`fixed inset-x-3 bottom-3 z-50 transition-[transform,opacity] duration-300 will-change-transform lg:hidden ${
           navHidden ? "pointer-events-none translate-y-[140%] opacity-0" : "translate-y-0 opacity-100"
         }`}
         data-nav-hidden={navHidden ? "1" : "0"}
         style={{ paddingBottom: "max(0.25rem, env(safe-area-inset-bottom))" }}
       >
-        <GlassBar radius={26}>
+        {/* BUG-047 — blur rests at NONE while hidden: GlassBar's own inline
+            filter is overridden through its style prop (its spread wins). */}
+        <GlassBar radius={26} style={navHidden ? { WebkitBackdropFilter: "none", backdropFilter: "none" } : undefined}>
           <div className="relative flex items-center justify-around px-1 py-2">
             <div className="absolute inset-0 rounded-[26px] bg-black/20" />
             {mobileLinks.map((l) => {

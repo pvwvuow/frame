@@ -99,6 +99,11 @@ const RUNTIME_DDL: string[] = [
   "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 )`,
   `CREATE INDEX IF NOT EXISTS "AccountSpace_uid_idx" ON "AccountSpace"("uid" ASC)`,
+  /* BUG-040 — one data space can belong to at most ONE account: without the
+   * unique index, two accounts attaching in the same guest window both
+   * adopted the same uid (shared history/collections). Safe to add: only a
+   * pre-existing violation would fail, and the runner catches per-statement. */
+  `CREATE UNIQUE INDEX IF NOT EXISTS "AccountSpace_uid_key" ON "AccountSpace"("uid" ASC)`,
   /* v0.27.0 (DATA-7) — per-EPISODE progress: the title-level WatchProgress
    * row stays the continue-watching pointer; this table remembers EVERY
    * episode position. Additive (CREATE IF NOT EXISTS) — existing DBs get it

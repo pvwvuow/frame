@@ -135,8 +135,18 @@ export async function POST(req: Request) {
     const claimedByOther = await db.accountSpace.findFirst({ where: { uid: current } });
     const adoptable = !claimedByOther && (await spaceHasData(current));
     target = adoptable ? current : accountSpaceUid(accountId);
-    // first-writer-wins: a concurrent attach must not flip the mapping
-    await db.accountSpace.upsert({ where: { accountId }, update: {}, create: { accountId, uid: target } });
+    // BUG-040 — ATOMIC claim: the unique index on uid makes a concurrent
+    // adopt by a second account (both saw the same unclaimed guest cookie)
+    // fail with P2002 instead of mapping both accounts onto one space.
+    try {
+      await db.accountSpace.create({ data: { accountId, uid: target } });
+    } catch {
+      await db.accountSpace.upsert({
+        where: { accountId },
+        update: {}, // first-writer-wins for THIS account's own row
+        create: { accountId, uid: accountSpaceUid(accountId) },
+      });
+    }
     const settled = await db.accountSpace.findUnique({ where: { accountId } });
     target = settled?.uid ?? target;
   }

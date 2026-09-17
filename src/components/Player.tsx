@@ -317,9 +317,13 @@ export default function Player() {
   // v0.29.0 (NEW-DATA-4) — the 20s cloud throttle used to DROP the last row:
   // pause / tab-hide / close within the window never reached other devices.
   // Now the pending row is flushed on pause, tab-hide and pagehide.
+  // BUG-022 — the pause listener used to bind to videoRef.current while the
+  // player was still CLOSED (the <video> mounts much later) → the whole
+  // effect was dead code for the session. It re-runs on the element-identity
+  // state instead (the exact race the videoEl state was built for).
   useEffect(() => {
     const flush = () => void flushProgressOne();
-    const v = videoRef.current;
+    const v = videoEl;
     v?.addEventListener("pause", flush);
     const onVis = () => {
       if (document.visibilityState === "hidden") flush();
@@ -332,7 +336,7 @@ export default function Player() {
       window.removeEventListener("pagehide", flush);
       flush(); // unmount (player closed / episode switched) → flush too
     };
-  }, []);
+  }, [videoEl]);
 
   const bumpUi = useCallback(() => {
     setShowUi(true);

@@ -127,6 +127,25 @@ export async function POST(req: Request) {
   }
   let skipped = 0;
 
+  /* BUG-042 — one stale row must not abort the whole merge: a catalog
+   * refresh can delete a title between the idBySlug resolution above and a
+   * write below (P2003), and a concurrent toggle can make a row vanish
+   * (P2025). Constraint failures on a SINGLE row count as skipped; the
+   * idempotent LWW merge on the next sync converges the rest. */
+  async function rowWrite(run: () => Promise<unknown>): Promise<boolean> {
+    try {
+      await run();
+      return true;
+    } catch (e) {
+      const code = (e as { code?: string })?.code;
+      if (code === "P2003" || code === "P2025" || code === "P2002") {
+        skipped++;
+        return false;
+      }
+      throw e;
+    }
+  }
+
   /* ---------- tombstone gate (THIS device's offline deletions) ---------- */
   const tombSlugs = new Set<string>();
   for (const t of tombstones) {
@@ -135,7 +154,7 @@ export async function POST(req: Request) {
       // whole-history wipe on this device — only meaningful for progress
       const rows = await db.watchProgress.findMany({ where: { userKey }, select: { id: true, updatedAt: true } });
       for (const r of rows) {
-        if (t.at > new Date(r.updatedAt).getTime()) await db.watchProgress.delete({ where: { id: r.id } });
+        if (t.at > new Date(r.updatedAt).getTime()) await db.watchProgress.deleteMany({ where: { id: r.id, userKey } });
       }
       continue;
     }
@@ -144,25 +163,25 @@ export async function POST(req: Request) {
     if (t.kind === "favorite") {
       const row = await db.favorite.findUnique({ where: { userKey_titleId: { userKey, titleId } } });
       if (row && t.at > new Date(row.createdAt).getTime()) {
-        await db.favorite.delete({ where: { userKey_titleId: { userKey, titleId } } });
+        await db.favorite.deleteMany({ where: { userKey, titleId } });
         tombSlugs.add(t.key);
       }
     } else if (t.kind === "watchlist") {
       const row = await db.watchlist.findUnique({ where: { userKey_titleId: { userKey, titleId } } });
       if (row && t.at > new Date(row.updatedAt).getTime()) {
-        await db.watchlist.delete({ where: { userKey_titleId: { userKey, titleId } } });
+        await db.watchlist.deleteMany({ where: { userKey, titleId } });
         tombSlugs.add(t.key);
       }
     } else if (t.kind === "rating") {
       const row = await db.userRating.findUnique({ where: { userKey_titleId: { userKey, titleId } } });
       if (row && t.at > new Date(row.updatedAt).getTime()) {
-        await db.userRating.delete({ where: { userKey_titleId: { userKey, titleId } } });
+        await db.userRating.deleteMany({ where: { userKey, titleId } });
         tombSlugs.add(t.key);
       }
     } else {
       const row = await db.watchProgress.findUnique({ where: { userKey_titleId: { userKey, titleId } } });
       if (row && t.at > new Date(row.updatedAt).getTime()) {
-        await db.watchProgress.delete({ where: { id: row.id } });
+        await db.watchProgress.deleteMany({ where: { id: row.id, userKey } });
         tombSlugs.add(t.key);
       }
     }
@@ -179,21 +198,21 @@ export async function POST(req: Request) {
       if (d.kind === "favorite") {
         const row = await db.favorite.findUnique({ where: { userKey_titleId: { userKey, titleId } } });
         if (row && d.at > new Date(row.createdAt).getTime()) {
-          await db.favorite.delete({ where: { userKey_titleId: { userKey, titleId } } });
+          await db.favorite.deleteMany({ where: { userKey, titleId } });
           deletionsApplied++;
           deletedSlugs.add(d.key);
         }
       } else if (d.kind === "watchlist") {
         const row = await db.watchlist.findUnique({ where: { userKey_titleId: { userKey, titleId } } });
         if (row && d.at > new Date(row.updatedAt).getTime()) {
-          await db.watchlist.delete({ where: { userKey_titleId: { userKey, titleId } } });
+          await db.watchlist.deleteMany({ where: { userKey, titleId } });
           deletionsApplied++;
           deletedSlugs.add(d.key);
         }
       } else {
         const row = await db.userRating.findUnique({ where: { userKey_titleId: { userKey, titleId } } });
         if (row && d.at > new Date(row.updatedAt).getTime()) {
-          await db.userRating.delete({ where: { userKey_titleId: { userKey, titleId } } });
+          await db.userRating.deleteMany({ where: { userKey, titleId } });
           deletionsApplied++;
           deletedSlugs.add(d.key);
         }
@@ -204,14 +223,14 @@ export async function POST(req: Request) {
       if (d.key === "*") {
         const rows = await db.watchProgress.findMany({ where: { userKey }, select: { id: true, updatedAt: true } });
         const stale = rows.filter((r) => d.at > new Date(r.updatedAt).getTime());
-        for (const r of stale) await db.watchProgress.delete({ where: { id: r.id } });
+        for (const r of stale) await db.watchProgress.deleteMany({ where: { id: r.id, userKey } });
         deletionsApplied += stale.length;
       } else {
         const titleId = idBySlug.get(d.key);
         if (!titleId) continue;
         const row = await db.watchProgress.findUnique({ where: { userKey_titleId: { userKey, titleId } } });
         if (row && d.at > new Date(row.updatedAt).getTime()) {
-          await db.watchProgress.delete({ where: { id: row.id } });
+          await db.watchProgress.deleteMany({ where: { id: row.id, userKey } });
           deletionsApplied++;
           deletedSlugs.add(d.key);
         }
@@ -276,8 +295,14 @@ export async function POST(req: Request) {
     const have = new Set(existing.map((e) => e.titleId));
     const missing = [...new Map(favPairs.map((p) => [p.id, p])).values()].filter((p) => !have.has(p.id));
     if (missing.length) {
-      const r = await db.favorite.createMany({ data: missing.map((p) => ({ userKey, titleId: p.id })) });
-      favoritesAdded = r.count;
+      // BUG-042 — a stale titleId in the batch (title deleted mid-merge) must
+      // not 500 the whole merge; the batch-level failure counts as skipped
+      // and the next idempotent sync converges.
+      if (
+        await rowWrite(() => db.favorite.createMany({ data: missing.map((p) => ({ userKey, titleId: p.id })) }))
+      ) {
+        favoritesAdded += missing.length;
+      }
     }
   }
 
@@ -296,16 +321,14 @@ export async function POST(req: Request) {
     const ex = await db.watchlist.findUnique({ where: { userKey_titleId: { userKey, titleId } } });
     const cloudTs = toTs(row?.updatedAt);
     if (!ex) {
-      await db.watchlist.create({
+      if (await rowWrite(() => db.watchlist.create({
         data: { userKey, titleId, status, ...(cloudTs ? { createdAt: new Date(Math.min(cloudTs, nowMs)), updatedAt: new Date(Math.min(cloudTs, nowMs)) } : {}) },
-      });
-      listAdded++;
+      }))) listAdded++;
     } else if (cloudTs > new Date(ex.updatedAt).getTime() + 500) {
-      await db.watchlist.update({
+      if (await rowWrite(() => db.watchlist.update({
         where: { userKey_titleId: { userKey, titleId } },
         data: { status },
-      });
-      listUpdated++;
+      }))) listUpdated++;
     }
   }
 
@@ -323,16 +346,14 @@ export async function POST(req: Request) {
     const ex = await db.userRating.findUnique({ where: { userKey_titleId: { userKey, titleId } } });
     const cloudTs = toTs(row?.updatedAt);
     if (!ex) {
-      await db.userRating.create({
+      if (await rowWrite(() => db.userRating.create({
         data: { userKey, titleId, score: Math.round(score), ...(cloudTs ? { createdAt: new Date(Math.min(cloudTs, nowMs)), updatedAt: new Date(Math.min(cloudTs, nowMs)) } : {}) },
-      });
-      ratingsAdded++;
+      }))) ratingsAdded++;
     } else if (cloudTs > new Date(ex.updatedAt).getTime() + 500) {
-      await db.userRating.update({
+      if (await rowWrite(() => db.userRating.update({
         where: { userKey_titleId: { userKey, titleId } },
         data: { score: Math.round(score) },
-      });
-      ratingsAdded++;
+      }))) ratingsAdded++;
     }
   }
 
@@ -374,8 +395,11 @@ export async function POST(req: Request) {
       const haveSet = new Set(have.map((h) => h.titleId));
       const missing = ids.filter((id) => !haveSet.has(id));
       if (missing.length) {
-        const r = await db.userCollectionItem.createMany({ data: missing.map((titleId) => ({ collectionId: row.id, titleId })) });
-        collectionItemsAdded += r.count;
+        if (
+          await rowWrite(() => db.userCollectionItem.createMany({ data: missing.map((titleId) => ({ collectionId: row.id, titleId })) }))
+        ) {
+          collectionItemsAdded += missing.length;
+        }
       }
     }
   }
@@ -432,20 +456,19 @@ export async function POST(req: Request) {
       episodeId = ep?.id ?? null;
       if (episodeId) {
         // per-episode row → the additive table (VERIFY-DATA-7b)
+        const epId = episodeId; // stable narrowing for the rowWrite closures
         const exEp = await db.watchEpisodeProgress.findUnique({
-          where: { userKey_titleId_episodeId: { userKey, titleId, episodeId } },
+          where: { userKey_titleId_episodeId: { userKey, titleId, episodeId: epId } },
         });
         if (!exEp) {
-          await db.watchEpisodeProgress.create({
-            data: { userKey, titleId, episodeId, position: row.position, duration: row.duration, ...(incomingTs ? { updatedAt: new Date(incomingTs) } : {}) },
-          });
-          progressApplied++;
+          if (await rowWrite(() => db.watchEpisodeProgress.create({
+            data: { userKey, titleId, episodeId: epId, position: row.position, duration: row.duration, ...(incomingTs ? { updatedAt: new Date(incomingTs) } : {}) },
+          }))) progressApplied++;
         } else if (incomingTs > new Date(exEp.updatedAt).getTime() + 500) {
-          await db.watchEpisodeProgress.update({
+          if (await rowWrite(() => db.watchEpisodeProgress.update({
             where: { id: exEp.id },
             data: { position: row.position, duration: row.duration, ...(incomingTs > new Date(exEp.updatedAt).getTime() ? { updatedAt: new Date(incomingTs) } : {}) },
-          });
-          progressApplied++;
+          }))) progressApplied++;
         }
       }
     }
@@ -454,19 +477,17 @@ export async function POST(req: Request) {
     if (newestBySlug.get(row.slug) !== row) continue;
     const ex = await db.watchProgress.findUnique({ where: { userKey_titleId: { userKey, titleId } } });
     if (!ex) {
-      await db.watchProgress.create({ data: { userKey, titleId, episodeId, position: row.position, duration: row.duration, ...(incomingTs ? { updatedAt: new Date(incomingTs) } : {}) } });
-      progressApplied++;
+      if (await rowWrite(() => db.watchProgress.create({ data: { userKey, titleId, episodeId, position: row.position, duration: row.duration, ...(incomingTs ? { updatedAt: new Date(incomingTs) } : {}) } }))) progressApplied++;
     } else {
       const exTs = new Date(ex.updatedAt).getTime();
       const newer = incomingTs > exTs + 500;
       const closeCall = Math.abs(incomingTs - exTs) <= 2_000;
       const further = row.position > ex.position + 1;
       if (newer || (closeCall && further)) {
-        await db.watchProgress.update({
+        if (await rowWrite(() => db.watchProgress.update({
           where: { userKey_titleId: { userKey, titleId } },
           data: { position: row.position, duration: row.duration, episodeId, ...(incomingTs > exTs ? { updatedAt: new Date(incomingTs) } : {}) },
-        });
-        progressApplied++;
+        }))) progressApplied++;
       }
     }
   }

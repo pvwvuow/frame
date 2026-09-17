@@ -42,6 +42,8 @@ jobs:
         run: node scripts/test-hero-pick.mjs
       - name: Catalog offline repair (real SQLite)
         run: node scripts/test-catalog-repair.mjs
+      - name: Catalog cache merge rules
+        run: node scripts/test-catalog-cache.mjs
       - name: Startup regression tests (nama.db / orphan server)
         run: node scripts/test-startup-fixes.mjs
       - name: Stream proxy / MKV subtitle tests

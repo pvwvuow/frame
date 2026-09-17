@@ -265,7 +265,9 @@ model NotificationEvent {
 /// قبلی در حساب جدید هم دیده می‌شد. uid همان مقدار کوکی nama_uid است.
 model AccountSpace {
   accountId String   @id
-  uid       String
+  /// BUG-040 — unique: one data space belongs to at most ONE account (the
+  /// concurrent-adopt race shared a guest space between two accounts)
+  uid       String   @unique
   createdAt DateTime @default(now())
 
   @@index([uid])
