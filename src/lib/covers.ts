@@ -105,7 +105,21 @@ const metahubBackdrop = (tt: string) => `https://images.metahub.space/background
  * decodes — so the only defense is to not ASK: every ladder below skips
  * metahub for blocked tts and falls through to the local cover-pack art
  * (curated, correct) and the titled placeholder. Remove an entry only after
- * re-verifying upstream. */
+ * re-verifying upstream.
+ *
+ * v0.42.5 — the fall-through had a HOLE: the cover-pack is a progressive
+ * download, so «local art» does not exist until the tt's part lands — and
+ * a blocked tt has NO metahub rung to rescue it. Net effect on real
+ * machines (user-reported 2026-09-18): «جوخه برادران» showed the bare
+ * placeholder FOREVER on every client whose store predated the r3 pack.
+ * Two-part fix:
+ *   1. the blocked tt's curated art now SHIPS INSIDE the app packages
+ *      (electron-after-pack.cjs + mobile-build.cjs allowlist the same
+ *      tt0185906 subtree — ~38KB), so /covers/<tt>/… resolves from the
+ *      app's own public/ root from the very first boot, pack or no pack;
+ *   2. the ladders below mount the local path for blocked tts even at
+ *      rev=0 (metahub can only ever serve the WRONG film for them, so
+ *      local/bundled is unconditionally the better first ask). */
 const METAHUB_BAD_TTS = new Set(["tt0185906"]);
 const metahubOk = (tt: string) => !METAHUB_BAD_TTS.has(tt.toLowerCase());
 const relayed = (u: string) => `/api/art?u=${encodeURIComponent(u)}`;
@@ -190,10 +204,12 @@ export function artTtOf(t: CoverSource): string {
   return ttIdOf(t.poster, t.posterUrl, t.backdrop, t.backdropUrl, t.slug);
 }
 
-/** Poster URL for <img src> — the ART-3.1 ladder (see module doc). */
+/** Poster URL for <img src> — the ART-3.1 ladder (see module doc).
+ *  v0.42.5: a metahub-blocked tt mounts the local/bundled path even at
+ *  rev=0 — its art ships inside the app, and metahub is wrong-art only. */
 export function posterSrc(t: CoverSource): string {
   const tt = artTtOf(t);
-  if (coversLocalRev() > 0 && tt) return localPoster(tt);
+  if (tt && (coversLocalRev() > 0 || !metahubOk(tt))) return localPoster(tt);
   if (t.posterUrl) return artSrc(t.posterUrl);
   const poster = t.poster || "";
   if (!poster) return tt && metahubOk(tt) ? artSrc(metahubPoster(tt)) : POSTER_PLACEHOLDER;
@@ -207,10 +223,11 @@ export function posterSrc(t: CoverSource): string {
   return poster;
 }
 
-/** Backdrop URL for <img src> — same ladder as posterSrc. */
+/** Backdrop URL for <img src> — same ladder as posterSrc (v0.42.5
+ *  blocked-tt rule included). */
 export function backdropSrc(t: CoverSource): string {
   const tt = artTtOf(t);
-  if (coversLocalRev() > 0 && tt) return localBackdrop(tt);
+  if (tt && (coversLocalRev() > 0 || !metahubOk(tt))) return localBackdrop(tt);
   if (t.backdropUrl) return artSrc(t.backdropUrl);
   const backdrop = t.backdrop || "";
   if (!backdrop) return tt && metahubOk(tt) ? artSrc(metahubBackdrop(tt)) : BACKDROP_PLACEHOLDER;

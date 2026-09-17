@@ -196,7 +196,16 @@ function main() {
 
   /* Post-export slim-down: the APK must NOT carry the covers library (the
    * desktop jpgs NOR the webp set — covers ride the split pack + metahub
-   * fallback now), nor the monolithic index.json (mobile/ shards instead). */
+   * fallback now), nor the monolithic index.json (mobile/ shards instead).
+   *
+   * v0.42.5 — BUNDLED-ART ALLOWLIST: the tts in covers.ts METAHUB_BAD_TTS
+   * (tt0185906 «Band of Brothers» → metahub serves the WRONG film) have no
+   * remote art route at all, so their curated art SHIPS INSIDE the package:
+   * rmWalk keeps covers/<tt>/ and the covers cleanup below removes every
+   * OTHER child. ~38KB. Keep in sync with covers.ts. */
+  const BUNDLED_ART_TTS = ["tt0185906"];
+  const bundledArt = (p) =>
+    BUNDLED_ART_TTS.some((tt) => p.includes(`${path.sep}covers${path.sep}${tt}${path.sep}`));
   const OUT = path.join(ROOT, "out");
   let removed = 0;
   let bytes = 0;
@@ -208,6 +217,7 @@ function main() {
         continue;
       }
       const ext = path.extname(e.name).toLowerCase();
+      if (bundledArt(p)) continue; // allowlisted blocked-tt art stays
       if (p.includes(`${path.sep}covers${path.sep}`) && (ext === ".jpg" || ext === ".jpeg" || ext === ".webp")) {
         bytes += fs.statSync(p).size;
         fs.unlinkSync(p);
@@ -216,8 +226,14 @@ function main() {
     }
   };
   rmWalk(OUT);
-  // drop the emptied covers dir tree from the export
-  if (fs.existsSync(path.join(OUT, "covers"))) fs.rmSync(path.join(OUT, "covers"), { recursive: true, force: true });
+  // drop the emptied covers dir tree from the export — EXCEPT the allowlisted tt
+  const coversOut = path.join(OUT, "covers");
+  if (fs.existsSync(coversOut)) {
+    for (const e of fs.readdirSync(coversOut, { withFileTypes: true })) {
+      if (e.isDirectory() && BUNDLED_ART_TTS.includes(e.name)) continue;
+      fs.rmSync(path.join(coversOut, e.name), { recursive: true, force: true });
+    }
+  }
   for (const f of ["index.json", "README.md"]) {
     const p = path.join(OUT, "catalog", f);
     if (fs.existsSync(p)) {

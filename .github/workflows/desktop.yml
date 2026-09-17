@@ -335,8 +335,16 @@ jobs:
           DEST="Frame-webbundle-v${VERSION#v}-n${NATIVE_REV}.zip"
           rm -f "$DEST"
           # zip the CONTENTS of out/ (index.html at the zip root — the OTA
-          # applier validates that and serves the folder as the web root)
+          # applier validates that and serves the folder as the web root).
+          # v0.42.5 — the covers/* exclusion re-adds the BUNDLED-ART allowlist
+          # (mobile-build.cjs BUNDLED_ART_TTS = metahub-blocked tts whose
+          # curated art ships inside the package, e.g. tt0185906).
           (cd out && zip -qr "../$DEST" . -x "covers/*")
+          if [ -d out/covers ]; then
+            for tt in $(ls out/covers 2>/dev/null); do
+              (cd out && zip -qr "../$DEST" "covers/$tt")
+            done
+          fi
           ls -la "$DEST"
           gh release upload "$TAG" "$DEST" --clobber --repo "$GITHUB_REPOSITORY"
           echo "attached $DEST to release $TAG"

@@ -28,7 +28,18 @@ exports.default = async function afterPack(context) {
      bundled – covers stream from the hosted site root (GitHub raw, the same
      origin the catalog auto-update uses) and the catalog is fetched remotely
      at boot. This keeps the installer ~200MB instead of ~900MB. The seed DB
-     (full metadata, works offline) stays bundled. */
+     (full metadata, works offline) stays bundled.
+
+     v0.42.5 — BUNDLED-ART ALLOWLIST: metahub serves the WRONG FILM for the
+     tts in covers.ts METAHUB_BAD_TTS (tt0185906 «Band of Brothers» → the
+     Isadora poster), so those titles have NO remote art route at all — their
+     only correct source is the curated local art, which previously only
+     reached clients via the progressive coverpack sync. Until (or unless)
+     that lands, the title sat on a bare placeholder forever (user-reported
+     2026-09-18). Keep the allowlisted tt subtrees inside the package — a
+     few KB each — so /covers/<tt>/… resolves from the app's own public/
+     root from the very first boot. Keep in sync with covers.ts. */
+  const BUNDLED_ART_TTS = ["tt0185906"];
   const skip = (src) =>
     /\.map$/.test(src) ||
     /[\\/]\.next[\\/]cache([\\/]|$)/.test(src) ||
@@ -48,6 +59,29 @@ exports.default = async function afterPack(context) {
   }
   // static assets live outside the traced output – copy them in explicitly
   fs.cpSync(path.join(root, ".next", "static"), path.join(dest, "standalone", ".next", "static"), { recursive: true });
+
+  /* v0.42.5 — BUNDLED-ART ALLOWLIST (see comment above): copy the blocked-tt
+   * art straight from the repo's public/covers into the packaged public/
+   * root. skip() prunes public/covers wholesale, so this explicit pass is
+   * the ONLY path the allowlisted art takes into the installer — keep it in
+   * sync with covers.ts METAHUB_BAD_TTS. */
+  for (const tt of BUNDLED_ART_TTS) {
+    const artDir = path.join(root, "public", "covers", tt);
+    if (!fs.existsSync(artDir)) {
+      console.warn(`  • afterPack: bundled-art allowlist — public/covers/${tt} missing, skipped`);
+      continue;
+    }
+    const dstDir = path.join(dest, "standalone", "public", "covers", tt);
+    fs.mkdirSync(dstDir, { recursive: true });
+    let n = 0;
+    for (const f of fs.readdirSync(artDir)) {
+      const st = fs.statSync(path.join(artDir, f));
+      if (!st.isFile()) continue;
+      fs.copyFileSync(path.join(artDir, f), path.join(dstDir, f));
+      n++;
+    }
+    console.log(`  • afterPack: bundled art for blocked tt ${tt} → ${n} file(s)`);
+  }
 
   const seedSrc = path.join(root, "db", "custom.db");
   if (!fs.existsSync(seedSrc)) throw new Error("db/custom.db missing – it is the packaged seed database");
