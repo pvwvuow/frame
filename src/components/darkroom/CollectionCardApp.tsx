@@ -1,6 +1,6 @@
 "use client";
 
-/* eslint-disable @next/next/no-img-element */
+ 
 /**
  * Darkroom — COLLECTION card workshop (v0.10.36).
  * Same professional workshop as the movie cards: pick one of your own
@@ -112,7 +112,7 @@ export default function CollectionCardApp({ modeBar }: { modeBar?: ReactNode }) 
 
   useEffect(() => {
     setHandle((h) => h || defaultHandle);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [defaultHandle]);
 
   /* ---------------- scale observer ---------------- */

@@ -1,6 +1,6 @@
 "use client";
 
-/* eslint-disable @next/next/no-img-element */
+ 
 /**
  * Darkroom share cards — 7 structures × 2 formats (post 1080², story 1080×1920).
  * Pure inline-style renders (html-to-image friendly). All typography follows

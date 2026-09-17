@@ -61,7 +61,7 @@ export async function GET(req: Request) {
     .slice(0, 500);
   const slugs = (sp.get("slugs") ?? "")
     .split(",")
-    .map((s) => decodeURIComponent(s).trim())
+    .map((s) => s.trim()) // BUG-065 — URLSearchParams already decoded; a second decode threw URIError on any stray %
     .filter(Boolean)
     .slice(0, 500);
 

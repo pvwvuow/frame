@@ -82,7 +82,7 @@ export default function CinemaButton() {
   useEffect(() => {
     const st = useCinema.getState();
     if (st.status === "idle") void st.resume(selfId.name || profile.displayName || "کاربر");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, []);
 
   useEffect(() => {
@@ -234,7 +234,7 @@ export default function CinemaButton() {
                     {cin.members.map((m) => (
                       <li key={m.uid} className="flex items-center gap-2.5 rounded-lg bg-white/[0.04] px-2.5 py-1.5">
                         {m.avatar ? (
-                          // eslint-disable-next-line @next/next/no-img-element
+                           
                           <img src={m.avatar} alt="" className="h-6 w-6 shrink-0 rounded-full object-cover ring-1 ring-white/15" />
                         ) : (
                           <span

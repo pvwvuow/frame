@@ -554,7 +554,7 @@ export class MkvScanner {
       id: idV.value,
       dataStart: this.pos + idV.len + sizeV.len,
       size: sizeV.value,
-      unknown: sizeV.value === (1 << (7 * sizeV.len)) - 1,
+      unknown: sizeV.len < 6 && sizeV.value === (1 << (7 * sizeV.len)) - 1 // BUG-060 — 32-bit wrap for len ≥ 5,
     };
     const elEndAbs = el.unknown ? -1 : this.abs + el.dataStart + el.size;
     const top = this.stack[this.stack.length - 1];
@@ -1289,7 +1289,11 @@ export class MkvWebScan {
           if (r.total) this.store.fileSize = r.total;
           this.bytes += r.data.length;
           this.scanScanner?.feed(r.data);
-          this.cursor += r.data.length;
+          if (!r.data.length) { // BUG-061 — a zero-length 206 would loop the same range forever
+          this.setState("parked");
+          return;
+        }
+        this.cursor += r.data.length;
           this.emit();
           const cov = this.store.covSec();
           const covered = cov ? cov[1] : -1;

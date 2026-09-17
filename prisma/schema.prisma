@@ -46,6 +46,9 @@ model Title {
   @@index([trendingScore])
   // v0.10.4 perf: the catalog pages sort/filter on these constantly (14k rows)
   @@index([type, trendingScore])
+  /// BUG-075 — the catalog's "name" sort (ORDER BY title) did a full
+  /// 15k-row filesort on every paged request
+  @@index([title])
   @@index([type, rating])
   @@index([type, year])
   @@index([rating])
@@ -69,6 +72,9 @@ model Episode {
   progress   WatchProgress[]
 
   @@index([titleId])
+  /// BUG-075 — the episodes list queries (titleId, season, number) in order;
+  /// the single-column index forced a filesort over every series' episodes
+  @@index([titleId, season, number])
 }
 
 /// "لیست من" – هر عنوان یک وضعیت، یادداشت و اولویت دارد

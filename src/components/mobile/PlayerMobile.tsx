@@ -371,7 +371,7 @@ export default function PlayerMobile() {
     setDataSaverState(getDataSaver());
     const r = getRatePref();
     if (r !== 1) setRate(r);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, []);
 
   /* BUG-023 — the per-title sub delay is the ONLY per-title pref here, but
@@ -1142,7 +1142,7 @@ export default function PlayerMobile() {
       s.stop();
       if (mseSessionRef.current === s) mseSessionRef.current = null;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [open, videoEl, owner, fatal, mseWanted, rawActive]);
 
   // v0.21.0 — MSE seek handling: a scrub to an UNBUFFERED position restarts

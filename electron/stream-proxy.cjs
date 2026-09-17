@@ -1531,7 +1531,21 @@ function startStreamProxy(log, opts = {}) {
 
   return new Promise((resolve, reject) => {
     server.once("error", reject);
+    // BUG-081 — persistent error listener AFTER startup: the once() above is
+    // consumed by a successful listen, leaving the server with zero error
+    // listeners (any later error crashed the whole app).
+    let settled = false;
+    server.on("error", (e) => {
+      if (settled) {
+        try {
+          if (typeof log !== "undefined" && log && log.warn) log.warn("stream-proxy server error:", e && e.message);
+        } catch {
+          /* ignore */
+        }
+      }
+    });
     server.listen(opts.port || 0, "127.0.0.1", () => {
+      settled = true;
       const { port } = server.address();
       resolve({
         base: `http://127.0.0.1:${port}`,
@@ -1557,11 +1571,24 @@ function proxyFetch(url, range, depth, onRequest) {
     }
     const headers = { "user-agent": UA, accept: "*/*", "accept-encoding": "identity" };
     if (range) headers.range = range;
-    const req = mod.get(url, { headers, rejectUnauthorized: false }, (res) => {
+    // BUG-083 — rejectUnauthorized:false accepted ANY certificate on every
+    // proxied upstream (video/subs bytes fed to the privileged EBML parser —
+    // a MITM's dream on hostile networks). Verification is ON again; hosts
+    // with broken chains fail loudly like everywhere else.
+    const req = mod.get(url, { headers }, (res) => {
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
         res.resume();
         const next = new URL(res.headers.location, url).toString();
-        return resolve(proxyFetch(next, range, depth + 1, onRequest));
+        // BUG-082 — hand the NEW request to the abort hook: upstreamReq kept
+        // pointing at the completed first request, so a client disconnect
+        // could no longer kill the redirected transfer (the common case —
+        // the F2M/Donyaye hosts redirect routinely).
+        if (typeof onRequest === "function") {
+          return proxyFetch(next, range, depth + 1, (r2) => {
+            if (typeof onRequest === "function") onRequest(r2);
+          }).then(resolve, reject);
+        }
+        return proxyFetch(next, range, depth + 1, onRequest).then(resolve, reject);
       }
       resolve(res);
     });

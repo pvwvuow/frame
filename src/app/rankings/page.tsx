@@ -116,7 +116,7 @@ function RankingsInner() {
                       {fa(rank)}
                     </span>
                     {/* poster */}
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    { }
                     <img src={t.poster} alt="" loading="lazy" className="h-16 w-11 shrink-0 rounded-lg object-cover sm:h-20 sm:w-14" />
                     {/* name */}
                     <span className="min-w-0 flex-1">

@@ -138,7 +138,7 @@ export default function MyListManager({ rows }: { rows: ListRow[] }) {
       if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
       switch (sort) {
         case "title":
-          return a.title.title.localeCompare(b.title.title, "fa") * -dir;
+          return a.title.title.localeCompare(b.title.title, "fa") * dir; // BUG-088 — the stray negation made the «نزولی» label lie
         case "rating":
           return (a.title.rating - b.title.rating) * dir;
         case "myScore":
@@ -601,7 +601,7 @@ function ListItem({ r, selectMode, selected, onSelect, onRemove, onPin, onNote, 
         </button>
       )}
       <button type="button" onClick={onOpen} className="relative h-[120px] w-[80px] shrink-0 overflow-hidden rounded-xl">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
+        { }
         <img src={r.title.poster} alt={r.title.title} loading="lazy" decoding="async" className="h-full w-full object-cover transition group-hover/list:scale-105" />
         {pct > 0 && (
           <span className="absolute inset-x-0 bottom-0 h-1 bg-white/20">
@@ -666,7 +666,7 @@ function NoteDialog({ row, onClose, onSave, pending }: { row: ListRow; onClose: 
     <div className="fixed inset-0 z-[90] grid place-items-center bg-black/80 p-4 backdrop-blur-sm" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div ref={trapRef} role="dialog" aria-modal="true" aria-labelledby={noteId} className="glass w-full max-w-md rounded-3xl p-6">
         <div className="flex items-center gap-3">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
+          { }
           <img src={row.title.poster} alt="" loading="lazy" decoding="async" className="h-16 w-11 rounded-lg object-cover" />
           <div>
             <p className="text-xs text-zinc-400">یادداشت شخصی برای</p>

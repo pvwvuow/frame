@@ -182,6 +182,15 @@ export async function GET(req: NextRequest) {
     upstream = await shared;
   } catch {
     negative.set(key, Date.now() + NEGATIVE_TTL_MS);
+  // BUG-066 — the map had NO eviction: attacker-shaped unique paths grew the
+  // heap without bound in the long-lived Electron server. Opportunistic sweep.
+  if (negative.size > 2048) {
+    const nowMs = Date.now();
+    for (const [k, until] of negative) {
+      if (until <= nowMs) negative.delete(k);
+      if (negative.size <= 1024) break;
+    }
+  }
     return new Response("upstream failed", { status: 502 });
   }
 

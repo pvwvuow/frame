@@ -1,6 +1,6 @@
 "use client";
 
-/* eslint-disable @next/next/no-img-element */
+ 
 /**
  * دیوار کالکشن‌های کاربران (تاریکخانه) — v0.10.34.
  * Public wall of user-published collections (Supabase `shared_collections`).

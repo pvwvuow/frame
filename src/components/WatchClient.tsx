@@ -76,7 +76,7 @@ export default function WatchClient(p: {
     play(p);
     // activity log (cloud, only when signed in) — the actual progress stays LOCAL by design
     void logEvent("play", { titleId: p.titleId, episodeId: p.episode?.id ?? null });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [allowed, p.titleId, p.episode?.id ?? 0, p.src]);
 
   if (SUBSCRIPTION_REQUIRED && !allowed) {

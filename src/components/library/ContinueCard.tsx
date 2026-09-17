@@ -54,7 +54,7 @@ export default function ContinueCard({ c, removable = true }: { c: ContinueLike;
     <div className="group relative overflow-hidden rounded-2xl border border-white/5 bg-ink-700/40 transition hover:border-white/15">
       <div className="flex gap-4 p-3">
         <Link href={href} className="relative h-[96px] w-[170px] shrink-0 overflow-hidden rounded-xl">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
+          { }
           <img src={c.title.backdrop} alt={c.title.title} loading={artWarm ? "eager" : "lazy"} decoding="async" className="h-full w-full object-cover transition duration-500 group-hover:scale-105" />
           <div className="absolute inset-0 grid place-items-center bg-black/30 opacity-0 transition group-hover:opacity-100">
             <span className="grid h-10 w-10 place-items-center rounded-full bg-white text-black">

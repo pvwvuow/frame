@@ -33,7 +33,7 @@ function RandomInner() {
     return () => {
       alive = false;
     };
-  }, [type, genre, sp.get("not")]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [type, genre, sp.get("not")]);  
 
   const qs = useCallback(
     (extra: Record<string, string | undefined>) => {
@@ -51,7 +51,7 @@ function RandomInner() {
     <main className="relative min-h-screen overflow-hidden pb-24 pt-24">
       {t && (
         <>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
+          { }
           <img src={t.backdrop} alt="" className="animate-ken absolute inset-0 h-full w-full object-cover" />
           <div className="absolute inset-0 bg-gradient-to-t from-ink via-ink/70 to-ink/40" />
           <div className="absolute inset-0 bg-gradient-to-l from-ink/70 to-transparent" />
@@ -93,7 +93,7 @@ function RandomInner() {
           <div className="glass mx-auto max-w-3xl rounded-3xl p-16 text-center text-sm text-zinc-400">در حال انتخاب…</div>
         ) : t ? (
           <div className="glass-strong glass-in mx-auto flex max-w-3xl flex-col gap-6 rounded-[32px] p-5 sm:flex-row sm:p-7">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
+            { }
             <img src={t.poster} alt={t.title} className="mx-auto h-[300px] w-[200px] shrink-0 rounded-2xl object-cover shadow-2xl ring-1 ring-white/20 sm:mx-0" />
             <div className="flex min-w-0 flex-1 flex-col">
               <div className="flex flex-wrap items-center gap-2 text-[11px] font-bold">

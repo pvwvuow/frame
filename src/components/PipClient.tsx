@@ -203,7 +203,9 @@ export default function PipClient() {
   useEffect(() => {
     try {
       const v = Number(localStorage.getItem(VOL_KEY));
-      if (Number.isFinite(v) && v > 0) setVolume(Math.min(1, v));
+      // BUG-105 — v === 0 is a DELIBERATE choice (B-10 fix exists in the theater
+      // player): only "never set" stays at the default
+      if (Number.isFinite(v) && v >= 0) setVolume(Math.min(1, v));
       setSubOn(localStorage.getItem(SUB_ON_KEY) !== "0");
     } catch {
       /* ignore */

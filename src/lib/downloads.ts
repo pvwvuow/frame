@@ -48,7 +48,7 @@ export function useDownloadState(onChange?: (s: DownloadState) => void) {
     return () => {
       listeners.delete(l);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, []);
 }
 

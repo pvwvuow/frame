@@ -61,7 +61,7 @@ export default function GenresPage() {
             >
               <div className="absolute inset-0 grid grid-cols-4 opacity-40 transition duration-700 group-hover:scale-105 group-hover:opacity-60">
                 {g.covers.map((c, j) => (
-                  // eslint-disable-next-line @next/next/no-img-element
+                   
                   <img key={j} src={c} alt="" className="h-full w-full object-cover" />
                 ))}
               </div>
@@ -94,7 +94,7 @@ export default function GenresPage() {
                 className="group relative flex aspect-[4/3] flex-col justify-end overflow-hidden rounded-2xl border border-white/5 bg-ink-700/40 p-4 transition hover:-translate-y-1 hover:border-white/15 hover:shadow-[0_20px_50px_rgba(0,0,0,0.6)]"
               >
                 {g.covers[0] && (
-                  // eslint-disable-next-line @next/next/no-img-element
+                   
                   <img src={g.covers[0]} alt="" className="absolute inset-0 h-full w-full object-cover opacity-35 transition duration-700 group-hover:scale-110 group-hover:opacity-50" />
                 )}
                 <div className="absolute inset-0 bg-gradient-to-t from-ink via-ink/60 to-transparent" />
@@ -111,7 +111,7 @@ export default function GenresPage() {
                 </div>
                 <div className="absolute end-3 top-3 flex -space-x-2 space-x-reverse opacity-0 transition group-hover:opacity-100">
                   {g.covers.slice(1, 4).map((c, j) => (
-                    // eslint-disable-next-line @next/next/no-img-element
+                     
                     <img key={j} src={c} alt="" className="h-9 w-6 rounded object-cover ring-1 ring-black/60" />
                   ))}
                 </div>

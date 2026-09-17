@@ -1,6 +1,8 @@
 # 🐞 گزارش کامل باگ‌یابی پروژه Frame — نسخه پایه v0.41.2
 
 **تاریخ:** ۲۰۲۶-۰۹-۱۷ · **روش:** ۷ ایجنت موازی (کامپوننت‌های دسکتاپ / موبایل / هسته‌ی lib / مسیرهای API / الکترون / CSS-تم / بیلد-CI) + `tsc` + `eslint` کامل + `npm audit`
+**وضعیت اجرا (۲۰۲۶-۰۹-۱۷):** فاز ۱ (۱۲/۱۲) + فاز ۲ (۳۸/۳۸) + بخش عمده فاز ۳ و quick-winهای فاز ۴ فیکس و در v0.42.0 منتشر شد — ۷۲ مورد فیکس‌شده، ۵۴ مورد باقی‌مانده مستند در همین فایل. (BUG-104: `npm audit fix` بدون force نیازی را بسته نکرد — همه‌ی موارد باقی‌مانده transitive/dev یا نیازمند major bump هستند؛ BUG-134: تست test-split-catalog به assetهای export شده نیاز دارد و به‌جای ci.yml به desktop.yml بعد از مرحله export متصل شد.)
+
 **خلاصه:** tsc پاک ✅ · eslint: ۱۲ error + ۴۲ warning · npm audit: ۵ high + ۷ moderate · **۱۳۴ باگ واقعی شناسایی شد**
 
 ## راهنما
@@ -91,73 +93,73 @@
 ## فاز ۳ — متوسط (۴۵ مورد)
 
 ### هسته/سینک
-- [ ] **BUG-050** 🟡 `replaySyncOp` آپ‌های حل‌نشده را «موفق» جا می‌زند (برخلاف قرارداد صف) → تغییر گم می‌شود. `cloud.ts:1418-1421`
+- [x] **BUG-050** 🟡 `replaySyncOp` آپ‌های حل‌نشده را «موفق» جا می‌زند (برخلاف قرارداد صف) → تغییر گم می‌شود. `cloud.ts:1418-1421`
 - [ ] **BUG-051** 🟡 wipeProfile بدون tombstone/cloud-delete → پاک‌سازی‌های کلی رستاخیز می‌شوند. `userdata.ts:419-440`
 - [ ] **BUG-052** 🟡 نوتیف «ادامه تماشا» هر اسکن بازنویسی می‌شود → خوانده‌شده دوباره نخوانده + پوش تکراری تا سقف روزانه. `userdata.ts:1083-1109`
 - [ ] **BUG-053** 🟡 re-add محلی tombstone را پاک نمی‌کند → re-add کراس-دوایس تا ۳روز بلاک. `userdata.ts:497-511`
 - [ ] **BUG-054** 🟡 lock دانلود per-account → ۲ اکانت = ۴ دانلود همزمان. `mobile-downloads.ts:112-116`
 - [ ] **BUG-055** 🟡 subDelay: ریست=0 با «تنظیم‌نشده» قاطی → فال‌بک global همیشه برمی‌گردد. `player-prefs.ts:117-127`
 - [ ] **BUG-056** 🟡 کیفیت دانلود هنوز چین انتخاب پلیر را دنبال نمی‌کند (نصفِ باگ قدیمی). `MobileDownloads.tsx:95-111`
-- [ ] **BUG-057** 🟡 `resumeQueueOnBoot` بدون catch روی fileStat → بوت‌ریکاوری کامل متوقف. `mobile-downloads.ts:273`
+- [x] **BUG-057** 🟡 `resumeQueueOnBoot` بدون catch روی fileStat → بوت‌ریکاوری کامل متوقف. `mobile-downloads.ts:273`
 - [ ] **BUG-058** 🟡 کاتالوگ: `recheckCatalogNow` گارد inflight را null می‌کند → دو merge همزمان. `catalog-refresh.ts:152-163`
 - [ ] **BUG-059** 🟡 self-update: نتیجه‌ی `downloadFile` بررسی نمی‌شود، id ثابت `"frame-update"` تداخل دارد، cancel در خطا نیست. `self-update.ts:310-362`
-- [ ] **BUG-060** 🟡 mkv-web: unknown-size برای vint طول ≥5 wrap می‌کند → skip نجومی. `mkv-web.ts:557`
-- [ ] **BUG-061** 🟡 mkv-web: chunk صفر → حلقه‌ی بی‌نهایت روی همان رنج. `mkv-web.ts:1264-1294`
+- [x] **BUG-060** 🟡 mkv-web: unknown-size برای vint طول ≥5 wrap می‌کند → skip نجومی. `mkv-web.ts:557`
+- [x] **BUG-061** 🟡 mkv-web: chunk صفر → حلقه‌ی بی‌نهایت روی همان رنج. `mkv-web.ts:1264-1294`
 - [ ] **BUG-062** 🟡 mkv-web: 416 در اولین jump → اسکن را «done» جا می‌زند. `mkv-web.ts:1256-1275`
 - [ ] **BUG-063** 🟡 fmp4: `sampleRate<<16` برای 88.2/96kHz wrap. `fmp4.ts:229`
-- [ ] **BUG-064** 🟡 کرسر `gt` + limit500 رویدادهای هم‌میلی‌ثانیه‌ی مرز را می‌پرد. `cloud.ts:1042-1054`
+- [x] **BUG-064** 🟡 کرسر `gt` + limit500 رویدادهای هم‌میلی‌ثانیه‌ی مرز را می‌پرد. `cloud.ts:1042-1054`
 
 ### API
-- [ ] **BUG-065** 🟡 `cloud-key`: `decodeURIComponent` دوباره → URIError → 500 روی `%`. `title/cloud-key:62-66`
-- [ ] **BUG-066** 🟡 نقشه‌ی negative در `/api/art` بدون evict → رشد بی‌حد حافظه. `art/route.ts:169-192`
+- [x] **BUG-065** 🟡 `cloud-key`: `decodeURIComponent` دوباره → URIError → 500 روی `%`. `title/cloud-key:62-66`
+- [x] **BUG-066** 🟡 نقشه‌ی negative در `/api/art` بدون evict → رشد بی‌حد حافظه. `art/route.ts:169-192`
 - [ ] **BUG-067** 🟡 ریلی هنر بدون `nosniff`/allowlist content-type (SVG same-origin). `art/route.ts:202-221` + `proxy.ts`
 - [ ] **BUG-068** 🟡 پاسخ POST reviews شامل `userKey` خام (همان کوکی httpOnly). `reviews/route.ts:29-33`
 - [ ] **BUG-069** 🟡 cap سراسری ۲۰۰ پوستر → کالکشن‌های ۳۵+ بدون پیش‌نمایش. `collections/route.ts:28-32`
 - [ ] **BUG-070** 🟡 رقابت manifest در `covers/merge` → گم‌شدن پارت/دوبارشماری. `covers/merge:67-112`
 - [ ] **BUG-071** 🟡 ایندکس جستجو کل ردیف‌ها را کش می‌کند (spike حافظه در 15k ردیف). `queries.ts:306-314`
-- [ ] **BUG-072** 🟡 `Math.max(...rows)` در `/api/x/lite` → RangeError در رشد کاتالوگ. `x/[...path]:175-178`
+- [x] **BUG-072** 🟡 `Math.max(...rows)` در `/api/x/lite` → RangeError در رشد کاتالوگ. `x/[...path]:175-178`
 - [ ] **BUG-073** 🟡 LIKE wildcardها escape نمی‌شوند (جستجو `_`/`%` دروغ می‌گوید). `darkroom/search:15` + `queries.ts`
 - [ ] **BUG-074** 🟡 seed: ریکاوری partial-seed کد مرده است (`count>0` کل loop را رد می‌کند). `seed.ts:683-693`
-- [ ] **BUG-075** 🟡 Prisma: ایندکس `Title.title` (sort=name) و `Episode(titleId,season,number)` نیست. `schema.prisma`
+- [x] **BUG-075** 🟡 Prisma: ایندکس `Title.title` (sort=name) و `Episode(titleId,season,number)` نیست. `schema.prisma`
 
 ### الکترون
-- [ ] **BUG-076** 🟡 covers-sync: `timeoutMs` دور ریخته شده → هنگ ابدی sync کاور. `covers-sync.cjs:71-77`
+- [x] **BUG-076** 🟡 covers-sync: `timeoutMs` دور ریخته شده → هنگ ابدی sync کاور. `covers-sync.cjs:71-77`
 - [ ] **BUG-077** 🟡 covers-sync: writeSync کوتاه + شمارش خوش‌بینانه + `.tmp` رهاشده. `covers-sync.cjs:95-122`
 - [ ] **BUG-078** 🟡 `setupUpdater` در مسیر repair دوباره اجرا می‌شود → لیسنر/رپر دوبل. `main.cjs:1135`
-- [ ] **BUG-079** 🟡 differential: `deltaMode` در download-progress نیست؛ arm-from-disk هاردکد x64. `main.cjs:1462-1495,1409`
+- [x] **BUG-079** 🟡 differential: `deltaMode` در download-progress نیست؛ arm-from-disk هاردکد x64. `main.cjs:1462-1495,1409`
 - [ ] **BUG-080** 🟡 Range resume بدون If-Range/ETag → چسباندن دو فایل مختلف (خراب). `downloads.cjs:353-357,412-425`
-- [ ] **BUG-081** 🟡 stream-proxy: `server.once('error')` مصرف می‌شود → خطای بعدی کرش کل اپ. `stream-proxy.cjs:1532-1543`
-- [ ] **BUG-082** 🟡 stream-proxy: abort در redirect re-arm نمی‌شود. `stream-proxy.cjs:1549-1572`
-- [ ] **BUG-083** 🟡 stream-proxy: `rejectUnauthorized:false` (MITM). `stream-proxy.cjs:1560`
+- [x] **BUG-081** 🟡 stream-proxy: `server.once('error')` مصرف می‌شود → خطای بعدی کرش کل اپ. `stream-proxy.cjs:1532-1543`
+- [x] **BUG-082** 🟡 stream-proxy: abort در redirect re-arm نمی‌شود. `stream-proxy.cjs:1549-1572`
+- [x] **BUG-083** 🟡 stream-proxy: `rejectUnauthorized:false` (MITM). `stream-proxy.cjs:1560`
 - [ ] **BUG-084** 🟡 CI: win/mac با seed-version.json کهنه بیلد می‌شوند → sync کامل بی‌مورد در نصب تازه. `desktop.yml:154-166`
 - [ ] **BUG-085** 🟡 mac بدون امضا + publishAutoUpdate → هر آپدیت شکست می‌خورد. `electron-builder.yml:33-75`
 
 ### UI/UX
-- [ ] **BUG-086** 🟡 Hero دسکتاپ: باز شدن <1024px و بعد بزرگ‌شدن → صحنه‌ی سینمایی مرده (بدون engine). `Hero.tsx:203-207`
-- [ ] **BUG-087** 🟡 جستجوی Darkroom بدون abort → نتیجه‌ی قدیمی روی جدید. `DarkroomApp.tsx:168-186`
-- [ ] **BUG-088** 🟡 سورت «نام» در My List معکوسِ لیبل است (نقیض اضافه). `MyListManager.tsx:136-141,433`
+- [x] **BUG-086** 🟡 Hero دسکتاپ: باز شدن <1024px و بعد بزرگ‌شدن → صحنه‌ی سینمایی مرده (بدون engine). `Hero.tsx:203-207`
+- [x] **BUG-087** 🟡 جستجوی Darkroom بدون abort → نتیجه‌ی قدیمی روی جدید. `DarkroomApp.tsx:168-186`
+- [x] **BUG-088** 🟡 سورت «نام» در My List معکوسِ لیبل است (نقیض اضافه). `MyListManager.tsx:136-141,433`
 - [ ] **BUG-089** 🟡 دیمر سورت داخل sticky z-30 → هدر/نوبار بالای دیم. `MyListManager.tsx:416-417`
 - [ ] **BUG-090** 🟡 نردبان z: palette 120 روی پلیر 100 + tie چهارگانه‌ی z-95. `CommandPalette:203` و غیره
-- [ ] **BUG-091** 🟡 `h-[82vh]` موبایل → پرش با جمع‌شدن نوار URL (dvh لازم). `Hero.tsx:713`
+- [x] **BUG-091** 🟡 `h-[82vh]` موبایل → پرش با جمع‌شدن نوار URL (dvh لازم). `Hero.tsx:713`
 - [ ] **BUG-092** 🟡 dust hero بدون gate خروج از دید. `Hero.tsx:215-224` + `globals.css:990-1000`
-- [ ] **BUG-093** 🟡 vignette محیطی هاردکد تیره در تم روز. `page.tsx:156` + `vip/page.tsx:93`
-- [ ] **BUG-094** 🟡 `::selection` در روز کم‌کنتراست. `globals.css:440`
-- [ ] **BUG-095** 🟡 track اسلایدر در روز نامرئی. `globals.css:429-431`
-- [ ] **BUG-096** 🟡 CatalogGate همیشه تیره (`bg-[#070709]`). `CatalogGate.tsx:76`
+- [x] **BUG-093** 🟡 vignette محیطی هاردکد تیره در تم روز. `page.tsx:156` + `vip/page.tsx:93`
+- [x] **BUG-094** 🟡 `::selection` در روز کم‌کنتراست. `globals.css:440`
+- [x] **BUG-095** 🟡 track اسلایدر در روز نامرئی. `globals.css:429-431`
+- [x] **BUG-096** 🟡 CatalogGate همیشه تیره (`bg-[#070709]`). `CatalogGate.tsx:76`
 - [ ] **BUG-097** 🟡 flush native→web موقعیت پخش را گم می‌کند. `PlayerMobile.tsx:3174-3183`
 - [ ] **BUG-098** 🟡 MediaSession بعد از بستن پلیر پاک نمی‌شود. `PlayerMobile.tsx:1693-1707`
 - [ ] **BUG-099** 🟡 تایمرهای یتیم PlayerMobile/CatalogGate. چندجا
 - [ ] **BUG-100** 🟡 PersonPage: «فعالیت ۰ تا ۱۴۰۲» برای سال نامشخص. `PersonPageClient.tsx:91`
-- [ ] **BUG-101** 🟡 پول 1.5s هر دکمه‌ی دانلود (ده‌ها اسکن/ثانیه در sheet اپیزودها). `MobileDownloads.tsx:55-65`
+- [x] **BUG-101** 🟡 پول 1.5s هر دکمه‌ی دانلود (ده‌ها اسکن/ثانیه در sheet اپیزودها). `MobileDownloads.tsx:55-65`
 
 ---
 
 ## فاز ۴ — کم/پالایش (۲۹ مورد)
 
 - [ ] **BUG-102** 🟢 خطاهای eslint (React Compiler): TDZ-style در `Player.tsx:295,298` و `CatalogGate.tsx:61` + my-list:55 + memoization skipها — بررسی و اصلاح ارزان‌ها
-- [ ] **BUG-103** 🟢 unused eslint-disable ها (~۸ مورد) — پاکسازی
+- [x] **BUG-103** 🟢 unused eslint-disable ها (~۸ مورد) — پاکسازی
 - [ ] **BUG-104** 🟢 npm audit: deepmerge-ts/js-yaml/sharp (high) + prismjs/uuid (moderate) — `npm audit fix` محتاط + رگرسیون
-- [ ] **BUG-105** 🟢 `dl:remove` فایل `.part` را یتیم می‌گذارد. `downloads.cjs:593-601`
+- [x] **BUG-105** 🟢 `dl:remove` فایل `.part` را یتیم می‌گذارد. `downloads.cjs:593-601`
 - [ ] **BUG-106** 🟢 `writeState` غیراتمیک (خرابی = گم شدن کل صف). `downloads.cjs:56-63`
 - [ ] **BUG-107** 🟢 pip: saveBounds آخرین windowی ساخته‌شده را ذخیره می‌کند نه آخرین جابه‌جاشده. `pip.cjs:55-66`
 - [ ] **BUG-108** 🟢 pip: bounds بدون x/y → NaN → کرش سازنده. `pip.cjs:45-53`
@@ -166,16 +168,16 @@
 - [ ] **BUG-111** 🟢 `loadURL` بدون catch/ریتری. `main.cjs:1050`
 - [ ] **BUG-112** 🟢 `install-update` بدون چک downloaded → throw. `main.cjs:1575-1579`
 - [ ] **BUG-113** 🟢 reaper: الگوی `server.js` خیلی باز (kill پروسه‌ی بیگناه). `main.cjs:290-327`
-- [ ] **BUG-114** 🟢 `/subs` بدون گارد empty-target (SubStore("") زباله). `stream-proxy.cjs:1168-1169`
+- [x] **BUG-114** 🟢 `/subs` بدون گارد empty-target (SubStore("") زباله). `stream-proxy.cjs:1168-1169`
 - [ ] **BUG-115** 🟢 copyFileSync 150MB روی main thread (فریز UI). `main.cjs:1334`
-- [ ] **BUG-116** 🟢 `will-change` روی paint props بی‌اثر. `globals.css:557`
+- [x] **BUG-116** 🟢 `will-change` روی paint props بی‌اثر. `globals.css:557`
 - [ ] **BUG-117** 🟢 tailwind.config.ts در v4 مرده است (بدون @config) — حذف یا سیم‌کشی. `tailwind.config.ts`
 - [ ] **BUG-118** 🟢 `.gitignore`: `build/` انکرنشده سایه می‌اندازد. `.gitignore:131-142`
 - [ ] **BUG-120** 🟢 اسکریپت‌های POSIX-only (`NODE_ENV=... start`) در ویندوز می‌شکنند. `package.json`
 - [ ] **BUG-121** 🟢 gradle cache key ناقص + fallback APK unsigned کرش می‌کند. `desktop.yml:240-273` + `ci.yml:75-82`
 - [ ] **BUG-122** 🟢 mkv-web: پروب forced کش نمی‌شود/کش کهنه باطل نمی‌شود. `mkv-web.ts:1086-1131`
 - [ ] **BUG-123** 🟢 PipClient حجم 0 را رد می‌کند (عدم هم‌ترازی با فیکس B-10). `PipClient.tsx:203-211`
-- [ ] **BUG-124** 🟢 ReviewForm بدون catch (شکست بی‌صدا). `ReviewForm.tsx:24-38`
+- [x] **BUG-124** 🟢 ReviewForm بدون catch (شکست بی‌صدا). `ReviewForm.tsx:24-38`
 - [ ] **BUG-125** 🟢 search page/ListCalendar بدون catch → اسپینر ابدی. `search/page.tsx:38-50`
 - [ ] **BUG-126** 🟢 use-toast: تأخیر حذف 1000000ms + دو سیستم توست موازی. `use-toast.ts:12`
 - [ ] **BUG-127** 🟢 وزن‌های فونت: 600=Bold (SemiBold غایب). `globals.css:14-17`

@@ -90,7 +90,7 @@ function VipAmbient() {
       {/* sink everything into the blackness at the edges */}
       <div
         className="absolute inset-0"
-        style={{ background: "radial-gradient(120% 95% at 50% 38%, transparent 42%, rgba(7, 7, 11, 0.9) 100%)" }}
+        style={{ background: "radial-gradient(120% 95% at 50% 38%, transparent 42%, color-mix(in srgb, var(--color-ink) 90%, transparent) 100%)" }}
       />
     </div>
   );

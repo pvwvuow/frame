@@ -296,7 +296,7 @@ export default function Player() {
       return;
     }
     if (s.pipOpen && onWatch) navigateAwayFromWatch();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [pathname]);
 
   const save = useCallback(
@@ -914,7 +914,7 @@ export default function Player() {
     }
     if (cst.hostPlaying && v.paused) void v.play().catch(() => {});
     else if (!cst.hostPlaying && !v.paused) v.pause();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [open, cin.status, cin.hostAt, contentKey]);
 
   // GUEST: content the host switches to is followed automatically
@@ -935,7 +935,7 @@ export default function Player() {
     cinResumeRef.current = contentKey;
     const st = useCinema.getState();
     if (st.status === "idle") void st.resume(selfId.name || profile.displayName || "کاربر");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [open, activeSrc, contentKey]);
 
   if (!open) return null;

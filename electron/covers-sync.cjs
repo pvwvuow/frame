@@ -72,6 +72,10 @@ async function netFetch(url, opts = {}, timeoutMs = API_TIMEOUT_MS) {
   const res = await ctx.netFetch(url, {
     headers: { "User-Agent": "Frame-CoversSync", ...(opts.headers || {}) },
     ...opts,
+    // BUG-076 — the timeout parameter was silently dropped: a hung coverpack
+    // download or merge POST kept `running` true forever and refused every
+    // future sync until app restart.
+    signal: AbortSignal.timeout(timeoutMs),
   });
   return res;
 }

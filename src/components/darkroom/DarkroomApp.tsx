@@ -1,6 +1,6 @@
 "use client";
 
-/* eslint-disable @next/next/no-img-element */
+ 
 /**
  * تاریکخانه (Darkroom) — share-card generator.
  * Minimal professional workshop: flat hairline sections, quiet inputs,
@@ -128,7 +128,7 @@ export default function DarkroomApp({
 
   useEffect(() => {
     setHandle((h) => h || defaultHandle);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [defaultHandle]);
 
   /* ---------------- scale observer ---------------- */
@@ -172,15 +172,23 @@ export default function DarkroomApp({
       return;
     }
     setSearching(true);
+    // BUG-087 — an AbortController per query: without it a slow earlier
+    // request overwrote the results of a newer term (out-of-order wins).
+    const ac = new AbortController();
     const tm = setTimeout(() => {
-      fetch(`/api/darkroom/search?q=${encodeURIComponent(term)}`)
+      fetch(`/api/darkroom/search?q=${encodeURIComponent(term)}`, { signal: ac.signal })
         .then((r) => (r.ok ? r.json() : []))
         .then((rows: DrTitle[]) => setResults(rows))
-        .catch(() => setResults([]))
-        .finally(() => setSearching(false));
+        .catch(() => {
+          if (!ac.signal.aborted) setResults([]);
+        })
+        .finally(() => {
+          if (!ac.signal.aborted) setSearching(false);
+        });
     }, 280);
     return () => {
       clearTimeout(tm);
+      ac.abort();
       setSearching(false);
     };
   }, [q]);

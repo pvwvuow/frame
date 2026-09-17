@@ -94,7 +94,7 @@ export default function NotificationList({ items }: { items: Notification[] }) {
                 {!isRead && <span className="absolute end-3 top-3 h-2 w-2 rounded-full bg-brand shadow-[0_0_10px_var(--color-brand-glow)]" aria-label="خوانده‌نشده" />}
                 <Link href={n.href} onClick={() => !isRead && markRead(n.id)} className="flex min-w-0 flex-1 items-start gap-3">
                   {n.image ? (
-                    // eslint-disable-next-line @next/next/no-img-element
+                     
                     <img src={n.image} alt="" loading="lazy" decoding="async" className="h-16 w-16 shrink-0 rounded-xl bg-ink-700 object-cover" />
                   ) : (
                     <span className={`grid h-16 w-16 shrink-0 place-items-center rounded-xl ${k.tint}`}>

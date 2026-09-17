@@ -153,7 +153,7 @@ function HomeGhosts() {
           against the viewport border (they sit BEHIND z-10 content) */}
       <div
         className="absolute inset-0"
-        style={{ background: "radial-gradient(130% 100% at 50% 42%, transparent 48%, rgba(7, 7, 11, 0.85) 100%)" }}
+        style={{ background: "radial-gradient(130% 100% at 50% 42%, transparent 48%, color-mix(in srgb, var(--color-ink) 85%, transparent) 100%)" }}
       />
     </div>
   );

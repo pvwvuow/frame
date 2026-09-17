@@ -229,7 +229,7 @@ export default function CollectionsPage() {
             >
               <div className="absolute inset-0 grid grid-cols-3 opacity-60 transition duration-700 group-hover:scale-105">
                 {c.items.slice(0, 3).map((t) => (
-                  // eslint-disable-next-line @next/next/no-img-element
+                   
                   <img key={t.id} src={t.poster} alt="" className="h-full w-full object-cover" />
                 ))}
               </div>

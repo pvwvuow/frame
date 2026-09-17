@@ -74,6 +74,9 @@ if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = db;
 let schemaPromise: Promise<void> | null = null;
 
 const RUNTIME_DDL: string[] = [
+  /* BUG-075 — hot-path indexes (name sort + ordered episode fetch); idempotent */
+  `CREATE INDEX IF NOT EXISTS "Title_title_idx" ON "Title"("title" ASC)`,
+  `CREATE INDEX IF NOT EXISTS "Episode_titleId_season_number_idx" ON "Episode"("titleId" ASC, "season" ASC, "number" ASC)`,
   `CREATE TABLE IF NOT EXISTS "UserCollection" (
   "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   "userKey" TEXT NOT NULL,

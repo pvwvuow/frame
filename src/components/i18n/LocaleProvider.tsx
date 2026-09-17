@@ -71,7 +71,7 @@ export default function LocaleProvider({ initial, children }: { initial: Locale;
       /* private mode */
     }
     // mount-only by design (initial is the server-resolved locale)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, []);
 
   useEffect(() => {

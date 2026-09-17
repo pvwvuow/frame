@@ -172,10 +172,10 @@ async function handleX(req: Request, ctx: { params: Promise<{ path: string[] }> 
           format: "frame-lite",
           // A-25 — length alone collides between different catalogs; the
           // newest add-date adds a cheap identity dimension.
-          version: `db-${rows.length}-${Math.max(...rows.map((r) => {
-            const ms = r.createdAt instanceof Date ? r.createdAt.getTime() : Date.parse(String(r.createdAt ?? ""));
-            return Number.isFinite(ms) ? ms : 0;
-          }), 0)}`,
+          version: `db-${rows.length}-${rows.reduce((mx, r) => {
+              const ms = r.createdAt instanceof Date ? r.createdAt.getTime() : Date.parse(String(r.createdAt ?? ""));
+              return Number.isFinite(ms) && ms > mx ? ms : mx;
+            }, 0)}`,
           generatedAt: new Date().toISOString(),
           counts: { titles: rows.length, movies, series: rows.length - movies, episodes: 0 },
           shardSize: 0,

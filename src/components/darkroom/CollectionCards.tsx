@@ -1,6 +1,6 @@
 "use client";
 
-/* eslint-disable @next/next/no-img-element */
+ 
 /**
  * Darkroom COLLECTION share cards — 6 structures × 2 formats (post 1080²,
  * story 1080×1920). Same editorial system as the movie cards (hairlines,

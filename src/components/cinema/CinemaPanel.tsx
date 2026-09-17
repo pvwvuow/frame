@@ -215,7 +215,7 @@ function MemberList({ hostUid }: { hostUid: string }) {
         {members.map((m) => (
           <li key={m.uid} className="flex items-center gap-2.5 rounded-xl bg-white/[0.04] px-3 py-2">
             {m.avatar ? (
-              // eslint-disable-next-line @next/next/no-img-element
+               
               <img src={m.avatar} alt="" className="h-7 w-7 shrink-0 rounded-full object-cover ring-1 ring-white/15" />
             ) : (
               <span

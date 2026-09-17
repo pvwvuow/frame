@@ -73,7 +73,7 @@ export default function CatalogGate({ children }: { children: React.ReactNode })
 
   if (error) {
     return (
-      <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center gap-4 bg-[#070709] px-8 text-center" dir="rtl">
+      <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center gap-4 bg-ink px-8 text-center" dir="rtl">
         <img src="/app-icon.png" alt="فریم" className="h-14 w-14 select-none rounded-2xl opacity-80" draggable={false} />
         <p className="text-base font-bold text-white">خطا در آماده‌سازی آرشیو</p>
         <p className="max-w-sm text-sm leading-7 text-white/50">بارگیری کاتالوگ ممکن نشد؛ اتصال اینترنت را بررسی کنید.</p>
@@ -92,7 +92,7 @@ export default function CatalogGate({ children }: { children: React.ReactNode })
        breathing icon + hairline progress + whisper-quiet phase text */
     const pct = progress && progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : null;
     return (
-      <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-[#070709] px-10" dir="rtl">
+      <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-ink px-10" dir="rtl">
         <img
           src="/app-icon.png"
           alt="فریم"

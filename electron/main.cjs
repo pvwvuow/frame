@@ -1416,7 +1416,9 @@ function armUpdaterCacheFromDisk(platform = process.platform) {
   try {
     if (updaterCacheState().installer > 0) return; // already armed
     const fsp = require("node:fs");
-    const want = `Frame-${app.getVersion()}-win-x64-setup.exe`;
+    // BUG-079b — the artifact name carries the REAL arch (arm64 builds were
+    // scanned as x64 and never armed → permanent full downloads there)
+    const want = `Frame-${app.getVersion()}-win-${process.arch}-setup.exe`;
     const dirs = new Set();
     for (const key of ["home", "desktop", "documents"]) {
       try { dirs.add(app.getPath(key)); } catch { /* profile without it */ }
@@ -1502,6 +1504,10 @@ function setupUpdater() {
         percent: p.percent,
         transferred: p.transferred,
         total: p.total,
+        // BUG-079 — the delta/full mode now rides EVERY progress event: a
+        // silent delta→full fallback is visible instead of looking like a
+        // stuck/partial download
+        mode: deltaMode,
       }));
     autoUpdater.on("update-downloaded", (i) => {
       seedUpdaterCache(i);
