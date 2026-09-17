@@ -68,18 +68,33 @@ fs.copyFileSync(stubSeed, path.join(TMP, "seed.stub.mjs"));
 const { pathToFileURL } = await import("node:url");
 const m = await import(pathToFileURL(modFile).href + `?v=${Date.now()}`);
 
+const version = JSON.parse(fs.readFileSync(path.join(CAT, "version.json"), "utf8"));
+const EXP = { titles: version.counts.titles, episodes: version.counts.episodes };
+// f2m part carries its own advertised title count — fall back to counting
+const f2mFile = version.parts[0]?.file ?? "catalog-f2m.json";
+const f2mExpected =
+  version.parts[0]?.titles ??
+  (() => {
+    try {
+      const part = JSON.parse(fs.readFileSync(path.join(CAT, f2mFile), "utf8"));
+      return Array.isArray(part.titles) ? part.titles.length : Object.keys(part.titles ?? {}).length;
+    } catch {
+      return 0;
+    }
+  })();
+
 console.log("== E2E split-catalog sync ==");
 const r = await m.syncCatalogOnce(`http://127.0.0.1:${PORT}/catalog-core.json`);
 check("sync ok", r.ok === true && !r.skipped, JSON.stringify(r));
-check("union merged (20385 titles)", r.titles === 20385, `titles=${r.titles}`);
-check("episodes total 120530", r.episodes === 120530, `episodes=${r.episodes}`);
+check(`union merged (${EXP.titles} titles)`, r.titles === EXP.titles, `titles=${r.titles}`);
+check(`episodes total ${EXP.episodes}`, r.episodes === EXP.episodes, `episodes=${r.episodes}`);
 
 const db = new PrismaClient({ datasources: { db: { url: "file:" + scratch } } });
 const total = await db.title.count();
 const f2m = await db.title.count({ where: { source: "f2m" } });
 const od = await db.title.count({ where: { source: "od" } });
-check("db title count 20385", total === 20385, `count=${total}`);
-check("f2m titles created 5401", f2m === 5401, `f2m=${f2m}`);
+check(`db title count ${EXP.titles}`, total === EXP.titles, `count=${total}`);
+check(`f2m titles created (part file)`, f2m === f2mExpected, `f2m=${f2m}`);
 check("od titles intact", od === 14983 || od === 14984, `od=${od}`);
 
 // sources survival: an od movie with merged f2m links must keep BOTH
@@ -93,7 +108,6 @@ check("movie has od+f2m links", srcList.some((s) => s.url.includes("aparatchi"))
 check("movie sources carry variant labels", srcList.every((s) => typeof s.v === "string" && s.q));
 
 // stored hash must be partsSha256
-const version = JSON.parse(fs.readFileSync(path.join(CAT, "version.json"), "utf8"));
 const stored = await db.syncState.findUnique({ where: { key: "catalog.hash" } });
 check("stored hash == partsSha256", stored?.value === version.partsSha256, `${stored?.value?.slice(0, 12)} vs ${version.partsSha256?.slice(0, 12)}`);
 
