@@ -212,7 +212,10 @@ try {
 console.log("\n[4] armUpdaterCacheFromDisk arms the differential cache from the local setup");
 const cacheDir = path.join(process.env.LOCALAPPDATA || "", "frame-updater");
 const cacheInstaller = path.join(cacheDir, "installer.exe");
-const setupName = `Frame-0.10.2-test-win-x64-setup.exe`; // app.getVersion() in the stub
+// BUG-079b — the scan now matches the REAL artifact name, which carries the
+// RUNNING process arch (arm64 Windows installs scan for arm64 too). The
+// fixture must use the same arch the test process reports.
+const setupName = `Frame-0.10.2-test-win-${process.arch}-setup.exe`; // app.getVersion() in the stub
 const rmCache = () => {
   for (const f of [cacheInstaller, cacheInstaller + ".tmp"]) {
     try { fs.rmSync(f, { force: true }); } catch { /* ignore */ }
