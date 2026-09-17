@@ -148,9 +148,16 @@ jobs:
       - name: Cache Electron / electron-builder downloads
         uses: actions/cache@v4
         with:
+          # v0.42.6 — the old list only covered LINUX cache dirs: windows
+          # (%LOCALAPPDATA%) and mac (~/Library/Caches) re-downloaded the
+          # ~110MB Electron zip + nsis/winCodeSign/dmg tools on EVERY build.
           path: |
             ~/.cache/electron
             ~/.cache/electron-builder
+            ~/AppData/Local/electron/Cache
+            ~/AppData/Local/electron-builder/Cache
+            ~/Library/Caches/electron
+            ~/Library/Caches/electron-builder
           key: electron-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
           restore-keys: electron-${{ runner.os }}-
 

@@ -24,10 +24,20 @@ afterPack: scripts/electron-after-pack.cjs
 npmRebuild: false
 nodeGypRebuild: false
 # v0.38.1 — update smallness: the installer payload is dominated by the
-# Electron runtime, so (a) lzma -mx=9 and (b) ship only the en-US locale
-# (~45 unused .pak locale files dropped ≈ 25MB unpacked). The app UI is the
-# web surface (fully Persian); Electron's own dialogs were already English-only.
-compression: maximum
+# Electron runtime, so (b) ship only the en-US locale (~45 unused .pak locale
+# files dropped ≈ 25MB unpacked). The app UI is the web surface (fully
+# Persian); Electron's own dialogs were already English-only.
+#
+# v0.42.6 — compression maximum → normal. MEASURED on the v0.42.5 release
+# (user-reported pain: «بیلد نباید انقد طول بکشد»): the windows job spent
+# 36.9m in Build & publish — NSIS LZMA ultra (-mx=9) over the ~220MB payload
+# × 2 targets (setup + portable) on a 2-core windows runner — while ubuntu
+# packaged the identical payload in 4.7m and mac in 7.3m. maximum bought a
+# ~15% smaller installer for +30 minutes of wall clock on EVERY release.
+# normal still yields working blockmaps (delta updates ride the EPOCH-stamped
+# mtimes from afterPack, not the compression preset) — the win job lands
+# ~10-12m and the whole release drops from ~45m to ~15m.
+compression: normal
 electronLanguages:
   - en-US
 publish:
