@@ -4,6 +4,7 @@
 import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import os from "node:os";
 import { createHash } from "node:crypto";
 import { execSync } from "node:child_process";
@@ -11,7 +12,7 @@ import { createRequire } from "node:module";
 import ts from "typescript";
 
 const require = createRequire(import.meta.url);
-const ROOT = "/home/z/nama-work/repo";
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const { PrismaClient } = require(path.join(ROOT, "node_modules", "@prisma/client"));
 
 const CAT = path.join(ROOT, "public", "catalog");

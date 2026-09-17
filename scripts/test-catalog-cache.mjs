@@ -20,11 +20,11 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { execSync } from "node:child_process";
 import { createRequire } from "node:module";
-import { pathToFileURL } from "node:url";
+import { pathToFileURL, fileURLToPath } from "node:url";
 import ts from "typescript";
 
 const require = createRequire(import.meta.url);
-const ROOT = "/home/z/nama-work/repo";
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const { PrismaClient } = require(path.join(ROOT, "node_modules", "@prisma/client"));
 
 const TMP = path.join(ROOT, ".tmp-cache-test");
