@@ -47,6 +47,11 @@ jobs:
         shell: bash
         env:
           FORCE: ${{ github.event.inputs.force }}
+          # v0.42.5 hotfix — the self-heal `gh workflow run` in this step ran
+          # UNAUTHENTICATED (v0.42.5 dispatch attempt: 3 fails → warning → tag
+          # deadlock again, manually unblocked via PAT). gh needs GH_TOKEN in
+          # THIS step's env; the job-level permissions alone are not enough.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           VERSION=$(node -p "require('./package.json').version")
