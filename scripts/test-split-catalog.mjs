@@ -104,7 +104,7 @@ const t = await db.title.findFirst({
 });
 const srcList = JSON.parse(t?.sources || "[]");
 check("movie sources survived (array→string fix)", srcList.length >= 10, `n=${srcList.length}`);
-check("movie has od+f2m links", srcList.some((s) => s.url.includes("aparatchi")) && srcList.some((s) => s.url.includes("abrtech")));
+check("movie has od+f2m links", srcList.some((s) => s.url.includes("aparatchi") || s.url.includes("varzeshha3-uploader")) && srcList.some((s) => s.url.includes("abrtech")));
 check("movie sources carry variant labels", srcList.every((s) => typeof s.v === "string" && s.q));
 
 // stored hash must be partsSha256
