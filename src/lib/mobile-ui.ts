@@ -88,15 +88,43 @@ export async function unlockOrientation(): Promise<void> {
 }
 
 /** Fullscreen helpers — transient activation may be missing right after a
- *  route change, so callers must handle rejection (fall back to portrait). */
+ *  route change, so callers must handle rejection (fall back to portrait).
+ *
+ *  v0.43.0 — Android WebView (Capacitor) rejects requestFullscreen() on
+ *  ordinary DIVs (only <video> custom views are honored there), which is the
+ *  whole «ویدیو در موبایل فول‌اسکرین نمی‌شود» class. The helper now also
+ *  tries the webkit-prefixed variant (iOS Safari) and reports an honest
+ *  boolean; the PLAYER decides the virtual-fullscreen fallback (PlayerMobile
+ *  promotes its fixed inset-0 wrapper itself — see enterLandscape). */
+type FsElement = HTMLElement & {
+  webkitRequestFullscreen?: () => Promise<void> | void;
+};
+
+export function fullscreenSupported(el: HTMLElement | null): boolean {
+  if (!el) return false;
+  return typeof el.requestFullscreen === "function" || typeof (el as FsElement).webkitRequestFullscreen === "function";
+}
+
 export async function enterFullscreen(el: HTMLElement | null): Promise<boolean> {
-  if (!el?.requestFullscreen) return false;
+  if (!el) return false;
   try {
-    await el.requestFullscreen();
-    return true;
+    if (typeof el.requestFullscreen === "function") {
+      await el.requestFullscreen();
+      return true;
+    }
   } catch {
-    return false;
+    /* fall through to the prefixed variant */
   }
+  try {
+    const wk = (el as FsElement).webkitRequestFullscreen;
+    if (typeof wk === "function") {
+      await wk.call(el);
+      return true;
+    }
+  } catch {
+    /* refused — caller decides the fallback */
+  }
+  return false;
 }
 
 export async function exitFullscreen(): Promise<void> {

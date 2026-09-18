@@ -34,6 +34,23 @@
  *   fullscreen → hardware back exits to portrait; portrait → back closes
  *   the player (progress saved). All system helpers degrade to no-ops on
  *   desktop/Electron (src/lib/mobile-ui.ts).
+ *
+ * v0.43.0 — «پلیر حرفه‌ای» rework:
+ *  - the landscape bottom bar carried 13 controls (quality, volume, speed,
+ *    subtitles, zoom, sleep, settings, lock, exit-fs …) — unwieldy on small
+ *    screens and UNREACHABLE in portrait. Everything secondary now lives in
+ *    one ⋮ (three-dot) menu sheet; the bar keeps only play / ±seek / time /
+ *    quality / mute / ⋮, and the portrait strip keeps ⋮ + fullscreen.
+ *  - REAL fullscreen on the Android WebView: requestFullscreen() on a DIV is
+ *    rejected there (and screen.orientation.lock needs it), so a refusal no
+ *    longer ends in «حالت تمام‌صفحه در دسترس نیست» — the wrapper (already
+ *    fixed inset-0) is promoted to the landscape presentation virtually and
+ *    the native layer hides the system bars + locks orientation
+ *    (NamaNative.setImmersive / setOrientation, nativeRev 13). Plain mobile
+ *    browsers keep the standard Fullscreen API path (incl. webkit prefix).
+ *  - hardware back inside the (virtual) fullscreen now exits to portrait
+ *    first — closing the player needs a second back, matching the doc'd
+ *    contract.
  */
 import Link from "next/link";
 import { flushProgressOne, markProfilePlaybackTouched, pushProgressOne } from "@/lib/cloud";
@@ -69,7 +86,7 @@ import { ensurePlayableAudio } from "@/lib/audio-guard";
 import { preferredSourceIdx, qualityPrefIdx, rememberedVariantIdx, rememberVariantPref, variantShort } from "@/lib/variant";
 import { setQualityPref } from "@/lib/quality-pref";
 import { titleHref, watchHref } from "@/lib/mobile-links";
-import { isLocalFile, localFilePath, nativeBridge, probeNativeBridge, getInstallInfo } from "@/lib/native-bridge";
+import { isAndroidNative, isLocalFile, localFilePath, nativeBridge, probeNativeBridge, getInstallInfo, nativeImmersive, nativeOrientation } from "@/lib/native-bridge";
 import { resolveOwner, shouldLadderAdvance, isLadderExhausted, isDuplicateNotice, metaWatchdogMs, preflightDecision, nextWebIdxSkippingNative, type PlaybackOwner } from "@/lib/mobile-playback";
 import { getPlayerEngine, setPlayerEngine, type PlayerEngine } from "@/lib/player-prefs";
 import { useCinema, cinemaTargetPosition, setCinemaFollowHandler, type CinemaBeat } from "@/lib/cinema";
@@ -121,7 +138,7 @@ const SUB_ON_KEY = "nama-sub-on";
 const VOL_KEY = "nama-volume";
 const MUTED_KEY = "nama-muted";
 
-type SheetKind = null | "quality" | "speed" | "subs" | "episodes" | "sleep" | "settings";
+type SheetKind = null | "quality" | "speed" | "subs" | "episodes" | "sleep" | "settings" | "more";
 type Ripple = { id: number; x: number; dir: -1 | 1 };
 
 export default function PlayerMobile() {
@@ -1555,24 +1572,62 @@ export default function PlayerMobile() {
   }, [open, activeSrc, contentKey]);
 
   // ---- fullscreen-first + rotation ------------------------------------------
+  // v0.43.0 — requestFullscreen() on a DIV is REJECTED by the Android WebView
+  // (Capacitor) and screen.orientation.lock() refuses to work without real
+  // HTML fullscreen — the exact «ویدیو در موبایل فول‌اسکرین نمی‌شود» report.
+  // A refusal is no longer a dead end: the wrapper is ALREADY fixed inset-0
+  // over the whole app, so on the Android app it is promoted to the landscape
+  // presentation virtually (virtualFsRef) while the native layer hides the
+  // system bars + locks the orientation (setImmersive/setOrientation —
+  // fire-and-forget no-ops on browsers and older APKs). Plain mobile browsers
+  // keep the standard Fullscreen API path (webkit prefix included).
+  const virtualFsRef = useRef(false);
+  const modeRef = useRef<"portrait" | "landscape">("portrait");
+  useEffect(() => {
+    modeRef.current = mode;
+  }, [mode]);
+  const orientLockRef = useRef<OrientLock>("auto");
+  useEffect(() => {
+    orientLockRef.current = orientLock;
+  }, [orientLock]);
+
+  const promoteLandscape = useCallback(() => {
+    // virtual fullscreen — cover the viewport now; the wrapper never changes,
+    // only the presentation mode and the system-UI layer around it.
+    virtualFsRef.current = true;
+    setMode("landscape");
+    void nativeImmersive(true);
+    void nativeOrientation("landscape");
+  }, []);
+
   const enterLandscape = useCallback(async () => {
     haptic();
     bumpUi();
+    setSheet(null);
     const ok = await enterFullscreen(wrapRef.current);
-    if (!ok) {
-      // B-9: a refusal must not be silent — the helpers swallow the rejection
-      showNotice("حالت تمام‌صفحه در دسترس نیست");
-      return;
+    if (ok) {
+      virtualFsRef.current = false;
+      void nativeImmersive(true); // harmless in browsers (no bridge)
+    } else {
+      promoteLandscape();
     }
     // v0.18.0 — the «قفل جهت» setting governs the fullscreen orientation
-    if (orientLock === "portrait") void lockPortrait();
-    else void lockLandscape(); // auto (sensor landscape) + forced landscape
-  }, [bumpUi, orientLock, showNotice]);
+    if (orientLock === "portrait") {
+      void lockPortrait();
+      void nativeOrientation("portrait");
+    } else {
+      void lockLandscape(); // auto (sensor landscape) + forced landscape
+      void nativeOrientation("landscape");
+    }
+  }, [bumpUi, orientLock, promoteLandscape]);
 
   const exitToPortrait = useCallback(async () => {
     haptic();
+    virtualFsRef.current = false;
     await exitFullscreen();
     await unlockOrientation();
+    void nativeImmersive(false);
+    void nativeOrientation("auto");
     setMode("portrait");
     bumpUi();
   }, [bumpUi]);
@@ -1580,31 +1635,89 @@ export default function PlayerMobile() {
   useEffect(() => {
     const onFs = () => {
       const fs = !!document.fullscreenElement;
-      setMode(fs ? "landscape" : "portrait");
-      if (!fs) void unlockOrientation();
+      if (fs) {
+        virtualFsRef.current = false;
+        setMode("landscape");
+      } else if (!virtualFsRef.current) {
+        // a REAL fullscreen just ended (browser gesture / another element);
+        // virtual fullscreen never fires this event at all.
+        setMode("portrait");
+        void unlockOrientation();
+        void nativeImmersive(false);
+        void nativeOrientation("auto");
+      }
     };
     document.addEventListener("fullscreenchange", onFs);
     return () => document.removeEventListener("fullscreenchange", onFs);
   }, []);
 
   // opening playback is (almost always) still inside the tap's transient
-  // activation window → try fullscreen immediately; refusal falls back to
-  // the portrait strip silently (the expand button is one tap away)
+  // activation window → try fullscreen immediately. Browsers: a refusal falls
+  // back to the portrait strip silently (the expand button is one tap away).
+  // The Android app: a refusal (always — WebView) promotes the virtual
+  // fullscreen ONLY when the phone is already held landscape (Netflix-style
+  // open); portrait opens keep the strip — expand + rotation still work.
   useEffect(() => {
     if (open && !wasOpenRef.current) {
       void enterFullscreen(wrapRef.current).then((ok) => {
-        if (ok) void lockLandscape();
+        if (ok) {
+          virtualFsRef.current = false;
+          void lockLandscape();
+        } else if (isAndroidNative() && usePlayerStore.getState().open && orientLockRef.current !== "portrait") {
+          if (window.matchMedia("(orientation: landscape)").matches) promoteLandscape();
+        }
       });
     }
     if (!open) wasOpenRef.current = false;
     else wasOpenRef.current = true;
-  }, [open]);
+  }, [open, promoteLandscape]);
+
+  // v0.43.0 — rotate-to-fullscreen (the YouTube/Netflix contract): on the
+  // Android app the WebView follows the sensor, so a physical rotation while
+  // the strip is open IS the user asking for fullscreen — and rotating back
+  // returns to the strip. Browsers already get the real Fullscreen API path;
+  // «قفل جهت = پرتره», the screen lock, fatal/ended/native states and the
+  // cinema-guest mirror all opt out. Guards ride a ref snapshot (no stale
+  // closures); orientation itself is enforced natively (setOrientation).
+  const rotGuardRef = useRef({ locked: false, fatal: false, ended: false, nativeActive: false, guest: false });
+  useEffect(() => {
+    rotGuardRef.current = { locked, fatal, ended, nativeActive, guest: guestLock };
+  }, [locked, fatal, ended, nativeActive, guestLock]);
+  useEffect(() => {
+    if (!open || !isAndroidNative()) return;
+    const mq = window.matchMedia("(orientation: landscape)");
+    const onChange = () => {
+      if (!usePlayerStore.getState().open) return;
+      if (mq.matches) {
+        if (orientLockRef.current === "portrait" || modeRef.current !== "portrait") return;
+        const g = rotGuardRef.current;
+        if (g.locked || g.fatal || g.ended || g.nativeActive || g.guest) return;
+        promoteLandscape();
+      } else {
+        // only the VIRTUAL landscape can see this event — the native
+        // orientation lock on new APKs (and real browser fullscreen)
+        // physically prevents the portrait rotation
+        if (modeRef.current !== "landscape" || !virtualFsRef.current) return;
+        if (orientLockRef.current === "landscape") return;
+        void exitToPortrait();
+      }
+    };
+    if (typeof mq.addEventListener === "function") mq.addEventListener("change", onChange);
+    else mq.addListener?.(onChange);
+    return () => {
+      if (typeof mq.removeEventListener === "function") mq.removeEventListener("change", onChange);
+      else mq.removeListener?.(onChange);
+    };
+  }, [open, promoteLandscape, exitToPortrait]);
 
   // closing the player must never leave fs/locks/wakelock dangling
   useEffect(() => {
     if (open) return;
     void exitFullscreen();
     void unlockOrientation();
+    void nativeImmersive(false);
+    void nativeOrientation("auto");
+    virtualFsRef.current = false;
     void releaseWakeLock();
     setSheet(null);
     setShowCinema(false);
@@ -1616,11 +1729,20 @@ export default function PlayerMobile() {
   // fullscreen → the browser consumes back to exit fullscreen (portrait);
   // portrait → popstate closes the player, progress saved. If we land back on
   // a bare /watch entry we leave it for the title page (desktop parity).
+  // v0.43.0 — VIRTUAL fullscreen has no browser to consume the back: the
+  // first back now exits to portrait (a guard entry is re-pushed so the
+  // contract stays «back again closes the player»), matching what real
+  // fullscreen got for free.
   useEffect(() => {
     if (!open) return;
     const onPop = () => {
       const st = usePlayerStore.getState();
       if (!st.open) return;
+      if (modeRef.current === "landscape") {
+        window.history.pushState({ namaPlayerFs: 1 }, "");
+        void exitToPortrait();
+        return;
+      }
       const v = videoRef.current;
       if (v && v.duration) save(v.currentTime, v.duration);
       try {
@@ -1640,7 +1762,7 @@ export default function PlayerMobile() {
     };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
-  }, [open, router, save]);
+  }, [open, router, save, exitToPortrait]);
 
   // ---- wake lock: the screen stays on while playing -------------------------
   useEffect(() => {
@@ -2421,7 +2543,13 @@ export default function PlayerMobile() {
                 aria-label="پیشرفت"
               />
             </div>
-            <div className="mt-1 flex flex-wrap items-center gap-y-1 gap-x-1.5">
+            {/* v0.43.0 — the 13-control bar is gone: play / ±seek / time on
+                one side, quality / mute / ⋮ on the other. Everything else
+                (speed, subtitles, zoom, sleep, episodes, cinema, lock,
+                settings, exit-fs, volume slider) lives in the ⋮ menu sheet —
+                reachable in BOTH orientations, never wrapping into rows that
+                cover the picture. */}
+            <div className="mt-1 flex items-center gap-x-1">
               <button type="button" onClick={togglePlay} className="grid h-12 w-12 place-items-center rounded-full text-white active:bg-white/15" aria-label="پخش/توقف">
                 {playing ? <PauseIcon width={26} height={26} /> : <PlayIcon width={26} height={26} />}
               </button>
@@ -2449,104 +2577,32 @@ export default function PlayerMobile() {
                     {qualityLabel || "عادی"}
                   </button>
                 )}
-                <div className="flex items-center gap-1 rounded-full border border-white/20 bg-white/10 px-2" dir="ltr">
-                  <button type="button" onClick={toggleMute} className="grid h-9 w-8 place-items-center text-white" aria-label="صدا">
-                    {muted || volume === 0 ? <MuteIcon width={18} height={18} /> : <VolumeIcon width={18} height={18} />}
-                  </button>
-                  <input
-                    type="range"
-                    min={0}
-                    max={1}
-                    step={0.05}
-                    value={muted ? 0 : volume}
-                    onChange={(e) => {
-                      setVolume(Number(e.target.value));
-                      setMuted(false);
-                    }}
-                    className="range-input w-16"
-                    aria-label="میزان صدا"
-                  />
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    haptic();
-                    setSheet("speed");
-                  }}
-                  className="flex h-9 items-center rounded-full border border-white/20 bg-white/10 px-2.5 text-[11px] font-black text-white active:bg-white/25"
-                >
-                  {fa(rate)}x
+                <button type="button" onClick={toggleMute} className="grid h-9 w-9 place-items-center rounded-full text-white active:bg-white/15" aria-label="صدا">
+                  {muted || volume === 0 ? <MuteIcon width={19} height={19} /> : <VolumeIcon width={19} height={19} />}
                 </button>
                 <button
                   type="button"
                   onClick={() => {
                     haptic();
-                    setSheet("subs");
+                    setSheet("more");
                   }}
-                  aria-label="زیرنویس"
-                  className={`relative grid h-9 w-9 place-items-center rounded-full border active:bg-white/25 ${subOn && subLoaded ? "border-brand/60 bg-brand/20 text-white" : "border-white/20 bg-white/10 text-white"}`}
-                >
-                  <SubtitleIcon width={16} height={16} />
-                  {subLoaded && subOn && <span className="absolute -top-0.5 end-0 h-2 w-2 rounded-full bg-brand ring-2 ring-black" />}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    haptic();
-                    cycleZoom();
-                  }}
-                  aria-label="چرخه زوم"
-                  className="flex h-9 items-center rounded-full border border-white/20 bg-white/10 px-2.5 text-[11px] font-black text-white active:bg-white/25"
-                >
-                  {zoomMode === "contain" ? "اندازه" : zoomMode === "cover" ? "پر" : "کشیده"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    haptic();
-                    setSheet("sleep");
-                  }}
-                  aria-label="تایمر خواب"
-                  className={`flex h-9 items-center rounded-full border px-2.5 text-[11px] font-black active:bg-white/25 ${sleepLeft !== null || sleepEop ? "border-brand/60 bg-brand/20 text-white" : "border-white/20 bg-white/10 text-white"}`}
-                >
-                  خواب
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    haptic();
-                    setSheet("settings");
-                  }}
-                  aria-label="تنظیمات پلیر"
-                  className="flex h-9 items-center rounded-full border border-white/20 bg-white/10 px-2.5 text-[11px] font-black text-white active:bg-white/25"
-                >
-                  تنظیمات
-                </button>
-                <button
-                  type="button"
-                  onClick={lockPlayer}
-                  aria-label="قفل صفحه"
+                  aria-label="گزینه‌های بیشتر"
                   className="grid h-9 w-9 place-items-center rounded-full border border-white/20 bg-white/10 text-white active:bg-white/25"
                 >
-                  <LockGlyph open={false} />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void exitToPortrait()}
-                  aria-label="خروج از تمام‌صفحه"
-                  className="grid h-9 w-9 place-items-center rounded-full border border-white/20 bg-white/10 text-white active:bg-white/25"
-                >
-                  <RotateGlyph />
+                  <MoreGlyph />
                 </button>
               </div>
             </div>
           </div>
         )}
 
-        {/* bottom controls (portrait strip) — compact: play, time, seekbar */}
+        {/* bottom controls (portrait strip) — compact: play, time, ⋮, fullscreen.
+            v0.43.0 — the ⋮ menu brings EVERY player feature (quality, speed,
+            subs, zoom, sleep, episodes, cinema, lock, settings) into portrait,
+            where the old design simply had no reachable path to them. */}
         {chromeVisible && !isLandscape && (
           <div className="absolute inset-x-0 bottom-0 z-20 bg-gradient-to-t from-black/85 to-transparent px-2 pb-1 pt-6">
-            <div className="flex items-center gap-1.5 px-1">
+            <div className="flex items-center gap-1 px-0.5">
               <button type="button" onClick={togglePlay} className="grid h-10 w-10 place-items-center rounded-full text-white active:bg-white/15" aria-label="پخش/توقف">
                 {playing ? <PauseIcon width={22} height={22} /> : <PlayIcon width={22} height={22} />}
               </button>
@@ -2556,8 +2612,19 @@ export default function PlayerMobile() {
               {netDown && <span className="rounded-full bg-amber-500/20 px-1.5 py-0.5 text-[9px] font-black text-amber-300">آفلاین</span>}
               <button
                 type="button"
-                onClick={() => void enterLandscape()}
+                onClick={() => {
+                  haptic();
+                  setSheet("more");
+                }}
                 className="ms-auto grid h-10 w-10 place-items-center rounded-full text-white active:bg-white/15"
+                aria-label="گزینه‌های بیشتر"
+              >
+                <MoreGlyph />
+              </button>
+              <button
+                type="button"
+                onClick={() => void enterLandscape()}
+                className="grid h-10 w-10 place-items-center rounded-full text-white active:bg-white/15"
                 aria-label="تمام‌صفحه"
               >
                 <FullscreenIcon width={19} height={19} />
@@ -2860,6 +2927,111 @@ export default function PlayerMobile() {
           <div className="absolute inset-0 bg-black/60" onClick={() => setSheet(null)} />
           <div className="absolute inset-x-0 bottom-0 max-h-[70%] overflow-y-auto rounded-t-3xl border-t border-white/10 bg-ink-800/95 px-4 pt-2 backdrop-blur-xl" style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 20px)" }}>
             <div className="mx-auto mb-2 h-1.5 w-12 rounded-full bg-white/25" />
+            {/* v0.43.0 — the ⋮ menu: every secondary control in ONE list with
+                live values (speed, sub state, zoom mode, sleep countdown…).
+                Tap a row → its sheet/behavior; the zoom row cycles in place. */}
+            {sheet === "more" && (
+              <>
+                <p className="mb-2 text-sm font-black text-white">گزینه‌های پخش</p>
+                <ul className="space-y-1 pb-1">
+                  <li className="flex items-center gap-3 rounded-xl bg-white/5 px-3 py-2.5">
+                    <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-white/10 text-zinc-200">
+                      <button type="button" onClick={toggleMute} className="grid place-items-center" aria-label="قطع صدا">
+                        {muted || volume === 0 ? <MuteIcon width={16} height={16} /> : <VolumeIcon width={16} height={16} />}
+                      </button>
+                    </span>
+                    <span className="text-xs font-bold text-zinc-200">صدا</span>
+                    <input
+                      type="range"
+                      min={0}
+                      max={1}
+                      step={0.05}
+                      value={muted ? 0 : volume}
+                      onChange={(e) => {
+                        setVolume(Number(e.target.value));
+                        setMuted(false);
+                      }}
+                      className="range-input ms-auto w-28"
+                      dir="ltr"
+                      aria-label="میزان صدا"
+                    />
+                  </li>
+                  {srcList.length > 1 && (
+                    <MenuRow
+                      icon={<span className="text-[9px] font-black leading-none tracking-wide">HD</span>}
+                      label="کیفیت و نسخه"
+                      value={qualityLabel || "عادی"}
+                      onClick={() => setSheet("quality")}
+                    />
+                  )}
+                  <MenuRow
+                    icon={<SpeedGlyph />}
+                    label="سرعت پخش"
+                    value={`${fa(rate)}×`}
+                    onClick={() => setSheet("speed")}
+                  />
+                  <MenuRow
+                    icon={<SubtitleIcon width={16} height={16} />}
+                    label="زیرنویس"
+                    value={subOn && subLoaded ? "روشن" : "خاموش"}
+                    dot={subOn && subLoaded}
+                    onClick={() => setSheet("subs")}
+                  />
+                  <MenuRow
+                    icon={<CropGlyph />}
+                    label="اندازه تصویر"
+                    value={zoomMode === "contain" ? "اندازه" : zoomMode === "cover" ? "پر" : "کشیده"}
+                    onClick={cycleZoom}
+                  />
+                  <MenuRow
+                    icon={<MoonGlyph />}
+                    label="تایمر خواب"
+                    value={
+                      sleepEop
+                        ? "پایان قسمت"
+                        : sleepLeft !== null
+                          ? `${fa(Math.max(0, Math.floor(sleepLeft / 60)))}:${fa(String(Math.max(0, Math.floor(sleepLeft % 60))).padStart(2, "0"))}`
+                          : undefined
+                    }
+                    active={sleepLeft !== null || sleepEop}
+                    onClick={() => setSheet("sleep")}
+                  />
+                  {episodes.length > 0 && (
+                    <MenuRow icon={<ListGlyph />} label="قسمت‌ها" onClick={() => setSheet("episodes")} />
+                  )}
+                  <MenuRow
+                    icon={<UsersIcon width={16} height={16} />}
+                    label="سینما (تماشای گروهی)"
+                    value={cinActive ? `${fa(cin.members.length)} عضو` : undefined}
+                    active={cinActive}
+                    onClick={() => {
+                      haptic();
+                      setSheet(null);
+                      setShowCinema(true);
+                    }}
+                  />
+                  <MenuRow
+                    icon={<LockGlyph open={false} />}
+                    label="قفل صفحه"
+                    onClick={() => {
+                      setSheet(null);
+                      lockPlayer();
+                    }}
+                  />
+                  <MenuRow icon={<GearGlyph />} label="تنظیمات پلیر" onClick={() => setSheet("settings")} />
+                  {isLandscape && (
+                    <MenuRow
+                      icon={<RotateGlyph />}
+                      label="خروج از تمام‌صفحه"
+                      onClick={() => {
+                        setSheet(null);
+                        void exitToPortrait();
+                      }}
+                    />
+                  )}
+                </ul>
+              </>
+            )}
             {sheet === "quality" && (
               <>
                 <p className="mb-2 text-sm font-black text-white">کیفیت و نسخه</p>
@@ -3314,6 +3486,97 @@ function RotateGlyph() {
       <rect x="7" y="3" width="10" height="18" rx="2" />
       <path d="M3 8a9 9 0 0 1 3-4M21 16a9 9 0 0 1-3 4" />
     </svg>
+  );
+}
+
+/* v0.43.0 — the ⋮ (three-dot) trigger + the glyphs of its menu rows */
+function MoreGlyph() {
+  return (
+    <svg width={18} height={18} viewBox="0 0 24 24" fill="currentColor">
+      <circle cx="12" cy="5" r="1.9" />
+      <circle cx="12" cy="12" r="1.9" />
+      <circle cx="12" cy="19" r="1.9" />
+    </svg>
+  );
+}
+
+function GearGlyph() {
+  return (
+    <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+    </svg>
+  );
+}
+
+function SpeedGlyph() {
+  return (
+    <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polygon points="13 19 22 12 13 5 13 19" />
+      <polygon points="2 19 11 12 2 5 2 19" />
+    </svg>
+  );
+}
+
+function CropGlyph() {
+  return (
+    <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" />
+    </svg>
+  );
+}
+
+function MoonGlyph() {
+  return (
+    <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+    </svg>
+  );
+}
+
+function ListGlyph() {
+  return (
+    <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="8" y1="6" x2="21" y2="6" />
+      <line x1="8" y1="12" x2="21" y2="12" />
+      <line x1="8" y1="18" x2="21" y2="18" />
+      <line x1="3" y1="6" x2="3.01" y2="6" />
+      <line x1="3" y1="12" x2="3.01" y2="12" />
+      <line x1="3" y1="18" x2="3.01" y2="18" />
+    </svg>
+  );
+}
+
+/* v0.43.0 — one row of the ⋮ menu: icon + label + trailing live value */
+function MenuRow({
+  icon,
+  label,
+  value,
+  active,
+  dot,
+  onClick,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value?: string;
+  active?: boolean;
+  dot?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={onClick}
+        className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-xs transition active:bg-white/10 ${active ? "bg-brand/15 text-white" : "text-zinc-300"}`}
+      >
+        <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-full ${active ? "bg-brand/25 text-white" : "bg-white/10 text-zinc-200"}`}>{icon}</span>
+        <span className="flex-1 text-start font-bold">{label}</span>
+        {dot && <span className="h-2 w-2 shrink-0 rounded-full bg-brand" />}
+        {value !== undefined && <span className="shrink-0 text-[11px] font-black tabular-nums text-zinc-400">{value}</span>}
+        <ChevronLeft width={14} height={14} className="shrink-0 text-zinc-500" />
+      </button>
+    </li>
   );
 }
 

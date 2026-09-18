@@ -246,65 +246,19 @@
                 android:layout_height="1dp"
                 android:layout_weight="1" />
 
+            <!-- v0.43.0 — the transport row keeps prev/rewind/forward/next + time;
+                 audio track, subtitles, speed, zoom, sleep timer and screen lock
+                 moved into the ⋮ overflow menu (btn_more) — the old 10-button row
+                 could not fit small landscape screens. -->
             <ImageButton
-                android:id="@+id/btn_audio"
+                android:id="@+id/btn_more"
                 android:layout_width="44dp"
                 android:layout_height="44dp"
                 android:background="?android:attr/selectableItemBackgroundBorderless"
-                android:contentDescription="ترک صدا"
+                android:contentDescription="گزینه‌های بیشتر"
                 android:scaleType="fitCenter"
                 android:padding="10dp"
-                android:src="@drawable/ic_np_audio" />
-
-            <ImageButton
-                android:id="@+id/btn_subs"
-                android:layout_width="44dp"
-                android:layout_height="44dp"
-                android:background="?android:attr/selectableItemBackgroundBorderless"
-                android:contentDescription="زیرنویس"
-                android:scaleType="fitCenter"
-                android:padding="10dp"
-                android:src="@drawable/ic_np_subtitles" />
-
-            <ImageButton
-                android:id="@+id/btn_speed"
-                android:layout_width="44dp"
-                android:layout_height="44dp"
-                android:background="?android:attr/selectableItemBackgroundBorderless"
-                android:contentDescription="سرعت پخش"
-                android:scaleType="fitCenter"
-                android:padding="10dp"
-                android:src="@drawable/ic_np_speed" />
-
-            <ImageButton
-                android:id="@+id/btn_zoom"
-                android:layout_width="44dp"
-                android:layout_height="44dp"
-                android:background="?android:attr/selectableItemBackgroundBorderless"
-                android:contentDescription="زوم"
-                android:scaleType="fitCenter"
-                android:padding="10dp"
-                android:src="@drawable/ic_np_zoom" />
-
-            <ImageButton
-                android:id="@+id/btn_sleep"
-                android:layout_width="44dp"
-                android:layout_height="44dp"
-                android:background="?android:attr/selectableItemBackgroundBorderless"
-                android:contentDescription="تایمر خواب"
-                android:scaleType="fitCenter"
-                android:padding="10dp"
-                android:src="@drawable/ic_np_sleep" />
-
-            <ImageButton
-                android:id="@+id/btn_lock"
-                android:layout_width="44dp"
-                android:layout_height="44dp"
-                android:background="?android:attr/selectableItemBackgroundBorderless"
-                android:contentDescription="قفل صفحه"
-                android:scaleType="fitCenter"
-                android:padding="10dp"
-                android:src="@drawable/ic_np_lock" />
+                android:src="@drawable/ic_np_more" />
         </LinearLayout>
     </LinearLayout>
 

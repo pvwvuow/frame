@@ -768,6 +768,76 @@ public class NamaNativePlugin extends Plugin {
         }
     }
 
+    /* ------------------------------------------------------------------ */
+    /* v0.43.0 — fullscreen support for the WebView player                 */
+    /*                                                                     */
+    /* The Android WebView REJECTS requestFullscreen() on ordinary DIVs    */
+    /* and screen.orientation.lock() refuses without real HTML fullscreen  */
+    /* — so the web player could never cover the system bars nor rotate    */
+    /* the screen (the «ویدیو در موبایل فول‌اسکرین نمی‌شود» report). The    */
+    /* player now falls back to its fixed inset-0 wrapper (virtual         */
+    /* fullscreen) and delegates the system-UI side to these two methods.  */
+    /* Older APKs simply never call them (guarded optional bridge).        */
+    /* ------------------------------------------------------------------ */
+
+    @PluginMethod
+    public void setImmersive(PluginCall call) {
+        Boolean on = call.getBoolean("on");
+        boolean enable = on == null || on;
+        final android.app.Activity activity = bridge.getActivity();
+        if (activity == null) {
+            call.reject("no activity");
+            return;
+        }
+        Runnable r = () -> {
+            try {
+                androidx.core.view.WindowCompat.setDecorFitsSystemWindows(activity.getWindow(), !enable);
+                androidx.core.view.WindowInsetsControllerCompat insets =
+                    new androidx.core.view.WindowInsetsControllerCompat(activity.getWindow(), activity.getWindow().getDecorView());
+                if (enable) {
+                    insets.hide(androidx.core.view.WindowInsetsCompat.Type.systemBars());
+                    insets.setSystemBarsBehavior(
+                        androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+                } else {
+                    insets.show(androidx.core.view.WindowInsetsCompat.Type.systemBars());
+                }
+                JSObject ret = new JSObject();
+                ret.put("ok", true);
+                call.resolve(ret);
+            } catch (Exception e) {
+                call.reject("immersive failed: " + e.getMessage());
+            }
+        };
+        if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) r.run();
+        else activity.runOnUiThread(r);
+    }
+
+    @PluginMethod
+    public void setOrientation(PluginCall call) {
+        String o = call.getString("o");
+        final android.app.Activity activity = bridge.getActivity();
+        if (activity == null) {
+            call.reject("no activity");
+            return;
+        }
+        final int requested;
+        if ("landscape".equals(o)) requested = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE;
+        else if ("portrait".equals(o)) requested = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT;
+        else requested = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_FULL_USER;
+        Runnable r = () -> {
+            try {
+                activity.setRequestedOrientation(requested);
+                JSObject ret = new JSObject();
+                ret.put("ok", true);
+                call.resolve(ret);
+            } catch (Exception e) {
+                call.reject("orientation failed: " + e.getMessage());
+            }
+        };
+        if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) r.run();
+        else activity.runOnUiThread(r);
+    }
+
     private SharedPreferences prefs() {
         return getContext().getSharedPreferences("nama_native", android.content.Context.MODE_PRIVATE);
     }

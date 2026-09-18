@@ -88,6 +88,15 @@ type NamaNativeBridge = {
    *  "dropper" pattern Google Play Protect flags as harmful. Full-APK
    *  updates now land in the browser like the first install. */
   openUrl: (o: { url: string }) => Promise<{ ok: boolean }>;
+  /** v0.43.0 — immersive system bars (hide status + navigation). The Android
+   *  WebView rejects requestFullscreen() on DIVs, so the web player's
+   *  fullscreen relies on THIS to hide the system UI; older APKs simply
+   *  don't implement it and the call is swallowed by the guarded wrappers. */
+  setImmersive?: (o: { on: boolean }) => Promise<{ ok: boolean }>;
+  /** v0.43.0 — native orientation lock (setRequestedOrientation). WebView
+   *  refuses screen.orientation.lock() without real HTML fullscreen — the
+   *  native side is the only honest way to rotate. */
+  setOrientation?: (o: { o: "landscape" | "portrait" | "auto" }) => Promise<{ ok: boolean }>;
   addListener: (event: "namaDownload", cb: (e: NamaDownloadEvent) => void) => Promise<{ remove: () => void }> & { remove: () => void };
 };
 
@@ -191,5 +200,28 @@ export async function getInstallInfo(force = false): Promise<NamaInstallInfo | n
     return cachedInfo;
   } catch {
     return null;
+  }
+}
+
+/* v0.43.0 — fullscreen support methods. Android WebView rejects
+ * requestFullscreen() on ordinary elements and refuses
+ * screen.orientation.lock() without real HTML fullscreen — the ONLY honest
+ * path to a Netflix-style fullscreen in the app is the native layer. Both
+ * wrappers are fire-and-forget: on Electron/plain browsers (bridge null) and
+ * on APKs older than nativeRev 13 (method missing) they no-op silently. */
+
+export async function nativeImmersive(on: boolean): Promise<void> {
+  try {
+    await nativeBridge()?.setImmersive?.({ on });
+  } catch {
+    /* older APK without the method — nothing to do */
+  }
+}
+
+export async function nativeOrientation(o: "landscape" | "portrait" | "auto"): Promise<void> {
+  try {
+    await nativeBridge()?.setOrientation?.({ o });
+  } catch {
+    /* older APK without the method — nothing to do */
   }
 }

@@ -599,13 +599,11 @@ public class PlayerActivity extends Activity {
             }
         });
 
-        findViewById(R.id.btn_speed).setOnClickListener(v -> showSpeedMenu());
-        findViewById(R.id.btn_subs).setOnClickListener(v -> showTrackMenu(C.TRACK_TYPE_TEXT));
-        findViewById(R.id.btn_audio).setOnClickListener(v -> showTrackMenu(C.TRACK_TYPE_AUDIO));
-
-        // v0.18.0 — zoom cycle, sleep timer, cinema, episodes + prev/next
-        findViewById(R.id.btn_zoom).setOnClickListener(v -> cycleZoom());
-        findViewById(R.id.btn_sleep).setOnClickListener(v -> showSleepMenu());
+        // v0.43.0 — ONE overflow (⋮) for everything secondary: audio track,
+        // subtitles, speed, zoom, sleep timer and screen lock moved out of the
+        // transport row (the 10-button bar could not fit small screens and the
+        // user asked for a three-dot menu). Cinema/episodes stay top-bar.
+        findViewById(R.id.btn_more).setOnClickListener(v -> showMoreMenu());
         findViewById(R.id.btn_cinema).setOnClickListener(v -> showCinemaDialog());
         ImageButton btnEpisodes = (ImageButton) findViewById(R.id.btn_episodes);
         ImageButton btnPrev = (ImageButton) findViewById(R.id.btn_prev);
@@ -625,12 +623,11 @@ public class PlayerActivity extends Activity {
             }
         }
 
-        findViewById(R.id.btn_lock).setOnClickListener(v -> setLocked(true));
+        // v0.43.0 — btn_lock moved into the ⋮ overflow (showMoreMenu)
         lockChip.setOnLongClickListener(v -> {
             setLocked(false);
             return true;
         });
-
         showControls();
         updatePlayPauseIcon();
     }
@@ -727,13 +724,51 @@ public class PlayerActivity extends Activity {
         gestureSurface.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY);
     }
 
+    /** v0.43.0 — the ⋮ overflow: everything that used to crowd the bottom
+     *  bar (audio track, subtitles, speed, zoom, sleep timer, screen lock)
+     *  plus the context-aware cinema/episodes entries. Anchored to btn_more
+     *  (the ONLY anchor guaranteed to exist in the v0.43.0 layout). */
+    private void showMoreMenu() {
+        ImageButton more = (ImageButton) findViewById(R.id.btn_more);
+        if (more == null) return;
+        PopupMenu pm = new PopupMenu(this, more);
+        // FIXED item ids (NOT sequential): entries are added conditionally, so
+        // a shifted id would silently run the wrong action below.
+        pm.getMenu().add(0, 1, 0, "ترک صدا");
+        pm.getMenu().add(0, 2, 1, "زیرنویس");
+        pm.getMenu().add(0, 3, 2, "سرعت پخش");
+        pm.getMenu().add(0, 4, 3, "نمایش: " + RESIZE_LABELS[resizeModeIdx]);
+        pm.getMenu().add(0, 5, 4, "تایمر خواب");
+        if (epIds != null && epIds.length > 1 && epIds[0] != 0) pm.getMenu().add(0, 6, 5, "قسمت‌ها");
+        pm.getMenu().add(0, 7, 6, "سینما (تماشای گروهی)");
+        pm.getMenu().add(0, 8, 7, "قفل صفحه");
+        pm.setOnMenuItemClickListener(item -> {
+            bumpUi();
+            switch (item.getItemId()) {
+                case 1: showTrackMenu(C.TRACK_TYPE_AUDIO); return true;
+                case 2: showTrackMenu(C.TRACK_TYPE_TEXT); return true;
+                case 3: showSpeedMenu(); return true;
+                case 4: cycleZoom(); return true;
+                case 5: showSleepMenu(); return true;
+                case 6: showEpisodesSheet(); return true;
+                case 7: showCinemaDialog(); return true;
+                case 8: setLocked(true); return true;
+                default: return false;
+            }
+        });
+        pm.show();
+    }
+
     private void showSpeedMenu() {
         if (player == null) return;
         // v0.18.0 — 0.25×–3× (web-parity range; was 0.5×–2×)
         float[] speeds = {0.25f, 0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f, 3f};
         String[] labels = {"۰٫۲۵×", "۰٫۵×", "۰٫۷۵×", "۱×", "۱٫۲۵×", "۱٫۵×", "۲×", "۳×"};
         float cur = player.getPlaybackParameters().speed;
-        PopupMenu pm = new PopupMenu(this, findViewById(R.id.btn_speed));
+        // v0.43.0 — btn_speed is gone from the layout; anchor to the ⋮ button
+        ImageButton anchor = (ImageButton) findViewById(R.id.btn_more);
+        if (anchor == null) anchor = (ImageButton) findViewById(R.id.btn_back);
+        PopupMenu pm = new PopupMenu(this, anchor);
         for (int i = 0; i < speeds.length; i++) {
             pm.getMenu().add(0, i, i, (Math.abs(cur - speeds[i]) < 0.01f ? "✓ " : "") + labels[i]);
         }
