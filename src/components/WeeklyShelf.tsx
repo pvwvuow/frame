@@ -1,18 +1,21 @@
 "use client";
 
 /* =====================================================================================
- * v0.50.0 — THE WEEKLY SHELF (پیشنهاد این هفته)
+ * v0.51.0 — THE WEEKLY SHOP SHELF (پیشنهاد این هفته) — REBUILT FROM THE USER'S MOCKUPS
  *
- * The user asked for a "weekly shop" among the home rows, modeled on the
- * theater slider's new deck architecture:
- *   «بیا اینارو هم یک جا اضافه کن بین اسلاید شو های پایین... مثل شاپ هفتگی
- *    ک پیشنهادی میاد به کاربر نشون بده.. مثلا این هفته 6 تا فیلمی ک متناسب
- *    با کاربره بیاد نمایش بده (مناسب با علاقه ها ..چیز هایی ک دیده)»
- * and shipped mockups: a WOODEN SHELF holding SIX framed posters, each lit
- * by its own spotlight, each card showing title + rating + genre + year +
- * a play button — in BOTH themes (dark walnut / bright oak).
+ * The user shipped five boards: a walnut shadow-box on a near-black wall (the
+ * content board + its green-screen variants) and an oak one on a cream wall —
+ * SIX framed posters standing inside the case, each under its own puck lamp.
+ * v0.50.0 invented its own shelf instead of following those boards; this
+ * version is measured off them:
+ *   • poster ratio 1:1.30 (10/13) — the display screens of the mock, NOT 2:3
+ *   • gap between frames ≈ 24% of a poster's width
+ *   • side inner margin ≈ 4.6% of the case · top board zone ≈ 21% · floor ≈ 15%
+ *   • puck lamps hang directly UNDER the top board, warm pools on the wood back
+ *   • card copy exactly as the content board: ONE title line, white ★ rating,
+ *     OUTLINED genre chip, year, and an OUTLINED circular play button
  *
- * Data — the WEEKLY DECK contract (src/lib/weekly-deck.ts):
+ * Data — the WEEKLY DECK contract (unchanged, src/lib/weekly-deck.ts):
  *   • build time ships a ~36-title quality POOL (weekly.json, content-hashed,
  *     REPLACED wholesale at runtime — the hero-deck lesson, no merges);
  *   • ON DEVICE pickWeeklySix() scores the pool against this viewer's taste
@@ -24,12 +27,10 @@
  *     catalog);
  *   • no taste data ⇒ cold start: quality + variety cut, still weekly.
  *
- * Visual — the mockup's materials, in CSS (no image assets): wood grain via
- * layered repeating gradients (.wood-shelf/.wood-ledge in globals.css), a
- * warm lamp + light cone per frame (.spotlight-*), black poster bezels,
- * white-on-poster copy held literal by the .force-dark var-reset so the
- * light theme keeps white card text on artwork (exactly like the day
- * mockup) while the header text above the shelf follows the theme.
+ * Visual — all materials are CSS (layered repeating gradients = the wood
+ * grain), no image assets: the case costs ~0 bytes and never 404s. Card copy
+ * sits inside .force-dark so it stays literal white over artwork in BOTH
+ * themes, exactly like the mockup boards.
  * ===================================================================================== */
 
 import Link from "next/link";
@@ -98,7 +99,7 @@ export default function WeeklyShelf() {
 
   return (
     <section className="relative mt-12 px-4 sm:px-8 lg:px-12">
-      <div className="mb-4 flex items-end justify-between">
+      <div className="mb-3.5 flex items-end justify-between">
         <div>
           <h2 className="text-lg font-extrabold text-white sm:text-xl">{tr("home.weeklyTitle")}</h2>
           <p className="mt-0.5 text-xs text-zinc-500">{personalized ? tr("home.weeklySub") : tr("home.weeklyColdSub")}</p>
@@ -108,80 +109,82 @@ export default function WeeklyShelf() {
         </span>
       </div>
 
-      {/* the wooden case: recessed interior (inset shadows) + the six frames
-          standing on the front ledge — the mockup's shelf, in CSS */}
-      <div className="wood-shelf relative overflow-hidden rounded-2xl px-3 pt-9 sm:px-5">
-        <div className="no-scrollbar flex snap-x snap-mandatory gap-3 sm:gap-4">
-          {picks.map((t) => (
-            <ShelfFrame key={t.id} t={t} playLabel={tr("common.play")} />
-          ))}
+      {/* THE SHOP CASE — the mockup's shadow-box. Three boards: the top board
+          the lamps hang from, the recessed wood back the frames stand against,
+          and the floor they stand on. Light theme swaps walnut → oak. */}
+      <div className="shop-case">
+        <div aria-hidden className="shop-top" />
+        <div className="shop-back">
+          <div className="shop-aisle no-scrollbar">
+            {picks.map((t) => (
+              <ShopSlot key={t.id} t={t} playLabel={tr("common.play")} />
+            ))}
+          </div>
         </div>
-        {/* the front board the frames stand on */}
-        <div className="wood-ledge relative -mx-3 h-4 sm:-mx-5">
-          <div className="absolute inset-x-0 top-0 h-px bg-white/20" />
-        </div>
+        <div aria-hidden className="shop-floor" />
       </div>
     </section>
   );
 }
 
-/* One framed poster + its private spotlight. The whole frame is a details
- * link; the round button is a SEPARATE sibling link to the player (never a
- * nested <a>). Poster copy sits inside .force-dark so it stays literal-white
- * over artwork in BOTH themes — the day mockup keeps white card text too. */
-function ShelfFrame({ t, playLabel }: { t: TitleView; playLabel: string }) {
+/* One framed poster standing in the case, with its own lamp above it. The
+ * whole frame is a details link; the round button is a SEPARATE sibling link
+ * to the player (never a nested <a>). Copy sits inside .force-dark so it
+ * stays literal-white over artwork in BOTH themes — like the mockup boards. */
+function ShopSlot({ t, playLabel }: { t: TitleView; playLabel: string }) {
   const { locale } = useI18n();
   return (
-    <div className="group relative w-[47%] max-w-[210px] shrink-0 snap-start sm:w-auto sm:max-w-none sm:flex-1">
-      {/* lamp + cone — each frame owns its spotlight, so a scrolled aisle
-          keeps the lamps aligned with their frames on phones too */}
-      <div aria-hidden className="pointer-events-none absolute -top-7 left-1/2 z-10 -translate-x-1/2">
-        <span className="spotlight-lamp block h-1.5 w-1.5 rounded-full" />
-      </div>
-      <div aria-hidden className="spotlight-cone pointer-events-none absolute -top-6 left-1/2 z-0 h-[80px] w-[130%] -translate-x-1/2 opacity-80 transition-opacity duration-300 group-hover:opacity-100" />
+    <div className="shop-slot group">
+      {/* the lamp's warm pool lighting the wood back behind this frame */}
+      <span aria-hidden className="shop-pool" />
+      {/* the cone of light falling from the lamp onto the frame's top */}
+      <span aria-hidden className="shop-cone" />
+      {/* the puck lamp hanging under the top board, above this frame */}
+      <span aria-hidden className="shop-puck"><i /></span>
 
-      <div className="frame-bezel relative rounded-lg transition-transform duration-300 group-hover:-translate-y-1">
-        <Link href={titleHref(t.slug)} className="force-dark relative block overflow-hidden rounded-[5px]">
+      <div className="shop-frame">
+        <Link href={titleHref(t.slug)} className="force-dark relative block h-full w-full overflow-hidden rounded-[4px]">
           <img
             src={posterSrc(t)}
             alt={t.title}
             loading="lazy"
             decoding="async"
             data-ph-title={t.title}
-            className="aspect-[2/3] w-full object-cover"
+            className="h-full w-full object-cover"
           />
-          <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/30 to-transparent" />
-          <div className="absolute inset-x-0 bottom-0 p-2">
+          <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/25 to-transparent" />
+          <div className="absolute inset-x-0 bottom-0 p-[7%] pb-[8.5%] pe-[26%]">
+            {/* the mock's single title line — no companion name on the card */}
             <TitleName
               t={t}
-              primaryClass="text-[12px] font-extrabold leading-tight text-white"
-              secondaryClass="text-[10px] leading-tight text-zinc-300"
+              hideSecondary
+              primaryClass="text-[clamp(11px,1.05vw,16px)] font-extrabold leading-tight text-white"
             />
-            <div className="mt-1.5 flex items-center gap-1.5 pe-7">
-              <span className="flex items-center gap-0.5 text-[10px] font-bold text-amber-400">
-                <StarIcon width={10} height={10} />
+            <div className="mt-[4%] flex items-center gap-[4%] text-[clamp(8px,0.62vw,10px)]">
+              <span className="flex shrink-0 items-center gap-0.5 font-bold text-white">
+                <StarIcon width="1em" height="1em" className="shrink-0" />
                 {Number(t.rating || 0).toFixed(1)}
               </span>
               {t.genres?.[0] ? (
-                <span className="rounded bg-white/15 px-1 py-px text-[9px] font-bold text-white backdrop-blur-sm">
+                <span className="min-w-0 truncate rounded-[4px] border border-white/45 px-[0.4em] py-px font-semibold leading-tight text-white">
                   {genreLabel(t.genres[0], locale)}
                 </span>
               ) : null}
-              <span className="text-[10px] text-zinc-300">{t.year}</span>
+              <span className="shrink-0 font-semibold text-white/70">{t.year}</span>
             </div>
           </div>
         </Link>
         <Link
           href={watchHref(t.slug)}
           aria-label={playLabel}
-          className="absolute bottom-2 end-2 z-10 grid h-6 w-6 place-items-center rounded-full bg-white/95 text-black shadow transition group-hover:bg-brand group-hover:text-white"
+          className="shop-play absolute bottom-[3.5%] end-[4.5%] z-10"
         >
-          <PlayIcon width={12} height={12} className="ms-px" />
+          <PlayIcon width="45%" height="45%" className="translate-x-[6%]" />
         </Link>
       </div>
 
-      {/* the frame's shadow pooling on the wood under it */}
-      <div aria-hidden className="pointer-events-none absolute inset-x-1.5 bottom-0 h-2.5 rounded-full bg-black/50 blur-md" />
+      {/* the frame's shadow pooling on the floor it stands on */}
+      <span aria-hidden className="shop-foot" />
     </div>
   );
 }

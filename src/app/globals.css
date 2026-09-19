@@ -1355,108 +1355,301 @@ html.light .ch-dust i { background: radial-gradient(circle, rgba(255, 255, 255, 
 }
 
 /* =====================================================================================
- * v0.50.0 — THE WEEKLY SHELF (پیشنهاد این هفته) — the wooden shop shelf
+ * v0.51.0 — THE WEEKLY SHOP SHELF (پیشنهاد این هفته) — measured off the user's mockups
  *
- * The user's mockups: a wooden case holding six framed posters, each lit by
- * its own warm spotlight — dark walnut on the dark theme, bright oak on the
- * light theme (the two day/night boards they shipped). All materials are
- * CSS (layered repeating gradients = the grain) — no image assets, so the
- * shelf costs ~0 bytes and never 404s.
+ * The five boards the user shipped: a walnut shadow-box on a near-black wall
+ * (the content board + its green-screen variants) and an oak board on a cream
+ * wall — SIX framed posters standing inside the case, each under its own puck
+ * lamp. Geometry below is measured from those images:
+ *   poster ratio 1:1.30 (10/13) · frame gap ≈ 24% of a poster's width
+ *   side inner margin ≈ 4.6% of case · top-board zone ≈ 21% · floor ≈ 15%
+ * All materials are CSS (layered repeating gradients = the grain) — no image
+ * assets, so the shelf costs ~0 bytes and never 404s.
  * ===================================================================================== */
 
-/* the case: recessed interior, top rim catching the lamps' spill, side walls
-   falling into shadow — the mockup's box depth */
-.wood-shelf {
+/* ---------- the case ---------- */
+
+/* outer shell: the walnut the boards are made of; corners nearly square */
+.shop-case {
+  border-radius: 8px;
+  overflow: hidden;
   background:
-    /* grain: two offset stripe families, one warm-light, one dark */
-    repeating-linear-gradient(93deg,
-      rgba(0, 0, 0, 0.14) 0 1.5px, transparent 1.5px 6px,
-      rgba(255, 232, 190, 0.045) 6px 7.5px, transparent 7.5px 13px),
-    repeating-linear-gradient(88deg,
-      rgba(0, 0, 0, 0.08) 0 2px, transparent 2px 17px),
-    linear-gradient(180deg, #7a5228 0%, #5e3c1b 46%, #462a11 100%);
-  box-shadow:
-    inset 0 2px 0 rgba(255, 226, 170, 0.20),
-    inset 0 -4px 10px rgba(0, 0, 0, 0.5),
-    inset 20px 0 30px rgba(0, 0, 0, 0.32),
-    inset -20px 0 30px rgba(0, 0, 0, 0.32),
-    0 24px 50px rgba(0, 0, 0, 0.45);
-  border: 1px solid rgba(0, 0, 0, 0.55);
+    repeating-linear-gradient(91deg,
+      rgba(0, 0, 0, 0.16) 0 1.5px, transparent 1.5px 6px,
+      rgba(255, 208, 140, 0.05) 6px 7.5px, transparent 7.5px 13px),
+    linear-gradient(180deg, #58381a 0%, #452a12 55%, #33200c 100%);
+  border: 1px solid rgba(0, 0, 0, 0.6);
+  box-shadow: 0 26px 60px rgba(0, 0, 0, 0.5);
 }
 
-/* the light theme's board: bright oak (the user's day mockup) */
-html.light .wood-shelf {
+/* the top board: horizontal grain, its bottom lip catching the lamps' spill */
+.shop-top {
+  position: relative;
+  height: clamp(24px, 2.6vw, 42px);
   background:
-    repeating-linear-gradient(93deg,
-      rgba(120, 70, 20, 0.10) 0 1.5px, transparent 1.5px 6px,
-      rgba(255, 255, 255, 0.12) 6px 7.5px, transparent 7.5px 13px),
-    repeating-linear-gradient(88deg,
-      rgba(120, 70, 20, 0.06) 0 2px, transparent 2px 17px),
-    linear-gradient(180deg, #dda76a 0%, #c68e50 46%, #ab7439 100%);
+    repeating-linear-gradient(180deg,
+      rgba(0, 0, 0, 0.18) 0 1px, transparent 1px 5px,
+      rgba(255, 205, 135, 0.055) 5px 6px, transparent 6px 11px),
+    linear-gradient(180deg, #63411f 0%, #4d3015 70%, #3a2410 100%);
   box-shadow:
-    inset 0 2px 0 rgba(255, 255, 240, 0.55),
-    inset 0 -4px 10px rgba(96, 56, 16, 0.30),
-    inset 20px 0 30px rgba(96, 56, 16, 0.16),
-    inset -20px 0 30px rgba(96, 56, 16, 0.16),
-    0 24px 50px rgba(120, 80, 30, 0.22);
-  border-color: rgba(96, 56, 16, 0.35);
+    inset 0 2px 2px rgba(0, 0, 0, 0.45),
+    inset 0 -3px 5px rgba(255, 190, 110, 0.22),
+    0 1px 0 rgba(255, 214, 150, 0.3);
 }
 
-/* the front board the frames stand on */
-.wood-ledge {
-  background: linear-gradient(180deg, #8a5f31 0%, #5e3c1b 58%, #3c230d 100%);
+/* the recessed interior: vertical-grain wood back panel falling into shadow */
+.shop-back {
+  position: relative;
+  padding: 0 4.5%;
+  background:
+    repeating-linear-gradient(90deg,
+      rgba(0, 0, 0, 0.2) 0 1.5px, transparent 1.5px 7px,
+      rgba(255, 200, 130, 0.045) 7px 8.5px, transparent 8.5px 14px),
+    repeating-linear-gradient(90deg,
+      transparent 0 45px, rgba(0, 0, 0, 0.22) 45px 46.5px, transparent 46.5px 92px),
+    linear-gradient(180deg, #42290f 0%, #331e09 100%);
   box-shadow:
-    inset 0 1px 0 rgba(255, 228, 170, 0.28),
-    0 8px 16px rgba(0, 0, 0, 0.45);
-  border-radius: 0 0 15px 15px; /* hug the case's rounded bottom */
-}
-html.light .wood-ledge {
-  background: linear-gradient(180deg, #e4b276 0%, #c68e50 55%, #9d6b35 100%);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 240, 0.6),
-    0 8px 16px rgba(120, 80, 30, 0.25);
+    inset 0 18px 30px rgba(0, 0, 0, 0.55),
+    inset 16px 0 32px rgba(0, 0, 0, 0.4),
+    inset -16px 0 32px rgba(0, 0, 0, 0.4);
 }
 
-/* per-frame spotlight: the lamp bead + its light cone (a blurred trapezoid) */
-.spotlight-lamp {
+/* the aisle the six frames stand in — a scroll row on phones */
+.shop-aisle {
+  position: relative;
+  display: flex;
+  gap: 3%;
+}
+
+/* ---------- one frame + its lamp ---------- */
+
+.shop-slot {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+  /* the lamp zone: from the top board's underside down to the frame's top */
+  padding-top: max(3%, 22px);
+}
+
+/* the lamp's warm pool lighting the wood behind this frame */
+.shop-pool {
+  position: absolute;
+  top: clamp(7px, 0.9vw, 13px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: 185%;
+  height: clamp(48px, 5.8vw, 100px);
+  pointer-events: none;
+  background: radial-gradient(50% 88% at 50% 0%,
+    rgba(255, 180, 96, 0.34) 0%,
+    rgba(255, 156, 70, 0.1) 55%,
+    transparent 78%);
+}
+
+/* the cone of light falling onto the frame's top edge */
+.shop-cone {
+  position: absolute;
+  top: clamp(13px, 1.7vw, 26px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: 118%;
+  height: clamp(30px, 3.4vw, 58px);
+  pointer-events: none;
+  filter: blur(6px);
+  background: linear-gradient(to bottom,
+    rgba(255, 190, 108, 0.3),
+    rgba(255, 170, 90, 0.07) 68%,
+    transparent 100%);
+  clip-path: polygon(43% 0, 57% 0, 93% 100%, 7% 100%);
+}
+
+/* the puck lamp hanging under the top board: metal shell + warm filament */
+.shop-puck {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: clamp(34px, 5.6vw, 84px);
+  height: clamp(8px, 0.95vw, 14px);
+  z-index: 20;
+  border-radius: 0 0 999px 999px;
+  background: linear-gradient(180deg, #6d635a 0%, #403a32 55%, #262119 100%);
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.6),
+    inset 0 -2px 3px rgba(255, 190, 110, 0.45);
+}
+.shop-puck i {
+  position: absolute;
+  inset-inline: 14%;
+  bottom: 1px;
+  height: 38%;
+  border-radius: 999px;
   background: #ffd9a0;
   box-shadow:
-    0 0 10px 2px rgba(255, 200, 120, 0.9),
-    0 0 24px 7px rgba(255, 180, 90, 0.38);
-}
-html.light .spotlight-lamp {
-  background: #fff3d6;
-  box-shadow:
-    0 0 10px 2px rgba(214, 158, 74, 0.75),
-    0 0 24px 7px rgba(214, 158, 74, 0.3);
-}
-.spotlight-cone {
-  background: linear-gradient(to bottom,
-    rgba(255, 199, 122, 0.32),
-    rgba(255, 199, 122, 0.07) 60%,
-    transparent 100%);
-  clip-path: polygon(45% 0, 55% 0, 94% 100%, 6% 100%);
-  filter: blur(7px);
-}
-html.light .spotlight-cone {
-  background: linear-gradient(to bottom,
-    rgba(255, 196, 108, 0.4),
-    rgba(255, 196, 108, 0.08) 60%,
-    transparent 100%);
+    0 0 8px 2px rgba(255, 200, 120, 0.85),
+    0 2px 16px 5px rgba(255, 170, 80, 0.4);
 }
 
-/* the poster bezel: black frame + a hairline metallic edge, resting on wood */
-.frame-bezel {
-  border: 3px solid #0b0b0d;
-  outline: 1px solid rgba(255, 255, 255, 0.09);
+/* the frame: black bezel, standing ON the floor line */
+.shop-frame {
+  position: relative;
+  z-index: 10;
+  aspect-ratio: 10 / 13; /* measured off the mock's display screens */
+  border: 3px solid #0d0d11;
+  outline: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 7px;
+  background: #0d0d11;
   box-shadow:
-    0 12px 22px rgba(0, 0, 0, 0.5),
-    0 2px 4px rgba(0, 0, 0, 0.4);
+    0 14px 26px rgba(0, 0, 0, 0.45),
+    0 3px 6px rgba(0, 0, 0, 0.4);
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
 }
-html.light .frame-bezel {
-  border-color: #101014;
-  outline-color: rgba(255, 255, 255, 0.35);
+.group:hover .shop-frame {
+  transform: translateY(-4px);
   box-shadow:
-    0 12px 22px rgba(90, 55, 15, 0.35),
-    0 2px 4px rgba(90, 55, 15, 0.3);
+    0 22px 34px rgba(0, 0, 0, 0.5),
+    0 4px 8px rgba(0, 0, 0, 0.4);
+}
+
+/* the outlined circular play button — exactly the mock's */
+.shop-play {
+  display: grid;
+  place-items: center;
+  width: clamp(26px, 2.5vw, 38px);
+  height: clamp(26px, 2.5vw, 38px);
+  border-radius: 999px;
+  border: 1.5px solid rgba(255, 255, 255, 0.85);
+  background: rgba(8, 8, 10, 0.35);
+  backdrop-filter: blur(2px);
+  color: #fff;
+  transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+.group:hover .shop-play {
+  background: #fff;
+  border-color: #fff;
+  color: #0a0a0c;
+}
+
+/* the frame's shadow pooling on the floor under it */
+.shop-foot {
+  position: absolute;
+  left: 7%;
+  right: 7%;
+  bottom: calc(-1 * clamp(4px, 0.5vw, 9px));
+  height: clamp(9px, 1.1vw, 16px);
+  pointer-events: none;
+  background: radial-gradient(50% 55% at 50% 50%, rgba(0, 0, 0, 0.55), transparent 72%);
+  filter: blur(1.5px);
+}
+
+/* the floor board: front apron, its top edge catching the light */
+.shop-floor {
+  position: relative;
+  height: clamp(15px, 3.7vw, 56px);
+  background:
+    repeating-linear-gradient(180deg,
+      rgba(0, 0, 0, 0.15) 0 1px, transparent 1px 6px),
+    linear-gradient(180deg, #5a3919 0%, #42290f 45%, #2a1907 100%);
+  box-shadow:
+    inset 0 1.5px 0 rgba(255, 210, 140, 0.32),
+    inset 0 10px 14px rgba(255, 170, 90, 0.07);
+}
+
+/* ---------- the day board: oak on a cream wall (the light mockup) ---------- */
+
+html.light .shop-case {
+  background:
+    repeating-linear-gradient(91deg,
+      rgba(112, 64, 18, 0.12) 0 1.5px, transparent 1.5px 6px,
+      rgba(255, 255, 255, 0.14) 6px 7.5px, transparent 7.5px 13px),
+    linear-gradient(180deg, #d3a26b 0%, #c08e54 55%, #a97a42 100%);
+  border-color: rgba(96, 56, 16, 0.35);
+  box-shadow: 0 26px 60px rgba(120, 80, 30, 0.25);
+}
+html.light .shop-top {
+  background:
+    repeating-linear-gradient(180deg,
+      rgba(112, 64, 18, 0.13) 0 1px, transparent 1px 5px,
+      rgba(255, 255, 255, 0.16) 5px 6px, transparent 6px 11px),
+    linear-gradient(180deg, #dda970 0%, #c8935a 70%, #b17f47 100%);
+  box-shadow:
+    inset 0 2px 2px rgba(96, 56, 16, 0.25),
+    inset 0 -3px 5px rgba(255, 244, 214, 0.5),
+    0 1px 0 rgba(255, 255, 255, 0.45);
+}
+html.light .shop-back {
+  background:
+    repeating-linear-gradient(90deg,
+      rgba(112, 64, 18, 0.12) 0 1.5px, transparent 1.5px 7px,
+      rgba(255, 255, 255, 0.1) 7px 8.5px, transparent 8.5px 14px),
+    repeating-linear-gradient(90deg,
+      transparent 0 45px, rgba(96, 56, 16, 0.16) 45px 46.5px, transparent 46.5px 92px),
+    linear-gradient(180deg, #dcb381 0%, #c99a63 100%);
+  box-shadow:
+    inset 0 18px 30px rgba(96, 56, 16, 0.28),
+    inset 16px 0 32px rgba(96, 56, 16, 0.2),
+    inset -16px 0 32px rgba(96, 56, 16, 0.2);
+}
+html.light .shop-pool {
+  background: radial-gradient(50% 88% at 50% 0%,
+    rgba(255, 196, 110, 0.38) 0%,
+    rgba(255, 180, 90, 0.12) 55%,
+    transparent 78%);
+}
+html.light .shop-cone {
+  background: linear-gradient(to bottom,
+    rgba(255, 200, 118, 0.35),
+    rgba(255, 184, 100, 0.08) 68%,
+    transparent 100%);
+}
+html.light .shop-puck {
+  background: linear-gradient(180deg, #f5f3ef 0%, #bdb6ac 55%, #948c80 100%);
+  box-shadow:
+    0 1px 2px rgba(96, 56, 16, 0.35),
+    inset 0 -2px 3px rgba(255, 200, 120, 0.55);
+}
+html.light .shop-puck i {
+  background: #ffdf9e;
+  box-shadow:
+    0 0 8px 2px rgba(214, 158, 74, 0.7),
+    0 2px 16px 5px rgba(214, 158, 74, 0.32);
+}
+html.light .shop-frame {
+  border-color: #101014;
+  outline-color: rgba(255, 255, 255, 0.4);
+  box-shadow:
+    0 14px 26px rgba(90, 55, 15, 0.35),
+    0 3px 6px rgba(90, 55, 15, 0.3);
+}
+html.light .shop-foot {
+  background: radial-gradient(50% 55% at 50% 50%, rgba(96, 56, 16, 0.38), transparent 72%);
+}
+html.light .shop-floor {
+  background:
+    repeating-linear-gradient(180deg,
+      rgba(112, 64, 18, 0.1) 0 1px, transparent 1px 6px),
+    linear-gradient(180deg, #d9a86e 0%, #bd8b51 45%, #9c6c36 100%);
+  box-shadow:
+    inset 0 1.5px 0 rgba(255, 255, 255, 0.55),
+    inset 0 10px 14px rgba(255, 244, 214, 0.25);
+}
+
+/* phones: the aisle becomes a scroll row of wider frames */
+@media (max-width: 639.98px) {
+  .shop-aisle {
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    scrollbar-width: none;
+  }
+  .shop-aisle::-webkit-scrollbar { display: none; }
+  .shop-slot {
+    flex: 0 0 47%;
+    scroll-snap-align: start;
+    padding-top: 24px;
+  }
+  .shop-pool { width: 150%; height: 56px; }
+  .shop-cone { width: 112%; height: 34px; top: 15px; }
+  .shop-puck { width: 40px; height: 9px; }
+  .shop-frame { border-width: 2.5px; }
+  .shop-play { width: 27px; height: 27px; }
 }
