@@ -609,25 +609,42 @@ async function hydrateLineup(candidates: LiteTitle[], want = 8): Promise<TitleVi
     .slice(0, want);
 }
 
+/** The hero's own quality order (same rule the curation pipeline prints by):
+ *  rating → trendingScore → id. Used for the featured pins' display order. */
+const byHeroQuality = (a: LiteTitle, b: LiteTitle) =>
+  b.rating - a.rating || b.trendingScore - a.trendingScore || b.id - a.id;
+
 export async function getFeatured(): Promise<TitleView[]> {
   await ensureReady();
-  // 1) AUTO: the v0.38.0 «برترین‌ها» billboard — top 3 movies + top 2 series
-  //    by rating over the WHOLE catalog, documentaries excluded (see
-  //    src/lib/hero-pick.ts). Deterministic per catalog, no add-date
-  //    dependence, cannot go stale the way the featured flags did.
+  // 1) THE FRESH WAVE (v0.45.0 — «اسلایدشو = تازه‌ها»). The publish pipeline
+  //    (scripts/feature-new-hero.mjs, run by publish-catalog on EVERY content
+  //    update) detects the newest add-wave and pins the best-rated arrivals
+  //    here: rating ≥ 8.5, real tt art on poster AND backdrop, series must
+  //    carry episodes. The user: «ازین فیلم و سریال های جدیدی ک میاد توی
+  //    اسلاید شو تیایتر جایگزین کنیم» — every new wave must REPLACE the show.
+  //    v0.38's best-of-catalog billboard used to run FIRST and star the same
+  //    old 9+ classics forever (Breaking Bad, Cosmos, …) — the fresh pins
+  //    were dead code at runtime. Order = rating → trending, up to 8 slides.
+  const pinned = lite.filter((t) => t.featured).sort(byHeroQuality).slice(0, 8);
+  if (pinned.length) {
+    const lineup = await hydrateLineup(pinned, 8);
+    if (lineup.length >= 3) return lineup;
+  }
+  // 2) FALLBACK: the v0.38.0 «برترین‌ها» billboard — top 3 movies + top 2
+  //    series by rating over the WHOLE catalog (see src/lib/hero-pick.ts).
+  //    Only for catalogs with NO featured pins at all (tiny demo/test data,
+  //    hand-built DBs, catalogs without any tt art).
   const picks = pickHero(lite);
   if (picks.length) {
     const lineup = await hydrateLineup(picks as LiteTitle[], 5);
     if (lineup.length >= 3) return lineup;
   }
-  // 2) FALLBACK: the featured flags (hand pin via HERO_TT, catalogs with no
-  //    tt art at all, tiny demo/test data).
+  // 3) LAST RESORT: hydration failed entirely (offline desktop?) — plain lite
+  //    rows so the hero surface never renders empty.
   const rows = lite.filter((t) => t.featured).sort(bySort("trending")).slice(0, 5);
   if (!rows.length) return [];
   const lineup = await hydrateLineup(rows);
   if (lineup.length) return lineup;
-  // 3) LAST RESORT: hydration failed entirely (offline desktop?) — plain lite
-  //    rows so the hero surface never renders empty.
   return rows;
 }
 

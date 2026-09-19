@@ -59,10 +59,15 @@ async function cachedScan<T>(key: string, fn: () => Promise<T>): Promise<T> {
 
 export async function getFeatured() {
   await ensureSeeded();
+  // v0.45.0 — parity with mobile/db.ts getFeatured: the featured pins are the
+  // fresh add-wave cut by scripts/feature-new-hero.mjs on every publish; the
+  // hero must SHOW them (user: «ازین فیلم و سریال های جدیدی ک میاد توی اسلاید
+  // شو تیایتر جایگزین کنیم»). Order = rating → trending (the pipeline's own
+  // display order), up to 8 slides (the pipeline's HERO_COUNT default).
   const rows = await db.title.findMany({
     where: { featured: true },
-    orderBy: { trendingScore: "desc" },
-    take: 5,
+    orderBy: [{ rating: "desc" }, { trendingScore: "desc" }],
+    take: 8,
   });
   return rows.map(pv);
 }
