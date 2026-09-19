@@ -13,12 +13,23 @@
  * (Hunter x Hunter 2011, Mr Sunshine 2018…). The rules are now CONTENT-based,
  * not add-date based:
  *
- *   1. ONGOING series (درحال پخش): type=series, year >= currentYear-1,
+ * v0.47.0 — the user rejected THAT cut too:
+ *   «من نسخه 0.46.0 رو دارم ولی هنوز اکثر فیلم و سریال های ک باید نباشن
+ *    هنوز هستن»
+ * The v0.46 floors (series year>=Y-1, movies year>=Y-2) let FINISHED 2025
+ * shows (Dexter: Resurrection, When Life Gives You Tangerines, Takopi,
+ * Kaguya…) and a 2024 movie (Attack on Titan: The Last Attack) dominate —
+ * high ratings, but from the user's seat: «قدیمی». A show that STARTED last
+ * year is last year's show. There is no airing-status column in the schema,
+ * so the floors tighten to what «درحال پخش» can mean here:
+ *
+ *   1. ONGOING series (درحال پخش): type=series, year = currentYear
+ *      (started this year → airing or just wrapped — never «قدیمی»),
  *      rating ≥ HERO_MIN_RATING (8.0), real tt poster+backdrop, ≥1 episode
  *      (the hero's Play button must work) — top HERO_SERIES_SLOTS (5)
  *      by rating → trendingScore;
  *   2. NEW high-rated movies (امتیازدارهای جدید): type=movie,
- *      year >= currentYear-2, same quality gates — top HERO_MOVIE_SLOTS (3);
+ *      year >= currentYear-1, same quality gates — top HERO_MOVIE_SLOTS (3);
  *   3. cross-fill: a thin pool hands its unfilled slots to the other one;
  *   4. top-up (only if the total is still < 5): the freshest add-wave
  *      regardless of year, so a small catalog still gets a full show;
@@ -75,7 +86,13 @@ const db = new PrismaClient({
   datasources: { db: { url: "file:" + ROOT + "/db/custom.db" } },
 });
 
-const ttOf = (poster) => /^\/covers\/(tt\d+)\//.exec(poster || "")?.[1] ?? null;
+/* ttOf — pull the IMDb id out of EITHER art form the catalog carries:
+ *   local cover pack:  /covers/tt12345/poster.jpg
+ *   remote metahub:    https://images.metahub.space/poster/small/tt12345/img
+ * The tt is the segment before the trailing slash in both. It is the
+ * identity used for dedupe AND the artwork-quality proof: covers.ts can
+ * build the whole art ladder (local + metahub) from just this id. */
+const ttOf = (u) => /(?:^|\/)(tt\d+)\//.exec(String(u || ""))?.[1] ?? null;
 
 async function pickManual() {
   const picked = [];
@@ -91,42 +108,59 @@ async function pickManual() {
 }
 
 async function pickAuto() {
-  /* v0.46.0 — content-based floors (NOT add-date based): a 2011 classic that
-   * merely got re-added is an OLD show and stays off the slider. "درحال پخش"
-   * has no DB flag, so the series floor is the release year: this year and
-   * last year only. Movies: the last ~2 years of releases (جدید). */
+  /* v0.47.0 — content-based floors (NOT add-date based), tightened per the
+   * user's v0.46 rejection: a 2025 show is DONE airing and stays off the
+   * slider even at 9.0. "درحال پخش" has no DB flag, so the series floor is
+   * the START year = the current year only. Movies: last year + this year. */
   const YEAR = new Date().getFullYear();
-  const seriesFloor = YEAR - 1;
-  const movieFloor = YEAR - 2;
+  const seriesFloor = YEAR;
+  const movieFloor = YEAR - 1;
   console.log(`rules: ongoing series year>=${seriesFloor} · new movies year>=${movieFloor} · min rating ${MIN_RATING}`);
 
   /* NOTE: Title.createdAt stays MIXED (numeric epochs + text) — raw SQL only
    * (P2023), same reason as before. Documentaries are matched on the JSON
-   * genres string exactly like queries.ts's hasGenre. LIMIT 40 gives the
-   * tt-dedupe room to skip duplicate rows. */
+   * genres string exactly like queries.ts's hasGenre. SQL applies the cheap
+   * floors (type/year/rating/doc/episodes); ARTWORK is judged in JS —
+   * v0.47.0 lesson: the 2026 wave ships metahub URLs instead of /covers
+   * files, so the old `LIKE '/covers/tt%'` gate on BOTH fields threw away
+   * ~90% of the current-year pool (Lanterns, Maul, The Odyssey…) over a
+   * purely local-asset question the app already solves remotely (covers.ts
+   * prefers metahub and synthesizes art from just the tt). What the hero
+   * needs is a REAL tt identity — local or remote, poster OR backdrop.
+   * LIMIT 120 gives the JS filters (art + junk titles + dedupe) room. */
   const DOC = `AND genres NOT LIKE '%"مستند"%'`;
-  const ART = `AND poster LIKE '/covers/tt%' AND backdrop LIKE '/covers/tt%'`;
-  const sel = `id, title, titleEn, year, rating, type, poster`;
-  const order = `ORDER BY rating DESC, trendingScore DESC LIMIT 40`;
+  const sel = `id, title, titleEn, year, rating, type, poster, backdrop`;
+  const order = `ORDER BY rating DESC, trendingScore DESC LIMIT 120`;
   const PLAYABLE = `EXISTS (SELECT 1 FROM "Episode" WHERE "Episode"."titleId" = "Title"."id")`;
+  /* scan-junk guard: placeholder rows («سریالی» at 9.5, «—») must never
+   * headline the show now that the artwork gate loosened. */
+  const JUNK_TITLE = new Set(["سریالی", "فیلم", "مستند", "—", "-", "–"]);
+  const heroReady = (t) =>
+    !!(ttOf(t.poster) || ttOf(t.backdrop)) &&
+    String(t.title || "").trim().length >= 2 &&
+    !JUNK_TITLE.has(String(t.title || "").trim());
 
   // 1) ONGOING series (درحال پخش) — year floor keeps the slider current.
-  const seriesRows = await db.$queryRawUnsafe(
-    `SELECT ${sel} FROM "Title"
-     WHERE type = 'series' AND year >= ? AND rating >= ?
-     ${ART} ${DOC} AND ${PLAYABLE}
-     ${order}`,
-    seriesFloor, MIN_RATING,
-  );
+  const seriesRows = (
+    await db.$queryRawUnsafe(
+      `SELECT ${sel} FROM "Title"
+       WHERE type = 'series' AND year >= ? AND rating >= ?
+       ${DOC} AND ${PLAYABLE}
+       ${order}`,
+      seriesFloor, MIN_RATING,
+    )
+  ).filter(heroReady);
 
   // 2) NEW high-rated movies (امتیازدارهای جدید).
-  const movieRows = await db.$queryRawUnsafe(
-    `SELECT ${sel} FROM "Title"
-     WHERE type = 'movie' AND year >= ? AND rating >= ?
-     ${ART} ${DOC}
-     ${order}`,
-    movieFloor, MIN_RATING,
-  );
+  const movieRows = (
+    await db.$queryRawUnsafe(
+      `SELECT ${sel} FROM "Title"
+       WHERE type = 'movie' AND year >= ? AND rating >= ?
+       ${DOC}
+       ${order}`,
+      movieFloor, MIN_RATING,
+    )
+  ).filter(heroReady);
 
   /* tt-dedupe — the scan leaves duplicate rows sharing one IMDb id (Takopi
    * ×2, Dune: Part Two ×3). One show = one slide, ever. First (highest-rated)
@@ -136,7 +170,7 @@ async function pickAuto() {
     const out = [];
     for (const t of rows) {
       if (out.length >= n) break;
-      const tt = ttOf(t.poster);
+      const tt = ttOf(t.poster) || ttOf(t.backdrop);
       if (tt && usedTt.has(tt)) continue;
       if (tt) usedTt.add(tt);
       out.push(t);
@@ -162,13 +196,15 @@ async function pickAuto() {
       if (!Number.isNaN(anchorMs)) {
         const floor = new Date(anchorMs - WAVE_WINDOW_H * 3600_000)
           .toISOString().slice(0, 19).replace("T", " ");
-        const waveRows = await db.$queryRawUnsafe(
-          `SELECT ${sel} FROM "Title"
-           WHERE createdAt >= ? AND rating >= 8.5
-           ${ART} ${DOC} AND (type != 'series' OR ${PLAYABLE})
-           ${order}`,
-          floor,
-        );
+        const waveRows = (
+          await db.$queryRawUnsafe(
+            `SELECT ${sel} FROM "Title"
+             WHERE createdAt >= ? AND rating >= 8.5
+             ${DOC} AND (type != 'series' OR ${PLAYABLE})
+             ${order}`,
+            floor,
+          )
+        ).filter(heroReady);
         picks = [...picks, ...takeDedup(waveRows, 5 - picks.length)];
         console.log(`top-up: wave floor ${floor.slice(0, 10)} (+${picks.length} total so far)`);
       }

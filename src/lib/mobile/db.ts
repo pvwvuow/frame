@@ -239,7 +239,14 @@ async function doInit(onProgress?: (p: ImportProgress) => void): Promise<void> {
   await db.fulls.clear();
   for (let s = 0; s < remote.shardCount; s++) {
     const name = `${remote.format === "nama-catalog-mobile-lite" ? "lite" : "full"}-${String(s).padStart(2, "0")}.json`;
-    const rows = await fetch(`/catalog/mobile/${name}`, { cache: "force-cache" }).then((r) => r.json()) as Record<string, unknown>[];
+    /* v0.47.0 — CACHE-BUST the shard bodies with the manifest version. The
+     * manifest itself is no-cache, but these URLs are IDENTICAL between app
+     * releases and were fetched with force-cache: an upgrade re-import could
+     * silently read the PREVIOUS release's shard bodies from the WebView HTTP
+     * cache (user-visible as «اسلایدر هنوز همون قدیمی‌هاست» after 0.46.0).
+     * The version query makes a new catalog = new URL = guaranteed miss;
+     * same version still rides the cache. */
+    const rows = await fetch(`/catalog/mobile/${name}?v=${encodeURIComponent(remote.version)}`, { cache: "force-cache" }).then((r) => r.json()) as Record<string, unknown>[];
     const clean = rows.map((t, i) => sanitizeTitle(t, s * remote.shardSize + i + 1));
     await db.titles.bulkPut(clean);
     for (const t of clean) collected.push(toLite(t));
