@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
+import { flipTheme } from "./theme/flip-theme";
 import { fa } from "@/lib/format";
 import {
   SearchIcon,
@@ -127,9 +128,9 @@ export default function CommandPalette() {
       { id: "notifications", label: tr("user.notifications"), icon: BellIcon, run: () => go("/notifications"), keywords: "notifications bell" },
       { id: "profile", label: tr("user.profile"), icon: UserIcon, run: () => go("/profile"), keywords: "profile" },
       { id: "settings", label: tr("user.settings"), icon: SettingsIcon, run: () => go("/settings"), keywords: "settings" },
-      { id: "t-dark", label: tr("palette.themeDark"), icon: MoonIcon, run: () => { setTheme("dark"); setOpen(false); }, keywords: "dark theme" },
-      { id: "t-light", label: tr("palette.themeLight"), icon: SunIcon, run: () => { setTheme("light"); setOpen(false); }, keywords: "light theme" },
-      { id: "t-system", label: tr("palette.themeSystem"), icon: MonitorIcon, run: () => { setTheme("system"); setOpen(false); }, keywords: "system theme auto" },
+      { id: "t-dark", label: tr("palette.themeDark"), icon: MoonIcon, run: () => { flipTheme(setTheme, "dark"); setOpen(false); }, keywords: "dark theme" },
+      { id: "t-light", label: tr("palette.themeLight"), icon: SunIcon, run: () => { flipTheme(setTheme, "light"); setOpen(false); }, keywords: "light theme" },
+      { id: "t-system", label: tr("palette.themeSystem"), icon: MonitorIcon, run: () => { flipTheme(setTheme, "system"); setOpen(false); }, keywords: "system theme auto" },
       { id: "shortcuts", label: tr("palette.shortcuts"), icon: KeyboardIcon, run: () => go("/settings#shortcuts"), keywords: "shortcuts keyboard" },
     ],
      

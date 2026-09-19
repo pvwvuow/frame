@@ -267,27 +267,30 @@
 @property --glass-shadow-b { syntax: "<color>"; inherits: true; initial-value: rgba(0, 0, 0, 0.35); }
 @property --glass-shadow-c { syntax: "<color>"; inherits: true; initial-value: rgba(255, 255, 255, 0.03); }
 
-html {
-  transition:
-    --color-white 800ms ease, --color-black 800ms ease,
-    --color-zinc-50 800ms ease, --color-zinc-100 800ms ease, --color-zinc-200 800ms ease,
-    --color-zinc-300 800ms ease, --color-zinc-400 800ms ease, --color-zinc-500 800ms ease,
-    --color-zinc-600 800ms ease, --color-zinc-700 800ms ease, --color-zinc-800 800ms ease,
-    --color-zinc-900 800ms ease, --color-zinc-950 800ms ease,
-    --color-ink 800ms ease, --color-ink-800 800ms ease, --color-ink-700 800ms ease,
-    --color-ink-600 800ms ease, --color-mist 800ms ease,
-    --color-brand 800ms ease, --color-brand-600 800ms ease, --color-brand-glow 800ms ease,
-    --color-gold 800ms ease,
-    --color-gold-ink 800ms ease,
-    --glass-bg 800ms ease, --glass-bg-strong 800ms ease, --glass-border 800ms ease,
-    --glass-hl 800ms ease, --glass-tint 800ms ease,
-    --rim-1 800ms ease, --rim-2 800ms ease, --rim-3 800ms ease,
-    --rim-4 800ms ease, --rim-5 800ms ease, --rim-6 800ms ease,
-    --sheen-1 800ms ease, --sheen-2 800ms ease, --sheen-3 800ms ease, --sheen-4 800ms ease,
-    --overlay 800ms ease, --scrollbar 800ms ease, --skeleton-a 800ms ease, --skeleton-b 800ms ease,
-    --stroke 800ms ease, --toast-bg 800ms ease, --toast-border 800ms ease, --toast-fg 800ms ease,
-    /* BUG-016 — the shadow tokens join the ramp (no more mid-morph snap) */
-    --shadow-color 800ms ease, --glass-shadow-a 800ms ease, --glass-shadow-b 800ms ease, --glass-shadow-c 800ms ease;
+/* =====================================================================================
+   v0.55.0 — THE 800ms TOKEN RAMP IS GONE (the «theme switch is very laggy» report).
+   The v0.40.0 morph transitioned ~48 INHERITED registered custom properties on <html>;
+   every animation frame re-resolved the value for EVERY element in the document —
+   full style recalc + full paint + re-rasterized gradients / color-mix fades /
+   backdrop-filter glass — for 0.8s straight. Measured (scripts/measure_theme_flip.mjs):
+   4.2s of main-thread busy across 3 flips, 13 frozen frames >50ms (worst 583ms).
+   On the TV-class WebView that read as «خیلی لگ داره».
+   The flip is now:
+     1. INSTANT under next-themes disableTransitionOnChange (one-frame
+        `transition:none!important` kill — every theme-driven transition, incl. the
+        cinema 900ms fades and the shop-board crossfade, snaps in the same frame);
+     2. softened by a COMPOSITOR-ONLY crossfade of View Transitions API snapshots
+        (src/components/theme/flip-theme.ts): one repaint total, then a pure GPU
+        fade of two static textures — no per-frame style recalc anywhere;
+     3. a plain instant snap where startViewTransition is missing (old WebViews)
+        — still strictly cheaper than the paint storm.
+   The @property registrations above STAY: they are free when not transitioning and
+   keep the tokens' typed fallback semantics.
+   ===================================================================================== */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 240ms;
+  animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /* v0.40.0 — the ambient ghost wall (home/vip) PAUSES while its layer is
@@ -508,12 +511,11 @@ html[data-reduce-motion="1"], html[data-reduce-motion="1"] *, html[data-reduce-m
   html:not([data-reduce-motion="0"]) * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }
 
-/* BUG-014 — while the theme morph runs (html[data-morph] for ~1s, set by
- * ThemeProvider) the hero's overlay-blend grain is hidden: with 10 fading
- * gradient twins under a mix-blend-mode layer, EVERY opacity frame
- * re-composited the full-stage blend stack. One second without film grain
- * beats a janky flip every time. */
-html[data-morph="1"] .ch-grain { visibility: hidden; }
+/* BUG-014 (retired in v0.55.0) — the old 800ms token ramp re-composited the
+ * hero's mix-blend grain EVERY frame, so ThemeProvider hid it via
+ * html[data-morph="1"] for the whole morph. The flip is now a snapshot
+ * crossfade: the blend stack renders once into each snapshot and the
+ * crossfade is compositor-only, so the grain needs no hiding anymore. */
 
 /* ---- Small helpers ---- */
 .line-clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }

@@ -2,7 +2,6 @@
 
 import { ThemeProvider as NextThemesProvider, useTheme } from "next-themes";
 import { Toaster } from "sonner";
-import { useEffect, useRef } from "react";
 import type { ReactNode } from "react";
 
 /**
@@ -10,39 +9,30 @@ import type { ReactNode } from "react";
  * Persisted by next-themes in localStorage under `nama-theme`; the class
  * (`.dark` / `.light`) is applied to <html> before hydration so there is
  * no flash of the wrong theme.
+ *
+ * v0.55.0 — disableTransitionOnChange is ON: on every flip next-themes
+ * injects a one-frame `transition:none!important` kill so ALL theme-driven
+ * transitions (the cinema 900ms fades, the shop-board crossfade, glass
+ * surfaces…) snap in the same frame instead of each chasing the class at
+ * its own speed. The perceived softness comes from the View Transitions
+ * snapshot crossfade in src/components/theme/flip-theme.ts — compositor
+ * only, zero per-frame style recalc. (The old 800ms @property token ramp
+ * measured 4.2s of main-thread busy across 3 flips — the «very laggy»
+ * theme-switch report.) The MorphBeacon (BUG-014) is retired with it.
  */
 export default function ThemeProvider({ children }: { children: ReactNode }) {
   return (
-    <NextThemesProvider attribute="class" defaultTheme="dark" enableSystem storageKey="nama-theme" disableTransitionOnChange={false}>
-      <MorphBeacon />
+    <NextThemesProvider
+      attribute="class"
+      defaultTheme="dark"
+      enableSystem
+      storageKey="nama-theme"
+      disableTransitionOnChange
+    >
       {children}
       <ThemedToaster />
     </NextThemesProvider>
   );
-}
-
-/** BUG-014 — marks the theme morph window on <html data-morph="1"> for ~1s.
- *  CSS uses it to hide the hero's mix-blend-mode grain while the 800ms token
- *  ramp repaints the whole document (the blend stack used to re-composite
- *  every frame of the flip — the biggest single cost of the theme swap). */
-function MorphBeacon() {
-  const { resolvedTheme } = useTheme();
-  const timer = useRef<number | null>(null);
-  const first = useRef(true);
-  useEffect(() => {
-    if (first.current) {
-      first.current = false;
-      return;
-    }
-    const html = document.documentElement;
-    html.setAttribute("data-morph", "1");
-    if (timer.current) window.clearTimeout(timer.current);
-    timer.current = window.setTimeout(() => html.removeAttribute("data-morph"), 1000);
-    return () => {
-      if (timer.current) window.clearTimeout(timer.current);
-    };
-  }, [resolvedTheme]);
-  return null;
 }
 
 function ThemedToaster() {

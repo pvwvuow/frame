@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useTheme } from "next-themes";
+import { flipTheme } from "./flip-theme";
 import { SunIcon, MoonIcon, MonitorIcon } from "../Icons";
 import { useI18n } from "../i18n/LocaleProvider";
 
@@ -32,7 +33,7 @@ export default function ThemeToggle({ className = "" }: { className?: string }) 
   return (
     <button
       type="button"
-      onClick={() => setTheme(next)}
+      onClick={() => flipTheme(setTheme, next)}
       aria-label={t("nav.themeCurrent", { name: label })}
       title={`${t("nav.theme")}: ${label}`}
       className={`relative flex h-10 items-center rounded-full border border-white/15 bg-white/[0.06] pe-4 ps-10 text-xs font-bold text-zinc-200 transition hover:border-white/30 hover:bg-white/10 hover:text-white ${className}`}
@@ -68,7 +69,7 @@ export function ThemeSegment() {
           <button
             key={t.value}
             type="button"
-            onClick={() => setTheme(t.value)}
+            onClick={() => flipTheme(setTheme, t.value)}
             aria-pressed={active}
             className={`group relative overflow-hidden rounded-2xl border p-4 text-start transition ${
               active ? "border-brand/60 bg-brand/10 shadow-[0_0_0_1px_var(--color-brand-glow)]" : "border-white/5 bg-white/[0.03] hover:border-white/15"
