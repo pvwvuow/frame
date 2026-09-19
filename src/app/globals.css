@@ -1387,7 +1387,34 @@ html.light .ch-dust i { background: radial-gradient(circle, rgba(255, 255, 255, 
   border-radius: 10px;
   overflow: hidden;
   transform: translateZ(0); /* keep the absolutely positioned frames on their own layer */
-  box-shadow: 0 26px 60px rgba(0, 0, 0, 0.45);
+  /* v0.53: softened — the top/bottom melts into the page now, a heavy shadow
+     under a borderless edge would break the blend */
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.25);
+}
+
+/* v0.53 — THE ROOM BLEED: the board photo ships with empty wall above (~27%)
+ * and below (~35%) the wooden case (measured: case top edge 26.8%, bottom
+ * edge ~65%). The user asked for a fade there so those zones take the color
+ * of the room — in BOTH themes — and the rows above/below flow into the
+ * shop instead of staring at a framed rectangle. --color-ink IS the page
+ * background (ink #070709 / light #f3f3f7), so the melt is pixel-exact. */
+.shop-case::before,
+.shop-case::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  z-index: 5; /* above the board art, below the posters (z:10) */
+  pointer-events: none;
+}
+.shop-case::before {
+  top: 0;
+  height: 26%; /* dissolves just before the case's top edge (26.8%) */
+  background: linear-gradient(to bottom, var(--color-ink) 0%, color-mix(in srgb, var(--color-ink) 62%, transparent) 45%, transparent 100%);
+}
+.shop-case::after {
+  bottom: 0;
+  height: 30%; /* starts just after the case's bottom edge (~65%) */
+  background: linear-gradient(to top, var(--color-ink) 0%, color-mix(in srgb, var(--color-ink) 62%, transparent) 45%, transparent 100%);
 }
 
 /* the user's board IS the chrome — dark by default, oak under html.light */
@@ -1428,7 +1455,10 @@ html.light .shop-slot--3 { left: 51.68%; width: 11.74%; }
 html.light .shop-slot--4 { left: 65.69%; width: 11.98%; }
 html.light .shop-slot--5 { left: 80.06%; width: 11.62%; }
 
-/* the poster fills the screen area edge-to-edge (the board already draws the bezel) */
+/* the poster fills the screen area edge-to-edge (the board already draws the bezel).
+ * v0.53: NO lift on hover — the frame is pinned to the board's green screens, any
+ * translate/scale slides it off the chroma rect and the green peeks out. The user
+ * asked for a soft halo instead: a warm lamp-light ring around the frame. */
 .shop-frame {
   position: relative;
   height: 100%;
@@ -1437,11 +1467,15 @@ html.light .shop-slot--5 { left: 80.06%; width: 11.62%; }
   border-radius: 3px;
   background: #0b0b0e;
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.42);
-  transition: transform 0.3s ease, box-shadow 0.3s ease;
+  transition: box-shadow 0.3s ease;
 }
-.group:hover .shop-frame {
-  transform: translateY(-3.5%) scale(1.02);
-  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.55);
+.group:hover .shop-frame,
+.group:focus-within .shop-frame {
+  box-shadow:
+    0 0 0 1px rgba(255, 241, 214, 0.22),
+    0 0 14px rgba(255, 205, 130, 0.26),
+    0 0 38px rgba(255, 186, 110, 0.18),
+    0 6px 18px rgba(0, 0, 0, 0.42);
 }
 
 /* the outlined circular play button — exactly the content board's */

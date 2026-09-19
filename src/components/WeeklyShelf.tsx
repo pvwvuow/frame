@@ -188,7 +188,10 @@ function ShopSlot({ t, idx, playLabel }: { t: TitleView; idx: number; playLabel:
           aria-label={playLabel}
           className="shop-play absolute bottom-[3.5%] end-[4.5%] z-10"
         >
-          <PlayIcon width="45%" height="45%" className="translate-x-[6%]" />
+          {/* optical centering: the glyph sits right-heavy in its own viewBox
+              (bbox center x≈14.36/24) — measured +2px off a 36px circle.
+              -8.6% of the icon width balances bbox AND centroid < ±0.6px */}
+          <PlayIcon width="45%" height="45%" className="-translate-x-[8.6%]" />
         </Link>
       </div>
     </div>
