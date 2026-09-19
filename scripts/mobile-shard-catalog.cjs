@@ -75,6 +75,19 @@ function main() {
   fs.rmSync(OUT_DIR, { recursive: true, force: true });
   fs.mkdirSync(OUT_DIR, { recursive: true });
 
+  /* v0.49.0 — ship the HERO DECK next to the shards: the slider's explicit,
+   * self-contained slide list (written by feature-new-hero.mjs moments ago).
+   * Devices fetch this ONE ~12KB file and REPLACE their stored deck wholesale
+   * — no featured-flag joins, no hydration, nothing a stale cache layer can
+   * revive. No deck → no hero.json → devices keep the flag fallback. */
+  const DECK_SRC = path.join(ROOT, "public", "catalog", ".hero-deck.json");
+  if (fs.existsSync(DECK_SRC)) {
+    fs.copyFileSync(DECK_SRC, path.join(OUT_DIR, "hero.json"));
+    console.log("hero deck: shipped (mobile/hero.json)");
+  } else {
+    console.warn("  ! no .hero-deck.json — hero.json NOT shipped (devices fall back to featured flags)");
+  }
+
   const seasonsOf = (t) => {
     const set = new Set();
     for (const e of t.episodes || []) set.add(Number(e.season) || 1);

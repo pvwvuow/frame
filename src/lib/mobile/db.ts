@@ -73,6 +73,7 @@ export type CatalogManifest = {
 import Dexie from "dexie";
 import { isElectron } from "@/lib/platform";
 import { pickHero } from "@/lib/hero-pick";
+import { parseHeroDeck, deckNewer, type HeroDeck } from "@/lib/hero-deck";
 
 /* ------------------------------------------------------------------ */
 /* Dexie database                                                      */
@@ -168,11 +169,15 @@ export const episodeId = (titleId: number, season: number, number: number) => ti
 
 const MANIFEST_KEY = "catalog:manifest";
 const LITE_KEY = (v: string) => `catalog:lite:v${v}`;
+/* v0.49.0 — the hero deck lives under its own key; a new deck REPLACES the
+ * value (never merges), so a stale show cannot survive here. */
+const HERO_DECK_KEY = "catalog:hero-deck";
 
 let lite: LiteTitle[] = [];
 let byId = new Map<number, LiteTitle>();
 let bySlug = new Map<string, LiteTitle>();
 let manifest: CatalogManifest | null = null;
+let heroDeck: HeroDeck | null = null;
 let initPromise: Promise<void> | null = null;
 
 export const isReady = () => lite.length > 0;
@@ -204,6 +209,16 @@ async function ensureReady(): Promise<void> {
   await initCatalog();
 }
 
+/* v0.49.0 — APP-RELEASE CACHE BUST. `cache:"no-cache"` on a CONSTANT url
+ * asks the HTTP cache to revalidate — but Android WebViews serving bundled
+ * assets have been observed answering from cache anyway, and a stale
+ * manifest body poisons EVERYTHING downstream (same version → fast path →
+ * old lite index → old featured flags → the same old show, three releases
+ * in a row). The app version changes on EVERY release, so the manifest and
+ * deck urls can never collide across an upgrade. */
+const APP_V = String(process.env.NEXT_PUBLIC_APP_VERSION || "");
+const avQ = () => (APP_V ? `?av=${encodeURIComponent(APP_V)}` : "");
+
 async function doInit(onProgress?: (p: ImportProgress) => void): Promise<void> {
   const p = onProgress ?? (() => {});
   if (isDesktopRuntime()) {
@@ -213,9 +228,10 @@ async function doInit(onProgress?: (p: ImportProgress) => void): Promise<void> {
     reindex();
     manifest = r.manifest ?? null;
     p({ done: 1, total: 1, phase: "done" });
+    await loadHeroDeck();
     return;
   }
-  const remote = await fetch("/catalog/mobile/manifest.json", { cache: "no-cache" }).then((r) => r.json()) as CatalogManifest;
+  const remote = await fetch(`/catalog/mobile/manifest.json${avQ()}`, { cache: "no-cache" }).then((r) => r.json()) as CatalogManifest;
 
   const stored = await db.kv.get(MANIFEST_KEY);
   const storedManifest = stored?.value as CatalogManifest | undefined;
@@ -226,6 +242,7 @@ async function doInit(onProgress?: (p: ImportProgress) => void): Promise<void> {
       reindex();
       manifest = storedManifest;
       p({ done: 1, total: 1, phase: "done" });
+      await loadHeroDeck(remote.version);
       return;
     }
   }
@@ -261,6 +278,7 @@ async function doInit(onProgress?: (p: ImportProgress) => void): Promise<void> {
     { key: LITE_KEY(remote.version), value: lite },
   ]);
   p({ done: remote.shardCount + 1, total: remote.shardCount + 1, phase: "done" });
+  await loadHeroDeck(remote.version);
   // v0.31.0 (NOTIF-1) — the catalog just changed: new episodes may have
   // landed for series the user follows. Background scan (throttled inside);
   // dynamic import breaks the module cycle userdata ← → db.
@@ -569,8 +587,45 @@ const matches = (t: LiteTitle, opts: CatalogQuery) =>
   (!opts.minRating || t.rating >= opts.minRating);
 
 /* ------------------------------------------------------------------ */
-/* Hero — the self-curating slideshow (v0.24.0)                        */
+/* Hero — v0.49.0 THE DECK (explicit, replaced, never merged)          */
 /* ------------------------------------------------------------------ */
+
+/** Load (or refresh) the hero deck. The deck is the WHOLE slider source — a
+ *  ~12KB file carrying the final slide list (identity + art + display copy)
+ *  written by scripts/feature-new-hero.mjs at publish time.
+ *
+ *  Replacement contract: a deck whose `version` (slides content hash) differs
+ *  from the stored one REPLACES it — old slides are physically gone. A body
+ *  that fails to parse is ignored entirely (stored deck stays). A network
+ *  failure keeps the last deck — the show must survive offline boots.
+ *
+ *  Mobile: the deck ships INSIDE the app bundle next to the shards; the
+ *  `?av=` bust guarantees an upgrade reads the new body, never the cached one.
+ *  Desktop: /api/x/hero resolves userData/hero-deck.json (kept forward-only
+ *  by the shell) with the bundled seed deck as fallback. */
+async function loadHeroDeck(manifestVersion?: string): Promise<void> {
+  try {
+    const stored = (await db.kv.get(HERO_DECK_KEY))?.value as HeroDeck | undefined;
+    const parsedStored = stored ? parseHeroDeck(stored) : null;
+    const mv = manifestVersion ? `&mv=${encodeURIComponent(manifestVersion)}` : "";
+    const url = isDesktopRuntime() ? "/api/x/hero" : `/catalog/mobile/hero.json${avQ()}${mv}`;
+    const res = await fetch(url, { cache: isDesktopRuntime() ? "no-store" : "force-cache" });
+    if (res.ok) {
+      const incoming = parseHeroDeck(await res.json());
+      if (incoming && deckNewer(incoming, parsedStored)) {
+        heroDeck = incoming;
+        await db.kv.put({ key: HERO_DECK_KEY, value: incoming });
+        return;
+      }
+    }
+  } catch {
+    /* offline / no deck yet — fall through to whatever is stored */
+  }
+  if (!heroDeck) {
+    const stored = (await db.kv.get(HERO_DECK_KEY))?.value as HeroDeck | undefined;
+    heroDeck = stored ? parseHeroDeck(stored) : null;
+  }
+}
 
 /** Hydrate one hero candidate to a full record; null when the row is gone or
  *  a series has no episodes at all (the hero's Play button must work).
@@ -623,21 +678,33 @@ const byHeroQuality = (a: LiteTitle, b: LiteTitle) =>
 
 export async function getFeatured(): Promise<TitleView[]> {
   await ensureReady();
-  // 1) THE FRESH WAVE (v0.45.0 — «اسلایدشو = تازه‌ها»). The publish pipeline
-  //    (scripts/feature-new-hero.mjs, run by publish-catalog on EVERY content
-  //    update) detects the newest add-wave and pins the best-rated arrivals
-  //    here: rating ≥ 8.5, real tt art on poster AND backdrop, series must
-  //    carry episodes. The user: «ازین فیلم و سریال های جدیدی ک میاد توی
-  //    اسلاید شو تیایتر جایگزین کنیم» — every new wave must REPLACE the show.
-  //    v0.38's best-of-catalog billboard used to run FIRST and star the same
-  //    old 9+ classics forever (Breaking Bad, Cosmos, …) — the fresh pins
-  //    were dead code at runtime. Order = rating → trending, up to 8 slides.
+  // 1) THE HERO DECK (v0.49.0 — the slider, rewritten from scratch).
+  //    The deck IS the show: an explicit ordered slide list written at
+  //    publish time. Rendering is a pure lookup — no network, no hydration,
+  //    no featured-flag joins, nothing that a stale cache layer can revert.
+  //    A slide whose slug is missing from the installed catalog means the
+  //    deck is stale against a content-only update → it loses that slide;
+  //    fewer than 3 resolvable slides → the flag fallback below takes over
+  //    (invariant: deck ⊆ catalog, always).
+  if (heroDeck?.slides.length) {
+    const slides: TitleView[] = [];
+    for (const s of heroDeck.slides) {
+      const l = bySlug.get(s.slug);
+      if (!l) continue; // slide not in this catalog — skip, never stall
+      slides.push({ ...liteView(l), description: s.description || l.description });
+    }
+    if (slides.length >= 3) return slides;
+  }
+  // 2) FALLBACK: featured flags — the pre-deck mechanism, kept as the safety
+  //    net for catalogs without a deck (tiny demo/test data, a content-only
+  //    publish that outpaced the deck, deck fetch failure). Order = rating →
+  //    trending, up to 8 slides.
   const pinned = lite.filter((t) => t.featured).sort(byHeroQuality).slice(0, 8);
   if (pinned.length) {
     const lineup = await hydrateLineup(pinned, 8);
     if (lineup.length >= 3) return lineup;
   }
-  // 2) FALLBACK: the v0.38.0 «برترین‌ها» billboard — top 3 movies + top 2
+  // 3) FALLBACK: the v0.38.0 «برترین‌ها» billboard — top 3 movies + top 2
   //    series by rating over the WHOLE catalog (see src/lib/hero-pick.ts).
   //    Only for catalogs with NO featured pins at all (tiny demo/test data,
   //    hand-built DBs, catalogs without any tt art).
@@ -646,7 +713,7 @@ export async function getFeatured(): Promise<TitleView[]> {
     const lineup = await hydrateLineup(picks as LiteTitle[], 5);
     if (lineup.length >= 3) return lineup;
   }
-  // 3) LAST RESORT: hydration failed entirely (offline desktop?) — plain lite
+  // 4) LAST RESORT: hydration failed entirely (offline desktop?) — plain lite
   //    rows so the hero surface never renders empty.
   const rows = lite.filter((t) => t.featured).sort(bySort("trending")).slice(0, 5);
   if (!rows.length) return [];

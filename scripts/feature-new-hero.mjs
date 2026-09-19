@@ -54,6 +54,8 @@
  */
 import { createRequire } from "node:module";
 import path from "node:path";
+import fs from "node:fs";
+import { createHash } from "node:crypto";
 
 const DRY_RUN = process.argv.includes("--dry-run");
 
@@ -214,6 +216,88 @@ async function pickAuto() {
   return picks.map((t) => ({ ...t, rating: Number(t.rating) }));
 }
 
+/* v0.49.0 — THE HERO DECK. Flags alone proved un-shippable: the same show
+ * kept coming back from five different cache layers no matter how the rules
+ * were recut («دکستر تاکوپی و کاگویا هنوز هستن» ×۳). So the slider no longer
+ * DERIVES anything at runtime: this script ships the FINAL slide list —
+ * identity, art, display copy — as ONE explicit version-stamped file
+ * (public/catalog/.hero-deck.json → mobile/hero.json, ~12KB) that devices
+ * REPLACE wholesale. version = sha256 of the slides themselves: same picks
+ * ⇒ byte-identical file (generatedAt included) ⇒ zero churn downstream. */
+const DECK_SRC = path.join(ROOT, "public", "catalog", ".hero-deck.json");
+const DECK_SHIPPED = path.join(ROOT, "public", "catalog", "mobile", "hero.json");
+const METAHUB = (tt, kind) => `https://images.metahub.space/${kind}/${tt}/img`;
+
+async function writeHeroDeck(picked) {
+  const ids = picked.map((t) => t.id);
+  const rows = await db.title.findMany({ where: { id: { in: ids } } });
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  const parseArr = (s) => {
+    try {
+      const v = JSON.parse(s || "[]");
+      return Array.isArray(v) ? v : [];
+    } catch {
+      return [];
+    }
+  };
+  const slides = ids
+    .map((id) => byId.get(id))
+    .filter(Boolean)
+    .map((t) => {
+      const tt = /(?:^|\/)(tt\d+)\//.exec(String(t.poster || ""))?.[1] || /(?:^|\/)(tt\d+)\//.exec(String(t.backdrop || ""))?.[1] || "";
+      return {
+        slug: t.slug,
+        title: t.title,
+        titleEn: t.titleEn || t.title,
+        type: t.type === "series" ? "series" : "movie",
+        year: t.year,
+        rating: Number(t.rating) || 0,
+        duration: t.duration || 0,
+        description: t.description || "",
+        genres: parseArr(t.genres),
+        poster: t.poster || "",
+        backdrop: t.backdrop || "",
+        posterUrl: tt ? METAHUB(tt, "poster/small") : "",
+        backdropUrl: tt ? METAHUB(tt, "background/medium") : "",
+        trailerUrl: t.trailerUrl || null,
+        quality: t.quality || "HD",
+        ageRating: t.ageRating || "+13",
+        country: t.country || "نامشخص",
+        director: t.director || "",
+        cast: parseArr(t.cast),
+      };
+    });
+  if (!slides.length) {
+    console.warn("  ! hero deck: no slides — skipping deck write (runtime falls back to flags)");
+    return;
+  }
+  const version = createHash("sha256").update(JSON.stringify(slides)).digest("hex").slice(0, 12);
+  /* generatedAt is CONTENT-derived: identical slides keep the previous
+   * timestamp so the file stays byte-identical across republishes. */
+  let generatedAt = new Date().toISOString();
+  for (const prev of [DECK_SHIPPED, DECK_SRC]) {
+    try {
+      const p = JSON.parse(fs.readFileSync(prev, "utf8"));
+      if (p?.version === version && p?.generatedAt) {
+        generatedAt = p.generatedAt;
+        break;
+      }
+    } catch {
+      /* no previous deck */
+    }
+  }
+  const deck = { format: "nama-hero-deck", version, generatedAt, slides };
+  fs.writeFileSync(DECK_SRC, JSON.stringify(deck));
+  const same = (() => {
+    try {
+      return fs.readFileSync(DECK_SHIPPED, "utf8") === JSON.stringify(deck);
+    } catch {
+      return false;
+    }
+  })();
+  console.log(`hero deck: ${slides.length} slides | version ${version} | generatedAt ${generatedAt}${same ? " (unchanged)" : ""}`);
+}
+
 async function main() {
   const picked = HERO_TT.length ? await pickManual() : await pickAuto();
   if (picked.length < COUNT) {
@@ -235,6 +319,7 @@ async function main() {
     await db.title.update({ where: { id: t.id }, data: { featured: true } });
   }
   console.log(`featured ${picked.length} title(s), un-featured the rest (cleared ${cleared.count})`);
+  await writeHeroDeck(picked);
 }
 
 main()

@@ -88,6 +88,7 @@ server.log
 !/scripts/resolve-f2m-covers.mjs
 !/scripts/f2m-tail-resolve.mjs
 !/scripts/test-hero-pick.mjs
+!/scripts/test-hero-deck.mjs
 !/scripts/test-catalog-repair.mjs
 !/scripts/test-ondemand.mjs
 !/scripts/test-catalog-cache.mjs
@@ -167,3 +168,5 @@ public/catalog/catalog-core.json
 public/catalog/catalog-f2m.json
 public/catalog/catalog-part-*.json
 public/catalog/.full.json
+# v0.49.0 — hero deck intermediate (the shipped copy is public/catalog/mobile/hero.json)
+public/catalog/.hero-deck.json

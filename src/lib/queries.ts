@@ -1,6 +1,9 @@
 import { db } from "@/lib/db";
 import { ensureSeeded } from "@/db/seed";
 import type { Title as DbTitle } from "@prisma/client";
+import fs from "node:fs";
+import path from "node:path";
+import { parseHeroDeck, type HeroDeck } from "@/lib/hero-deck";
 
 export type TitleView = Omit<DbTitle, "genres" | "cast"> & {
   genres: string[];
@@ -57,8 +60,60 @@ async function cachedScan<T>(key: string, fn: () => Promise<T>): Promise<T> {
   return value;
 }
 
+/* v0.49.0 — THE HERO DECK (server side). Resolve the deck file exactly like
+ * /api/x/hero does: userData (forward-copied by the shell) → bundled seed →
+ * repo file in dev. Cached by (version + generatedAt) so repeated renders
+ * stat once. The deck is the slider's primary source; featured flags below
+ * stay as the fallback for a missing/stale-deck-against-catalog case. */
+let heroDeckCache: { deck: HeroDeck | null; key: string; at: number } | null = null;
+function readHeroDeck(): HeroDeck | null {
+  const candidates = [
+    process.env.NAMA_HERO_DECK,
+    process.env.NAMA_HERO_SEED,
+    path.join(process.cwd(), "public", "catalog", "mobile", "hero.json"),
+  ].filter((p): p is string => !!p);
+  for (const p of candidates) {
+    try {
+      const body = fs.readFileSync(p, "utf8");
+      const deck = parseHeroDeck(JSON.parse(body));
+      if (deck) {
+        const key = `${deck.version}:${deck.generatedAt}`;
+        if (heroDeckCache && heroDeckCache.key === key && Date.now() - heroDeckCache.at < 60_000) {
+          return heroDeckCache.deck;
+        }
+        heroDeckCache = { deck, key, at: Date.now() };
+        return deck;
+      }
+    } catch {
+      /* try the next candidate */
+    }
+  }
+  heroDeckCache = null;
+  return null;
+}
+
 export async function getFeatured() {
   await ensureSeeded();
+  // 1) THE HERO DECK (v0.49.0 — the slider, rewritten from scratch): the
+  //    explicit publish-time slide list, rendered by slug order with the
+  //    deck's display copy. No derivation, nothing to revive stale.
+  const deck = readHeroDeck();
+  if (deck?.slides.length) {
+    const slugs = deck.slides.map((s) => s.slug);
+    const rows = await db.title.findMany({ where: { slug: { in: slugs } } });
+    const bySlug = new Map(rows.map((r) => [r.slug, r]));
+    const descBySlug = new Map(deck.slides.map((s) => [s.slug, s.description] as const));
+    const ordered = slugs
+      .map((slug) => bySlug.get(slug))
+      .filter((r): r is DbTitle => !!r)
+      .map((r) => {
+        const view = pv(r);
+        const desc = descBySlug.get(view.slug);
+        return desc ? { ...view, description: desc } : view;
+      });
+    if (ordered.length >= 3) return ordered;
+  }
+  // 2) FALLBACK: featured flags (pre-deck mechanism — kept as the safety net).
   // v0.45.0 — parity with mobile/db.ts getFeatured: the featured pins are the
   // fresh add-wave cut by scripts/feature-new-hero.mjs on every publish; the
   // hero must SHOW them (user: «ازین فیلم و سریال های جدیدی ک میاد توی اسلاید

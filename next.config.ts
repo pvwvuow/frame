@@ -1,12 +1,26 @@
 import type { NextConfig } from "next";
+import { readFileSync } from "node:fs";
 
 /* NAMA_MOBILE=1 → static export for the Android/Capacitor build:
  * no Node server ships in the APK, so everything is pre-rendered/client. */
 const isMobile = process.env.NAMA_MOBILE === "1";
 
+/* v0.49.0 — the APP-RELEASE cache-bust stamp for the mobile catalog
+ * manifest + hero deck urls (see src/lib/mobile/db.ts): a new app version
+ * must never read the previous release's cached manifest body. */
+let appVersion = "";
+try {
+  appVersion = String(JSON.parse(readFileSync("package.json", "utf8")).version || "");
+} catch {
+  /* dev without a package.json — urls stay un-busted */
+}
+
 const nextConfig: NextConfig = {
   output: isMobile ? "export" : "standalone",
   ...(isMobile ? { images: { unoptimized: true } } : {}),
+  env: {
+    NEXT_PUBLIC_APP_VERSION: appVersion,
+  },
   typescript: {
     ignoreBuildErrors: true,
   },

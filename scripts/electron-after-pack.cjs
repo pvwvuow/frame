@@ -115,6 +115,17 @@ exports.default = async function afterPack(context) {
     console.warn("  • afterPack: public/catalog/version.json missing – fresh installs will do a full remote sync");
   }
 
+  /* v0.49.0 — the HERO DECK ships offline with the installer (like the seed
+   * db): the slider's explicit slide list, written by feature-new-hero.mjs.
+   * main.cjs forward-copies it to userData and the server serves it via
+   * /api/x/hero — the theater can never boot on a stale show again. */
+  const deckSrc = path.join(root, "public", "catalog", "mobile", "hero.json");
+  if (fs.existsSync(deckSrc)) {
+    fs.copyFileSync(deckSrc, path.join(dest, "seed-hero.json"));
+  } else {
+    console.warn("  • afterPack: public/catalog/mobile/hero.json missing – desktop hero falls back to featured flags");
+  }
+
   console.log("  • afterPack: standalone server copied →", dest, "(cover-light: covers+catalog excluded)");
 
   /* v0.30.13 — DETERMINISTIC PAYLOAD, the other half of differential updates.

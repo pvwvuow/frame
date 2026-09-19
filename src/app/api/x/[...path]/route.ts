@@ -153,6 +153,33 @@ async function handleX(req: Request, ctx: { params: Promise<{ path: string[] }> 
   const userKey = await getUserKey();
 
   switch (head) {
+    /* v0.49.0 — THE HERO DECK (desktop). The theater slider's explicit slide
+     * list, resolved from: <userData>/hero-deck.json (forward-copied from the
+     * bundled seed by main.cjs on every boot — never backwards) → the bundled
+     * seed-hero.json → the repo file in dev. The client (mobile/db.ts) treats
+     * this file as the WHOLE show: replacement, not merge, so the old
+     * «featured flags revived from a stale cache» bug class is gone. */
+    case "hero": {
+      const fs = await import("node:fs");
+      const path = await import("node:path");
+      const candidates = [
+        process.env.NAMA_HERO_DECK,
+        process.env.NAMA_HERO_SEED,
+        path.join(process.cwd(), "public", "catalog", "mobile", "hero.json"),
+      ].filter((p): p is string => !!p);
+      for (const p of candidates) {
+        try {
+          const deck = JSON.parse(fs.readFileSync(p, "utf8"));
+          if (deck?.format === "nama-hero-deck" && Array.isArray(deck.slides) && deck.slides.length) {
+            return ok(deck);
+          }
+        } catch {
+          /* try the next candidate */
+        }
+      }
+      return Response.json({ error: "hero_deck_unavailable" }, { status: 404, headers: noStore });
+    }
+
     /* in-memory lite index — the desktop counterpart of the shard catalog */
     case "lite": {
       const rows = await db.title.findMany({ orderBy: { id: "asc" }, select: LITE_SELECT });

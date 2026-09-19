@@ -870,6 +870,38 @@ const DEFAULT_CATALOG_URL = "https://github.com/pvwvuow/frame/releases/latest/do
   } catch (e) {
     log.warn("seed-version.json read failed:", e);
   }
+
+  /* v0.49.0 — HERO DECK delivery (desktop). The installer bundles the seed
+   * deck (seed-hero.json, written by afterPack). On every boot it is
+   * forward-copied into <userData>/hero-deck.json — the LIVE deck the server
+   * serves via /api/x/hero. Forward-only: a seed deck never overwrites a
+   * NEWER userData deck (generatedAt compare), so deck updates survive while
+   * a stale seed can never drag the show backwards. The data layer treats
+   * the deck as the whole slider — no featured-flag revival is possible. */
+  try {
+    const seedHero = path.join(path.dirname(seed), "seed-hero.json");
+    const userHero = path.join(app.getPath("userData"), "hero-deck.json");
+    const genOf = (f) => {
+      try {
+        return String(JSON.parse(fs.readFileSync(f, "utf8")).generatedAt || "");
+      } catch {
+        return "";
+      }
+    };
+    const seedGen = genOf(seedHero);
+    if (seedHero && fs.existsSync(seedHero)) {
+      const userGen = genOf(userHero);
+      const tSeed = Date.parse(seedGen) || 0;
+      const tUser = Date.parse(userGen) || 0;
+      if (!fs.existsSync(userHero) || tSeed >= tUser) {
+        fs.copyFileSync(seedHero, userHero);
+      }
+      env.NAMA_HERO_SEED = seedHero;
+      env.NAMA_HERO_DECK = userHero;
+    }
+  } catch (e) {
+    log.warn("hero deck copy failed:", e);
+  }
   /* If the server dies instantly (port race, antivirus lock) retry once on a
      fresh port before surfacing an error. v0.10.14: the FIRST attempt uses
      the previous run's port when free – a stable origin is what keeps the
