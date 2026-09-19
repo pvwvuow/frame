@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { hostnameIsInternal } from "./host-guard";
 
 /**
  * A-6/C — گارد مبدأ برای اندپوینت‌های جهش‌دهنده‌ی API (P1-backend).
@@ -69,6 +70,11 @@ export function sameOriginOrThrow(req: Request): NextResponse | null {
 const PRIVATE_HOSTNAME_RE =
   /^(?:localhost$|127\.\d+\.\d+\.\d+$|10\.\d+\.\d+\.\d+$|192\.168\.\d+\.\d+$|172\.(?:1[6-9]|2\d|3[01])\.\d+\.\d+$|169\.254\.\d+\.\d+$|0\.0\.0\.0$|\[::1\]$|\[::$|\[fc|\[fd|\[fe80)/i;
 
+/* S01 (audit v0.49) — the legacy regex above missed IPv4-MAPPED IPv6
+ * (`[::ffff:7f00:1]`), `[::]`, `localhost.` and the CGNAT range. The real
+ * classification now lives in the PURE, unit-tested module host-guard.ts;
+ * this file keeps the legacy fast path and delegates the rest. */
+
 /**
  * درست اگر URL یک http(s) عمومی باشد (نه loopback/خصوصی/link-local/حافظه).
  * برای مسیر شروع خزنده؛ fetchListing برای هر صفحه (و بعد از هر redirect)
@@ -82,6 +88,7 @@ export function isPublicHttpUrl(rawUrl: string): boolean {
     return false;
   }
   if (u.protocol !== "http:" && u.protocol !== "https:") return false;
-  if (PRIVATE_HOSTNAME_RE.test(u.hostname)) return false;
+  if (PRIVATE_HOSTNAME_RE.test(u.hostname)) return false; // legacy fast path
+  if (hostnameIsInternal(u.hostname)) return false;
   return true;
 }

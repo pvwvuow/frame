@@ -42,7 +42,7 @@ export default function HistoryList({ rows }: { rows: HistoryRow[] }) {
   const remove = (ids?: number[]) =>
     start(async () => {
       try {
-        await fetch("/api/progress", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify(ids ? { titleIds: ids } : {}) });
+        await fetch("/api/progress", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify(ids ? { titleIds: ids } : { all: true }) });
         // v0.27.0 (DATA-3) — deletions propagate to the cloud + other devices
         void pushProgressDelete(ids);
         toast.success(ids ? "از تاریخچه حذف شد" : "تاریخچه پاک شد");

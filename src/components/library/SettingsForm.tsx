@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
-import { markProfileTouched, useCloudSession, wipeCloudAccountData, pushCinemaProfile } from "@/lib/cloud";
+import { markProfileTouched, useCloudSession, wipeCloudAccountData, wipeCloudScopeData, pushCinemaProfile } from "@/lib/cloud";
+import { enqueueSyncOp } from "@/lib/sync-queue";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -128,6 +129,11 @@ export default function SettingsForm({ initial }: { initial: ProfileData }) {
   const [danger, setDanger] = useState<string | null>(null);
   const [section, setSection] = useState<SectionId>("profile");
   const [pinDraft, setPinDraft] = useState("");
+  const [currentPinDraft, setCurrentPinDraft] = useState("");
+  /* S04 (audit v0.49) — desktop serves only hasPin (the raw pin NEVER crosses
+   * the API); mobile keeps the pin in Dexie. Either way this tells the form a
+   * pin exists, so changing/clearing it asks for the current one first. */
+  const hasPin = Boolean((initial as unknown as { hasPin?: boolean }).hasPin) || Boolean(p.parentalPin);
   const [checking, setChecking] = useState(false);
   const avatarFileRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
@@ -182,7 +188,31 @@ export default function SettingsForm({ initial }: { initial: ProfileData }) {
   const save = () =>
     start(async () => {
       try {
-        const r = await fetch("/api/profile", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(p) });
+        /* S04 (audit v0.49) — the pin travels the API ONLY when the user actually
+         * changed it in this session, and then it MUST be accompanied by the
+         * current pin. An unchanged pin is stripped from the body entirely (on
+         * mobile the local row holds the raw pin — it used to leak to the server
+         * on every save). */
+        const body: Record<string, unknown> = { ...p };
+        const pinChanged = typeof body.parentalPin === "string" && body.parentalPin !== (initial as ProfileData).parentalPin;
+        if (pinChanged && hasPin) {
+          if (currentPinDraft.length !== 4) {
+            toast.error("برای تغییر پین، پین فعلی را وارد کنید");
+            return;
+          }
+          body.currentPin = currentPinDraft;
+        } else {
+          delete body.parentalPin;
+        }
+        const r = await fetch("/api/profile", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+        if (r.status === 403) {
+          toast.error("پین فعلی درست نیست");
+          return;
+        }
+        if (r.status === 429) {
+          toast.error("تلاش‌های زیاد — کمی بعد دوباره امتحان کنید");
+          return;
+        }
         if (r.ok) markProfileTouched();
         // v0.14.2 — the avatar/name used to ride the cloud only on the NEXT app
         // start; push the cinema-visible fields right away so friends see them
@@ -204,8 +234,19 @@ export default function SettingsForm({ initial }: { initial: ProfileData }) {
         // ratings, history, collections, activity, shared walls). Without this,
         // another device would push its old rows straight back and resurrect
         // them here on the next sync. Username + VIP stay untouched.
+        // D02 (audit v0.49) — EVERY scope now wipes its cloud copy, not just
+        // "all": a scoped local wipe used to leave the cloud rows intact and
+        // they came straight back on the next pull. If the cloud side fails
+        // (offline, VPN down), the wipe parks in the offline op queue and
+        // replays on reconnect — so the deletion still survives reconnects.
         let cloudOk = true;
-        if (scope === "all" && session) cloudOk = await wipeCloudAccountData();
+        if (session) {
+          cloudOk = scope === "all" ? await wipeCloudAccountData() : await wipeCloudScopeData(scope as "history" | "list" | "favorites" | "ratings");
+          if (!cloudOk && scope !== "all") {
+            enqueueSyncOp("wipe-scope", session.user?.id ?? "", { scope });
+            void import("@/lib/cloud").then((m) => m.flushSyncOps().catch(() => {}));
+          }
+        }
         if (cloudOk) toast.success("داده‌ها پاک شد");
         else toast.error("این دستگاه پاک شد؛ پاک‌سازی ابری ناموفق بود — با اینترنت وصل دوباره تلاش کنید");
         setDanger(null);
@@ -276,6 +317,26 @@ export default function SettingsForm({ initial }: { initial: ProfileData }) {
   };
 
   const set = <K extends keyof ProfileData>(k: K, v: ProfileData[K]) => setP((s) => ({ ...s, [k]: v }));
+
+  /* S04 — change / remove the parental pin THROUGH the verified path: the
+   * payload carries currentPin, the server (and the mobile Dexie mirror)
+   * refuse the change without it. */
+  const changePin = () => {
+    set("parentalPin", pinDraft);
+    setPinDraft("");
+    setCurrentPinDraft("");
+    toast.message("پین تنظیم شد؛ فراموش نکنید ذخیره کنید.");
+  };
+
+  const removePin = () => {
+    if (!currentPinDraft) {
+      toast.error("برای حذف پین، پین فعلی را وارد کنید");
+      return;
+    }
+    set("parentalPin", "");
+    setCurrentPinDraft("");
+    toast.message("پین حذف شد؛ فراموش نکنید ذخیره کنید.");
+  };
   const visibleSections = SECTIONS.filter((s) => s.id !== "about" || true);
 
   return (
@@ -516,14 +577,29 @@ export default function SettingsForm({ initial }: { initial: ProfileData }) {
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <p className="text-sm font-bold text-white">پین ۴ رقمی</p>
-                    <p className="text-[11px] text-zinc-500">{p.parentalPin ? "پین تنظیم شده است." : "پینی تنظیم نشده است."}</p>
+                    {/* S04 — hasPin (desktop) یا parentalPin (موبایل): روی دسکتاپ پین از مرز API
+                        بیرون نمی‌آید، فقط hasPin؛ قبلاً وضعیت اینجا همیشه «تنظیم نشده» می‌دید */}
+                    <p className="text-[11px] text-zinc-500">{hasPin ? "پین تنظیم شده است." : "پینی تنظیم نشده است."}</p>
                   </div>
-                  {p.parentalPin && (
-                    <button type="button" onClick={() => set("parentalPin", "")} className="rounded-full border border-rose-500/30 px-3 py-1.5 text-xs font-bold text-rose-200 hover:bg-rose-500/10">
+                  {hasPin && (
+                    <button type="button" onClick={() => removePin()} className="rounded-full border border-rose-500/30 px-3 py-1.5 text-xs font-bold text-rose-200 hover:bg-rose-500/10">
                       حذف پین
                     </button>
                   )}
                 </div>
+                {/* S04 (audit v0.49) — وقتی پینی هست، تغییر/حذفش نیازمند اثبات پین فعلی است */}
+                {hasPin && (
+                  <input
+                    inputMode="numeric"
+                    maxLength={4}
+                    value={currentPinDraft}
+                    onChange={(e) => setCurrentPinDraft(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                    placeholder="پین فعلی"
+                    aria-label="پین فعلی"
+                    dir="ltr"
+                    className="mt-3 h-11 w-32 rounded-xl border border-white/10 bg-black/40 px-4 text-center text-lg tracking-[0.5em] text-white focus:border-white/30 focus:outline-none"
+                  />
+                )}
                 <div className="mt-3 flex flex-wrap items-center gap-2">
                   <input
                     inputMode="numeric"
@@ -537,15 +613,11 @@ export default function SettingsForm({ initial }: { initial: ProfileData }) {
                   />
                   <button
                     type="button"
-                    disabled={pinDraft.length !== 4}
-                    onClick={() => {
-                      set("parentalPin", pinDraft);
-                      setPinDraft("");
-                      toast.message("پین تنظیم شد؛ فراموش نکنید ذخیره کنید.");
-                    }}
+                    disabled={pinDraft.length !== 4 || (hasPin && currentPinDraft.length !== 4)}
+                    onClick={() => changePin()}
                     className="h-11 rounded-xl bg-white px-4 text-xs font-bold text-black disabled:opacity-40"
                   >
-                    {p.parentalPin ? "تغییر پین" : "تنظیم پین"}
+                    {hasPin ? "تغییر پین" : "تنظیم پین"}
                   </button>
                 </div>
               </div>

@@ -99,14 +99,24 @@ export async function DELETE(req: Request) {
   const guard = sameOriginOrThrow(req);
   if (guard) return guard;
   const userKey = await getUserKey();
-  const body = (await req.json().catch(() => null)) as { titleId?: number; titleIds?: number[] } | null;
+  const body = (await req.json().catch(() => null)) as { titleId?: number; titleIds?: number[]; all?: boolean } | null;
   const ids = Array.isArray(body?.titleIds)
     ? body.titleIds.map(Number).filter(Boolean).slice(0, 1000)
     : body?.titleId
       ? [Number(body.titleId)]
       : [];
-  const r = await db.watchProgress.deleteMany({ where: { userKey, ...(ids.length ? { titleId: { in: ids } } : {}) } });
+  // D09 (audit v0.49) — an EMPTY/broken body used to fall through to
+  // deleteMany with NO id filter = wipe the WHOLE history. A bulk clear is
+  // now an EXPLICIT contract: only `{ all: true }` may clear everything;
+  // `{}` / garbage / missing ids ⇒ 400, nothing deleted.
+  if (!ids.length) {
+    if (body?.all !== true) return Response.json({ error: "titleId or all=true required" }, { status: 400 });
+    const all = await db.watchProgress.deleteMany({ where: { userKey } });
+    await db.watchEpisodeProgress.deleteMany({ where: { userKey } }).catch(() => undefined);
+    return Response.json({ ok: true, removed: all.count });
+  }
+  const r = await db.watchProgress.deleteMany({ where: { userKey, titleId: { in: ids } } });
   // v0.27.0 (DATA-7) — the per-episode rows ride along
-  await db.watchEpisodeProgress.deleteMany({ where: { userKey, ...(ids.length ? { titleId: { in: ids } } : {}) } }).catch(() => undefined);
+  await db.watchEpisodeProgress.deleteMany({ where: { userKey, titleId: { in: ids } } }).catch(() => undefined);
   return Response.json({ ok: true, removed: r.count });
 }

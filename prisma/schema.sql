@@ -66,6 +66,25 @@ CREATE TABLE "Favorite" (
 );
 
 -- CreateTable
+CREATE TABLE "UserCollection" (
+    "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    "userKey" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "cloudId" TEXT,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- CreateTable
+CREATE TABLE "UserCollectionItem" (
+    "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    "collectionId" INTEGER NOT NULL,
+    "titleId" INTEGER NOT NULL,
+    "addedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "UserCollectionItem_collectionId_fkey" FOREIGN KEY ("collectionId") REFERENCES "UserCollection" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+-- CreateTable
 CREATE TABLE "UserRating" (
     "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
     "userKey" TEXT NOT NULL,
@@ -90,12 +109,24 @@ CREATE TABLE "WatchProgress" (
 );
 
 -- CreateTable
+CREATE TABLE "WatchEpisodeProgress" (
+    "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    "userKey" TEXT NOT NULL,
+    "titleId" INTEGER NOT NULL,
+    "episodeId" INTEGER NOT NULL,
+    "position" REAL NOT NULL DEFAULT 0,
+    "duration" REAL NOT NULL DEFAULT 0,
+    "updatedAt" DATETIME NOT NULL
+);
+
+-- CreateTable
 CREATE TABLE "Review" (
     "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
     "titleId" INTEGER NOT NULL,
     "author" TEXT NOT NULL,
     "rating" INTEGER NOT NULL,
     "body" TEXT NOT NULL,
+    "userKey" TEXT,
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "Review_titleId_fkey" FOREIGN KEY ("titleId") REFERENCES "Title" ("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
@@ -120,9 +151,11 @@ CREATE TABLE "UserProfile" (
     "notifyNewEpisodes" BOOLEAN NOT NULL DEFAULT true,
     "notifyRecommendations" BOOLEAN NOT NULL DEFAULT true,
     "notifyContinue" BOOLEAN NOT NULL DEFAULT true,
+    "notifySystem" BOOLEAN NOT NULL DEFAULT true,
     "kidsMode" BOOLEAN NOT NULL DEFAULT false,
     "parentalPin" TEXT NOT NULL DEFAULT '',
     "language" TEXT NOT NULL DEFAULT 'fa',
+    "playerPrefs" TEXT,
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -132,6 +165,29 @@ CREATE TABLE "SyncState" (
     "key" TEXT NOT NULL PRIMARY KEY,
     "value" TEXT NOT NULL,
     "updatedAt" DATETIME NOT NULL
+);
+
+-- CreateTable
+CREATE TABLE "NotificationEvent" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "userKey" TEXT NOT NULL,
+    "kind" TEXT NOT NULL,
+    "titleId" INTEGER,
+    "title" TEXT NOT NULL,
+    "body" TEXT NOT NULL DEFAULT '',
+    "href" TEXT NOT NULL DEFAULT '',
+    "image" TEXT,
+    "data" TEXT NOT NULL DEFAULT '{}',
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "readAt" DATETIME,
+    "expiresAt" DATETIME NOT NULL
+);
+
+-- CreateTable
+CREATE TABLE "AccountSpace" (
+    "accountId" TEXT NOT NULL PRIMARY KEY,
+    "uid" TEXT NOT NULL,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 -- CreateIndex
@@ -145,6 +201,9 @@ CREATE INDEX "Title_trendingScore_idx" ON "Title"("trendingScore");
 
 -- CreateIndex
 CREATE INDEX "Title_type_trendingScore_idx" ON "Title"("type", "trendingScore");
+
+-- CreateIndex
+CREATE INDEX "Title_title_idx" ON "Title"("title");
 
 -- CreateIndex
 CREATE INDEX "Title_type_rating_idx" ON "Title"("type", "rating");
@@ -165,6 +224,9 @@ CREATE INDEX "Title_year_idx" ON "Title"("year");
 CREATE INDEX "Episode_titleId_idx" ON "Episode"("titleId");
 
 -- CreateIndex
+CREATE INDEX "Episode_titleId_season_number_idx" ON "Episode"("titleId", "season", "number");
+
+-- CreateIndex
 CREATE INDEX "Watchlist_userKey_status_idx" ON "Watchlist"("userKey", "status");
 
 -- CreateIndex
@@ -177,6 +239,21 @@ CREATE INDEX "Favorite_userKey_idx" ON "Favorite"("userKey");
 CREATE UNIQUE INDEX "Favorite_userKey_titleId_key" ON "Favorite"("userKey", "titleId");
 
 -- CreateIndex
+CREATE INDEX "UserCollection_userKey_idx" ON "UserCollection"("userKey");
+
+-- CreateIndex
+CREATE INDEX "UserCollection_cloudId_idx" ON "UserCollection"("cloudId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "UserCollection_userKey_name_key" ON "UserCollection"("userKey", "name");
+
+-- CreateIndex
+CREATE INDEX "UserCollectionItem_collectionId_idx" ON "UserCollectionItem"("collectionId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "UserCollectionItem_collectionId_titleId_key" ON "UserCollectionItem"("collectionId", "titleId");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "UserRating_userKey_titleId_key" ON "UserRating"("userKey", "titleId");
 
 -- CreateIndex
@@ -186,8 +263,26 @@ CREATE INDEX "WatchProgress_userKey_updatedAt_idx" ON "WatchProgress"("userKey",
 CREATE UNIQUE INDEX "WatchProgress_userKey_titleId_key" ON "WatchProgress"("userKey", "titleId");
 
 -- CreateIndex
+CREATE INDEX "WatchEpisodeProgress_userKey_titleId_idx" ON "WatchEpisodeProgress"("userKey", "titleId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "WatchEpisodeProgress_userKey_titleId_episodeId_key" ON "WatchEpisodeProgress"("userKey", "titleId", "episodeId");
+
+-- CreateIndex
 CREATE INDEX "Review_titleId_idx" ON "Review"("titleId");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "UserProfile_userKey_key" ON "UserProfile"("userKey");
+
+-- CreateIndex
+CREATE INDEX "NotificationEvent_userKey_createdAt_idx" ON "NotificationEvent"("userKey", "createdAt");
+
+-- CreateIndex
+CREATE INDEX "NotificationEvent_userKey_readAt_idx" ON "NotificationEvent"("userKey", "readAt");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "AccountSpace_uid_key" ON "AccountSpace"("uid");
+
+-- CreateIndex
+CREATE INDEX "AccountSpace_uid_idx" ON "AccountSpace"("uid");
 

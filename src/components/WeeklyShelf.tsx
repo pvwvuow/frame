@@ -1,19 +1,22 @@
 "use client";
 
 /* =====================================================================================
- * v0.51.0 — THE WEEKLY SHOP SHELF (پیشنهاد این هفته) — REBUILT FROM THE USER'S MOCKUPS
+ * v0.52.0 — THE WEEKLY SHOP SHELF (پیشنهاد این هفته) — THE USER'S OWN BOARD, LITERALLY
  *
- * The user shipped five boards: a walnut shadow-box on a near-black wall (the
- * content board + its green-screen variants) and an oak one on a cream wall —
- * SIX framed posters standing inside the case, each under its own puck lamp.
- * v0.50.0 invented its own shelf instead of following those boards; this
- * version is measured off them:
- *   • poster ratio 1:1.30 (10/13) — the display screens of the mock, NOT 2:3
- *   • gap between frames ≈ 24% of a poster's width
- *   • side inner margin ≈ 4.6% of the case · top board zone ≈ 21% · floor ≈ 15%
- *   • puck lamps hang directly UNDER the top board, warm pools on the wood back
- *   • card copy exactly as the content board: ONE title line, white ★ rating,
- *     OUTLINED genre chip, year, and an OUTLINED circular play button
+ * After two rebuilds the user was explicit: «دقیقا از عکسایی ک دادم استفاده کن — خودت نساز»
+ * So the shelf chrome is no longer a CSS reconstruction: it IS the user's uploaded
+ * board. Two variants ship (30/40 KB webp):
+ *   • /shop/case-dark.webp  — the walnut shadow-box on the near-black wall
+ *   • /shop/case-light.webp — the oak shadow-box on the cream wall
+ * The board's six green screens are the poster slots. Their chroma-key rects were
+ * measured off the actual pixels (identical across all four boards the user sent):
+ *   L = 8.86 / 23.22 / 37.58 / 51.94 / 65.83 / 80.19 % · T ≈ 35 % · H ≈ 26.35 %
+ * and the real posters are absolutely positioned exactly over them, edge to edge.
+ * Card copy is the content board's: ONE title line, white ★ rating, OUTLINED genre
+ * chip, year, and an OUTLINED circular play button — inside .force-dark so the copy
+ * stays literal white over artwork in BOTH themes.
+ * Phones: the whole wooden case pans horizontally — the board scrolls WITH its
+ * frames, so the chrome can never separate from the posters.
  *
  * Data — the WEEKLY DECK contract (unchanged, src/lib/weekly-deck.ts):
  *   • build time ships a ~36-title quality POOL (weekly.json, content-hashed,
@@ -26,11 +29,6 @@
  *     offer something NEW («چیز هایی ک دیده» is the taste signal, not the
  *     catalog);
  *   • no taste data ⇒ cold start: quality + variety cut, still weekly.
- *
- * Visual — all materials are CSS (layered repeating gradients = the wood
- * grain), no image assets: the case costs ~0 bytes and never 404s. Card copy
- * sits inside .force-dark so it stays literal white over artwork in BOTH
- * themes, exactly like the mockup boards.
  * ===================================================================================== */
 
 import Link from "next/link";
@@ -51,6 +49,10 @@ type ShelfData = {
   weekKey: string;
   personalized: boolean;
 };
+
+/* the user's two boards — the ?v= keeps WebView caches honest across app updates */
+const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION || "0";
+const boardSrc = (name: string) => `/shop/${name}.webp?v=${encodeURIComponent(APP_VERSION)}`;
 
 export default function WeeklyShelf() {
   const { t: tr, locale } = useI18n();
@@ -109,41 +111,48 @@ export default function WeeklyShelf() {
         </span>
       </div>
 
-      {/* THE SHOP CASE — the mockup's shadow-box. Three boards: the top board
-          the lamps hang from, the recessed wood back the frames stand against,
-          and the floor they stand on. Light theme swaps walnut → oak. */}
-      <div className="shop-case">
-        <div aria-hidden className="shop-top" />
-        <div className="shop-back">
-          <div className="shop-aisle no-scrollbar">
-            {picks.map((t) => (
-              <ShopSlot key={t.id} t={t} playLabel={tr("common.play")} />
-            ))}
-          </div>
+      {/* THE SHOP CASE — the user's own board. The wall, the wooden case, the lamps
+          and the warm pools all come from the image itself; only the six posters
+          (and their copy) are live UI, pinned to the board's green screens. */}
+      <div className="shop-scroller">
+        <div className="shop-case">
+          <img
+            aria-hidden
+            alt=""
+            src={boardSrc("case-dark")}
+            className="shop-bg shop-bg--dark"
+            draggable={false}
+            loading="lazy"
+            decoding="async"
+          />
+          <img
+            aria-hidden
+            alt=""
+            src={boardSrc("case-light")}
+            className="shop-bg shop-bg--light"
+            draggable={false}
+            loading="lazy"
+            decoding="async"
+          />
+          {picks.map((t, i) => (
+            <ShopSlot key={t.id} idx={i} t={t} playLabel={tr("common.play")} />
+          ))}
         </div>
-        <div aria-hidden className="shop-floor" />
       </div>
     </section>
   );
 }
 
-/* One framed poster standing in the case, with its own lamp above it. The
+/* One framed poster standing exactly on one of the board's green screens. The
  * whole frame is a details link; the round button is a SEPARATE sibling link
  * to the player (never a nested <a>). Copy sits inside .force-dark so it
- * stays literal-white over artwork in BOTH themes — like the mockup boards. */
-function ShopSlot({ t, playLabel }: { t: TitleView; playLabel: string }) {
+ * stays literal-white over artwork in BOTH themes — like the content board. */
+function ShopSlot({ t, idx, playLabel }: { t: TitleView; idx: number; playLabel: string }) {
   const { locale } = useI18n();
   return (
-    <div className="shop-slot group">
-      {/* the lamp's warm pool lighting the wood back behind this frame */}
-      <span aria-hidden className="shop-pool" />
-      {/* the cone of light falling from the lamp onto the frame's top */}
-      <span aria-hidden className="shop-cone" />
-      {/* the puck lamp hanging under the top board, above this frame */}
-      <span aria-hidden className="shop-puck"><i /></span>
-
+    <div className={`shop-slot shop-slot--${idx} group`}>
       <div className="shop-frame">
-        <Link href={titleHref(t.slug)} className="force-dark relative block h-full w-full overflow-hidden rounded-[4px]">
+        <Link href={titleHref(t.slug)} className="force-dark relative block h-full w-full overflow-hidden rounded-[3px]">
           <img
             src={posterSrc(t)}
             alt={t.title}
@@ -154,13 +163,13 @@ function ShopSlot({ t, playLabel }: { t: TitleView; playLabel: string }) {
           />
           <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/25 to-transparent" />
           <div className="absolute inset-x-0 bottom-0 p-[7%] pb-[8.5%] pe-[26%]">
-            {/* the mock's single title line — no companion name on the card */}
+            {/* the content board's single title line — no companion name on the card */}
             <TitleName
               t={t}
               hideSecondary
-              primaryClass="text-[clamp(11px,1.05vw,16px)] font-extrabold leading-tight text-white"
+              primaryClass="text-[clamp(10px,1.02vw,15px)] font-extrabold leading-tight text-white"
             />
-            <div className="mt-[4%] flex items-center gap-[4%] text-[clamp(8px,0.62vw,10px)]">
+            <div className="mt-[4%] flex items-center gap-[4%] text-[clamp(8px,0.6vw,9.5px)]">
               <span className="flex shrink-0 items-center gap-0.5 font-bold text-white">
                 <StarIcon width="1em" height="1em" className="shrink-0" />
                 {Number(t.rating || 0).toFixed(1)}
@@ -182,9 +191,6 @@ function ShopSlot({ t, playLabel }: { t: TitleView; playLabel: string }) {
           <PlayIcon width="45%" height="45%" className="translate-x-[6%]" />
         </Link>
       </div>
-
-      {/* the frame's shadow pooling on the floor it stands on */}
-      <span aria-hidden className="shop-foot" />
     </div>
   );
 }

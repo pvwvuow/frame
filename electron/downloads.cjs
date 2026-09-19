@@ -56,7 +56,24 @@ function stateFile() {
 function writeState() {
   try {
     fs.mkdirSync(path.dirname(stateFile()), { recursive: true });
-    fs.writeFileSync(stateFile(), JSON.stringify({ dir: baseDir, items: items.slice(-MAX_HISTORY) }), "utf8");
+    // N10 (audit v0.49) — the state JSON used to be written straight over the
+    // live file: a crash/kill mid-write left a TRUNCATED frame-downloads.json
+    // and the loader fell back to an empty queue (every paused download
+    // forgotten). Now: write to a tmp sibling + fsync + atomic rename, and
+    // keep one .bak generation so even a torn rename can be recovered.
+    const file = stateFile();
+    const tmp = file + ".tmp";
+    const bak = file + ".bak";
+    const body = JSON.stringify({ dir: baseDir, items: items.slice(-MAX_HISTORY) });
+    const fd = fs.openSync(tmp, "w");
+    try {
+      fs.writeFileSync(fd, body, "utf8");
+      fs.fsyncSync(fd);
+    } finally {
+      fs.closeSync(fd);
+    }
+    if (fs.existsSync(file)) fs.copyFileSync(file, bak);
+    fs.renameSync(tmp, file);
   } catch (e) {
     log.warn("downloads state save failed:", e);
   }
@@ -79,22 +96,28 @@ function flushSave() {
 function load() {
   if (loaded) return;
   loaded = true;
-  try {
-    const raw = JSON.parse(fs.readFileSync(stateFile(), "utf8"));
-    if (raw && typeof raw === "object") {
-      baseDir = typeof raw.dir === "string" && path.isAbsolute(raw.dir) ? raw.dir : null;
-      items = Array.isArray(raw.items) ? raw.items.filter((it) => it && typeof it.url === "string") : [];
-      // app quit / crash mid-download: downloading → paused (resumable when a
-      // .part survived), otherwise back to the queue
-      for (const it of items) {
-        if (it.status === "downloading") {
-          it.status = fs.existsSync(it.filePath + ".part") ? "paused" : "queued";
-          it.speed = 0;
+  // N10 — try the live file; on a parse failure fall back to .bak (a torn
+  // write no longer wipes the queue) before giving up.
+  for (const candidate of [stateFile(), stateFile() + ".bak"]) {
+    try {
+      const raw = JSON.parse(fs.readFileSync(candidate, "utf8"));
+      if (raw && typeof raw === "object") {
+        baseDir = typeof raw.dir === "string" && path.isAbsolute(raw.dir) ? raw.dir : null;
+        items = Array.isArray(raw.items) ? raw.items.filter((it) => it && typeof it.url === "string") : [];
+        // app quit / crash mid-download: downloading → paused (resumable when a
+        // .part survived), otherwise back to the queue
+        for (const it of items) {
+          if (it.status === "downloading") {
+            it.status = fs.existsSync(it.filePath + ".part") ? "paused" : "queued";
+            it.speed = 0;
+          }
         }
+        return; // loaded — don't fall through to the next candidate
       }
+    } catch (e) {
+      if (e && e.code === "ENOENT") continue; // no such file → try the next
+      log.warn("downloads state load failed for", candidate, e); // torn/unreadable → next
     }
-  } catch {
-    /* first run */
   }
 }
 

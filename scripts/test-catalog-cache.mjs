@@ -208,6 +208,53 @@ console.log("\n[J] v0.48.0 cache NEWER than the bundled seed → still merges (g
   delete process.env.NAMA_CATALOG_SEED_VERSION_GEN;
 }
 
+console.log("\n[K] v0.52.0 D03 — a duplicate slug in the payload must NOT crash the merge");
+{
+  /* the same slug twice (index + part body): the second CREATE used to hit
+   * the slug unique constraint and abort mid-merge. Now: last occurrence
+   * wins, merge stays idempotent. */
+  part = { ...part, titles: [...part.titles, title("zeta", "Zeta", "f2m"), title("zeta", "Zeta-v2", "f2m")] };
+  writeCache();
+  const r = await m.recheckCatalogNow(DEAD);
+  check("merge ok with duplicate slug (no crash)", r.ok === true && !r.skipped, JSON.stringify(r));
+  const zeta = await db.title.findFirst({ where: { slug: "zeta" }, select: { title: true } });
+  check("exactly ONE zeta row", zeta !== null, "row missing");
+  check("LAST occurrence won (Zeta-v2)", zeta?.title === "Zeta-v2", zeta?.title);
+  /* re-run stays idempotent */
+  const r2 = await m.recheckCatalogNow(DEAD);
+  check("re-run after dedupe → hash-match skip", r2.ok === true && r2.skipped === true, JSON.stringify(r2));
+}
+
+console.log("\n[L] v0.52.0 D04 — a payload WITHOUT the episodes field must not wipe episodes");
+{
+  /* zeta gets 2 episodes (simulating a device's local state); the publisher
+   * then sends zeta WITHOUT the episodes field. Previously the missing field
+   * was coerced to [] and EVERY episode + watch progress was deleted. Now:
+   * null = «the feed said nothing» → untouched. An explicit [] still clears. */
+  part = { ...part, titles: [ ...part.titles.filter((t) => t.slug !== "zeta"), { ...title("zeta", "Zeta-v2", "f2m"), episodes: [ep(1, "zeta"), ep(2, "zeta")] } ] };
+  writeCache();
+  await m.recheckCatalogNow(DEAD); // apply the 2-episode version
+  const withEps = await db.title.findFirst({ where: { slug: "zeta" }, select: { id: true } });
+  const epsCount = await db.episode.count({ where: { titleId: withEps.id } });
+  check("zeta has 2 episodes locally", epsCount === 2, String(epsCount));
+  await db.watchProgress.create({ data: { userKey: "t", titleId: withEps.id, position: 100, duration: 200, updatedAt: new Date() } }).catch(() => {});
+
+  part = { ...part, titles: [...part.titles.filter((t) => t.slug !== "zeta"), { ...title("zeta", "Zeta-v2", "f2m"), episodes: undefined }] };
+  writeCache();
+  const r = await m.recheckCatalogNow(DEAD);
+  check("merge ok with episodes field ABSENT", r.ok === true && !r.skipped, JSON.stringify(r));
+  const after = await db.episode.count({ where: { titleId: withEps.id } });
+  check("episodes SURVIVED the field-less payload (2, not 0)", after === 2, String(after));
+  const wp = await db.watchProgress.findFirst({ where: { titleId: withEps.id } });
+  check("watch progress survived too", wp !== null);
+  /* and an EXPLICIT empty array still clears (the feed SPOKE) */
+  part = { ...part, titles: [...part.titles.filter((t) => t.slug !== "zeta"), { ...title("zeta", "Zeta-v2", "f2m"), episodes: [] }] };
+  writeCache();
+  await m.recheckCatalogNow(DEAD);
+  const afterExplicit = await db.episode.count({ where: { titleId: withEps.id } });
+  check("explicit episodes:[] still clears (0)", afterExplicit === 0, String(afterExplicit));
+}
+
 fs.rmSync(TMP, { recursive: true, force: true });
 await db.$disconnect();
 console.log(`\n${passed} passed, ${failed} failed`);

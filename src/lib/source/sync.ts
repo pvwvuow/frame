@@ -123,7 +123,11 @@ class SourceSync {
       this.st.rootUrl = u.toString();
       this.queue = [{ url: u.toString(), segs: [] }];
       this.visited = new Set();
-      await db.syncState.deleteMany().catch(() => {});
+      // D01 (audit) — این جدول مشترک است: catalog-refresh روی «catalog.hash» /
+      // «seed.applied» و اعلان‌ها روی «notif:*» سوارند. پاک‌سازی بی‌قید همه را
+      // می‌کشت و مبناهای مقایسه‌ی کاتالوگ/اعلان از بین می‌رفت. خزنده فقط
+      // ردیف خودش («meta») را صاحب است — فقط همان حذف می‌شود.
+      await db.syncState.deleteMany({ where: { key: "meta" } }).catch(() => {});
     }
     this.st.status = "running";
     this.st.startedAt = this.st.startedAt ?? Date.now();

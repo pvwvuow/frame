@@ -1394,6 +1394,30 @@ export async function wipeCloudAccountData(): Promise<boolean> {
   }
 }
 
+/* D02 (audit v0.49) — SCOPED cloud wipe. «حذف تاریخچه/لیست/علاقه‌مندی/امتیاز»
+ * فقط همین دستگاه را پاک می‌کرد؛ ردیف ابریِ همان scope باقی می‌ماند و در
+ * اولین pull/merge از دستگاه دیگر برمی‌گشت (رستاخیزِ داده). حالا هر scope
+ * دقیقاً جدول‌های خودش را پاک می‌کند؛ تمام = همان پاک‌سازی کامل قبلی. */
+export type WipeScope = "all" | "history" | "list" | "favorites" | "ratings";
+
+export async function wipeCloudScopeData(scope: WipeScope): Promise<boolean> {
+  if (scope === "all") return wipeCloudAccountData();
+  try {
+    const uid = await currentUserId();
+    const sb = getSupabase();
+    if (!uid || !sb) return false;
+    const tables: (Parameters<typeof sb.from>[0])[] =
+      scope === "history" ? ["watch_progress"]
+      : scope === "list" ? ["watchlist"]
+      : scope === "favorites" ? ["favorites"]
+      : ["ratings"];
+    const results = await Promise.all(tables.map((t) => sb.from(t).delete().eq("user_id", uid)));
+    return results.every((r) => !r.error);
+  } catch {
+    return false;
+  }
+}
+
 /* ------------------------------------------------------------------ */
 /* v0.27.0 — the offline op queue: flush + replay                      */
 /* ------------------------------------------------------------------ */
@@ -1616,6 +1640,12 @@ async function replaySyncOp(sb: SupabaseClient, uid: string, op: SyncOp): Promis
       const ok = await sbExecTransient(sb.from("user_collection_items").delete().eq("collection_id", colId).eq("slug", slug));
       if (ok) void recordDelEvent(sb, uid, { kind: "collection-item", key: name, slug, at: nowAt });
       return ok;
+    }
+    /* D02 (audit v0.49) — replay a scoped wipe that failed offline. */
+    case "wipe-scope": {
+      const scope = String(p.scope ?? "");
+      if (scope !== "history" && scope !== "list" && scope !== "favorites" && scope !== "ratings") return true;
+      return wipeCloudScopeData(scope);
     }
     default:
       return true; // unknown op kind → drop instead of looping forever

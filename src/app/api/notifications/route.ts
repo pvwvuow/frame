@@ -14,7 +14,10 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   const userKey = await getUserKey();
   await maybeScan(userKey);
-  return Response.json(await getNotifications(userKey));
+  // D09 (audit v0.49) — personal data must not sit in shared HTTP caches:
+  // the explicit no-store header makes the contract testable, not implicit
+  // in `dynamic = "force-dynamic"`.
+  return Response.json(await getNotifications(userKey), { headers: { "Cache-Control": "no-store" } });
 }
 
 export async function POST(req: NextRequest) {

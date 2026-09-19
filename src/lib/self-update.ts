@@ -283,7 +283,11 @@ function wireEvents() {
   if (!b || wired) return;
   wired = true;
   void b.addListener("namaDownload", (e: NamaDownloadEvent) => {
-    if (e.id !== "frame-update") return;
+    // N06 (audit v0.49) — download ids are now UNIQUE PER REQUEST (they used
+    // to be the constant "frame-update", so a cover-pack download and an OTA
+    // bundle in flight collided: one finished the other's wait-promise, one
+    // cancel stopped the other). Progress fan-out accepts the family prefix.
+    if (!e.id.startsWith("frame-update")) return;
     if (e.type === "progress") emit({ phase: "download", received: e.received, total: e.total });
     else if (e.type === "done") emit({ phase: "apply" });
     else if (e.type === "error") emit({ phase: "error", message: "دانلود ناموفق بود" });
@@ -308,14 +312,20 @@ function wireEvents() {
  *  and only then do we await its completion. A failed start fails fast
  *  instead of burning the whole timeout. */
 async function awaitDownloadedFile(
-  id: string,
+  idPrefix: string,
   url: string,
   dest: string,
   timeoutMs = 15 * 60_000
 ): Promise<void> {
   const b = nativeBridge();
   if (!b) throw new Error("no-bridge");
+  // N06 (audit v0.49) — the id is UNIQUE per call; the scoped listener below
+  // is bound to exactly this id, so no other download's events can settle
+  // this promise (overlapping OTA + cover-pack downloads used to share one
+  // constant id and complete/cancel each other).
   let removeListener: (() => void) | null = null;
+  downloadSeq += 1;
+  const id = `${idPrefix}-${Date.now().toString(36)}-${downloadSeq}`;
   const donePromise = new Promise<void>((resolve, reject) => {
     let timer: ReturnType<typeof setTimeout> | null = null;
     let settled = false;
@@ -361,14 +371,37 @@ async function awaitDownloadedFile(
   }
 }
 
+/* N06 (audit v0.49) — per-request download id sequence (see awaitDownloadedFile). */
+let downloadSeq = 0;
+
+/* N05 (audit v0.49) — the version/rev reach native code that builds FILE
+ * PATHS from them (`ota/<version>-bundle.zip`). A crafted tag with `/`,
+ * `..` or separators could escape the ota root. Releases are ours, but the
+ * contract must hold even when the channel is not trusted: strict shape,
+ * fail closed. */
+const SAFE_VERSION_RE = /^[0-9A-Za-z]+(?:[._-][0-9A-Za-z]+)*$/;
+
+function safeVersionForPath(v: unknown): string {
+  const s = String(v ?? "");
+  if (!s || s.length > 64 || !SAFE_VERSION_RE.test(s) || s.includes("..")) throw new Error("bad-version");
+  return s;
+}
+
+function safeRevForPath(v: unknown): string {
+  const n = Number(v);
+  if (!Number.isSafeInteger(n) || n < 0 || n > 1e9) throw new Error("bad-rev");
+  return String(n);
+}
+
 /** Apply the CODE bundle (hot OTA). Returns true when applied. */
 async function applyCodeBundle(check: UpdateCheck): Promise<boolean> {
   const b = nativeBridge();
   if (!b || !check.bundleUrl) return false;
-  const zipName = `ota/${check.version}-bundle.zip`;
+  const zipName = `ota/${safeVersionForPath(check.version)}-bundle.zip`;
   emit({ phase: "download", received: 0, total: check.bundleSize });
   // v0.26.0 — await the download for real (was: fixed 600ms sleep + pray)
-  await awaitDownloadedFile("frame-update", check.bundleUrl, zipName);
+  // N06 — unique per-request id (was the constant "frame-update")
+  await awaitDownloadedFile("frame-update-bundle", check.bundleUrl, zipName);
   emit({ phase: "apply" });
   const r = await b.applyBundle({ zipPath: zipName, version: check.version });
   if (!r.ok) throw new Error("apply failed");
@@ -389,10 +422,11 @@ async function applyCoverPacks(check: UpdateCheck): Promise<number> {
   for (const p of check.packParts) {
     if (doneParts.includes(p.part)) continue;
     const nn = String(p.part).padStart(2, "0");
-    const zipName = `covers-pack/r${check.packRev}-p${nn}.zip`;
+    const zipName = `covers-pack/r${safeRevForPath(check.packRev)}-p${nn}.zip`;
     emit({ phase: "covers", received: 0, total: p.size, message: `بستهٔ کاور ${p.part} از ${check.packParts.length}` });
     // v0.26.0 — await the download for real (was: fixed 400ms sleep + pray)
-    await awaitDownloadedFile("frame-update", p.url, zipName);
+    // N06 — unique per-request id (was the constant "frame-update")
+    await awaitDownloadedFile(`frame-covers-r${check.packRev}-p${nn}`, p.url, zipName);
     try {
       await b.applyCoverPack({ zipPath: zipName, rev: check.packRev });
     } catch (err) {

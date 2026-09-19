@@ -573,7 +573,27 @@ public class NamaNativePlugin extends Plugin {
                 }
                 File otaRoot = new File(getContext().getFilesDir(), "ota");
                 otaRoot.mkdirs();
+                // N05 (audit v0.49) — version reaches FILE PATH construction;
+                // a crafted tag with separators/`..` must never leave otaRoot.
+                // Strict shape (alnum + . _ -), no `..` anywhere, and the
+                // resolved target must canonicalize UNDER otaRoot. Fail closed.
+                if (!version.isEmpty()) {
+                    if (version.length() > 64 || version.contains("..")
+                            || !version.matches("[0-9A-Za-z]+([._-][0-9A-Za-z]+)*")) {
+                        call.reject("bad version");
+                        return;
+                    }
+                }
                 File target = new File(otaRoot, version.isEmpty() ? "ota-" + System.currentTimeMillis() : version);
+                try {
+                    if (!target.getCanonicalPath().startsWith(otaRoot.getCanonicalPath() + File.separator)) {
+                        call.reject("bad version target");
+                        return;
+                    }
+                } catch (Exception te) {
+                    call.reject("bad version target");
+                    return;
+                }
                 // v0.16.0 — the web root is replaced wholesale, but runtime-merged
                 // cover packs (covers/**) must survive code OTAs: carry the dir out
                 // of the previous bundle before it is deleted, tuck it back in after

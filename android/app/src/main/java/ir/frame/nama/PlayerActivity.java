@@ -245,6 +245,12 @@ public class PlayerActivity extends Activity {
             epIndex = Math.max(0, Math.min(n - 1, getIntent().getIntExtra("episodeIndex", 0)));
         }
 
+        // N11 (audit v0.49) — the polled statics are PER-SESSION, not global
+        // truth: a new title setup MUST zero them, otherwise a failed setup of
+        // title B finishes with title A's position/duration still in the
+        // statics and the JS layer stores A's time onto B.
+        sPositionMs = 0L;
+        sDurationMs = 0L;
         sEnded = false;
         sError = "";
 

@@ -75,6 +75,11 @@ export type CatalogItem = {
   source: string;
   /** v0.23.0 — catalog add-date (ISO) from the hosted index; empty = old title */
   addedAt?: string;
+  /** D04 (audit) — THREE-STATE episodes contract:
+   *  • array (possibly empty) → the feed spoke: merge / deliberately clear
+   *  • null → the feed said NOTHING: the device's episodes + watch progress
+   *    must survive untouched (a missing field used to be coerced to [] and
+   *    silently wipe every episode of the title) */
   episodes: {
     season: number;
     number: number;
@@ -84,7 +89,7 @@ export type CatalogItem = {
     videoUrl: string;
     sources: string | null;
     thumbnail: string;
-  }[];
+  }[] | null;
 };
 
 const EMPTY: CatalogRefreshResult = {
@@ -975,6 +980,10 @@ async function syncCatalog(catalogUrl: string): Promise<CatalogRefreshResult> {
     views: Number(t.views) || 0,
     source: String(t.source ?? "od"),
     addedAt: typeof t.addedAt === "string" ? t.addedAt : "",
+    // D04 (audit) — three-state: an array (even empty) is the feed SPEAKING;
+    // a missing/undefined field must reach the merge as null ("said nothing")
+    // so the device's episodes + watch progress are never wiped by a payload
+    // that simply didn't carry the field.
     episodes: Array.isArray(t.episodes)
       ? t.episodes.map((e) => ({
           season: Number(e.season) || 1,
@@ -986,7 +995,7 @@ async function syncCatalog(catalogUrl: string): Promise<CatalogRefreshResult> {
           sources: asSourcesJson(e.sources),
           thumbnail: rebaseAsset(String(e.thumbnail ?? ""), siteRoot),
         }))
-      : [],
+      : null,
   });
 
   const rawItems = [...payload.titles];
@@ -1132,8 +1141,19 @@ async function reconcileTwinUserRows(goneId: number, twinId: number): Promise<nu
   return moved;
 }
 
-async function applyCatalog(items: CatalogItem[]): Promise<CatalogRefreshResult> {
+async function applyCatalog(rawItems: CatalogItem[]): Promise<CatalogRefreshResult> {
   const stats = { created: 0, updated: 0, removed: 0 };
+
+  /* D03 (audit) — the payload may legitimately carry the same slug twice
+   * (index + part bodies). Previously both occurrences reached the loop and
+   * the second CREATE hit the slug unique constraint, aborting mid-merge and
+   * leaving a half-applied state. Winner policy is DETERMINISTIC: the LAST
+   * occurrence wins (parts are appended in feed order, later = fresher).
+   * Re-run stays idempotent either way. */
+  const bySlug = new Map<string, CatalogItem>();
+  for (const t of rawItems) bySlug.set(t.slug, t);
+  const items = [...bySlug.values()];
+
   const seedSlugs = new Set(items.map((t) => t.slug));
 
   const current = await db.title.findMany({ select: { id: true, slug: true, source: true, poster: true } });
@@ -1221,18 +1241,22 @@ async function applyCatalog(items: CatalogItem[]): Promise<CatalogRefreshResult>
     };
     // BUG-039 — episode rows used for CREATE need a concrete sources value;
     // the UPDATE path (mergeEpisodes) keeps the device's row when null.
-    const eps = t.episodes.map((e) => ({ ...e, sources: e.sources ?? "[]" }));
-    episodeTotal += eps.length;
+    // D04 — null episodes (feed omitted the field) skips the merge entirely:
+    // the device's episode ids + watch progress survive untouched.
+    const eps = t.episodes?.map((e) => ({ ...e, sources: e.sources ?? "[]" })) ?? null;
+    episodeTotal += eps?.length ?? 0;
 
     const existingId = idBySlug.get(t.slug);
     if (existingId === undefined) {
-      await db.title.create({ data: { slug: t.slug, ...data, sources: t.sources ?? "[]", episodes: { create: eps } } });
+      const created = await db.title.create({ data: { slug: t.slug, ...data, sources: t.sources ?? "[]", episodes: { create: eps ?? [] } } });
+      // D03 — register the fresh id so a duplicate slug can never double-create
+      idBySlug.set(t.slug, created.id);
       stats.created++;
       continue;
     }
 
     await db.title.update({ where: { id: existingId }, data });
-    await mergeEpisodes(existingId, eps);
+    if (eps !== null) await mergeEpisodes(existingId, eps);
     stats.updated++;
   }
 
@@ -1266,7 +1290,11 @@ function safeDate(v: unknown): Date | undefined {
  * delete (کاسکید فقط برای همین عده اتفاق می‌افتد). مقایسه‌ی فیلدها همان
  * منطق قبلی (episodesDiffer) است، فقط به‌تفکیک هر اپیزود اعمال می‌شود.
  */
-async function mergeEpisodes(titleId: number, eps: CatalogItem["episodes"]): Promise<void> {
+type EpisodeInput = NonNullable<CatalogItem["episodes"]>[number];
+
+/** D04 — callers only reach here when the feed actually SPOKE (eps !== null);
+ *  the parameter takes the non-null episode shape. */
+async function mergeEpisodes(titleId: number, eps: EpisodeInput[]): Promise<void> {
   const rows = await db.episode.findMany({ where: { titleId } });
   const byKey = new Map(rows.map((r) => [`${r.season}:${r.number}`, r]));
   const seenKeys = new Set<string>();

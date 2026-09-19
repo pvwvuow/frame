@@ -396,7 +396,14 @@ export async function patchProfile(b: Record<string, unknown>, userKey = getUser
   if (typeof b.language === "string" && LANGS.has(b.language)) next.language = b.language;
   if (typeof b.playbackSpeed === "number" && SPEEDS.has(b.playbackSpeed)) next.playbackSpeed = b.playbackSpeed;
   if (typeof b.volume === "number") next.volume = Math.max(0, Math.min(100, Math.round(b.volume)));
-  if (typeof b.parentalPin === "string" && (b.parentalPin === "" || /^\d{4}$/.test(b.parentalPin))) next.parentalPin = b.parentalPin;
+  // S04 (audit v0.49) — parity with the desktop API: changing/clearing an
+  // EXISTING parental pin requires the current pin. The Dexie row holds the
+  // pin raw, so the check is local and synchronous; a wrong current pin
+  // throws instead of silently replacing the lock.
+  if (typeof b.parentalPin === "string" && (b.parentalPin === "" || /^\d{4}$/.test(b.parentalPin))) {
+    if (cur.parentalPin && b.currentPin !== cur.parentalPin) throw new Error("wrong-current-pin");
+    next.parentalPin = b.parentalPin;
+  }
   // v0.27.0 (DATA-10) — the synced player-prefs blob rides the profile row
   if (b.playerPrefs && typeof b.playerPrefs === "object") {
     try {
@@ -692,7 +699,9 @@ export async function getProgressMap(titleIds: number[], userKey = getUserKey())
 
 export async function removeProgress(titleId?: number | number[], userKey = getUserKey()): Promise<number> {
   if (isDesktopRuntime()) {
-    const body = Array.isArray(titleId) ? { titleIds: titleId } : titleId ? { titleId } : {};
+    // D09 (audit v0.49) — a bulk clear is now EXPLICIT ({ all: true }); the
+    // old empty-body {} used to wipe the whole history as a side effect.
+    const body = Array.isArray(titleId) ? { titleIds: titleId } : titleId ? { titleId } : { all: true };
     const d = await srvPost<{ removed: number }>("/api/progress", body, "DELETE");
     return d.removed;
   }

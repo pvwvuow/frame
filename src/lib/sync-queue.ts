@@ -38,7 +38,11 @@ export type SyncOpKind =
   | "progress-del"
   | "collection-del"
   | "collection-rename"
-  | "collection-item-del";
+  | "collection-item-del"
+  /* D02 (audit v0.49) — a scoped wipe (history/list/favorites/ratings) that
+   * could not reach the cloud (offline) parks here and replays on flush, so
+   * the deletion survives reconnects and other devices' pulls. */
+  | "wipe-scope";
 
 export type SyncOp = {
   id: string;
