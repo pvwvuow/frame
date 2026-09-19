@@ -14,6 +14,11 @@
  *   E. tampered cache file → NO merge, falls back to the (dead) remote → fail
  *   F. repaired cache → skip again (hash match)
  *   G. env unset → legacy remote path (probe dead → probeUnknown skip)
+ *   H. v0.48.0 NO-GOING-BACKWARDS: a cache OLDER than the bundled seed is
+ *      never merged — the fresh seed pins survive (the stale-cache revert bug)
+ *   I. v0.48.0 release-day skip: cache hash == bundled seed hash → skip
+ *   J. v0.48.0: a cache NEWER than the bundled seed still merges (guard is
+ *      one-directional)
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -153,6 +158,54 @@ console.log("\n[G] env unset → legacy remote path (dead probe → probeUnknown
   delete process.env.NAMA_CATALOG_CACHE_DIR;
   const r = await m.recheckCatalogNow(DEAD);
   check("probeUnknown skip, no crash", r.ok === true && r.skipped === true && r.probeUnknown === true, JSON.stringify(r));
+}
+
+console.log("\n[H] v0.48.0 stale cache OLDER than the bundled seed → NEVER merged (no pin revert)");
+{
+  process.env.NAMA_CATALOG_CACHE_DIR = CACHE;
+  /* the "device" just seed-merged a NEWER release: its pins = gamma + delta */
+  await db.title.update({ where: { slug: "gamma" }, data: { featured: true } });
+  await db.title.update({ where: { slug: "delta" }, data: { featured: true } });
+  /* the shell's <userData> cache still holds the PREVIOUS release:
+   * delta is gone (older catalog) and its version.json predates the seed */
+  part = { ...part, titles: part.titles.filter((t) => t.slug !== "delta") };
+  writeCache(); // generatedAt stays 2026-09-13
+  process.env.NAMA_CATALOG_SEED_VERSION_HASH = "f".repeat(64); // seed identity ≠ cache hash
+  process.env.NAMA_CATALOG_SEED_VERSION_GEN = "2026-09-18T21:03:02.000Z"; // NEWER than cache
+  const r = await m.recheckCatalogNow(DEAD);
+  check("stale merge REJECTED (skipped)", r.ok === true && r.skipped === true, JSON.stringify(r));
+  check("db untouched — still 4 titles", (await db.title.count()) === 4);
+  const g = await db.title.findFirst({ where: { slug: "gamma" }, select: { featured: true } });
+  const d = await db.title.findFirst({ where: { slug: "delta" }, select: { featured: true } });
+  check("fresh seed pins survived (gamma+delta still featured)", !!g?.featured && !!d?.featured);
+}
+
+console.log("\n[I] v0.48.0 release-day skip: cache hash == bundled seed hash");
+{
+  /* same release shipped as seed and as release assets — zero reason to merge */
+  const v = JSON.parse(fs.readFileSync(path.join(CACHE, "version.json"), "utf8"));
+  process.env.NAMA_CATALOG_SEED_VERSION_HASH = v.partsSha256;
+  process.env.NAMA_CATALOG_SEED_VERSION_GEN = "2020-01-01T00:00:00.000Z"; // even an OLD seed gen must skip on hash equality
+  const r = await m.recheckCatalogNow(DEAD);
+  check("skipped (content identical to seed)", r.ok === true && r.skipped === true, JSON.stringify(r));
+  check("db untouched (still 4)", (await db.title.count()) === 4);
+}
+
+console.log("\n[J] v0.48.0 cache NEWER than the bundled seed → still merges (guard is one-directional)");
+{
+  /* brand-new title so the cache hash also differs from the stored HASH_KEY —
+   * this proves the MERGE happened, not a hash-match skip */
+  part = { ...part, titles: [...part.titles, title("epsilon", "Epsilon", "f2m")] };
+  writeCache();
+  process.env.NAMA_CATALOG_SEED_VERSION_HASH = "e".repeat(64);
+  process.env.NAMA_CATALOG_SEED_VERSION_GEN = "2026-09-01T00:00:00.000Z"; // seed OLDER than cache
+  const r = await m.recheckCatalogNow(DEAD);
+  check("newer-than-seed cache merged (+1 created)", r.ok === true && !r.skipped && r.created === 1, JSON.stringify(r));
+  /* 4, not 5: delta left the cache catalog in [H] and applyCatalog removes
+   * titles that left — the point here is the MERGE happened at all */
+  check("epsilon exists after merge", (await db.title.findFirst({ where: { slug: "epsilon" } })) !== null);
+  delete process.env.NAMA_CATALOG_SEED_VERSION_HASH;
+  delete process.env.NAMA_CATALOG_SEED_VERSION_GEN;
 }
 
 fs.rmSync(TMP, { recursive: true, force: true });

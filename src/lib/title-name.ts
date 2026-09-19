@@ -25,14 +25,27 @@ export type TitleNames = {
  * Bilingual naming rules:
  *  • English-language productions → English title first, Persian title small next to it.
  *  • Persian productions in the Persian UI → Persian first, English small.
- *  • Persian productions in the English UI → English first, Persian small.
+ *  • v0.48.0 — user: «در حالت انگلیسی اسم فارسی فیلم هارو نشون نده اصلا» —
+ *    in the ENGLISH locale the Persian companion name is dropped EVERYWHERE
+ *    (hero subtitle, card second line, a11y label). A title with no English
+ *    name still shows its Persian name as primary — it is the only name
+ *    there is; what disappears is the Persian *duplication*.
  */
 export function titleNames(t: Named, locale: Locale = getActiveLocale()): TitleNames {
   const en = (t.titleEn || "").trim();
   const faName = (t.title || "").trim();
   const englishFirst = isForeign(t) || locale === "en";
   const primary = englishFirst ? en || faName : faName || en;
-  const secondary = englishFirst ? (faName !== primary ? faName : "") : en !== primary ? en : "";
+  const secondary =
+    locale === "en"
+      ? ""
+      : englishFirst
+        ? faName !== primary
+          ? faName
+          : ""
+        : en !== primary
+          ? en
+          : "";
   const dirFor = (s: string): "rtl" | "ltr" => (HAS_LATIN.test(s) && !/[\u0600-\u06FF]/.test(s) ? "ltr" : "rtl");
   return {
     primary,

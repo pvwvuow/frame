@@ -650,6 +650,8 @@ async function probeVersion(catalogUrl: string): Promise<{
   sha256: string;
   partsSha256: string | null;
   parts: Array<{ file: string; sha256?: string }>;
+  /** version.json generatedAt — v0.48.0 ordering against the bundled seed. */
+  gen: string;
 } | null> {
   const vUrl = siblingUrl(catalogUrl, "version.json");
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -663,6 +665,7 @@ async function probeVersion(catalogUrl: string): Promise<{
       const j = (await res.json()) as {
         sha256?: string;
         partsSha256?: string;
+        generatedAt?: string;
         parts?: Array<{ file?: string; sha256?: string }>;
       };
       if (typeof j.sha256 !== "string" || !/^[0-9a-f]{64}$/i.test(j.sha256)) return null;
@@ -675,7 +678,12 @@ async function probeVersion(catalogUrl: string): Promise<{
         typeof j.partsSha256 === "string" && /^[0-9a-f]{64}$/i.test(j.partsSha256)
           ? j.partsSha256.toLowerCase()
           : null;
-      return { sha256: j.sha256.toLowerCase(), partsSha256, parts };
+      return {
+        sha256: j.sha256.toLowerCase(),
+        partsSha256,
+        parts,
+        gen: typeof j.generatedAt === "string" ? j.generatedAt : "",
+      };
     } catch {
       // transient network hiccup → retry once, then report unknown
     }
@@ -722,6 +730,8 @@ function normAssetPath(u: unknown): string {
  *  so the caller falls back to the classic remote path. */
 async function readLocalCatalogCache(catalogUrl: string): Promise<{
   knownHash: string;
+  /** cache version.json generatedAt — v0.48.0 seed-ordering guard. */
+  gen: string;
   coreBody: string;
   partBodies: string[];
 } | null> {
@@ -734,6 +744,7 @@ async function readLocalCatalogCache(catalogUrl: string): Promise<{
       sha256?: string;
       coreSha256?: string;
       partsSha256?: string;
+      generatedAt?: string;
       parts?: Array<{ file?: string; sha256?: string }>;
     };
     if (v.format !== "nama-catalog-version" || !/^[0-9a-f]{64}$/i.test(v.sha256 ?? "")) return null;
@@ -778,7 +789,7 @@ async function readLocalCatalogCache(catalogUrl: string): Promise<{
     } else if (sha256(coreBody) !== (v.sha256 as string).toLowerCase()) {
       return null;
     }
-    return { knownHash, coreBody, partBodies };
+    return { knownHash, gen: typeof v.generatedAt === "string" ? v.generatedAt : "", coreBody, partBodies };
   } catch {
     return null; // no cache / torn write / bad json → classic remote path
   }
@@ -798,6 +809,32 @@ async function syncCatalog(catalogUrl: string): Promise<CatalogRefreshResult> {
   // v0.34.0 — track the combined core+parts identity; single-file catalogs
   // (or a probe from an older host) fall back to the plain sha256.
   const knownHash = local ? local.knownHash : probe ? (probe.partsSha256 ?? probe.sha256) : null;
+
+  /* v0.48.0 — NO-GOING-BACKWARDS GUARD (the stale-cache revert bug).
+   * After an app update the bundled-seed merge has ALREADY applied this
+   * release's catalog offline (featured pins included) and stored its
+   * partsSha256 in SyncState. But the shell's <userData>/catalog-cache
+   * still holds the PREVIOUS release's version.json + core, and the
+   * local-first path happily merged that stale copy — reverting the fresh
+   * hero pins (user report: «دکستر تاکوپی و کاگویا هنوز هستن») until some
+   * later ~122MB re-download happened to succeed behind a VPN.
+   * Guard: a candidate catalog (cache or probe) whose generatedAt is not
+   * NEWER than the bundled seed's — or whose hash IS the seed's — is never
+   * merged. Equal = already on disk; older = a downgrade. Genuinely newer
+   * remote content (a future content-only publish) still merges as before.
+   * Unset env (dev/tests/non-electron server) → guard inactive. */
+  const seedVersionHash = (process.env.NAMA_CATALOG_SEED_VERSION_HASH || "").trim().toLowerCase();
+  const seedGenMs = Date.parse(process.env.NAMA_CATALOG_SEED_VERSION_GEN || "") || 0;
+  const candGenMs = Date.parse(local?.gen ?? probe?.gen ?? "") || 0;
+  if (
+    knownHash &&
+    seedVersionHash &&
+    (knownHash === seedVersionHash || (seedGenMs > 0 && candGenMs > 0 && candGenMs <= seedGenMs))
+  ) {
+    scheduleResync(catalogUrl);
+    const count = await db.title.count();
+    return { ok: true, skipped: true, titles: count, episodes: 0, created: 0, updated: 0, removed: 0 };
+  }
 
   // v0.23.1 — PROOF-OF-CHANGE GUARD. The version.json probe is the only cheap
   // way to know the remote changed. When the probe itself is unreachable

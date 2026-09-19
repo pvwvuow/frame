@@ -9,6 +9,7 @@ import { ShuffleIcon, PlayIcon, StarIcon, ClockIcon, InfoIcon } from "@/componen
 import WatchlistButton from "@/components/WatchlistButton";
 import FavoriteButton from "@/components/FavoriteButton";
 import { titleHref, watchHref, personHref } from "@/lib/mobile-links";
+import { titleNames } from "@/lib/title-name";
 
 type SP = { type?: string; genre?: string; not?: string };
 
@@ -101,10 +102,26 @@ function RandomInner() {
                 <span className="rounded-md border border-white/15 bg-white/5 px-2 py-0.5 text-zinc-200">{t.quality}</span>
                 <span className="rounded-md border border-white/15 bg-white/5 px-2 py-0.5 text-zinc-200">{t.ageRating}</span>
               </div>
-              <h2 className="mt-3 text-3xl font-black text-white">{t.title}</h2>
-              <p className="text-xs text-zinc-500" dir="ltr">
-                {t.titleEn} · {t.year}
-              </p>
+              {(() => {
+                /* v0.48.0 — bilingual rules via titleNames: EN locale never
+                 * shows the Persian name (and the subtitle line below now
+                 * carries the OTHER name, Persian locale keeps Persian first) */
+                const names = titleNames(t);
+                return (
+                  <>
+                    <h2 className="mt-3 text-3xl font-black text-white" dir={names.primaryDir}>{names.primary}</h2>
+                    {names.secondary ? (
+                      <p className="text-xs text-zinc-500" dir={names.secondaryDir}>
+                        {names.secondary} · {t.year}
+                      </p>
+                    ) : (
+                      <p className="text-xs text-zinc-500" dir="ltr">
+                        {t.year > 0 ? String(t.year) : ""}
+                      </p>
+                    )}
+                  </>
+                );
+              })()}
               <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-zinc-300">
                 <span className="flex items-center gap-1 font-extrabold text-amber-400">
                   <StarIcon width={14} height={14} /> {fa(t.rating)}

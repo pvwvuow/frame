@@ -619,12 +619,25 @@ function catalogCacheCombinedOk(cacheDir, v, coreName) {
 /** Downloads/refreshes the local catalog cache. Incremental: files with a
  *  per-file sha256 (parts always; the core since coreSha256 exists) are only
  *  re-fetched when the publisher says they changed. version.json is written
- *  LAST so a torn run always leaves a self-consistent (old) manifest. */
+ *  LAST so a torn run always leaves a self-consistent (old) manifest.
+ *  v0.48.0 — RELEASE-DAY SKIP: when the remote catalog is IDENTICAL to the
+ *  one the installer's seed already delivered offline (same partsSha256,
+ *  the normal case right after an app update), the ~122MB core fetch is
+ *  pure waste — user report: «بعد هر اپدیتی این مقدار حجم شروع میشه ب
+ *  دانلود». The whole download AND the sync trigger are skipped; the seed
+ *  merge has already stored this exact hash in SyncState. */
+let seedVersionPartsSha = "";
+
 async function ensureCatalogCache(catalogUrl, cacheDir) {
   const vBody = await catalogFetchBuffer(catalogSiblingUrl(catalogUrl, "version.json"), 20000);
   const v = JSON.parse(vBody.toString("utf8"));
   if (!v || v.format !== "nama-catalog-version" || !/^[0-9a-f]{64}$/i.test(v.sha256 || "")) {
     throw new Error("bad version.json payload");
+  }
+  /* v0.48.0 — remote == bundled seed → content already on disk, skip all. */
+  const remotePartsSha = String(v.partsSha256 || v.sha256 || "").toLowerCase();
+  if (seedVersionPartsSha && remotePartsSha === seedVersionPartsSha) {
+    return { files: 0, downloaded: 0, skippedSeedMatch: true };
   }
   const coreName = decodeURIComponent(new URL(catalogUrl).pathname.split("/").pop() || "catalog-core.json");
   if (!SAFE_CATALOG_FILE_RE.test(coreName)) throw new Error("bad catalog file name");
@@ -693,6 +706,10 @@ function scheduleCatalogCacheRefresh(catalogUrl, cacheDir) {
   const run = async (why) => {
     try {
       const r = await ensureCatalogCache(catalogUrl, cacheDir);
+      if (r.skippedSeedMatch) {
+        log.info(`[catalog-cache] (${why}) remote catalog matches the bundled seed — download skipped`);
+        return;
+      }
       log.info(`[catalog-cache] refreshed (${why}): ${r.files} files, ${(r.downloaded / 1048576).toFixed(1)}MB downloaded`);
       const sync = await triggerCatalogSync();
       if (sync && sync.ok) {
@@ -838,7 +855,17 @@ const DEFAULT_CATALOG_URL = "https://github.com/pvwvuow/frame/releases/latest/do
        * ~130MB catalog for content the seed had just delivered offline. */
       const vJson = JSON.parse(fs.readFileSync(vf, "utf8"));
       const vHash = String(vJson.partsSha256 || vJson.sha256 || "").toLowerCase();
-      if (/^[0-9a-f]{64}$/.test(vHash)) env.NAMA_CATALOG_SEED_VERSION_HASH = vHash;
+      if (/^[0-9a-f]{64}$/.test(vHash)) {
+        env.NAMA_CATALOG_SEED_VERSION_HASH = vHash;
+        /* v0.48.0 — the shell-side release-day skip needs the same identity. */
+        seedVersionPartsSha = vHash;
+        /* v0.48.0 — the seed's generatedAt lets the server ORDER the bundled
+         * catalog against cached/probed ones (no-going-backwards guard in
+         * catalog-refresh.ts: a stale <userData> cache from the previous
+         * release must never re-merge over the fresh seed). */
+        const vGen = String(vJson.generatedAt || "").trim();
+        if (vGen) env.NAMA_CATALOG_SEED_VERSION_GEN = vGen;
+      }
     }
   } catch (e) {
     log.warn("seed-version.json read failed:", e);
