@@ -1383,21 +1383,31 @@ html.light .ch-dust i { background: radial-gradient(circle, rgba(255, 255, 255, 
 .shop-case {
   position: relative;
   width: 100%;
-  aspect-ratio: 1671 / 941;
+  /* v0.54 — CROPPED WINDOW: the board's dead wall (rows 0→18% and 78→100% of
+     the image, measured: wood spans 26.8%→65%) no longer takes layout space.
+     Aspect = 1671 / (941 × 0.60). The full board lives in .shop-inner, lifted
+     by translateY(-18%), so every .shop-slot coordinate stays image-native. */
+  aspect-ratio: 1671 / 565;
   border-radius: 10px;
   overflow: hidden;
   transform: translateZ(0); /* keep the absolutely positioned frames on their own layer */
-  /* v0.53: softened — the top/bottom melts into the page now, a heavy shadow
-     under a borderless edge would break the blend */
-  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.25);
+  /* v0.54: no CSS shadow at all — every edge now fades into the room */
 }
 
-/* v0.53 — THE ROOM BLEED: the board photo ships with empty wall above (~27%)
- * and below (~35%) the wooden case (measured: case top edge 26.8%, bottom
- * edge ~65%). The user asked for a fade there so those zones take the color
- * of the room — in BOTH themes — and the rows above/below flow into the
- * shop instead of staring at a framed rectangle. --color-ink IS the page
- * background (ink #070709 / light #f3f3f7), so the melt is pixel-exact. */
+/* the board inside the window — full 1671/941 geometry, lifted so the wall
+   above the wood is mostly out of view (rows 18%→78% visible) */
+.shop-inner {
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  aspect-ratio: 1671 / 941;
+  transform: translateY(-18%);
+}
+
+/* v0.53/v0.54 — THE ROOM BLEED: the board melts into the page on every side.
+ * --color-ink IS the page background (ink #070709 / light #f3f3f7), so the
+ * melt is pixel-exact in BOTH themes. Bands are % of the CROPPED window:
+ * top wall = (26.8−18)/60 = 14.7%, bottom = (78−65)/60 = 21.7%. */
 .shop-case::before,
 .shop-case::after {
   content: "";
@@ -1408,14 +1418,28 @@ html.light .ch-dust i { background: radial-gradient(circle, rgba(255, 255, 255, 
 }
 .shop-case::before {
   top: 0;
-  height: 26%; /* dissolves just before the case's top edge (26.8%) */
+  height: 14.5%; /* dissolves just before the wood's top edge */
   background: linear-gradient(to bottom, var(--color-ink) 0%, color-mix(in srgb, var(--color-ink) 62%, transparent) 45%, transparent 100%);
 }
 .shop-case::after {
   bottom: 0;
-  height: 30%; /* starts just after the case's bottom edge (~65%) */
+  height: 21%; /* starts just after the wood's bottom edge */
   background: linear-gradient(to top, var(--color-ink) 0%, color-mix(in srgb, var(--color-ink) 62%, transparent) 45%, transparent 100%);
 }
+
+/* v0.54 — SIDE BLEED: the board's own wall margins get a narrow fade too, so
+ * the image merges with the room from the sides. Measured: the wooden case
+ * starts at 4.73% from each side — the 4% fade can never touch it. */
+.shop-fade {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 4%;
+  z-index: 5;
+  pointer-events: none;
+}
+.shop-fade--l { left: 0;  background: linear-gradient(to right, var(--color-ink), transparent); }
+.shop-fade--r { right: 0; background: linear-gradient(to left,  var(--color-ink), transparent); }
 
 /* the user's board IS the chrome — dark by default, oak under html.light */
 .shop-bg {

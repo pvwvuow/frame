@@ -100,7 +100,7 @@ export default function WeeklyShelf() {
   const weekNum = Number(weekKey.slice(-2));
 
   return (
-    <section className="relative mt-12 px-4 sm:px-8 lg:px-12">
+    <section className="relative mt-8 px-4 sm:px-8 lg:px-12">
       <div className="mb-3.5 flex items-end justify-between">
         <div>
           <h2 className="text-lg font-extrabold text-white sm:text-xl">{tr("home.weeklyTitle")}</h2>
@@ -111,32 +111,39 @@ export default function WeeklyShelf() {
         </span>
       </div>
 
-      {/* THE SHOP CASE — the user's own board. The wall, the wooden case, the lamps
-          and the warm pools all come from the image itself; only the six posters
-          (and their copy) are live UI, pinned to the board's green screens. */}
+      {/* THE SHOP CASE — the user's own board, shown through a CROPPED window
+          (v0.54): .shop-inner keeps the board's full geometry (slots stay
+          measured against the image) while the window cuts the dead wall
+          rows 0→18% and 78→100% away, so the slideshow rows above/below sit
+          close. Four fades melt every edge into the room: top, bottom and
+          now the sides (4% wide — the wood starts at 4.73%, never touched). */}
       <div className="shop-scroller">
         <div className="shop-case">
-          <img
-            aria-hidden
-            alt=""
-            src={boardSrc("case-dark")}
-            className="shop-bg shop-bg--dark"
-            draggable={false}
-            loading="lazy"
-            decoding="async"
-          />
-          <img
-            aria-hidden
-            alt=""
-            src={boardSrc("case-light")}
-            className="shop-bg shop-bg--light"
-            draggable={false}
-            loading="lazy"
-            decoding="async"
-          />
-          {picks.map((t, i) => (
-            <ShopSlot key={t.id} idx={i} t={t} playLabel={tr("common.play")} />
-          ))}
+          <div className="shop-inner">
+            <img
+              aria-hidden
+              alt=""
+              src={boardSrc("case-dark")}
+              className="shop-bg shop-bg--dark"
+              draggable={false}
+              loading="lazy"
+              decoding="async"
+            />
+            <img
+              aria-hidden
+              alt=""
+              src={boardSrc("case-light")}
+              className="shop-bg shop-bg--light"
+              draggable={false}
+              loading="lazy"
+              decoding="async"
+            />
+            {picks.map((t, i) => (
+              <ShopSlot key={t.id} idx={i} t={t} playLabel={tr("common.play")} />
+            ))}
+          </div>
+          <div aria-hidden className="shop-fade shop-fade--l" />
+          <div aria-hidden className="shop-fade shop-fade--r" />
         </div>
       </div>
     </section>
