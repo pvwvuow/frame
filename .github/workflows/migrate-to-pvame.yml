@@ -24,6 +24,10 @@ jobs:
           PAT: ${{ secrets.MIG_PAT }}
         run: |
           set -euo pipefail
+          # checkout@v4 یک http.extraheader با GITHUB_TOKEN خود frame روی همهٔ
+          # URLهای github.com می‌گذارد که اعتبار URL-embedded را خنثی می‌کند؛
+          # باید حذف شود تا push به pvame با MIG_PAT انجام شود.
+          git config --local --unset-all http.https://github.com/.extraheader || true
           git remote add pvame "https://x-access-token:${PAT}@github.com/pvwvuow/pvame.git"
           git push pvame --force "refs/remotes/origin/main:refs/heads/main" "refs/remotes/origin/android:refs/heads/android"
           git push pvame --force --tags
