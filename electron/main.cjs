@@ -902,6 +902,33 @@ const DEFAULT_CATALOG_URL = "https://github.com/pvwvuow/frame/releases/latest/do
   } catch (e) {
     log.warn("hero deck copy failed:", e);
   }
+
+  /* v0.50.0 — WEEKLY DECK delivery (desktop). Same contract as the hero:
+   * afterPack bundles seed-weekly.json; every boot forward-copies it into
+   * <userData>/weekly-deck.json (the live pool /api/x/weekly serves).
+   * Forward-only — a stale seed can never drag the shop backwards. */
+  try {
+    const seedWeekly = path.join(path.dirname(seed), "seed-weekly.json");
+    const userWeekly = path.join(app.getPath("userData"), "weekly-deck.json");
+    if (seedWeekly && fs.existsSync(seedWeekly)) {
+      const genOfW = (f) => {
+        try {
+          return String(JSON.parse(fs.readFileSync(f, "utf8")).generatedAt || "");
+        } catch {
+          return "";
+        }
+      };
+      const tSeedW = Date.parse(genOfW(seedWeekly)) || 0;
+      const tUserW = Date.parse(genOfW(userWeekly)) || 0;
+      if (!fs.existsSync(userWeekly) || tSeedW >= tUserW) {
+        fs.copyFileSync(seedWeekly, userWeekly);
+      }
+      env.NAMA_WEEKLY_SEED = seedWeekly;
+      env.NAMA_WEEKLY_DECK = userWeekly;
+    }
+  } catch (e) {
+    log.warn("weekly deck copy failed:", e);
+  }
   /* If the server dies instantly (port race, antivirus lock) retry once on a
      fresh port before surfacing an error. v0.10.14: the FIRST attempt uses
      the previous run's port when free – a stable origin is what keeps the

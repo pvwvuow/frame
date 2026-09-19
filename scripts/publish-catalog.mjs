@@ -24,17 +24,25 @@ import path from "node:path";
 const ROOT = path.join(import.meta.dirname, "..");
 const DRY_RUN = process.argv.includes("--dry-run");
 
+/* the curation scripts accept --dry-run; the data movers don't need it */
+const DRYABLE = new Set(["feature-new-hero.mjs", "feature-weekly.mjs"]);
+
 function run(file) {
-  console.log(`\n─── node scripts/${file} ${DRY_RUN && file === "feature-new-hero.mjs" ? "--dry-run" : ""}`);
-  const r = spawnSync(process.execPath, [path.join(ROOT, "scripts", file), ...(DRY_RUN && file === "feature-new-hero.mjs" ? ["--dry-run"] : [])], {
+  const dry = DRY_RUN && DRYABLE.has(file) ? "--dry-run" : "";
+  console.log(`\n─── node scripts/${file} ${dry}`);
+  const r = spawnSync(process.execPath, [path.join(ROOT, "scripts", file), ...dry ? [dry] : []], {
     stdio: "inherit",
     cwd: ROOT,
   });
   if (r.status !== 0) throw new Error(`step failed: ${file} (exit ${r.status})`);
 }
 
-console.log("publish-catalog: hero → export → shards");
+console.log("publish-catalog: hero → weekly → export → shards");
 run("feature-new-hero.mjs");
+/* v0.50.0 — the weekly shelf's pool (پیشنهاد این هفته) is recut on every
+ * publish too; it excludes the hero's slides so the shelf reads as a
+ * different aisle. */
+run("feature-weekly.mjs");
 if (DRY_RUN) {
   console.log("\ndry-run stops here (export/shards not touched).");
   process.exit(0);

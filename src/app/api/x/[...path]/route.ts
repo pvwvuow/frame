@@ -180,6 +180,33 @@ async function handleX(req: Request, ctx: { params: Promise<{ path: string[] }> 
       return Response.json({ error: "hero_deck_unavailable" }, { status: 404, headers: noStore });
     }
 
+    /* v0.50.0 — THE WEEKLY DECK (desktop). «پیشنهاد این هفته» — the pool the
+     * weekly shelf picks six from, same delivery contract as the hero deck:
+     * <userData>/weekly-deck.json (forward-copied from the bundled seed by
+     * main.cjs, never backwards) → seed-weekly.json → the repo file in dev.
+     * The client replaces its stored pool wholesale — no merge, nothing for
+     * a stale cache layer to revive. */
+    case "weekly": {
+      const fs = await import("node:fs");
+      const path = await import("node:path");
+      const candidates = [
+        process.env.NAMA_WEEKLY_DECK,
+        process.env.NAMA_WEEKLY_SEED,
+        path.join(process.cwd(), "public", "catalog", "mobile", "weekly.json"),
+      ].filter((p): p is string => !!p);
+      for (const p of candidates) {
+        try {
+          const deck = JSON.parse(fs.readFileSync(p, "utf8"));
+          if (deck?.format === "nama-weekly-deck" && Array.isArray(deck.pool) && deck.pool.length) {
+            return ok(deck);
+          }
+        } catch {
+          /* try the next candidate */
+        }
+      }
+      return Response.json({ error: "weekly_deck_unavailable" }, { status: 404, headers: noStore });
+    }
+
     /* in-memory lite index — the desktop counterpart of the shard catalog */
     case "lite": {
       const rows = await db.title.findMany({ orderBy: { id: "asc" }, select: LITE_SELECT });

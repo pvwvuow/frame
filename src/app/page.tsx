@@ -6,6 +6,7 @@ import Hero from "@/components/Hero";
 import Row from "@/components/Row";
 import TitleCard from "@/components/TitleCard";
 import LoadErrorCard from "@/components/LoadErrorCard";
+import WeeklyShelf from "@/components/WeeklyShelf";
 import { PlayIcon } from "@/components/Icons";
 import { useI18n } from "@/components/i18n/LocaleProvider";
 import {
@@ -316,6 +317,11 @@ export default function HomePage() {
             <TitleCard key={t.id} t={t} progress={progressMap.get(t.id)} size="lg" />
           ))}
         </Row>
+
+        {/* v0.50.0 — پیشنهاد این هفته: the weekly shop shelf (six on-device
+            picks from the weekly deck pool) — self-loading, hides itself
+            when the pool is unavailable */}
+        <WeeklyShelf />
 
         {/* promo banner — v0.30.9: matte-glass slab (the material of the
             details pill the user picked as the reference): the artwork sits

@@ -88,6 +88,19 @@ function main() {
     console.warn("  ! no .hero-deck.json — hero.json NOT shipped (devices fall back to featured flags)");
   }
 
+  /* v0.50.0 — ship the WEEKLY DECK next to the shards: the weekly shelf's
+   * candidate pool (written by feature-weekly.mjs). Devices fetch this ONE
+   * small file and REPLACE their stored pool wholesale — the on-device
+   * scorer picks the six frames. No deck → no weekly.json → the shelf
+   * hides itself (never a broken shop). */
+  const WEEKLY_SRC = path.join(ROOT, "public", "catalog", ".weekly-deck.json");
+  if (fs.existsSync(WEEKLY_SRC)) {
+    fs.copyFileSync(WEEKLY_SRC, path.join(OUT_DIR, "weekly.json"));
+    console.log("weekly deck: shipped (mobile/weekly.json)");
+  } else {
+    console.warn("  ! no .weekly-deck.json — weekly.json NOT shipped (shelf stays hidden)");
+  }
+
   const seasonsOf = (t) => {
     const set = new Set();
     for (const e of t.episodes || []) set.add(Number(e.season) || 1);

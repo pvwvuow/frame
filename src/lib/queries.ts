@@ -4,6 +4,7 @@ import type { Title as DbTitle } from "@prisma/client";
 import fs from "node:fs";
 import path from "node:path";
 import { parseHeroDeck, type HeroDeck } from "@/lib/hero-deck";
+import { parseWeeklyDeck, type WeeklyDeck } from "@/lib/weekly-deck";
 
 export type TitleView = Omit<DbTitle, "genres" | "cast"> & {
   genres: string[];
@@ -131,6 +132,58 @@ export async function getTrending(limit = 12) {
   await ensureSeeded();
   const rows = await db.title.findMany({ orderBy: { trendingScore: "desc" }, take: limit });
   return rows.map(pv);
+}
+
+/* v0.50.0 — THE WEEKLY DECK (server side). Resolved exactly like /api/x/weekly:
+ * userData (forward-copied by the shell) → bundled seed → repo file in dev;
+ * cached by (version + generatedAt). getWeeklyPool joins the pool slugs with
+ * the installed rows and keeps the deck's display copy — same pool ⊆ catalog
+ * invariant as the hero deck. The SHELF itself picks six on the client
+ * (pickWeeklySix); this accessor exists for server-side parity. */
+let weeklyDeckCache: { deck: WeeklyDeck | null; key: string; at: number } | null = null;
+function readWeeklyDeck(): WeeklyDeck | null {
+  const candidates = [
+    process.env.NAMA_WEEKLY_DECK,
+    process.env.NAMA_WEEKLY_SEED,
+    path.join(process.cwd(), "public", "catalog", "mobile", "weekly.json"),
+  ].filter((p): p is string => !!p);
+  for (const p of candidates) {
+    try {
+      const body = fs.readFileSync(p, "utf8");
+      const deck = parseWeeklyDeck(JSON.parse(body));
+      if (deck) {
+        const key = `${deck.version}:${deck.generatedAt}`;
+        if (weeklyDeckCache && weeklyDeckCache.key === key && Date.now() - weeklyDeckCache.at < 60_000) {
+          return weeklyDeckCache.deck;
+        }
+        weeklyDeckCache = { deck, key, at: Date.now() };
+        return deck;
+      }
+    } catch {
+      /* try the next candidate */
+    }
+  }
+  weeklyDeckCache = null;
+  return null;
+}
+
+export async function getWeeklyPool() {
+  await ensureSeeded();
+  const deck = readWeeklyDeck();
+  if (!deck?.pool.length) return [];
+  const slugs = deck.pool.map((s) => s.slug);
+  const rows = await db.title.findMany({ where: { slug: { in: slugs } } });
+  const bySlug = new Map(rows.map((r) => [r.slug, r]));
+  const descBySlug = new Map(deck.pool.map((s) => [s.slug, s.description] as const));
+  const ordered = slugs
+    .map((slug) => bySlug.get(slug))
+    .filter((r): r is DbTitle => !!r)
+    .map((r) => {
+      const view = pv(r);
+      const desc = descBySlug.get(view.slug);
+      return desc ? { ...view, description: desc } : view;
+    });
+  return ordered.length >= 6 ? ordered : [];
 }
 
 export async function getNewest(limit = 12) {

@@ -126,6 +126,18 @@ exports.default = async function afterPack(context) {
     console.warn("  • afterPack: public/catalog/mobile/hero.json missing – desktop hero falls back to featured flags");
   }
 
+  /* v0.50.0 — the WEEKLY DECK ships offline with the installer (same seed
+   * pattern as the hero deck): the weekly shelf's candidate pool, written
+   * by feature-weekly.mjs. main.cjs forward-copies it to userData and the
+   * server serves it via /api/x/weekly — the shop never boots on a stale
+   * pool either. */
+  const weeklySrc = path.join(root, "public", "catalog", "mobile", "weekly.json");
+  if (fs.existsSync(weeklySrc)) {
+    fs.copyFileSync(weeklySrc, path.join(dest, "seed-weekly.json"));
+  } else {
+    console.warn("  • afterPack: public/catalog/mobile/weekly.json missing – desktop weekly shelf stays hidden");
+  }
+
   console.log("  • afterPack: standalone server copied →", dest, "(cover-light: covers+catalog excluded)");
 
   /* v0.30.13 — DETERMINISTIC PAYLOAD, the other half of differential updates.

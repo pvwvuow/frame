@@ -193,6 +193,14 @@ async function main() {
   } catch {
     /* no deck this publish — consumers fall back to featured flags */
   }
+  /* v0.50.0 — the WEEKLY DECK's content identity rides in version.json too
+   * (public/catalog/mobile/weekly.json, copied by mobile-shard-catalog.cjs). */
+  let weeklySha256 = "";
+  try {
+    weeklySha256 = createHash("sha256").update(fs.readFileSync(path.join(dir, ".weekly-deck.json"))).digest("hex");
+  } catch {
+    /* no weekly pool this publish — the shelf stays hidden */
+  }
   fs.writeFileSync(
     path.join(dir, "version.json"),
     JSON.stringify({
@@ -206,6 +214,7 @@ async function main() {
       partsSha256,
       parts: partsMeta,
       heroSha256,
+      weeklySha256,
       counts: payload.counts,
       generatedAt: payload.generatedAt,
     })
@@ -216,6 +225,7 @@ async function main() {
   for (const p of partsMeta) console.log(`  ${p.file}: ${mb(p.bytes)} | ${p.titles} titles | ${p.sha256.slice(0, 12)}…`);
   console.log(`partsSha256: ${partsSha256.slice(0, 12)}…`);
   if (heroSha256) console.log(`heroSha256: ${heroSha256.slice(0, 12)}…`);
+  if (weeklySha256) console.log(`weeklySha256: ${weeklySha256.slice(0, 12)}…`);
   console.log("counts (full):", JSON.stringify(payload.counts));
 
   /* v0.25.0 — PER-TITLE full records (the on-demand half of the mobile

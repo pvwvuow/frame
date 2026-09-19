@@ -74,6 +74,7 @@ import Dexie from "dexie";
 import { isElectron } from "@/lib/platform";
 import { pickHero } from "@/lib/hero-pick";
 import { parseHeroDeck, deckNewer, type HeroDeck } from "@/lib/hero-deck";
+import { parseWeeklyDeck, weeklyDeckNewer, type WeeklyDeck } from "@/lib/weekly-deck";
 
 /* ------------------------------------------------------------------ */
 /* Dexie database                                                      */
@@ -172,12 +173,16 @@ const LITE_KEY = (v: string) => `catalog:lite:v${v}`;
 /* v0.49.0 — the hero deck lives under its own key; a new deck REPLACES the
  * value (never merges), so a stale show cannot survive here. */
 const HERO_DECK_KEY = "catalog:hero-deck";
+/* v0.50.0 — the weekly pool, same contract (replace, never merge):
+ * «پیشنهاد این هفته» — six on-device picks from a build-time pool. */
+const WEEKLY_DECK_KEY = "catalog:weekly-deck";
 
 let lite: LiteTitle[] = [];
 let byId = new Map<number, LiteTitle>();
 let bySlug = new Map<string, LiteTitle>();
 let manifest: CatalogManifest | null = null;
 let heroDeck: HeroDeck | null = null;
+let weeklyDeck: WeeklyDeck | null = null;
 let initPromise: Promise<void> | null = null;
 
 export const isReady = () => lite.length > 0;
@@ -229,6 +234,7 @@ async function doInit(onProgress?: (p: ImportProgress) => void): Promise<void> {
     manifest = r.manifest ?? null;
     p({ done: 1, total: 1, phase: "done" });
     await loadHeroDeck();
+    await loadWeeklyDeck();
     return;
   }
   const remote = await fetch(`/catalog/mobile/manifest.json${avQ()}`, { cache: "no-cache" }).then((r) => r.json()) as CatalogManifest;
@@ -243,6 +249,7 @@ async function doInit(onProgress?: (p: ImportProgress) => void): Promise<void> {
       manifest = storedManifest;
       p({ done: 1, total: 1, phase: "done" });
       await loadHeroDeck(remote.version);
+      await loadWeeklyDeck(remote.version);
       return;
     }
   }
@@ -279,6 +286,7 @@ async function doInit(onProgress?: (p: ImportProgress) => void): Promise<void> {
   ]);
   p({ done: remote.shardCount + 1, total: remote.shardCount + 1, phase: "done" });
   await loadHeroDeck(remote.version);
+  await loadWeeklyDeck(remote.version);
   // v0.31.0 (NOTIF-1) — the catalog just changed: new episodes may have
   // landed for series the user follows. Background scan (throttled inside);
   // dynamic import breaks the module cycle userdata ← → db.
@@ -625,6 +633,54 @@ async function loadHeroDeck(manifestVersion?: string): Promise<void> {
     const stored = (await db.kv.get(HERO_DECK_KEY))?.value as HeroDeck | undefined;
     heroDeck = stored ? parseHeroDeck(stored) : null;
   }
+}
+
+/** The weekly pool (v0.50.0 — پیشنهاد این هفته). Same delivery contract as
+ *  the hero deck: ONE small file, fetched once per boot, REPLACED whenever
+ *  its content version differs — no merge, nothing a stale cache layer can
+ *  revive. Mobile: ships inside the bundle next to the shards (?av=/?mv=
+ *  busts). Desktop: /api/x/weekly resolves userData/weekly-deck.json → the
+ *  bundled seed → the repo file in dev. Failure keeps the last pool — the
+ *  shelf survives offline boots. */
+async function loadWeeklyDeck(manifestVersion?: string): Promise<void> {
+  try {
+    const stored = (await db.kv.get(WEEKLY_DECK_KEY))?.value as WeeklyDeck | undefined;
+    const parsedStored = stored ? parseWeeklyDeck(stored) : null;
+    const mv = manifestVersion ? `&mv=${encodeURIComponent(manifestVersion)}` : "";
+    const url = isDesktopRuntime() ? "/api/x/weekly" : `/catalog/mobile/weekly.json${avQ()}${mv}`;
+    const res = await fetch(url, { cache: isDesktopRuntime() ? "no-store" : "force-cache" });
+    if (res.ok) {
+      const incoming = parseWeeklyDeck(await res.json());
+      if (incoming && weeklyDeckNewer(incoming, parsedStored)) {
+        weeklyDeck = incoming;
+        await db.kv.put({ key: WEEKLY_DECK_KEY, value: incoming });
+        return;
+      }
+    }
+  } catch {
+    /* offline / no deck yet — fall through to whatever is stored */
+  }
+  if (!weeklyDeck) {
+    const stored = (await db.kv.get(WEEKLY_DECK_KEY))?.value as WeeklyDeck | undefined;
+    weeklyDeck = stored ? parseWeeklyDeck(stored) : null;
+  }
+}
+
+/** The weekly pool resolved against the installed catalog (lite rows carry
+ *  id/poster/genres). A pool slug missing from THIS catalog is skipped, not
+ *  fatal; fewer than 6 survivors → empty array → the shelf hides itself
+ *  (invariant: pool ⊆ catalog, same as the hero deck). Order is the pool's
+ *  publish order — pickWeeklySix reorders on device. */
+export async function getWeeklyPool(): Promise<TitleView[]> {
+  await ensureReady();
+  if (!weeklyDeck?.pool.length) return [];
+  const out: TitleView[] = [];
+  for (const s of weeklyDeck.pool) {
+    const l = bySlug.get(s.slug);
+    if (!l) continue;
+    out.push({ ...liteView(l), description: s.description || l.description });
+  }
+  return out.length >= 6 ? out : [];
 }
 
 /** Hydrate one hero candidate to a full record; null when the row is gone or
