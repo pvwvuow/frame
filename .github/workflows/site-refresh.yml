@@ -37,8 +37,12 @@ jobs:
           git config user.email "actions@users.noreply.github.com"
           if git diff --quiet; then
             echo "No changes — site already up to date"
-          else
-            git add docs/index.html
-            git commit -m "به‌روزرسانی خودکار لینک‌های دانلود سایت"
-            git push
+            exit 0
           fi
+          git add docs/index.html
+          git commit -m "به‌روزرسانی خودکار لینک‌های دانلود سایت"
+          # release events check out the tag in DETACHED HEAD; other pushes may
+          # have landed while the job ran → re-apply on top of latest main.
+          git fetch origin main
+          git rebase origin/main
+          git push origin HEAD:main
