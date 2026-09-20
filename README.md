@@ -27,9 +27,13 @@
 |:---:|:---:|
 | ![خانه](docs/assets/home-desktop.webp) | ![تاریک‌خانه](docs/assets/darkroom-desktop.webp) |
 
-| رنک‌بندی‌ها | نسخه‌ی اندروید |
+| صفحه‌ی فیلم | رنک‌بندی‌ها |
 |:---:|:---:|
-| ![رنک‌بندی‌ها](docs/assets/rankings-desktop.webp) | ![اندروید](docs/assets/home-mobile.webp) |
+| ![صفحه فیلم](docs/assets/title-desktop.webp) | ![رنک‌بندی‌ها](docs/assets/rankings-desktop.webp) |
+
+| اندروید — خانه | اندروید — لیست من |
+|:---:|:---:|
+| ![اندروید خانه](docs/assets/home-mobile.webp) | ![اندروید لیست من](docs/assets/mylist-mobile.webp) |
 
 ## ✨ امکانات
 
