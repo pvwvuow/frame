@@ -1,0 +1,44 @@
+name: site-refresh
+
+# خواندن آخرین ریلیز و به‌روزرسانی خودکار لینک‌های دانلود + نسخه در سایت معرفی
+# (docs/index.html). با هر ریلیز جدید اجرا می‌شود؛ کرون روزانه هم پشتیبان است.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+  schedule:
+    - cron: "23 3 * * *"   # روزانه 03:23 UTC
+
+permissions:
+  contents: write
+
+concurrency:
+  group: site-refresh
+  cancel-in-progress: true
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Bake latest release into landing page
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python scripts/update_site.py
+
+      - name: Commit & push
+        run: |
+          git config user.name  "frame-bot"
+          git config user.email "actions@users.noreply.github.com"
+          if git diff --quiet; then
+            echo "No changes — site already up to date"
+          else
+            git add docs/index.html
+            git commit -m "به‌روزرسانی خودکار لینک‌های دانلود سایت"
+            git push
+          fi
