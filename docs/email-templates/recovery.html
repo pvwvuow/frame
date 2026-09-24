@@ -1,0 +1,104 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="fa" dir="rtl">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>فریم — بازیابی رمز عبور</title>
+</head>
+<body style="margin:0; padding:0; background-color:#050506;">
+<!-- ══════════════════════════════════════════════════════════════════
+     FRAME · recovery email template (Supabase → Auth → Emails → Reset Password)
+     Paste this WHOLE file as the template Body. Variables used:
+       {{ .TokenHash }} → one-shot verify link (consumed on first use)
+       {{ .Token }}     → 6-digit code fallback shown in the email
+     The link opens https://pvwvuow.github.io/frame/reset.html — keep that
+     origin in Auth → URL Configuration → Redirect URLs.
+     ══════════════════════════════════════════════════════════════════ -->
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#050506;">
+<tr><td align="center" style="padding:32px 12px;">
+<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="max-width:600px; width:100%;">
+
+  <!-- slate top: clapperboard stripe -->
+  <tr><td style="height:10px; line-height:10px; font-size:0;
+    background:repeating-linear-gradient(-45deg,#16161a 0 12px,#ded9cd 12px 24px);
+    border-radius:14px 14px 0 0; border-bottom:1px solid rgba(255,255,255,.14);">&nbsp;</td></tr>
+
+  <!-- body card -->
+  <tr><td style="background-color:#0e0e11; border-left:1px solid rgba(255,255,255,.08); border-right:1px solid rgba(255,255,255,.08); padding:36px 40px 30px 40px; font-family:Tahoma,'Segoe UI',Arial,sans-serif; direction:rtl; text-align:right;">
+
+    <!-- micro slate line -->
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+      <tr>
+        <td style="font-family:'Courier New',monospace; font-size:11px; letter-spacing:3px; color:rgba(244,242,236,.4); direction:ltr; text-align:left;">
+          FRAME&nbsp;·&nbsp;<span style="color:#e50914;">RECOVERY&nbsp;REEL</span>
+        </td>
+        <td style="font-family:'Courier New',monospace; font-size:11px; letter-spacing:3px; color:rgba(244,242,236,.4); direction:ltr; text-align:right;">
+          NO.001
+        </td>
+      </tr>
+    </table>
+
+    <!-- logo -->
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+      <tr><td align="center" style="padding:26px 0 10px 0;">
+        <img src="https://pvwvuow.github.io/frame/assets/icon-512.png" width="64" height="64" alt="فریم" style="display:block; border-radius:14px; border:1px solid rgba(255,255,255,.12);" />
+      </td></tr>
+    </table>
+
+    <!-- headline -->
+    <h1 style="margin:10px 0 6px 0; font-size:24px; font-weight:bold; color:#f4f2ec; text-align:center; line-height:1.7;">بازیابی رمز عبور</h1>
+    <p style="margin:0 0 22px 0; font-size:14px; line-height:2.1; color:rgba(244,242,236,.62); text-align:center;">
+      سلام! برای حساب فریم‌ت یک درخواست بازیابی رمز عبور ثبت شده.<br />
+      با دکمه‌ی زیر رمز جدید رو انتخاب کن:
+    </p>
+
+    <!-- CTA button -->
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+      <tr><td align="center" style="padding:2px 0 8px 0;">
+        <a href="https://pvwvuow.github.io/frame/reset.html?token_hash={{ .TokenHash }}&type=recovery"
+           style="display:inline-block; background-color:#e50914; background-image:linear-gradient(135deg,#e50914,#b00610);
+                  color:#ffffff; text-decoration:none; font-size:15px; font-weight:bold;
+                  padding:14px 46px; border-radius:12px; letter-spacing:.2px;
+                  box-shadow:0 10px 30px rgba(229,9,20,.35);">انتخاب رمز جدید</a>
+      </td></tr>
+    </table>
+
+    <!-- code fallback -->
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+      <tr><td style="padding:18px 6px 4px 6px;">
+        <div style="border:1px dashed rgba(255,255,255,.22); border-radius:12px; background-color:rgba(255,255,255,.03); padding:16px 18px; text-align:center;">
+          <div style="font-family:'Courier New',monospace; font-size:10px; letter-spacing:3px; color:rgba(244,242,236,.4); direction:ltr; margin-bottom:8px;">6-DIGIT&nbsp;CODE&nbsp;—&nbsp;ONE&nbsp;SHOT</div>
+          <p style="margin:0 0 8px 0; font-size:13px; color:rgba(244,242,236,.62);">اگر دکمه کار نکرد، این کد را در صفحه‌ی بازیابی وارد کن:</p>
+          <div style="font-family:'Courier New',monospace; font-size:28px; font-weight:bold; letter-spacing:12px; color:#f4f2ec; direction:ltr; padding:6px 0 2px 0;">{{ .Token }}</div>
+        </div>
+      </td></tr>
+    </table>
+
+    <!-- notes -->
+    <p style="margin:18px 0 0 0; font-size:12.5px; line-height:2.1; color:rgba(244,242,236,.45);">
+      • این لینک <b style="color:rgba(244,242,236,.75);">یک‌بارمصرف</b> است و تا <b style="color:rgba(244,242,236,.75);">۱ ساعت</b> اعتبار دارد.<br />
+      • اگر شما این درخواست را ندادید، این ایمیل را نادیده بگیرید — رمزت بدون تغییر می‌ماند.
+    </p>
+  </td></tr>
+
+  <!-- footer -->
+  <tr><td style="background-color:#0e0e11; border:1px solid rgba(255,255,255,.08); border-top:1px solid rgba(255,255,255,.1); border-radius:0 0 14px 14px; padding:16px 40px 20px 40px;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+      <tr>
+        <td style="font-size:12px; color:rgba(244,242,236,.4);">FRAME — سینمای خانگی</td>
+        <td style="font-size:12px; text-align:left; direction:ltr;">
+          <a href="https://pvwvuow.github.io/frame/" style="color:rgba(244,242,236,.55); text-decoration:none;">pvwvuow.github.io/frame</a>
+        </td>
+      </tr>
+    </table>
+  </td></tr>
+
+  <!-- out-of-card hint for dark-mode renderers -->
+  <tr><td align="center" style="padding:18px 10px 0 10px; font-family:'Courier New',monospace; font-size:10px; letter-spacing:3px; color:rgba(244,242,236,.25); direction:ltr;">
+    MADE&nbsp;WITH&nbsp;FRAME
+  </td></tr>
+</table>
+</td></tr>
+</table>
+</body>
+</html>
