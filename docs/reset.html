@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Frame — بازیابی رمز عبور</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    min-height: 100dvh; display: flex; align-items: center; justify-content: center;
+    background: radial-gradient(1200px 800px at 70% -10%, #1b1f3a 0%, #0b0d16 55%, #07080f 100%);
+    color: #f4f4f6; font-family: Vazirmatn, "Segoe UI", Tahoma, sans-serif; padding: 24px;
+  }
+  .card {
+    width: 100%; max-width: 430px; background: rgba(255,255,255,.045);
+    border: 1px solid rgba(255,255,255,.09); border-radius: 26px; padding: 34px 30px;
+    box-shadow: 0 30px 80px rgba(0,0,0,.5);
+  }
+  .brand { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; }
+  .dot { width: 34px; height: 34px; border-radius: 11px; background: linear-gradient(135deg,#6c5cff,#b84dff);
+         display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 17px; }
+  h1 { font-size: 20px; font-weight: 800; }
+  p.sub { font-size: 13px; color: #9aa0ae; line-height: 1.9; margin-top: 6px; }
+  label { display: block; margin-top: 16px; font-size: 12px; font-weight: 700; color: #9aa0ae; }
+  input {
+    width: 100%; margin-top: 8px; padding: 13px 16px; border-radius: 15px;
+    border: 1px solid rgba(255,255,255,.12); background: rgba(0,0,0,.32);
+    color: #fff; font-size: 14px; outline: none; transition: border-color .15s;
+  }
+  input:focus { border-color: #6c5cff; }
+  button.primary {
+    width: 100%; margin-top: 20px; padding: 14px; border: 0; border-radius: 999px; cursor: pointer;
+    background: linear-gradient(135deg,#6c5cff,#8f4dff); color: #fff; font-size: 14px; font-weight: 800;
+    transition: opacity .15s;
+  }
+  button.primary:disabled { opacity: .5; cursor: default; }
+  .msg { margin-top: 16px; padding: 13px 16px; border-radius: 15px; font-size: 13px; line-height: 1.9; }
+  .msg.err { border: 1px solid rgba(244,63,94,.35); background: rgba(244,63,94,.09); color: #fecdd3; }
+  .msg.ok  { border: 1px solid rgba(74,222,128,.3); background: rgba(74,222,128,.08); color: #bbf7d0; }
+  .msg.info{ border: 1px solid rgba(255,255,255,.12); background: rgba(255,255,255,.04); color: #c8cdd8; }
+  .hidden { display: none; }
+  .lang { position: fixed; top: 14px; inset-inline-end: 16px; font-size: 12px; color: #9aa0ae;
+          background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.1);
+          border-radius: 999px; padding: 6px 14px; cursor: pointer; }
+  .foot { margin-top: 18px; font-size: 12px; color: #7d828f; line-height: 2; }
+  .foot a { color: #a99dff; text-decoration: none; }
+</style>
+</head>
+<body>
+<button class="lang" id="langBtn" type="button">EN</button>
+<main class="card">
+  <div class="brand"><div class="dot">F</div><h1 id="t_title">بازیابی رمز عبور</h1></div>
+
+  <section id="s_working">
+    <p class="sub" id="t_verifying">در حال بررسی لینک بازیابی…</p>
+  </section>
+
+  <section id="s_failed" class="hidden">
+    <div class="msg err" id="t_failedMsg"></div>
+    <p class="sub" id="t_failedHint"></p>
+    <p class="foot" id="t_backHome">می‌توانید از داخل اپ (صفحه‌ی ورود ← «رمزت را فراموش کردی؟») لینک تازه بگیرید.</p>
+  </section>
+
+  <section id="s_form" class="hidden">
+    <p class="sub" id="t_formHint">لینک تأیید شد. رمز جدید را انتخاب کن:</p>
+    <form id="f" novalidate>
+      <label id="t_pw1l" for="p1">رمز جدید
+        <input id="p1" type="password" dir="ltr" autocomplete="new-password" minlength="6" required placeholder="••••••••">
+      </label>
+      <label id="t_pw2l" for="p2">تکرار
+        <input id="p2" type="password" dir="ltr" autocomplete="new-password" minlength="6" required placeholder="••••••••">
+      </label>
+      <div id="formErr" class="msg err hidden"></div>
+      <button class="primary" id="btn" type="submit">ذخیره رمز</button>
+    </form>
+  </section>
+
+  <section id="s_done" class="hidden">
+    <div class="msg ok" id="t_doneMsg">رمز عوض شد! 🎉</div>
+    <p class="sub" id="t_doneHint">حالا برگرد داخل اپ Frame و با رمز جدید وارد شو.</p>
+  </section>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script>
+/* Frame desktop password-reset landing (v0.70.0, R1-2).
+ * Canonical source: pvame/docs/reset.html — deployed to
+ * https://pvwvuow.github.io/frame/reset.html (GitHub Pages, frame repo /docs).
+ * The desktop app's recovery email opens HERE (the app's own origin is a
+ * dead 127.0.0.1 port by then). Handles every Supabase recovery shape:
+ *   #access_token=…  → implicit  → setSession
+ *   ?code=…          → PKCE      → exchangeCodeForSession
+ *   #token_hash=…    → OTP       → verifyOtp(recovery)
+ * then updates the password with the in-browser session.
+ * NOTE: this origin must stay listed in Supabase → Auth → Redirect URLs. */
+const SUPABASE_URL = "https://emqsegjeiyimoyncbhfn.supabase.co";
+const SUPABASE_KEY = "sb_publishable_m23eUV8cC-xqhqD-3P6Wsg_U5WsiM3E";
+
+const L = {
+  fa: {
+    title: "بازیابی رمز عبور", verifying: "در حال بررسی لینک بازیابی…",
+    formHint: "لینک تأیید شد. رمز جدید را انتخاب کن:",
+    pw1: "رمز جدید", pw2: "تکرار", save: "ذخیره رمز", saving: "لطفاً صبر کنید…",
+    short: "رمز عبور باید حداقل ۶ کاراکتر باشد.", match: "دو رمز یکسان نیستند.",
+    ok: "رمز عوض شد! 🎉", okHint: "حالا برگرد داخل اپ Frame و با رمز جدید وارد شو.",
+    expired: "لینک بازیابی منقضی شده یا قبلاً استفاده شده.",
+    failedHint: "از داخل اپ (صفحه‌ی ورود ← «رمزت را فراموش کردی؟») لینک تازه بگیرید.",
+    backHome: "می‌توانید از داخل اپ لینک تازه بگیرید.",
+    empty: "این صفحه به لینک داخل ایمیل بازیابی نیاز دارد.",
+  },
+  en: {
+    title: "Password recovery", verifying: "Verifying the recovery link…",
+    formHint: "Link verified. Pick a new password:",
+    pw1: "New password", pw2: "Repeat", save: "Save password", saving: "Please wait…",
+    short: "Password must be at least 6 characters.", match: "The two passwords do not match.",
+    ok: "Password changed! 🎉", okHint: "Now go back to the Frame app and sign in with the new password.",
+    expired: "The recovery link has expired or was already used.",
+    failedHint: "Request a fresh link inside the app (Sign-in → “Forgot your password?”).",
+    backHome: "You can request a fresh link from inside the app.",
+    empty: "This page needs the link from your recovery email.",
+  },
+};
+let lang = (navigator.language || "").toLowerCase().startsWith("fa") ? "fa" : "fa";
+const $ = (id) => document.getElementById(id);
+function applyLang() {
+  document.documentElement.lang = lang;
+  document.documentElement.dir = lang === "fa" ? "rtl" : "ltr";
+  const t = L[lang];
+  $("t_title").textContent = t.title;
+  $("t_verifying").textContent = t.verifying;
+  $("t_formHint").textContent = t.formHint;
+  $("t_pw1l").firstChild.textContent = t.pw1;
+  $("t_pw2l").firstChild.textContent = t.pw2;
+  $("btn").textContent = t.save;
+  $("t_doneMsg").textContent = t.ok;
+  $("t_doneHint").textContent = t.okHint;
+  $("t_backHome").textContent = t.backHome;
+  $("langBtn").textContent = lang === "fa" ? "EN" : "فارسی";
+}
+$("langBtn").onclick = () => { lang = lang === "fa" ? "en" : "fa"; applyLang(); };
+applyLang();
+
+function show(section) {
+  for (const s of ["s_working", "s_form", "s_failed", "s_done"]) $(s).classList.add("hidden");
+  $(section).classList.remove("hidden");
+}
+function fail(msg, expired) {
+  const t = L[lang];
+  $("t_failedMsg").textContent = msg || (expired ? t.expired : "");
+  $("t_failedHint").textContent = t.failedHint;
+  show("s_failed");
+}
+function cleanUrl() { try { history.replaceState(null, "", location.pathname); } catch (e) {} }
+const parse = (s) => new URLSearchParams((s || "").replace(/^[?#]/, ""));
+
+async function boot() {
+  const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+  const q = parse(location.search), h = parse(location.hash);
+  let session = null;
+  try {
+    if (h.get("access_token") && h.get("refresh_token")) {
+      const r = await sb.auth.setSession({ access_token: h.get("access_token"), refresh_token: h.get("refresh_token") });
+      if (r.error) throw r.error;
+      session = r.data.session;
+    } else if (q.get("code")) {
+      const r = await sb.auth.exchangeCodeForSession(location.href);
+      if (r.error) throw r.error;
+      session = r.data.session;
+    } else if (q.get("token_hash") || h.get("token_hash")) {
+      const r = await sb.auth.verifyOtp({ type: (q.get("type") || h.get("type") || "recovery"), token_hash: (q.get("token_hash") || h.get("token_hash")) });
+      if (r.error) throw r.error;
+      session = r.data.session;
+    } else if (q.get("error") || h.get("error")) {
+      throw new Error(decodeURIComponent(q.get("error_description") || h.get("error_description") || "link error"));
+    } else {
+      const cur = await sb.auth.getSession();
+      session = cur && cur.data && cur.data.session;
+      if (!session) { fail(L[lang].empty); return; }
+    }
+  } catch (e) {
+    cleanUrl();
+    const m = String((e && e.message) || e);
+    fail(/expired|invalid/i.test(m) ? L[lang].expired : m, true);
+    return;
+  }
+  cleanUrl();
+  show("s_form");
+  $("p1").focus();
+
+  $("f").addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const t = L[lang];
+    const p1 = $("p1").value, p2 = $("p2").value;
+    const errBox = $("formErr");
+    errBox.classList.add("hidden");
+    if ((p1 || "").length < 6) { errBox.textContent = t.short; errBox.classList.remove("hidden"); return; }
+    if (p1 !== p2) { errBox.textContent = t.match; errBox.classList.remove("hidden"); return; }
+    $("btn").disabled = true; $("btn").textContent = t.saving;
+    try {
+      const r = await sb.auth.updateUser({ password: p1 });
+      if (r.error) throw r.error;
+      show("s_done");
+    } catch (e) {
+      errBox.textContent = String((e && e.message) || e);
+      errBox.classList.remove("hidden");
+      $("btn").disabled = false; $("btn").textContent = t.save;
+    }
+  });
+}
+boot();
+</script>
+</body>
+</html>
