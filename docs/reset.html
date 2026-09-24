@@ -4,200 +4,338 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
-<meta name="theme-color" content="#08080a">
+<meta name="theme-color" content="#0a0a0c">
 <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
 <title>Frame — بازیابی رمز عبور</title>
 <link rel="preload" href="fonts/Vazirmatn-Regular.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="fonts/Vazirmatn-Black.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="style.css">
+<link rel="preload" href="fonts/IBMPlexMono-Regular.woff2" as="font" type="font/woff2" crossorigin>
 <style>
-/* Frame password-reset page — reuses the landing design system (style.css):
-   tokens --bg/--panel/--line/--red/--gold, .nav/.brand/.glow/.ic/.btn.
-   Page-specific form styles below keep the same visual language. */
-:root { color-scheme: dark; }
-.stage{
-  position:relative; min-height:calc(100dvh - 64px);
-  display:grid; place-items:center; padding:36px 16px 42px; overflow:hidden;
+/* ─────────────────────────────────────────────────────────────────────
+   FRAME · RECOVERY REEL — password recovery, styled as a 35mm film frame
+   Design DNA from the app's Darkroom (تاریک‌خانه) templates:
+   DR_INK #0a0a0c · DR_PANEL #0e0e11 · DR_PAPER #f4f2ec · DR_RED #e50914
+   DR_GOLD #f5b81b · IBM Plex Mono micro-labels · film perforations ·
+   ember light streaks · clapperboard stripes · projector beam + dust.
+   Auth logic: handles implicit / PKCE / OTP token_hash + 6-digit code
+   fallback; recovery is one-shot (server-side via token_hash, plus
+   client consumed-marker and global sign-out after the change).
+   ───────────────────────────────────────────────────────────────────── */
+@font-face{font-family:"Frame Mono";src:url("fonts/IBMPlexMono-Regular.woff2") format("woff2");font-weight:400;font-display:swap}
+@font-face{font-family:"Frame Mono";src:url("fonts/IBMPlexMono-Medium.woff2") format("woff2");font-weight:500;font-display:swap}
+@font-face{font-family:"Frame Mono";src:url("fonts/IBMPlexMono-SemiBold.woff2") format("woff2");font-weight:600;font-display:swap}
+@font-face{font-family:"Vazirmatn";src:url("fonts/Vazirmatn-Regular.woff2") format("woff2");font-weight:400;font-display:swap}
+@font-face{font-family:"Vazirmatn";src:url("fonts/Vazirmatn-Medium.woff2") format("woff2");font-weight:500;font-display:swap}
+@font-face{font-family:"Vazirmatn";src:url("fonts/Vazirmatn-Bold.woff2") format("woff2");font-weight:700;font-display:swap}
+@font-face{font-family:"Vazirmatn";src:url("fonts/Vazirmatn-Black.woff2") format("woff2");font-weight:900;font-display:swap}
+
+:root{
+  color-scheme:dark;
+  --ink:#0a0a0c; --panel:#0e0e11; --panel2:#121217;
+  --paper:#f4f2ec; --mute:rgba(244,242,236,.62); --faint:rgba(244,242,236,.4);
+  --line:rgba(255,255,255,.14); --cell:#1a1a1e;
+  --red:#e50914; --red2:#ff2745; --gold:#f5b81b;
 }
-.panel-card{
-  position:relative; z-index:1; width:100%; max-width:432px;
-  background:linear-gradient(180deg,var(--panel),var(--bg2));
-  border:1px solid var(--line); border-radius:var(--r-lg);
-  padding:30px 28px 26px; text-align:start;
-  box-shadow:0 30px 80px rgba(0,0,0,.55), 0 0 0 1px rgba(255,255,255,.03) inset;
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  font-family:"Vazirmatn",system-ui,-apple-system,"Segoe UI",sans-serif;
+  background:var(--ink); color:var(--paper); line-height:1.9; font-size:16px;
+  -webkit-font-smoothing:antialiased; min-height:100dvh; overflow-x:hidden;
 }
-.panel-card h1{font-size:1.32rem; line-height:1.6; margin-bottom:2px}
-.sub{color:var(--mut); font-size:.92rem; line-height:1.9}
-.head-row{display:flex; align-items:center; gap:.85rem; margin-bottom:14px}
-.ic.xl{width:52px; height:52px; flex:none; margin:0}
-.ic.gold{background:rgba(245,185,62,.12); color:var(--gold); border-color:rgba(245,185,62,.32)}
-/* language pill */
-.lang{
-  margin-inline-start:auto; cursor:pointer; font-family:inherit; font-size:.8rem; font-weight:700;
-  color:var(--mut); background:rgba(255,255,255,.04); border:1px solid var(--line2);
-  border-radius:999px; padding:6px 14px; transition:.2s;
+/* film grain over everything */
+body::after{
+  content:""; position:fixed; inset:-50%; z-index:60; pointer-events:none; opacity:.05;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
-.lang:hover{color:var(--txt); border-color:#4a4a58; background:rgba(255,255,255,.07)}
+/* ── ember streaks + projector beam ── */
+.fx{position:fixed; inset:0; pointer-events:none; overflow:hidden; z-index:0}
+.ember{position:absolute; width:230px; filter:blur(24px); mix-blend-mode:screen}
+.ember-a{inset-inline-start:-60px; top:16%; height:150%; background:linear-gradient(180deg,rgba(229,9,20,0) 0%,rgba(229,9,20,.42) 45%,rgba(229,9,20,0) 100%); transform:rotate(23deg)}
+.ember-b{inset-inline-start:38%; top:-12%; height:120%; width:56px; background:linear-gradient(180deg,rgba(255,84,54,0) 0%,rgba(255,84,54,.5) 50%,rgba(255,84,54,0) 100%); transform:rotate(23deg); filter:blur(9px)}
+.ember-c{inset-inline-end:-90px; bottom:-20%; height:110%; background:linear-gradient(180deg,rgba(229,9,20,0) 0%,rgba(229,9,20,.34) 50%,rgba(229,9,20,0) 100%); transform:rotate(-17deg)}
+.beam{
+  position:absolute; top:-6%; inset-inline-start:50%; transform:translateX(-50%);
+  width:min(880px,140vw); height:88%;
+  background:linear-gradient(180deg,rgba(244,242,236,.09) 0%,rgba(244,242,236,.03) 45%,rgba(244,242,236,0) 78%);
+  clip-path:polygon(41% 0, 59% 0, 86% 100%, 14% 100%);
+  filter:blur(6px);
+}
+.dust{position:absolute; width:5px; height:5px; border-radius:50%; background:rgba(244,242,236,.5); filter:blur(1px); animation:drift 9s linear infinite; opacity:0}
+.dust:nth-child(1){inset-inline-start:47%; top:16%; animation-delay:0s}
+.dust:nth-child(2){inset-inline-start:52%; top:26%; animation-delay:2.4s; width:3px; height:3px}
+.dust:nth-child(3){inset-inline-start:44%; top:34%; animation-delay:4.6s; width:4px; height:4px}
+.dust:nth-child(4){inset-inline-start:56%; top:20%; animation-delay:6.8s}
+.dust:nth-child(5){inset-inline-start:50%; top:40%; animation-delay:8.2s; width:3px; height:3px}
+@keyframes drift{
+  0%{transform:translate(0,0); opacity:0}
+  12%{opacity:.7}
+  60%{opacity:.35}
+  100%{transform:translate(26px,180px); opacity:0}
+}
+@media (prefers-reduced-motion:reduce){.dust{animation:none; opacity:.2}}
+
+/* ── nav ── */
+.nav{position:relative; z-index:10; display:flex; align-items:center; height:64px;
+  padding:0 max(16px,4vw); border-bottom:1px solid rgba(255,255,255,.08);
+  background:rgba(10,10,12,.66); backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px)}
+.brand{display:flex; align-items:center; gap:.55rem; font-weight:900; font-size:1.12rem; color:var(--paper); text-decoration:none}
+.brand b{color:var(--red)}
+.lang{margin-inline-start:auto; cursor:pointer; font-family:"Frame Mono",monospace; font-size:.72rem; letter-spacing:.18em;
+  color:var(--mute); background:rgba(255,255,255,.04); border:1px solid var(--line);
+  border-radius:999px; padding:6px 14px; transition:.2s}
+.lang:hover{color:var(--paper); border-color:rgba(255,255,255,.32)}
+
+/* ── stage ── */
+.stage{position:relative; z-index:1; min-height:calc(100dvh - 64px); display:grid; place-items:center; padding:40px 16px 46px}
+</style>
+<style>
+/* ── the film-frame card ── */
+.reel{
+  width:100%; max-width:470px; background:var(--panel); border:1px solid rgba(255,255,255,.09);
+  border-radius:18px; overflow:hidden; position:relative;
+  box-shadow:0 40px 110px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.03) inset, 0 0 90px rgba(229,9,20,.07);
+}
+.reel-top{height:12px; background:repeating-linear-gradient(-45deg,#16161a 0 12px,#ded9cd 12px 24px); border-bottom:1px solid rgba(255,255,255,.12); opacity:.92}
+.reel-body{display:grid; grid-template-columns:30px 1fr 30px}
+.rail{background:#08080a; display:flex; flex-direction:column; justify-content:space-evenly; align-items:center; padding:14px 0}
+.rail i{display:block; width:13px; height:19px; border-radius:3.5px; background:var(--cell); border:1px solid rgba(255,255,255,.055)}
+.rail i:nth-child(odd){background:#141418}
+.content{padding:22px 22px 24px; min-height:430px; display:flex; flex-direction:column}
+
+/* slate header */
+.slate{display:flex; align-items:center; gap:10px; margin-bottom:14px}
+.slate .mark{width:11px; height:11px; background:var(--red); flex:none}
+.mono{font-family:"Frame Mono",monospace; font-size:10px; font-weight:500; letter-spacing:.3em; text-transform:uppercase; color:var(--faint); direction:ltr; unicode-bidi:isolate}
+.slate .mono b{color:var(--paper); font-weight:600}
+.slate .mono .rd{color:var(--red)}
+.slate .no{margin-inline-start:auto; text-align:end}
+
+h1{font-weight:900; font-size:1.42rem; line-height:1.6; letter-spacing:-.01em}
+.sub{color:var(--mute); font-size:.9rem; line-height:1.95; margin-top:2px}
+
+/* film-leader countdown (verifying) */
+.leader-wrap{display:grid; place-items:center; padding:26px 0 18px}
+.leader{position:relative; width:108px; height:108px; border-radius:50%;
+  border:1.5px solid rgba(244,242,236,.28); background:radial-gradient(circle,rgba(229,9,20,.13),rgba(229,9,20,0) 68%)}
+.leader::before,.leader::after{content:""; position:absolute; background:rgba(244,242,236,.22)}
+.leader::before{left:50%; top:-10px; bottom:-10px; width:1.5px; transform:translateX(-50%)}
+.leader::after{top:50%; left:-10px; right:-10px; height:1.5px; transform:translateY(-50%)}
+.sweep{position:absolute; inset:3px; border-radius:50%;
+  background:conic-gradient(rgba(229,9,20,.4) 0 180deg, transparent 180deg 360deg);
+  animation:sweep 1.6s linear infinite}
+@keyframes sweep{to{transform:rotate(360deg)}}
+.leader .n{position:absolute; inset:0; display:grid; place-items:center; font-weight:900; font-size:2.3rem; color:var(--paper); text-shadow:0 2px 18px rgba(0,0,0,.8)}
+
 /* form */
-label.lb{display:block; margin-top:15px; font-size:.8rem; font-weight:700; color:var(--mut)}
+label.lb{display:block; margin-top:14px; font-size:.78rem; font-weight:700; color:var(--mute)}
 .field{position:relative; margin-top:7px}
 input{
-  width:100%; padding:12.5px 15px; border-radius:14px; font-family:inherit; font-size:.95rem;
-  border:1px solid var(--line2); background:#0b0b0f; color:var(--txt); outline:none;
+  width:100%; padding:12px 14px; border-radius:12px; font-family:inherit; font-size:.94rem;
+  border:1px solid rgba(255,255,255,.16); background:#08080a; color:var(--paper); outline:none;
   transition:border-color .18s, box-shadow .18s;
 }
-input::placeholder{color:var(--dim)}
-input:focus{border-color:var(--red); box-shadow:0 0 0 3px rgba(240,18,46,.14)}
-input.ok{border-color:rgba(74,222,128,.55); box-shadow:0 0 0 3px rgba(74,222,128,.10)}
-input.has-eye{padding-inline-end:46px}
-.eye{
-  position:absolute; right:7px; top:50%; transform:translateY(-50%);
-  width:32px; height:32px; border:0; border-radius:10px; cursor:pointer; display:grid; place-items:center;
-  background:transparent; color:var(--dim); transition:.15s;
-}
-.eye:hover{color:var(--txt); background:rgba(255,255,255,.06)}
+input::placeholder{color:rgba(244,242,236,.28)}
+input:focus{border-color:var(--red); box-shadow:0 0 0 3px rgba(229,9,20,.16)}
+input.ok{border-color:rgba(245,184,27,.6); box-shadow:0 0 0 3px rgba(245,184,27,.1)}
+input.has-eye{padding-inline-end:44px}
+.eye{position:absolute; right:6px; top:50%; transform:translateY(-50%); width:32px; height:32px;
+  border:0; border-radius:9px; cursor:pointer; display:grid; place-items:center;
+  background:transparent; color:rgba(244,242,236,.38); transition:.15s}
+.eye:hover{color:var(--paper); background:rgba(255,255,255,.07)}
 .eye .off{display:none}
 .eye.on .eye-svg{display:none}
 .eye.on .off{display:block}
-.hint{margin-top:6px; font-size:.74rem; color:var(--dim)}
-/* primary button = app .btn-red */
+.hint{margin-top:6px; font-size:.72rem; color:rgba(244,242,236,.35)}
+
 .btn-main{
-  width:100%; margin-top:20px; padding:.9rem 1.4rem; border:0; border-radius:14px; cursor:pointer;
-  font-family:inherit; font-size:.98rem; font-weight:800; color:#fff;
-  background:linear-gradient(135deg,var(--red),#c90d24); box-shadow:0 8px 28px rgba(240,18,46,.32);
+  width:100%; margin-top:18px; padding:.85rem 1.4rem; border:0; border-radius:12px; cursor:pointer;
+  font-family:inherit; font-size:.97rem; font-weight:800; color:#fff;
+  background:linear-gradient(135deg,var(--red),#b00610); box-shadow:0 10px 32px rgba(229,9,20,.35);
   transition:.2s; display:inline-flex; align-items:center; justify-content:center; gap:.5rem;
 }
-.btn-main:hover:not(:disabled){background:linear-gradient(135deg,var(--red2),#e01230); transform:translateY(-1px)}
+.btn-main:hover:not(:disabled){background:linear-gradient(135deg,var(--red2),#d40815); transform:translateY(-1px)}
 .btn-main:disabled{opacity:.55; cursor:default}
-/* messages */
-.msg{margin-top:15px; padding:12px 15px; border-radius:14px; font-size:.86rem; line-height:1.9}
-.msg.err{border:1px solid rgba(240,18,46,.35); background:rgba(240,18,46,.09); color:#fecdd3}
-.msg.ok{border:1px solid rgba(74,222,128,.3); background:rgba(74,222,128,.08); color:#bbf7d0}
+
+.msg{margin-top:14px; padding:11px 14px; border-radius:12px; font-size:.85rem; line-height:1.9}
+.msg.err{border:1px solid rgba(229,9,20,.4); background:rgba(229,9,20,.09); color:#fecdd3}
 .hidden{display:none}
-/* states */
-.center{text-align:center}
-.spin{
-  width:36px; height:36px; border-radius:50%; margin:22px auto 12px;
-  border:3px solid rgba(255,255,255,.12); border-top-color:var(--red);
-  animation:sp .8s linear infinite;
-}
-@keyframes sp{to{transform:rotate(360deg)}}
-.big-check{margin:0 auto 14px; width:66px; height:66px; border-radius:22px; display:grid; place-items:center;
-  background:rgba(245,185,62,.12); border:1px solid rgba(245,185,62,.32); color:var(--gold)}
-.done-title{font-size:1.25rem; font-weight:900; margin:2px 0 6px}
+
+/* code fallback */
+.code-toggle{margin-top:14px; background:none; border:0; cursor:pointer; font-family:inherit;
+  font-size:.78rem; color:var(--faint); text-decoration:underline; text-underline-offset:4px; padding:0}
+.code-toggle:hover{color:var(--paper)}
+.codebox{margin-top:10px; border:1px dashed rgba(255,255,255,.2); border-radius:12px; padding:12px 14px; background:rgba(255,255,255,.02)}
+.codebox .mono{font-size:9px; margin-bottom:6px; display:block}
+.code-row{display:grid; grid-template-columns:1fr 1fr; gap:10px}
+.codebox input{font-family:"Frame Mono",monospace; letter-spacing:.35em; text-align:center; font-size:1rem; padding:10px 8px}
+@media (max-width:420px){.code-row{grid-template-columns:1fr}}
+
+/* failed / done states */
+.center{align-items:center; text-align:center}
+.big-chip{margin:6px auto 16px; width:64px; height:64px; border-radius:50%; display:grid; place-items:center}
+.big-chip.gold{background:rgba(245,184,27,.12); border:1px solid rgba(245,184,27,.38); color:var(--gold); box-shadow:0 0 44px rgba(245,184,27,.18)}
+.big-chip.red{background:rgba(229,9,20,.12); border:1px solid rgba(229,9,20,.38); color:var(--red2)}
+.done-title{font-size:1.3rem; font-weight:900}
+.wrapline{font-size:.9rem; color:var(--mute)}
 .btn-ghost{
-  display:inline-flex; align-items:center; gap:.5rem; margin-top:18px; padding:.65rem 1.3rem;
-  border-radius:14px; border:1px solid var(--line2); color:var(--txt); background:rgba(255,255,255,.03);
-  font-family:inherit; font-size:.9rem; font-weight:800; cursor:pointer; transition:.2s; text-decoration:none;
+  display:inline-flex; align-items:center; gap:.5rem; margin-top:16px; padding:.6rem 1.3rem;
+  border-radius:12px; border:1px solid rgba(255,255,255,.18); color:var(--paper); background:rgba(255,255,255,.03);
+  font-family:inherit; font-size:.88rem; font-weight:800; cursor:pointer; transition:.2s; text-decoration:none;
 }
-.btn-ghost:hover{border-color:#4a4a58; background:rgba(255,255,255,.06)}
-.page-foot{position:relative; z-index:1; margin-top:22px; text-align:center; font-size:.78rem; color:var(--dim)}
-.page-foot a{color:var(--mut); text-decoration:none; border-bottom:1px solid var(--line2); padding-bottom:1px}
-.page-foot a:hover{color:var(--txt); border-color:var(--red)}
-.foot-note{margin-top:12px; text-align:start; font-size:.78rem; color:var(--dim); line-height:1.9}
-@media (prefers-reduced-motion:reduce){.spin{animation:none}}
-@media (max-width:480px){ .panel-card{padding:24px 20px 22px} }
+.btn-ghost:hover{border-color:rgba(255,255,255,.36); background:rgba(255,255,255,.06)}
+.foot-note{margin-top:12px; text-align:start; font-size:.76rem; color:rgba(244,242,236,.35); line-height:1.9}
+
+.reel-foot{display:flex; align-items:center; gap:10px; margin-top:auto; padding-top:18px}
+.reel-foot .rule{flex:1; height:1px; background:linear-gradient(90deg,rgba(255,255,255,.14),transparent)}
+.reel-foot .mono{font-size:9px}
+.page-foot{position:relative; z-index:1; margin-top:22px; text-align:center; font-size:.76rem; color:rgba(244,242,236,.32)}
+.page-foot a{color:var(--mute); text-decoration:none; border-bottom:1px solid rgba(255,255,255,.14); padding-bottom:1px}
+.page-foot a:hover{color:var(--paper); border-color:var(--red)}
+
+@media (max-width:480px){
+  .content{padding:18px 14px 20px}
+  .reel-body{grid-template-columns:20px 1fr 20px}
+  .rail i{width:9px; height:14px; border-radius:2.5px}
+  h1{font-size:1.22rem}
+}
+@media (prefers-reduced-motion:reduce){.sweep{animation-duration:4s}}
 </style>
 </head>
 <body>
 
+<div class="fx" aria-hidden="true">
+  <div class="beam"></div>
+  <div class="ember ember-a"></div>
+  <div class="ember ember-b"></div>
+  <div class="ember ember-c"></div>
+  <span class="dust"></span><span class="dust"></span><span class="dust"></span><span class="dust"></span><span class="dust"></span>
+</div>
+
 <header class="nav">
-  <div class="wrap nav-in">
-    <a class="brand" href="https://pvwvuow.github.io/frame/" aria-label="فریم — صفحه‌ی اصلی">
-      <img src="assets/icon-192.png" width="34" height="34" alt="لوگوی فریم">
-      <span>فریم</span>
-    </a>
-    <button class="lang" id="langBtn" type="button">EN</button>
-  </div>
+  <a class="brand" href="https://pvwvuow.github.io/frame/" aria-label="فریم — صفحه‌ی اصلی">
+    <img src="assets/icon-192.png" width="30" height="30" alt="لوگوی فریم">
+    <span>فریم<b>.</b></span>
+  </a>
+  <button class="lang" id="langBtn" type="button">EN</button>
 </header>
 
 <main class="stage">
-  <div class="glow glow-a" aria-hidden="true"></div>
-  <div class="glow glow-b" aria-hidden="true"></div>
+  <section class="reel" aria-label="بازیابی رمز عبور">
+    <div class="reel-top" aria-hidden="true"></div>
+    <div class="reel-body">
+      <div class="rail" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
 
-  <section class="panel-card">
-    <div id="s_working">
-      <div class="center">
-        <div class="spin" aria-hidden="true"></div>
-        <p class="sub" id="t_verifying">در حال بررسی لینک بازیابی…</p>
-      </div>
-    </div>
-
-    <div id="s_failed" class="hidden">
-      <div class="head-row">
-        <div class="ic xl" aria-hidden="true">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      <div class="content">
+        <div class="slate">
+          <span class="mark" aria-hidden="true"></span>
+          <span class="mono">FRAME · <span class="rd">RECOVERY&nbsp;REEL</span></span>
+          <span class="mono no" id="t_reelno">NO.001 — RECOVER</span>
         </div>
-        <h1 id="t_title">بازیابی رمز عبور</h1>
-      </div>
-      <div class="msg err" id="t_failedMsg"></div>
-      <p class="sub" id="t_failedHint" style="margin-top:10px"></p>
-      <p class="foot-note" id="t_backHome"></p>
-    </div>
 
-    <div id="s_form" class="hidden">
-      <div class="head-row">
-        <div class="ic xl" aria-hidden="true">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        <div id="s_working" class="center" style="display:grid">
+          <h1 id="t_title_w" style="text-align:center">بازیابی رمز عبور</h1>
+          <div class="leader-wrap">
+            <div class="leader" role="status" aria-live="polite">
+              <div class="sweep" aria-hidden="true"></div>
+              <span class="n" id="leadN">3</span>
+            </div>
+          </div>
+          <p class="sub" id="t_verifying" style="text-align:center">در حال بررسی لینک بازیابی…</p>
         </div>
-        <div>
+
+        <div id="s_failed" class="hidden">
+          <div class="big-chip red" aria-hidden="true">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          </div>
           <h1 id="t_title">بازیابی رمز عبور</h1>
+          <div class="msg err" id="t_failedMsg" style="margin-top:10px"></div>
+          <p class="sub" id="t_failedHint" style="margin-top:8px"></p>
+          <p class="foot-note" id="t_backHome"></p>
+          <button class="code-toggle" id="failCodeBtn" type="button" hidden></button>
+        </div>
+
+        <div id="s_form" class="hidden">
+          <h1 id="t_title_f">بازیابی رمز عبور</h1>
           <p class="sub" id="t_formHint">لینک تأیید شد. رمز جدید را انتخاب کن:</p>
+
+          <form id="f" novalidate>
+            <label class="lb" for="p1"><span id="t_pw1">رمز جدید</span></label>
+            <div class="field">
+              <input id="p1" class="has-eye" type="password" dir="ltr" autocomplete="new-password" minlength="6" required placeholder="••••••••">
+              <button class="eye" id="e1" type="button" aria-label="نمایش رمز">
+                <svg class="eye-svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                <svg class="off" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+              </button>
+            </div>
+            <p class="hint" id="t_pwHint">حداقل ۶ کاراکتر</p>
+
+            <label class="lb" for="p2"><span id="t_pw2">تکرار رمز جدید</span></label>
+            <div class="field">
+              <input id="p2" class="has-eye" type="password" dir="ltr" autocomplete="new-password" minlength="6" required placeholder="••••••••">
+              <button class="eye" id="e2" type="button" aria-label="نمایش رمز">
+                <svg class="eye-svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                <svg class="off" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+              </button>
+            </div>
+
+            <div id="formErr" class="msg err hidden"></div>
+            <button class="btn-main" id="btn" type="submit">ذخیره رمز</button>
+          </form>
+
+          <button class="code-toggle" id="codeBtn" type="button"></button>
+          <div id="codebox" class="codebox hidden">
+            <span class="mono">6-DIGIT CODE — ONE SHOT</span>
+            <div class="code-row">
+              <input id="cemail" type="email" dir="ltr" autocomplete="email" placeholder="you@mail.com">
+              <input id="ccode" type="text" dir="ltr" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="••••••">
+            </div>
+            <div id="codeErr" class="msg err hidden" style="margin-top:10px"></div>
+            <button class="btn-main" id="codeGo" type="button" style="margin-top:10px; padding:.65rem 1.2rem; font-size:.88rem"></button>
+          </div>
+        </div>
+
+        <div id="s_done" class="hidden center" style="display:grid">
+          <div class="big-chip gold" aria-hidden="true">
+            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          </div>
+          <p class="mono" style="margin-bottom:6px">THAT'S&nbsp;A&nbsp;WRAP</p>
+          <p class="done-title" id="t_doneMsg">رمز عوض شد! 🎉</p>
+          <p class="wrapline" id="t_doneHint">حالا برگرد داخل اپ Frame و با رمز جدید وارد شو.</p>
+          <a class="btn-ghost" href="https://pvwvuow.github.io/frame/" id="t_backApp">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+            <span>بازگشت به فریم</span>
+          </a>
+        </div>
+
+        <div class="reel-foot">
+          <span class="mono" id="t_made">MADE&nbsp;WITH&nbsp;<b style="color:var(--paper)">FRAME</b></span>
+          <span class="rule" aria-hidden="true"></span>
+          <span class="mono" id="t_reelno2">REEL&nbsp;·&nbsp;001</span>
         </div>
       </div>
 
-      <form id="f" novalidate>
-        <label class="lb" for="p1"><span id="t_pw1">رمز جدید</span></label>
-        <div class="field">
-          <input id="p1" class="has-eye" type="password" dir="ltr" autocomplete="new-password" minlength="6" required placeholder="••••••••">
-          <button class="eye" id="e1" type="button" aria-label="نمایش رمز">
-            <svg class="eye-svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-            <svg class="off" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
-          </button>
-        </div>
-        <p class="hint" id="t_pwHint">حداقل ۶ کاراکتر</p>
-
-        <label class="lb" for="p2"><span id="t_pw2">تکرار رمز جدید</span></label>
-        <div class="field">
-          <input id="p2" class="has-eye" type="password" dir="ltr" autocomplete="new-password" minlength="6" required placeholder="••••••••">
-          <button class="eye" id="e2" type="button" aria-label="نمایش رمز">
-            <svg class="eye-svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-            <svg class="off" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
-          </button>
-        </div>
-
-        <div id="formErr" class="msg err hidden"></div>
-        <button class="btn-main" id="btn" type="submit">ذخیره رمز</button>
-      </form>
-    </div>
-
-    <div id="s_done" class="hidden center">
-      <div class="big-check" aria-hidden="true">
-        <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-      </div>
-      <p class="done-title" id="t_doneMsg">رمز عوض شد! 🎉</p>
-      <p class="sub" id="t_doneHint">حالا برگرد داخل اپ Frame و با رمز جدید وارد شو.</p>
-      <a class="btn-ghost" href="https://pvwvuow.github.io/frame/" id="t_backApp">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
-        <span>بازگشت به فریم</span>
-      </a>
+      <div class="rail" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
     </div>
   </section>
 
   <p class="page-foot">فریم — سینمای خانگی · <a href="https://pvwvuow.github.io/frame/" id="t_homeLink">صفحه‌ی اصلی</a></p>
 </main>
-
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script>
-/* Frame desktop password-reset landing (v0.70.0, R1-2; brand redesign 2026-09-25).
+/* Frame password-reset landing — "RECOVERY REEL" (v0.70.x, R1-2 + one-shot hardening).
  * Canonical source: pvame/docs/reset.html — deployed to
  * https://pvwvuow.github.io/frame/reset.html (GitHub Pages, frame repo /docs).
  * The desktop app's recovery email opens HERE (the app's own origin is a
  * dead 127.0.0.1 port by then). Handles every Supabase recovery shape:
  *   #access_token=…  → implicit  → setSession
  *   ?code=…          → PKCE      → exchangeCodeForSession
- *   #token_hash=…    → OTP       → verifyOtp(recovery)
- * then updates the password with the in-browser session.
+ *   ?token_hash=…    → OTP       → verifyOtp(recovery)   ← server-enforced one-shot
+ *   + manual 6-digit code fallback (email + code → verifyOtp)
+ * One-shot: links generated with {{ .TokenHash }} are consumed server-side on
+ * first verify; this page additionally (a) marks the presented token fingerprint
+ * as used after a successful password change and refuses replays, and
+ * (b) globally signs out so stored/refreshable sessions die with the change.
  * NOTE: this origin must stay listed in Supabase → Auth → Redirect URLs. */
 const SUPABASE_URL = "https://emqsegjeiyimoyncbhfn.supabase.co";
 const SUPABASE_KEY = "sb_publishable_m23eUV8cC-xqhqD-3P6Wsg_U5WsiM3E";
@@ -212,10 +350,14 @@ const L = {
     ok: "رمز عوض شد! 🎉", okHint: "حالا برگرد داخل اپ Frame و با رمز جدید وارد شو.",
     backApp: "بازگشت به فریم",
     expired: "لینک بازیابی منقضی شده یا قبلاً استفاده شده.",
+    used: "این لینک قبلاً استفاده شده — هر لینک فقط یک‌بارمصرف است.",
     failedHint: "از داخل اپ (صفحه‌ی ورود ← «رمزت را فراموش کردی؟») لینک تازه بگیرید.",
     backHome: "می‌توانید از داخل اپ لینک تازه بگیرید.",
     empty: "این صفحه به لینک داخل ایمیل بازیابی نیاز دارد.",
     home: "صفحه‌ی اصلی", eye: "نمایش / مخفی کردن رمز",
+    codeToggle: "لینک کار نمی‌کنه؟ با کد ۶ رقمی وارد شو",
+    codeGo: "تأیید کد", codeBad: "ایمیل یا کد ۶ رقمی معتبر نیست.",
+    failCode: "یا: ورود با کد ۶ رقمی ایمیل",
   },
   en: {
     title: "Password recovery", verifying: "Verifying the recovery link…",
@@ -226,20 +368,42 @@ const L = {
     ok: "Password changed! 🎉", okHint: "Now go back to the Frame app and sign in with the new password.",
     backApp: "Back to Frame",
     expired: "The recovery link has expired or was already used.",
+    used: "This link was already used — recovery links are single-use.",
     failedHint: "Request a fresh link inside the app (Sign-in → “Forgot your password?”).",
     backHome: "You can request a fresh link from inside the app.",
     empty: "This page needs the link from your recovery email.",
     home: "Home page", eye: "Show / hide password",
+    codeToggle: "Link not working? Sign in with the 6-digit code",
+    codeGo: "Verify code", codeBad: "Invalid email or 6-digit code.",
+    failCode: "Or: sign in with the 6-digit code from the email",
   },
 };
 let lang = (navigator.language || "").toLowerCase().startsWith("fa") ? "fa" : "fa";
 const $ = (id) => document.getElementById(id);
+
+/* ── one-shot marker: fingerprint the presented link tokens ── */
+const USED_KEY = "frame_recovery_used_v1";
+const djb2 = (s) => { let h = 5381; for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0; return h.toString(36); };
+const FP = djb2(location.search + "|" + location.hash);
+const usedList = () => { try { return JSON.parse(localStorage.getItem(USED_KEY) || "[]"); } catch (e) { return []; } };
+const isUsed = () => !!FP && usedList().includes(FP);
+const markUsed = () => { if (!FP) return; const l = usedList(); l.push(FP); try { localStorage.setItem(USED_KEY, JSON.stringify(l.slice(-20))); } catch (e) {} };
+
+/* ── film-leader countdown 3→2→1 while verifying ── */
+let leadTimer = null;
+function startLeader() {
+  const el = $("leadN"); if (!el) return;
+  const seq = ["3", "2", "1"]; let i = 0; el.textContent = seq[0];
+  leadTimer = setInterval(() => { i = (i + 1) % seq.length; el.textContent = seq[i]; }, 800);
+}
+function stopLeader() { if (leadTimer) { clearInterval(leadTimer); leadTimer = null; } }
+
 function applyLang() {
   document.documentElement.lang = lang;
   document.documentElement.dir = lang === "fa" ? "rtl" : "ltr";
   document.title = "Frame — " + L[lang].title;
   const t = L[lang];
-  document.querySelectorAll("#t_title").forEach((el) => (el.textContent = t.title));
+  for (const id of ["t_title_w", "t_title", "t_title_f"]) $(id).textContent = t.title;
   $("t_verifying").textContent = t.verifying;
   $("t_formHint").textContent = t.formHint;
   $("t_pw1").textContent = t.pw1;
@@ -251,6 +415,9 @@ function applyLang() {
   $("t_backHome").textContent = t.backHome;
   $("t_backApp").querySelector("span").textContent = t.backApp;
   $("t_homeLink").textContent = t.home;
+  $("codeBtn").textContent = t.codeToggle;
+  $("codeGo").textContent = t.codeGo;
+  $("failCodeBtn").textContent = t.failCode;
   $("langBtn").textContent = lang === "fa" ? "EN" : "فارسی";
   $("e1").setAttribute("aria-label", t.eye);
   $("e2").setAttribute("aria-label", t.eye);
@@ -262,28 +429,39 @@ applyLang();
 for (const [inputId, btnId] of [["p1", "e1"], ["p2", "e2"]]) {
   $(btnId).addEventListener("click", () => {
     const inp = $(inputId);
-    const show = inp.type === "password";
-    inp.type = show ? "text" : "password";
-    $(btnId).classList.toggle("on", show);
+    const showPw = inp.type === "password";
+    inp.type = showPw ? "text" : "password";
+    $(btnId).classList.toggle("on", showPw);
     inp.focus();
   });
 }
-/* green ring when the repeat matches */
+/* gold ring when the repeat matches */
 $("p2").addEventListener("input", () => {
   const same = $("p2").value.length >= 6 && $("p1").value === $("p2").value;
   $("p2").classList.toggle("ok", same);
 });
 
 function show(section) {
-  for (const s of ["s_working", "s_form", "s_failed", "s_done"]) $(s).classList.add("hidden");
-  $(section).classList.remove("hidden");
+  stopLeader();
+  for (const s of ["s_working", "s_form", "s_failed", "s_done"]) {
+    $(s).classList.add("hidden"); $(s).classList.remove("center"); $(s).style.display = "";
+  }
+  const el = $(section);
+  el.classList.remove("hidden");
+  if (section === "s_working" || section === "s_done") { el.classList.add("center"); el.style.display = "grid"; }
+  if (section === "s_working") startLeader();
 }
 function fail(msg, expired) {
   const t = L[lang];
   $("t_failedMsg").textContent = msg || (expired ? t.expired : "");
   $("t_failedHint").textContent = t.failedHint;
+  $("failCodeBtn").hidden = false;
   show("s_failed");
 }
+/* manual 6-digit code fallback */
+$("codeBtn").onclick = () => $("codebox").classList.toggle("hidden");
+$("failCodeBtn").onclick = () => { $("codebox").classList.remove("hidden"); show("s_form"); };
+
 function cleanUrl() { try { history.replaceState(null, "", location.pathname); } catch (e) {} }
 const parse = (s) => new URLSearchParams((s || "").replace(/^[?#]/, ""));
 
@@ -292,6 +470,7 @@ async function boot() {
   const q = parse(location.search), h = parse(location.hash);
   let session = null;
   try {
+    if (isUsed()) throw { used: true };
     if (h.get("access_token") && h.get("refresh_token")) {
       const r = await sb.auth.setSession({ access_token: h.get("access_token"), refresh_token: h.get("refresh_token") });
       if (r.error) throw r.error;
@@ -314,15 +493,15 @@ async function boot() {
   } catch (e) {
     cleanUrl();
     const m = String((e && e.message) || e);
-    fail(/expired|invalid/i.test(m) ? L[lang].expired : m, true);
+    if (e && e.used) { fail(L[lang].used); return; }
+    fail(/expired|invalid|already/i.test(m) ? L[lang].expired : m, true);
     return;
   }
   cleanUrl();
   show("s_form");
   $("p1").focus();
 
-  $("f").addEventListener("submit", async (ev) => {
-    ev.preventDefault();
+  const doUpdate = async () => {
     const t = L[lang];
     const p1 = $("p1").value, p2 = $("p2").value;
     const errBox = $("formErr");
@@ -333,13 +512,39 @@ async function boot() {
     try {
       const r = await sb.auth.updateUser({ password: p1 });
       if (r.error) throw r.error;
+      markUsed();                        /* this link can never open the form again on this device */
+      try { await sb.auth.signOut({ scope: "global" }); } catch (e2) {}  /* kill refreshable sessions */
       show("s_done");
     } catch (e) {
       errBox.textContent = String((e && e.message) || e);
       errBox.classList.remove("hidden");
       $("btn").disabled = false; $("btn").textContent = t.save;
     }
-  });
+  };
+  $("f").addEventListener("submit", (ev) => { ev.preventDefault(); doUpdate(); });
+
+  /* 6-digit code → verifyOtp(recovery) → then the same password form */
+  $("codeGo").onclick = async () => {
+    const t = L[lang];
+    const errBox = $("codeErr");
+    errBox.classList.add("hidden");
+    const email = ($("cemail").value || "").trim();
+    const code = ($("ccode").value || "").replace(/\D/g, "");
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) || code.length !== 6) {
+      errBox.textContent = t.codeBad; errBox.classList.remove("hidden"); return;
+    }
+    $("codeGo").disabled = true; $("codeGo").textContent = t.saving;
+    try {
+      const r = await sb.auth.verifyOtp({ type: "recovery", email, token: code });
+      if (r.error) throw r.error;
+      $("codebox").classList.add("hidden");
+      $("p1").focus();
+    } catch (e) {
+      errBox.textContent = String((e && e.message) || e);
+      errBox.classList.remove("hidden");
+    }
+    $("codeGo").disabled = false; $("codeGo").textContent = t.codeGo;
+  };
 }
 boot();
 </script>
