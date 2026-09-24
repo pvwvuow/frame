@@ -1,0 +1,409 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#0a0a0c">
+<link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
+<title>Frame — راهنمای نصب اندروید</title>
+<link rel="preload" href="fonts/Vazirmatn-Regular.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="fonts/Vazirmatn-Black.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="fonts/IBMPlexMono-Regular.woff2" as="font" type="font/woff2" crossorigin>
+<style>
+/* ─────────────────────────────────────────────────────────────────────
+   FRAME · INSTALL GUIDE — Android APK install manual, darkroom DNA.
+   Same design language as the RECOVERY REEL reset page:
+   DR_INK #0a0a0c · DR_PAPER #f4f2ec · DR_RED #e50914 · DR_GOLD #f5b81b
+   IBM Plex Mono micro-labels · clapperboard stripes · ember glow.
+   The live version/SHA-256 are pulled from the GitHub release API with
+   static fallbacks baked in, and download links point to the Supabase
+   cloud mirror first (GitHub release downloads break for many Iranian
+   ISPs → truncated APK → «خطا در تجزیه بسته»).
+   ───────────────────────────────────────────────────────────────────── */
+@font-face{font-family:"Frame Mono";src:url("fonts/IBMPlexMono-Regular.woff2") format("woff2");font-weight:400;font-display:swap}
+@font-face{font-family:"Frame Mono";src:url("fonts/IBMPlexMono-Medium.woff2") format("woff2");font-weight:500;font-display:swap}
+@font-face{font-family:"Frame Mono";src:url("fonts/IBMPlexMono-SemiBold.woff2") format("woff2");font-weight:600;font-display:swap}
+@font-face{font-family:"Vazirmatn";src:url("fonts/Vazirmatn-Regular.woff2") format("woff2");font-weight:400;font-display:swap}
+@font-face{font-family:"Vazirmatn";src:url("fonts/Vazirmatn-Medium.woff2") format("woff2");font-weight:500;font-display:swap}
+@font-face{font-family:"Vazirmatn";src:url("fonts/Vazirmatn-Bold.woff2") format("woff2");font-weight:700;font-display:swap}
+@font-face{font-family:"Vazirmatn";src:url("fonts/Vazirmatn-Black.woff2") format("woff2");font-weight:900;font-display:swap}
+
+:root{
+  --ink:#0a0a0c; --panel:#101013; --panel2:#141417; --line:#232328;
+  --paper:#f4f2ec; --dim:#a7a49b; --faint:#6d6a62;
+  --red:#e50914; --red2:#ff2745; --gold:#f5b81b;
+  --mono:"Frame Mono",ui-monospace,Menlo,Consolas,monospace;
+  --sans:"Vazirmatn",Tahoma,Segoe UI,sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  background:var(--ink); color:var(--paper); font-family:var(--sans);
+  min-height:100vh; overflow-x:hidden;
+  background-image:
+    radial-gradient(900px 460px at 85% -8%, rgba(229,9,20,.13), transparent 62%),
+    radial-gradient(760px 420px at 8% 108%, rgba(245,184,27,.07), transparent 60%);
+}
+.wrap{max-width:860px;margin:0 auto;padding:0 20px}
+
+/* ── nav ─────────────────────────────────────────────────────────── */
+nav{
+  position:sticky;top:0;z-index:50;
+  background:rgba(10,10,12,.78);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+  border-bottom:1px solid rgba(255,255,255,.06);
+}
+.nav-in{display:flex;align-items:center;justify-content:space-between;height:62px}
+.brand{display:flex;align-items:center;gap:10px;text-decoration:none;color:var(--paper)}
+.brand img{width:30px;height:30px;border-radius:8px;display:block}
+.brand b{font-weight:900;font-size:19px;letter-spacing:-.2px}
+.brand b::after{content:".";color:var(--red)}
+.mono-label{
+  font-family:var(--mono);font-size:10px;letter-spacing:.32em;color:var(--faint);
+  text-transform:uppercase;direction:ltr;display:inline-block;
+}
+
+/* clapperboard stripe */
+.stripe{height:7px;display:flex;overflow:hidden;border-bottom:1px solid rgba(255,255,255,.05)}
+.stripe i{flex:1;background:#141417}
+.stripe i:nth-child(odd){background:var(--red);opacity:.16}
+
+/* ── hero ────────────────────────────────────────────────────────── */
+header.hero{padding:54px 0 26px;text-align:center;position:relative}
+h1{font-size:clamp(30px,6vw,46px);font-weight:900;line-height:1.25}
+h1 em{font-style:normal;color:var(--red);text-shadow:0 0 34px rgba(229,9,20,.45)}
+.hero p.sub{color:var(--dim);font-size:15px;line-height:2;max-width:560px;margin:16px auto 0}
+.verchip{
+  display:inline-flex;align-items:center;gap:8px;margin-top:18px;
+  border:1px solid var(--line);border-radius:999px;padding:7px 16px;
+  font-family:var(--mono);font-size:12px;color:var(--gold);letter-spacing:.14em;direction:ltr;
+}
+.verchip .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);box-shadow:0 0 10px var(--gold)}
+
+/* download card */
+.dl{
+  margin:30px 0 8px;background:linear-gradient(180deg,var(--panel2),var(--panel));
+  border:1px solid var(--line);border-radius:22px;padding:26px 24px;text-align:right;
+  box-shadow:0 30px 70px rgba(0,0,0,.45);
+}
+.dl-row{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:center;margin-top:4px}
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:10px;
+  border-radius:14px;padding:14px 26px;font-family:var(--sans);
+  font-size:15px;font-weight:700;text-decoration:none;cursor:pointer;border:none;
+  transition:transform .15s ease,box-shadow .15s ease,filter .15s ease;
+}
+.btn-main{
+  background:linear-gradient(135deg,var(--red2),var(--red));color:#fff;
+  box-shadow:0 10px 30px rgba(229,9,20,.35);
+}
+.btn-main:hover{transform:translateY(-2px);filter:brightness(1.08)}
+.btn-ghost{
+  background:transparent;color:var(--paper);border:1px solid var(--line);
+}
+.btn-ghost:hover{border-color:var(--faint);transform:translateY(-2px)}
+.dl-note{color:var(--faint);font-size:12px;line-height:1.9;text-align:center;margin-top:14px}
+.dl-note a{color:var(--gold);text-decoration:none}
+
+/* sha box */
+.sha{
+  margin-top:18px;border:1px dashed var(--line);border-radius:14px;background:#0c0c0f;
+  padding:13px 15px;font-family:var(--mono);font-size:11px;color:var(--dim);
+  direction:ltr;word-break:break-all;line-height:1.8;position:relative;
+}
+.sha b{color:var(--gold);letter-spacing:.18em}
+.sha .copy{
+  position:absolute;top:8px;left:8px;border:1px solid var(--line);background:var(--panel2);
+  color:var(--dim);border-radius:8px;padding:4px 10px;font-family:var(--mono);font-size:10px;cursor:pointer;
+}
+.sha .copy:hover{color:var(--paper);border-color:var(--faint)}
+
+/* ── steps ───────────────────────────────────────────────────────── */
+.steps{display:grid;gap:18px;margin:34px 0 10px}
+.step{
+  background:linear-gradient(180deg,var(--panel2),var(--panel));
+  border:1px solid var(--line);border-radius:20px;padding:24px 24px 22px;position:relative;overflow:hidden;
+}
+.step::before{
+  content:"";position:absolute;inset:0 auto 0 0;width:4px;
+  background:linear-gradient(180deg,var(--red),transparent 80%);
+}
+.step .num{
+  font-family:var(--mono);font-size:11px;letter-spacing:.3em;color:var(--red);
+  display:flex;align-items:center;gap:12px;margin-bottom:10px;direction:ltr;justify-content:flex-end;
+}
+.step h2{font-size:19px;font-weight:900;margin-bottom:8px}
+.step p{color:var(--dim);font-size:14px;line-height:2.1}
+.step p b{color:var(--paper)}
+.oem{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+.oem span{
+  border:1px solid var(--line);border-radius:10px;background:#0c0c0f;
+  padding:7px 13px;font-size:12px;color:var(--dim);line-height:1.9;
+}
+.oem b{color:var(--gold);font-weight:700}
+.warn{
+  margin-top:14px;border:1px solid rgba(245,184,27,.28);background:rgba(245,184,27,.06);
+  border-radius:14px;padding:12px 16px;font-size:13px;line-height:2.1;color:#e8d9a8;
+}
+.ok{
+  margin-top:14px;border:1px solid rgba(34,197,94,.25);background:rgba(34,197,94,.05);
+  border-radius:14px;padding:12px 16px;font-size:13px;line-height:2.1;color:#b8e6c5;
+}
+
+/* ── troubleshooting ─────────────────────────────────────────────── */
+h3.sec{
+  font-size:22px;font-weight:900;margin:46px 0 6px;display:flex;align-items:center;gap:12px;
+}
+h3.sec::after{content:"";flex:1;height:1px;background:linear-gradient(90deg,var(--line),transparent)}
+details{
+  background:var(--panel);border:1px solid var(--line);border-radius:16px;
+  padding:0 18px;margin-top:12px;overflow:hidden;
+}
+details[open]{border-color:rgba(229,9,20,.35)}
+summary{
+  cursor:pointer;list-style:none;display:flex;align-items:center;justify-content:space-between;
+  gap:10px;padding:16px 0;font-weight:700;font-size:14.5px;color:var(--paper);
+}
+summary::-webkit-details-marker{display:none}
+summary .n{font-family:var(--mono);color:var(--faint);font-size:10px;letter-spacing:.2em}
+summary::after{content:"+";font-family:var(--mono);color:var(--red);font-size:18px;transition:transform .2s}
+details[open] summary::after{transform:rotate(45deg)}
+details .body{padding:0 2px 18px;color:var(--dim);font-size:13.5px;line-height:2.2}
+details .body b{color:var(--paper)}
+details .body code{
+  font-family:var(--mono);direction:ltr;unicode-bidi:embed;
+  background:#0c0c0f;border:1px solid var(--line);border-radius:8px;padding:2px 8px;font-size:11px;color:var(--gold);
+}
+
+/* ── trust section ───────────────────────────────────────────────── */
+.trust{
+  margin:40px 0 8px;background:linear-gradient(180deg,var(--panel2),var(--panel));
+  border:1px solid var(--line);border-radius:20px;padding:24px;
+}
+.trust h2{font-size:18px;font-weight:900;margin-bottom:10px}
+.trust p{color:var(--dim);font-size:13.5px;line-height:2.2}
+.trust a{color:var(--gold);text-decoration:none}
+
+/* ── footer ──────────────────────────────────────────────────────── */
+.page-foot{
+  margin-top:52px;border-top:1px solid rgba(255,255,255,.06);
+  padding:26px 0 40px;text-align:center;
+}
+.page-foot .mono-label{color:var(--faint)}
+.foot-note{color:var(--faint);font-size:12.5px;margin-top:10px;line-height:2}
+.foot-note a{color:var(--dim);text-decoration:none;border-bottom:1px dotted var(--faint)}
+
+@media (max-width:560px){
+  .step{padding:20px 16px 18px}
+  .dl{padding:20px 16px}
+  .btn{width:100%}
+}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="wrap nav-in">
+    <a class="brand" href="index.html">
+      <img src="assets/icon-192.png" alt="Frame">
+      <b>فریم</b>
+    </a>
+    <span class="mono-label">INSTALL&nbsp;·&nbsp;REEL&nbsp;NO.002</span>
+  </div>
+</nav>
+<div class="stripe"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+<header class="hero wrap">
+  <h1>فریم را روی <em>اندروید</em> نصب کنید</h1>
+  <p class="sub">
+    نصب فریم بیرون از استور انجام می‌شود، بنابراین اندروید و Play Protect چند سؤال امنیتی می‌پرسند.
+    کاملاً طبیعی است — با سه قدم زیر رد می‌شود. اگر پیام خطا دیدید، جدول عیب‌یابی پایین صفحه پاسخ دارد.
+  </p>
+  <div class="verchip"><span class="dot"></span><span id="verChip">FRAME&nbsp;·&nbsp;ANDROID</span></div>
+
+  <div class="dl">
+    <div class="dl-row">
+      <a id="mirrorBtn" class="btn btn-main" href="https://emqsegjeiyimoyncbhfn.supabase.co/storage/v1/object/public/releases/Frame-0.70.0-android.apk">
+        دانلود مستقیم — میرور ابری
+      </a>
+      <a id="ghBtn" class="btn btn-ghost" href="https://github.com/pvwvuow/frame/releases/latest">
+        دانلود از GitHub
+      </a>
+    </div>
+    <p class="dl-note">
+      میرور ابری همان فایلِ بایت‌به‌بایت یکسان را از سرور Supabase می‌دهد — برای ایران پایدارتر است.
+      اگر «خطا در تجزیه بسته» گرفتید، تقریباً همیشه یعنی دانلود از GitHub ناقص مانده؛ از میرور بگیرید.
+    </p>
+    <div class="sha">
+      <b>SHA-256</b><br>
+      <span id="shaText">fb13e8fea0a621fea45a6bfef879049482b86615b94bd9ef2ee0d9da91566bd5</span>
+      <button class="copy" id="copySha">COPY</button>
+    </div>
+    <p class="dl-note">بعد از دانلود می‌توانید صحت فایل را با همین اثر انگشت مقایسه کنید — <a href="#check">روش چک کردن</a></p>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <div class="steps">
+    <div class="step">
+      <div class="num">STEP&nbsp;01&nbsp;/&nbsp;DOWNLOAD</div>
+      <h2>۱ — فایل APK را دانلود کنید</h2>
+      <p>
+        دکمه‌ی قرمز بالای صفحه را بزنید. فایل حدود <b>۲۵ مگابایت</b> است و اسمش شبیه
+        <b>Frame-0.70.0-android.apk</b> می‌ماند. اگر مرورگر درباره‌ی «فایل می‌تواند مضر باشد» هشدار داد،
+        «نگه‌داشتن/Keep» را بزنید — این هشدار برای هر فایل APK خارج از استور می‌آید، نه مخصوص فریم.
+      </p>
+    </div>
+
+    <div class="step">
+      <div class="num">STEP&nbsp;02&nbsp;/&nbsp;ALLOW&nbsp;SOURCE</div>
+      <h2>۲ — اجازه‌ی نصب از منبع ناشناس</h2>
+      <p>
+        وقتی روی فایل دانلودشده بزنید، اندروید می‌گوید <b>«برنامه‌ی شما مجاز به نصب برنامه‌های ناشناس نیست»</b>
+        یا <b>«منبع ناامن»</b>. این قفلِ نصب‌های بیرون از استور است و باید فقط برای همان برنامه‌ای که فایل را
+        باز می‌کند (مرورگر یا فایل‌منیجر) بازش کنید:
+      </p>
+      <div class="oem">
+        <span><b>سامسونگ:</b> تنظیمات ← برنامه‌ها ← سه‌نقطه ← دسترسی ویژه ← نصب برنامه‌های ناشناس</span>
+        <span><b>شیائومی/پوکو/ردمی:</b> تنظیمات ← تنظیمات اضافی ← حریم خصوصی ← دسترسی‌های ویژه ← نصب برنامه‌های ناشناس</span>
+        <span><b>هوآوی/هونر:</b> تنظیمات ← امنیت ← تنظیمات بیشتر ← نصب برنامه‌ها از منابع ناشناس</span>
+        <span><b>اندروید عمومی:</b> تنظیمات ← برنامه‌ها ← دسترسی ویژه به برنامه ← نصب برنامه‌های ناشناس</span>
+      </div>
+      <div class="warn">
+        میان‌بر ساده‌تر: همان لحظه که پیام «منبع ناامن» آمد، دکمه‌ی <b>تنظیمات/Settings</b> داخل خود پیام را بزنید و
+        گزینه‌ی «اجازه دادن از این منبع» را روشن کنید؛ بعد دکمه‌ی نصب را دوباره بزنید.
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="num">STEP&nbsp;03&nbsp;/&nbsp;PLAY&nbsp;PROTECT</div>
+      <h2>۳ — پاسخ به Play Protect</h2>
+      <p>
+        پیش از نصب، Play Protect فایل را اسکن می‌کند. چون فریم در Google Play منتشر نشده، معمولاً می‌گوید
+        <b>«اسکن نشده»</b> یا حتی <b>«برنامه ناامن مسدود شد»</b>. این برخورد الگوریتمی با همه‌ی اپ‌های
+        خارج از استور است؛ امضای فریم ثابت است و فایل با اثر انگشت SHA-256 در همین صفحه قابل تأیید است:
+      </p>
+      <div class="ok">
+        «اسکن نشده» ← روی <b>«نصب بدون اسکن / Install without scanning»</b> بزنید.<br>
+        «برنامه ناامن مسدود شد» ← <b>«جزئیات بیشتر / More details»</b> ← <b>«نصب در هر صورت / Install anyway»</b>.
+        اگر دکمه‌ای نبود، دو سه ثانیه صبر کنید تا دکمه فعال شود — گوگل عمداً تأخیر می‌اندازد.
+      </div>
+      <p style="margin-top:12px">
+        اگر مایلید به بهتر شدن شناخت فریم کمک کنید، همان پیام را با گزینه‌ی
+        <b>«ارسال برای بررسی / Report»</b> به گوگل گزارش کنید — گزارش‌های کاربران واقعی، تشخیص اشتباه را سریع رفع می‌کند.
+      </p>
+    </div>
+  </div>
+
+  <h3 class="sec">عیب‌یابی</h3>
+
+  <details>
+    <summary>«خطا در تجزیه بسته» یا There was a problem parsing the package</summary>
+    <div class="body">
+      تقریباً همیشه یعنی <b>فایل ناقص دانلود شده</b>. دانلود از سرور GitHub برای خیلی از اپراتورهای ایران
+      وسط راه قطع می‌شود. راه حل: از <b>میرور ابری</b> (دکمه‌ی قرمز بالای همین صفحه) دوباره دانلود کنید و
+      بعد از دانلود، حجم فایل را با عدد داخل همین صفحه مقایسه کنید (باید حدود ۲۵ مگابایت باشد).
+      اگر فایل را با کامپیوتر دانلود می‌کنید، اثر SHA-256 را چک کنید:
+      <code>certutil -hashfile Frame-0.70.0-android.apk SHA256</code> در ویندوز یا
+      <code>sha256sum Frame-0.70.0-android.apk</code> در لینوکس و مک.
+    </div>
+  </details>
+
+  <details>
+    <summary>«برنامه نصب نشد» بدون توضیح بیشتر</summary>
+    <div class="body">
+      سه حالت رایج دارد: ① فضای خالی کم است — حداقل <b>۳۰۰ مگابایت</b> جا آزاد کنید. ② یک نسخه‌ی قدیمی‌تر
+      فریم با مشکل نیمه‌کاره روی دستگاه مانده — آن را از تنظیمات <b>حذف</b> کنید و دوباره نصب کنید
+      (داده‌ها با اکانت شما به‌صورت ابری می‌مانند). ③ دانلود ناقص بوده — بخش قبلی را ببینید.
+    </div>
+  </details>
+
+  <details>
+    <summary>Play Protect کلاً اجازه‌ی نصب نمی‌دهد (دکمه‌ی «نصب در هر صورت» نیست)</summary>
+    <div class="body">
+      موقتاً اسکن را خاموش کنید: برنامه‌ی <b>Play Store</b> ← آیکن پروفایل ← <b>Play Protect</b> ← چرخ‌دنده ←
+      خاموش‌کردن «اسکن برنامه‌ها با Play Protect» ← نصب را انجام دهید ← دوباره روشن کنید.
+      این خاموشی موقتی فقط روی نصب همین فایل اثر دارد؛ به امنیت دستگاه برنمی‌گردد.
+      اگر وقت داشتید، از همان صفحه برای فریم <b>گزارش مثبت کاذب</b> بفرستید تا دفعه‌ی بعد هشدار سبک‌تر شود.
+    </div>
+  </details>
+
+  <details>
+    <summary>روی گوشی‌های شیائومی خطای «به دلایل امنیتی نصب ممنوع است»</summary>
+    <div class="body">
+      MIUI یک قفل اضافه دارد: <b>تنظیمات اضافی ← Developer options</b> را باز کنید و
+      <b>«Install via USB»</b> و <b>«USB debugging (Security settings)»</b> را روشن کنید؛ اگر سیم‌کارت لازم داشت،
+      سیم‌کارت جا باشد. بعد فایل APK را با فایل‌منیجر «File Manager» خود شیائومی باز کنید — نصب از خود
+      مرورگر MIUI گاهی قفل است.
+    </div>
+  </details>
+
+  <details>
+    <summary id="check">چطور مطمئن شوم فایل، خودِ فریم است؟</summary>
+    <div class="body">
+      هر نسخه‌ی فریم یک <b>اثر انگشت SHA-256</b> یکتا دارد که در همین صفحه منتشر می‌شود.
+      روی ویندوز در CMD بزنید <code>certutil -hashfile فایل SHA256</code>؛ روی اندروید هم اپ‌های
+      «Hash verifier» همین کار را می‌کنند. اگر دو رشته دقیقاً یکی بود، فایل دست‌نخورده و اصل است.
+      امضای دیجیتال همه‌ی نسخه‌های فریم از روز اول با <b>همان یک کلید</b> انجام می‌شود — یعنی نسخه‌های جدید
+      بدون حذف نسخه‌ی قبلی، روی آن نصب می‌شوند و داده‌هایتان می‌ماند.
+    </div>
+  </details>
+
+  <div class="trust">
+    <h2>چرا آنتی‌ویروس به فریم هشدار می‌دهد؟</h2>
+    <p>
+      دو دلیل ساده دارد. اول اینکه فریم در Google Play نیست؛ سیستم‌های امنیتی به اپ‌های خارج از استور
+      ذاتاً بی‌اعتمادند چون امضای دیجیتال آن‌ها را سازمان صدور گواهی (CA) تأیید نکرده است — نه چون کاری مشکوک
+      می‌کند. دوم اینکه هر نسخه‌ی جدید تا وقتی تعداد کافی از کاربران واقعی آن را اجرا کنند، «فایل ناشناخته»
+      حساب می‌شود. فریم <b>هیچ</b> مجوز حساسی نمی‌خواهد: نه دسترسی پیامک، نه مخاطبین، نه نصب خودکار
+      برنامه‌ی دیگر — فقط اینترنت و نوتیفیکیشن. این فهرست مجوزها را می‌توانید در خود دستگاه، بخش
+      «App permissions» ببینید و با هر اپ استوری مقایسه کنید.
+    </p>
+  </div>
+
+  <footer class="page-foot">
+    <span class="mono-label">FRAME&nbsp;·&nbsp;HOME&nbsp;CINEMA</span>
+    <p class="foot-note">
+      فریم — سینمای خانگی &nbsp;·&nbsp; <a href="https://pvwvuow.github.io/frame/reset.html">بازیابی رمز عبور</a>
+    </p>
+  </footer>
+
+</main>
+
+<script>
+/* Live version pinning: pull the latest release meta; static fallbacks above
+   stay valid if the API is unreachable (common behind Iranian firewalls). */
+(async () => {
+  const MIRROR = "https://emqsegjeiyimoyncbhfn.supabase.co/storage/v1/object/public/releases/";
+  try {
+    const r = await fetch("https://api.github.com/repos/pvwvuow/frame/releases/latest", {
+      headers: { Accept: "application/vnd.github+json", "User-Agent": "frame-install-page" },
+    });
+    if (!r.ok) return;
+    const rel = await r.json();
+    const apk = (rel.assets || []).find((a) => /^Frame-v?\d+\.\d+\.\d+-android\.apk$/i.test(a.name));
+    if (!apk) return;
+    const v = apk.name.match(/(\d+\.\d+\.\d+)/);
+    if (v) document.getElementById("verChip").textContent = "FRAME · ANDROID · v" + v[1];
+    document.getElementById("mirrorBtn").href = MIRROR + encodeURIComponent(apk.name);
+    document.getElementById("ghBtn").href = apk.browser_download_url;
+    try {
+      const s = await fetch(apk.browser_download_url.replace(/\.apk$/, ".apk.sha256"));
+      if (s.ok) {
+        const t = (await s.text()).trim().split(/\s+/)[0];
+        if (/^[0-9a-f]{64}$/i.test(t)) document.getElementById("shaText").textContent = t;
+      }
+    } catch (e) { /* keep fallback sha */ }
+  } catch (e) { /* offline — static fallbacks already rendered */ }
+})();
+
+document.getElementById("copySha").onclick = () => {
+  const t = document.getElementById("shaText").textContent.trim();
+  const done = () => { document.getElementById("copySha").textContent = "COPIED"; setTimeout(() => { document.getElementById("copySha").textContent = "COPY"; }, 1600); };
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(done).catch(() => {});
+  else { const ta = document.createElement("textarea"); ta.value = t; document.body.appendChild(ta); ta.select(); try { document.execCommand("copy"); done(); } catch (e) {} ta.remove(); }
+};
+</script>
+</body>
+</html>
