@@ -48,7 +48,18 @@ p{color:#a7a49b;font-size:13px;line-height:2;margin:0}
     if (r.ok) {
       const rel = await r.json();
       const apk = (rel.assets || []).find((a) => /^Frame-v?\d+\.\d+\.\d+-android\.apk$/i.test(a.name));
-      if (apk) { go(MIRROR + encodeURIComponent(apk.name)); return; }
+      if (apk) {
+        // v0.70.4-gap lesson: the mirror can LAG a release (object not yet
+        // uploaded) — redirecting blindly landed users on a Supabase 404.
+        // HEAD-check the mirror; on miss go straight to the release asset.
+        const mu = MIRROR + encodeURIComponent(apk.name);
+        try {
+          const h = await fetch(mu, { method: "HEAD" });
+          if (h.ok) { go(mu); return; }
+        } catch (e) { /* mirror unreachable — fall through to GitHub asset */ }
+        go("https://github.com/pvwvuow/frame/releases/download/" + rel.tag_name + "/" + encodeURIComponent(apk.name));
+        return;
+      }
     }
   } catch (e) { /* api unreachable */ }
   go("https://github.com/pvwvuow/frame/releases/latest");

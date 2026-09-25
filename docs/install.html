@@ -386,7 +386,15 @@ details .body code{
     if (!apk) return;
     const v = apk.name.match(/(\d+\.\d+\.\d+)/);
     if (v) document.getElementById("verChip").textContent = "FRAME · ANDROID · v" + v[1];
-    document.getElementById("mirrorBtn").href = MIRROR + encodeURIComponent(apk.name);
+    // v0.70.4-gap lesson: the mirror can LAG a release — never send the
+    // primary button at a missing object; HEAD-check and fall back to the
+    // GitHub asset so the button always yields a real download.
+    const mu = MIRROR + encodeURIComponent(apk.name);
+    const mb = document.getElementById("mirrorBtn");
+    try {
+      const h = await fetch(mu, { method: "HEAD" });
+      mb.href = h.ok ? mu : apk.browser_download_url;
+    } catch (e) { mb.href = mu; }
     document.getElementById("ghBtn").href = apk.browser_download_url;
     try {
       const s = await fetch(apk.browser_download_url.replace(/\.apk$/, ".apk.sha256"));
