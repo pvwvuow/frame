@@ -57,7 +57,7 @@
 |---|---|
 | 🪟 ویندوز ۱۰/۱۱ | `Frame-<نسخه>-win-x64-setup.exe` (نصبی) یا `...-portable.exe` (بدون نصب) |
 | 🍎 مک (Apple Silicon / Intel) | `Frame-<نسخه>-mac-arm64.dmg` یا `...-mac-x64.dmg` |
-| 🐧 لینوکس | `Frame-<نسخه>-linux-x86_64.AppImage` یا `...-amd64.deb` |
+| 🐧 لینوکس | `Frame-<نسخه>-linux-x86_64.AppImage` یا `...-linux-amd64.deb` |
 | 🤖 اندروید ۷+ | `Frame-<نسخه>-android.apk` |
 
 > برنامه خودش نسخه‌ی جدید را چک می‌کند و به‌روز می‌شود؛ لازم نیست دنبال آپدیت بگردی.

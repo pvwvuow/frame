@@ -5,6 +5,11 @@ productName: Frame
 executableName: Frame
 copyright: Copyright © 2026 Frame
 compression: maximum
+
+# نام پیش‌فرض برای هر تارگتی که بخش اختصاصی ندارد — در عمل فقط zip مک
+# (nsis / portable / dmg / AppImage / deb نام خودشان را پایین‌تر تعریف می‌کنند)
+# و همان چیزی است که release-guard برای آپدیت خودکار مک انتظار دارد.
+artifactName: Frame-${version}-mac-${arch}.${ext}
 removePackageScripts: true
 nodeGypRebuild: false
 buildDependenciesFromSource: false
@@ -73,6 +78,7 @@ mac:
 
 dmg:
   artifactName: Frame-${version}-mac-${arch}.${ext}
+
   window:
     width: 540
     height: 380
@@ -102,7 +108,7 @@ appImage:
   artifactName: Frame-${version}-linux-x86_64.${ext}
 
 deb:
-  artifactName: Frame-${version}-amd64.${ext}
+  artifactName: Frame-${version}-linux-amd64.${ext}
   depends:
     - libgtk-3-0 | libgtk-3-0t64
     - libnss3
