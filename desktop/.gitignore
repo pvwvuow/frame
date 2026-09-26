@@ -1,0 +1,8 @@
+node_modules/
+dist/
+out/
+build/
+app/data/
+app/fonts/
+*.log
+.DS_Store

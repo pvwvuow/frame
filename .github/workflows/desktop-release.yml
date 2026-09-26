@@ -1,0 +1,123 @@
+name: desktop-release
+
+# بیلد و انتشار کلاینت دسکتاپ فریم (Electron) برای ویندوز، مک و لینوکس.
+#
+#   • push روی تگ v*          → بیلد هر سه پلتفرم + انتشار در GitHub Releases
+#   • اجرای دستی (dispatch)   → بیلد همیشه؛ انتشار فقط اگر publish=true باشد
+#   • push روی main در desktop/ → فقط بیلد آزمایشی (بدون انتشار) و آپلود آرتیفکت
+#
+# خروجی‌ها دقیقاً با جدول دانلود README یکسان‌اند:
+#   Frame-<ver>-win-x64-setup.exe / -portable.exe
+#   Frame-<ver>-mac-arm64.dmg / -mac-x64.dmg
+#   Frame-<ver>-linux-x86_64.AppImage / -amd64.deb
+
+on:
+  push:
+    tags: ["v*"]
+    paths: ["desktop/**", ".github/workflows/desktop-release.yml"]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "انتشار خروجی‌ها در GitHub Releases"
+        required: false
+        default: "false"
+        type: choice
+        options: ["false", "true"]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: desktop-release
+  cancel-in-progress: false
+
+defaults:
+  run:
+    working-directory: desktop
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows (x64)
+            os: windows-latest
+            args: --win nsis portable --x64
+          - name: macOS (Apple Silicon)
+            os: macos-14
+            args: --mac dmg zip --arm64
+          - name: macOS (Intel)
+            os: macos-13
+            args: --mac dmg zip --x64
+          - name: Linux (x64)
+            os: ubuntu-22.04
+            args: --linux AppImage deb --x64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Sync catalog, fonts & icon
+        run: npm run sync:catalog
+
+      - name: Sanity check main process
+        run: npm run lint
+
+      - name: Build & package
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+          ELECTRON_CACHE: ${{ github.workspace }}/.cache/electron
+        run: |
+          PUBLISH="never"
+          if [ "${{ github.ref_type }}" = "tag" ] || [ "${{ inputs.publish }}" = "true" ]; then
+            PUBLISH="always"
+          fi
+          npx electron-builder ${{ matrix.args }} --publish "$PUBLISH"
+        shell: bash
+
+      - name: Collect artifacts
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p out
+          find dist -maxdepth 1 -type f \( -name "*.exe" -o -name "*.dmg" -o -name "*.zip" -o -name "*.AppImage" -o -name "*.deb" -o -name "*.yml" -o -name "*.blockmap" \) -exec cp {} out/ \;
+          ls -la out || true
+
+      - name: Upload workflow artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frame-${{ matrix.os }}
+          path: desktop/out
+          if-no-files-found: ignore
+          retention-days: 14
+
+  summary:
+    name: خلاصه بیلد
+    needs: build
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: نتیجه
+        run: |
+          echo "### بیلد دسکتاپ فریم" >> "$GITHUB_STEP_SUMMARY"
+          echo "- ریف: \`${{ github.ref }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- نتیجه‌ی ماتریکس: ${{ needs.build.result }}" >> "$GITHUB_STEP_SUMMARY"
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            echo "- انتشار: ریلیز تگ \`${{ github.ref_name }}\` در Releases به‌روزرسانی شد" >> "$GITHUB_STEP_SUMMARY"
+          fi

@@ -1,0 +1,36 @@
+{
+  "name": "frame-desktop",
+  "productName": "Frame",
+  "version": "0.75.0",
+  "description": "فریم — سینمای خانگی: کلاینت دسکتاپ ویندوز، مک و لینوکس",
+  "author": {
+    "name": "Frame",
+    "email": "frame@tvframe.vip"
+  },
+  "license": "UNLICENSED",
+    "private": true,
+  "main": "src/main.js",
+  "desktopName": "Frame",
+  "homepage": "https://pvwvuow.github.io/frame/",
+  "scripts": {
+    "start": "electron .",
+    "sync:catalog": "node scripts/sync-catalog.mjs",
+    "postinstall": "node scripts/sync-catalog.mjs",
+    "lint": "node --check src/main.js && node --check src/preload.js && node --check src/store.js && node --check src/updater.js && node --check app/renderer.js",
+    "pack:dir": "npm run sync:catalog && electron-builder --dir",
+    "pack:win": "npm run sync:catalog && electron-builder --win nsis portable --x64",
+    "pack:mac": "npm run sync:catalog && electron-builder --mac dmg --arm64 --x64",
+    "pack:linux": "npm run sync:catalog && electron-builder --linux AppImage deb --x64",
+    "release": "npm run sync:catalog && electron-builder --publish always"
+  },
+  "dependencies": {
+    "electron-updater": "6.8.9"
+  },
+  "devDependencies": {
+    "electron": "44.4.5",
+    "electron-builder": "26.15.3"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src https://raw.githubusercontent.com https://api.github.com" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>فریم — سینمای خانگی</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <svg class="mark" viewBox="0 0 32 32" aria-hidden="true">
+          <rect x="2.5" y="4.5" width="27" height="23" rx="5" fill="none" stroke="currentColor" stroke-width="2.2" />
+          <path d="M13.6 11.2 21 16l-7.4 4.8z" fill="currentColor" />
+        </svg>
+        <div class="brand-text">
+          <strong>فریم</strong>
+          <span>سینمای خانگی</span>
+        </div>
+      </div>
+
+      <div class="search">
+        <input id="q" type="search" placeholder="جستجوی فیلم یا سریال…" autocomplete="off" spellcheck="false" />
+      </div>
+
+      <nav class="views">
+        <button class="pill active" data-view="browse">کتابخانه</button>
+        <button class="pill" data-view="mylist">لیست من <em id="mycount">۰</em></button>
+      </nav>
+
+      <div class="tools">
+        <button id="refresh" class="ghost" title="به‌روزرسانی کاتالوگ از مخزن">به‌روزرسانی داده</button>
+        <button id="update" class="ghost" title="بررسی نسخه‌ی جدید برنامه">بررسی آپدیت</button>
+      </div>
+    </header>
+
+    <section class="filters">
+      <div class="chips" id="types">
+        <button class="chip active" data-type="all">همه</button>
+        <button class="chip" data-type="movie">فیلم</button>
+        <button class="chip" data-type="series">سریال</button>
+      </div>
+      <div class="chips scroll" id="genres"></div>
+      <label class="sort">
+        مرتب‌سازی
+        <select id="sort">
+          <option value="rating">امتیاز IMDb</option>
+          <option value="year">جدیدترین</option>
+          <option value="title">الفبا</option>
+        </select>
+      </label>
+    </section>
+
+    <main class="stage">
+      <div id="summary" class="summary"></div>
+      <div id="grid" class="grid"></div>
+      <div id="empty" class="empty hidden">چیزی پیدا نشد.</div>
+      <button id="more" class="more hidden">نمایش بیشتر</button>
+    </main>
+
+    <footer class="statusbar">
+      <span id="src">—</span>
+      <span class="dot">•</span>
+      <span id="ver">—</span>
+      <span class="grow"></span>
+      <span id="updateState"></span>
+    </footer>
+
+    <div id="modal" class="modal hidden" role="dialog" aria-modal="true">
+      <div class="modal-backdrop" data-close></div>
+      <article class="modal-card" id="modalCard"></article>
+    </div>
+
+    <script src="renderer.js"></script>
+  </body>
+</html>

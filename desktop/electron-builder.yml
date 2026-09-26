@@ -1,0 +1,109 @@
+# تنظیمات بسته‌بندی دسکتاپ فریم
+# اسامی فایل‌ها دقیقاً با جدول دانلود README مخزن یکی است.
+appId: com.frame.app
+productName: Frame
+executableName: Frame
+copyright: Copyright © 2026 Frame
+compression: maximum
+removePackageScripts: true
+nodeGypRebuild: false
+buildDependenciesFromSource: false
+npmRebuild: false
+
+asar: true
+asarUnpack:
+  - app/data/**
+
+directories:
+  output: dist
+  buildResources: build
+
+files:
+  - src/**
+  - app/**
+  - package.json
+  - "!dist/**"
+  - "!build/**"
+  - "!scripts/**"
+  - "!**/*.md"
+
+extraMetadata:
+  main: src/main.js
+
+# --- به‌روزرسانی خودکار از GitHub Releases همین مخزن ---
+publish:
+  provider: github
+  owner: pvwvuow
+  repo: frame
+  releaseType: release
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: portable
+      arch: [x64]
+  verifyUpdateCodeSignature: false
+
+nsis:
+  artifactName: Frame-${version}-win-x64-setup.${ext}
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Frame
+  language: 1065
+  multiLanguageInstaller: false
+  uninstallDisplayName: Frame
+
+portable:
+  artifactName: Frame-${version}-win-x64-portable.${ext}
+
+mac:
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+    - target: zip
+      arch: [arm64, x64]
+  category: public.app-category.video
+  identity: null
+  hardenedRuntime: false
+  darkModeSupport: true
+
+dmg:
+  artifactName: Frame-${version}-mac-${arch}.${ext}
+  window:
+    width: 540
+    height: 380
+  contents:
+    - x: 130
+      y: 190
+    - x: 410
+      y: 190
+      type: link
+      path: /Applications
+
+linux:
+  target:
+    - target: AppImage
+      arch: [x64]
+    - target: deb
+      arch: [x64]
+  category: AudioVideo
+  executableName: frame
+  maintainer: Frame <frame@tvframe.vip>
+  vendor: Frame
+  syncDesktopName: true
+  synopsis: Frame — home cinema
+  description: فریم — سینمای خانگی؛ مرور کاتالوگ فیلم و سریال با زیرنویس و دوبله فارسی
+
+appImage:
+  artifactName: Frame-${version}-linux-x86_64.${ext}
+
+deb:
+  artifactName: Frame-${version}-amd64.${ext}
+  depends:
+    - libgtk-3-0 | libgtk-3-0t64
+    - libnss3
+    - libasound2 | libasound2t64
