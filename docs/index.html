@@ -7,7 +7,7 @@
 <meta name="description" content="فریم، سینمای آنلاین شماست؛ بیش از ۱۹ هزار فیلم و سریال را همین‌جا جستجو کن و با فریم تماشا کن — کیفیت تا 4K، دوبله و زیرنویس فارسی، دانلود آفلاین و همگام‌سازی ابری. رایگان برای ویندوز، مک، لینوکس و اندروید.">
 <meta name="keywords" content="فریم, اپلیکیشن فریم, Frame, دانلود فیلم, تماشای آنلاین فیلم, جستجوی فیلم, فیلم و سریال, زیرنویس فارسی, دوبله فارسی, سینمای آنلاین, سینمای خانگی, دانلود اپلیکیشن فیلم اندروید, تماشای سریال, فریم اندروید, اپ تماشای فیلم">
 <meta name="robots" content="index, follow, max-image-preview:large">
-<meta name="theme-color" content="#08080a">
+<meta name="theme-color" content="#0a0a0c">
 <link rel="canonical" href="https://pvwvuow.github.io/frame/">
 <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
 <link rel="apple-touch-icon" href="assets/icon-192.png">
@@ -29,8 +29,8 @@
 <meta name="twitter:description" content="بیش از ۱۹ هزار فیلم و سریال با کیفیت تا 4K — رایگان برای ویندوز، مک، لینوکس و اندروید.">
 <meta name="twitter:image" content="https://pvwvuow.github.io/frame/assets/og-cover.jpg">
 
-<link rel="preload" href="fonts/Vazirmatn-Regular.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="preload" href="fonts/Vazirmatn-Black.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="fonts/Estedad-FD-Black.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="fonts/IBMPlexMono-Regular.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="style.css">
 
 <script type="application/ld+json">
@@ -102,238 +102,287 @@
 </head>
 <body>
 
+<div class="topbar" aria-hidden="true">
+  <div class="wrap-wide topbar-in">
+    <span class="tb-mono">FRAME · ONLINE CINEMA</span>
+    <span class="tb-mono tb-mid">سینمای آنلاین · رایگان · کاملاً فارسی</span>
+    <span class="tb-mono">EST. ۱۴۰۴ — NO. 07</span>
+  </div>
+</div>
+
 <header class="nav">
-  <div class="wrap nav-in">
+  <div class="wrap-wide nav-in">
     <a class="brand" href="#top" aria-label="فریم — صفحه‌ی اصلی">
-      <span class="brand-mark" aria-hidden="true">F</span>
-      <span class="brand-name">Frame<i>.</i></span>
+      <span class="brand-mark" aria-hidden="true"></span>
+      <span class="brand-name">فریم<b>.</b></span>
     </a>
     <nav class="nav-links" aria-label="ناوبری اصلی">
-      <a href="#top">خانه</a>
       <a href="#browse">برترین‌ها</a>
+      <a href="#collections">قالب‌ها</a>
       <a href="#features">امکانات</a>
       <a href="#download">دانلود</a>
       <a href="#faq">پرسش‌ها</a>
     </nav>
     <div class="nav-actions">
       <button class="nav-search" id="nav-search" type="button" aria-label="جستجو در کتابخانه">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
         <span>جستجوی فیلم و سریال…</span>
       </button>
-      <a class="vip-chip" href="#vip" aria-label="اشتراک وی‌آی‌پی">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M2 8l5 4 5-8 5 8 5-4-2 12H4L2 8z"/></svg>
-        VIP
-      </a>
-      <a class="btn btn-red btn-sm" href="#download">دانلود رایگان</a>
+      <a class="vip-chip" href="#vip" aria-label="اشتراک وی‌آی‌پی">VIP</a>
+      <a class="btn-red" href="#download">دانلود رایگان</a>
     </div>
   </div>
 </header>
 
 <main id="top">
 
-  <!-- ═══════════ HERO SEARCH ═══════════ -->
+  <!-- ═══════════ HERO / SPOTLIGHT ═══════════ -->
   <section class="hero" aria-label="جستجو در کتابخانه‌ی فریم">
-    <div class="glow glow-a" aria-hidden="true"></div>
-    <div class="glow glow-b" aria-hidden="true"></div>
-    <div class="wrap hero-in">
-      <p class="eyebrow">✦ سینمای آنلاین · رایگان · بدون تبلیغ · کاملاً فارسی</p>
-      <h1>دنبال چی هستی؟</h1>
-      <p class="lead">نام فیلم، سریال، بازیگر، کارگردان یا حتی ژانر را بنویس — از میان <b>۱۹٬۲۷۱ عنوان</b> فریم پیدا می‌کنیم؛ بعد با فریم تماشا کن.</p>
+    <div class="hero-frame" aria-hidden="true"></div>
+    <div class="grain" aria-hidden="true"></div>
+    <div class="wrap-wide hero-grid">
 
-      <form class="search-box" id="search-form" role="search" autocomplete="off">
-        <svg class="search-ic" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-        <input id="q" type="search" inputmode="search" placeholder="مثلاً بریکینگ بد، اینترستلار یا کمدی…"
-               aria-label="جستجو در کتابخانه‌ی فریم">
-        <button class="btn btn-red" type="submit">جستجو</button>
-      </form>
+      <div class="hero-txt">
+        <p class="kicker"><span class="dash" aria-hidden="true"></span><span class="kicker-mono">FRAME — SEARCH THE ARCHIVE</span></p>
+        <h1>دنبال چی هستی<b class="red">؟</b></h1>
+        <p class="lead">نام فیلم، سریال، بازیگر، کارگردان یا حتی ژانر را بنویس — از میان <b>۱۹٬۲۷۱ عنوان</b> پیدا می‌کنیم؛ بعد با فریم تماشا کن.</p>
 
-      <div class="quick-genres" id="quick-genres" aria-label="ژانرهای پرطرفدار"></div>
+        <form class="search-box" id="search-form" role="search" autocomplete="off">
+          <svg class="search-ic" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+          <input id="q" type="search" inputmode="search" placeholder="بریکینگ بد، اینترستلار، کمدی…" aria-label="جستجو در کتابخانه‌ی فریم">
+          <button class="btn-red" type="submit">جستجو</button>
+        </form>
 
-      <ul class="stats" aria-label="آمار کتابخانه‌ی فریم">
-        <li><b>۱۹٬۲۷۱</b><span>عنوان</span></li>
-        <li><b>۱۵٬۹۷۲</b><span>فیلم</span></li>
-        <li><b>۳٬۲۹۹</b><span>سریال</span></li>
-        <li><b>۱۰۸ هزار+</b><span>قسمت</span></li>
-        <li><b>4K</b><span>کیفیت تصویر</span></li>
-      </ul>
+        <div class="quick-genres" id="quick-genres" aria-label="ژانرهای پرطرفدار"></div>
+
+        <ul class="meta-dots" aria-label="آمار کتابخانه‌ی فریم">
+          <li><b>۱۹٬۲۷۱</b> عنوان</li>
+          <li><b>۱۵٬۹۷۲</b> فیلم</li>
+          <li><b>۳٬۲۹۹</b> سریال</li>
+          <li><b>۱۰۸ هزار+</b> قسمت</li>
+          <li><b>4K</b></li>
+        </ul>
+      </div>
+
+      <div class="hero-posters" aria-hidden="true">
+        <figure class="hp hp-a"><img src="covers-web/tt0/tt0903747.webp" alt="" width="300" height="450" loading="eager"><figcaption>NO. 01</figcaption></figure>
+        <figure class="hp hp-b"><img src="covers-web/tt0/tt0185906.webp" alt="" width="300" height="450" loading="eager"><figcaption>NO. 02</figcaption></figure>
+        <figure class="hp hp-c"><img src="covers-web/tt0/tt0795176.webp" alt="" width="300" height="450" loading="eager"><figcaption>NO. 03</figcaption></figure>
+        <span class="hp-tag">★ 9.5 — BREAKING BAD</span>
+      </div>
+
+    </div>
+    <div class="wrap-wide hero-foot" aria-hidden="true">
+      <span class="hf-mono">SCROLL</span>
+      <span class="hf-line"></span>
+      <span class="hf-mono">برترین‌های کتابخانه، همین پایین ↓</span>
     </div>
   </section>
 
-  <!-- ═══════════ LIVE BROWSE ═══════════ -->
+  <!-- ═══════════ FILM STRIP / MARQUEE ═══════════ -->
+  <section class="strip" aria-label="نوار فیلم — عناوین منتخب">
+    <div class="strip-sprockets" aria-hidden="true"></div>
+    <div class="strip-track" id="strip-track"></div>
+    <div class="strip-sprockets" aria-hidden="true"></div>
+  </section>
+
+  <!-- ═══════════ LIVE BROWSE / SHEET ═══════════ -->
   <section id="browse" class="sec browse" aria-label="مرور و جستجوی کتابخانه">
     <div class="wrap-wide">
       <div class="browse-head">
         <div>
-          <h2 id="browse-title">برترین‌های فریم</h2>
+          <p class="kicker"><span class="dash" aria-hidden="true"></span><span class="kicker-mono">THE SHEET — TOP OF THE LIBRARY</span></p>
+          <h2 id="browse-title">برترین‌های فریم<b class="red">.</b></h2>
           <p class="browse-count" id="browse-count">در حال بارگذاری…</p>
         </div>
-        <p class="browse-hint" aria-hidden="true">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
-          برای پیش‌نمایش سریع روی هر پوستر بزن
-        </p>
+        <p class="browse-hint mono" aria-hidden="true">CLICK ANY POSTER — QUICK PREVIEW<br>برای پیش‌نمایش سریع روی هر پوستر بزن</p>
       </div>
 
       <div class="filterbar" id="filterbar">
-        <div class="chips" id="type-chips" role="group" aria-label="نوع عنوان"></div>
-        <div class="chips" id="sort-chips" role="group" aria-label="ترتیب نمایش"></div>
+        <div class="tags" id="type-chips" role="group" aria-label="نوع عنوان"></div>
+        <div class="tags" id="sort-chips" role="group" aria-label="ترتیب نمایش"></div>
         <div class="selects">
-          <label class="select-wrap">
-            <select id="year-sel" aria-label="بازه‌ی سال"></select>
-          </label>
-          <label class="select-wrap">
-            <select id="rating-sel" aria-label="حداقل امتیاز"></select>
-          </label>
+          <label class="select-wrap"><select id="year-sel" aria-label="بازه‌ی سال"></select></label>
+          <label class="select-wrap"><select id="rating-sel" aria-label="حداقل امتیاز"></select></label>
         </div>
       </div>
-      <div class="chips chips-genres" id="genre-chips" role="group" aria-label="ژانر"></div>
+      <div class="tags tags-genres" id="genre-chips" role="group" aria-label="ژانر"></div>
 
       <div class="grid" id="grid" aria-live="polite"></div>
 
       <div class="empty" id="empty" hidden>
-        <p class="empty-ic" aria-hidden="true">🎬</p>
+        <p class="mono empty-k">NO RESULTS — 404</p>
         <h3>چیزی پیدا نشد</h3>
         <p>این جستجو بین عناوین منتخبِ این صفحه نبود — ولی در خود فریم بیش از <b>۱۹ هزار عنوان</b> با جستجوی زنده در انتظارت است.</p>
-        <a class="btn btn-red" href="#download">دانلود رایگان فریم</a>
+        <a class="btn-red" href="#download">دانلود رایگان فریم</a>
       </div>
 
       <div class="more-wrap">
-        <button class="btn btn-ghost" id="more" type="button" hidden>نمایش بیشتر</button>
+        <button class="btn-outline" id="more" type="button" hidden>نمایش بیشتر</button>
       </div>
     </div>
   </section>
 
-  <!-- ═══════════ FEATURES ═══════════ -->
+  <!-- ═══════════ COLLECTION TEMPLATES ═══════════ -->
+  <section id="collections" class="sec alt" aria-label="قالب‌های آماده‌ی کلکسیون">
+    <div class="wrap-wide">
+      <div class="browse-head">
+        <div>
+          <p class="kicker"><span class="dash" aria-hidden="true"></span><span class="kicker-mono">READY-MADE COLLECTIONS</span></p>
+          <h2>یک کلیک تا <span class="red">شروع</span><b class="red">.</b></h2>
+          <p class="browse-count">قالب‌های آماده‌ی تاریک‌خانه — با پوسترهای واقعی همین کتابخانه پر شده‌اند؛ توی اپ با یک لمس، کلکسیونِ خودت می‌شوند.</p>
+        </div>
+      </div>
+      <div class="coll-row" id="coll-row"></div>
+    </div>
+  </section>
+
+  <!-- ═══════════ FEATURES / INDEX ═══════════ -->
   <section id="features" class="sec" aria-label="امکانات فریم">
-    <div class="wrap">
-      <p class="eyebrow">امکانات</p>
-      <h2>هر چیزی که از یک سینمای خانگی <span class="red">انتظار داری</span></h2>
-      <p class="sec-lead">فریم فقط «پخش‌کننده» نیست؛ یک تجربه‌ی کامل تماشاست — از جستجو و لیست تماشا تا ساخت کلکسیون و پوستر اشتراک‌گذاری.</p>
+    <div class="wrap-wide">
+      <div class="browse-head">
+        <div>
+          <p class="kicker"><span class="dash" aria-hidden="true"></span><span class="kicker-mono">FEATURES — THE INDEX</span></p>
+          <h2>هر چیزی که از یک سینمای خانگی <span class="red">انتظار داری</span></h2>
+        </div>
+      </div>
 
-      <div class="grid-feat">
-        <article class="card-f">
-          <div class="ic" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="18" rx="2"/><path d="M7 3v18M17 3v18M2 9h5M2 15h5M17 9h5M17 15h5"/></svg></div>
-          <h3>کتابخانه‌ی بزرگ</h3>
-          <p>بیش از ۱۹ هزار فیلم و سریال؛ جستجوی زنده، فیلتر ژانر و سال و رنک‌بندی‌های به‌روز بر اساس امتیاز IMDb.</p>
+      <div class="feat-index">
+        <article class="feat-row">
+          <span class="f-no mono">01</span>
+          <div class="f-body"><h3>کتابخانه‌ی بزرگ</h3><p>بیش از ۱۹ هزار فیلم و سریال؛ جستجوی زنده، فیلتر ژانر و سال و رنک‌بندی‌های به‌روز بر اساس امتیاز IMDb.</p></div>
+          <span class="f-arrow" aria-hidden="true">⟶</span>
         </article>
-        <article class="card-f">
-          <div class="ic" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="6 3 20 12 6 21 6 3"/></svg></div>
-          <h3>پخش‌کننده‌ی حرفه‌ای</h3>
-          <p>ادامه‌ی تماشا از همان ثانیه‌ای که رها کردی، پرش ±۱۰ ثانیه‌ای، انتخاب کیفیت تا 4K و رفتن خودکار به قسمت بعد.</p>
+        <article class="feat-row">
+          <span class="f-no mono">02</span>
+          <div class="f-body"><h3>پخش‌کننده‌ی حرفه‌ای</h3><p>ادامه‌ی تماشا از همان ثانیه‌ای که رها کردی، پرش ±۱۰ ثانیه‌ای، انتخاب کیفیت تا 4K و رفتن خودکار به قسمت بعد.</p></div>
+          <span class="f-arrow" aria-hidden="true">⟶</span>
         </article>
-        <article class="card-f">
-          <div class="ic" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M6 21h12M8 9h8M8 13h5"/></svg></div>
-          <h3>دوبله و زیرنویس فارسی</h3>
-          <p>نسخه‌های دوبله‌شده با نشان مشخص می‌شوند؛ زیرنویس فارسی با فونت و اندازه‌ی قابل تنظیم — حتی زیرنویس چسبیده‌ی داخل فایل.</p>
+        <article class="feat-row">
+          <span class="f-no mono">03</span>
+          <div class="f-body"><h3>دوبله و زیرنویس فارسی</h3><p>نسخه‌های دوبله‌شده با نشان مشخص می‌شوند؛ زیرنویس فارسی با فونت و اندازه‌ی قابل تنظیم — حتی زیرنویس چسبیده‌ی داخل فایل.</p></div>
+          <span class="f-arrow" aria-hidden="true">⟶</span>
         </article>
-        <article class="card-f">
-          <div class="ic" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg></div>
-          <h3>لیست من</h3>
-          <p>علاقه‌مندی‌ها، لیست تماشا، وضعیت تماشا و امتیازدهی شخصی برای هر عنوان — همه‌چیز مرتب و همیشه همراهت.</p>
+        <article class="feat-row">
+          <span class="f-no mono">04</span>
+          <div class="f-body"><h3>لیست من</h3><p>علاقه‌مندی‌ها، لیست تماشا، وضعیت تماشا و امتیازدهی شخصی برای هر عنوان — همه‌چیز مرتب و همیشه همراهت.</p></div>
+          <span class="f-arrow" aria-hidden="true">⟶</span>
         </article>
-        <article class="card-f">
-          <div class="ic" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2.4 4.9 5.4.8-3.9 3.8.9 5.4-4.8-2.5-4.8 2.5.9-5.4L4.2 7.7l5.4-.8z"/></svg></div>
-          <h3>کلکسیون‌سازی</h3>
-          <p>هر چند عنوان که دوست داری را یک‌جا جمع کن؛ با قالب‌های آماده مثل «ترسناک برای شب» در چند ثانیه مجموعه بساز.</p>
+        <article class="feat-row">
+          <span class="f-no mono">05</span>
+          <div class="f-body"><h3>کلکسیون‌سازی</h3><p>هر چند عنوان که دوست داری را یک‌جا جمع کن؛ با قالب‌های آماده در چند ثانیه مجموعه بساز و به تاریک‌خانه بفرست.</p></div>
+          <span class="f-arrow" aria-hidden="true">⟶</span>
         </article>
-        <article class="card-f">
-          <div class="ic" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="9" cy="9" r="2"/><path d="M21 15l-4.5-4.5L6 21"/></svg></div>
-          <h3>تاریک‌خانه</h3>
-          <p>برای فیلم موردعلاقه‌ات نظر بنویس و از آن پوستری حرفه‌ای برای استوری و پست بساز؛ شاهکارهایت را قاب کن.</p>
+        <article class="feat-row">
+          <span class="f-no mono">06</span>
+          <div class="f-body"><h3>تاریک‌خانه</h3><p>برای فیلم موردعلاقه‌ات نظر بنویس و از آن پوستری حرفه‌ای برای استوری و پست بساز؛ شاهکارهایت را قاب کن.</p></div>
+          <span class="f-arrow" aria-hidden="true">⟶</span>
         </article>
-        <article class="card-f">
-          <div class="ic" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19a4.5 4.5 0 1 0-.9-8.9 6 6 0 1 0-11.3 2.4A3.5 3.5 0 0 0 6.5 19z"/></svg></div>
-          <h3>همگام‌سازی ابری</h3>
-          <p>لیست، امتیازها، کلکسیون‌ها، تاریخچه و ادامه‌ی تماشا بین گوشی و کامپیوتر جابه‌جا می‌شود؛ از همان‌جا ادامه بده که رها کردی.</p>
+        <article class="feat-row">
+          <span class="f-no mono">07</span>
+          <div class="f-body"><h3>همگام‌سازی ابری</h3><p>لیست، امتیازها، کلکسیون‌ها، تاریخچه و ادامه‌ی تماشا بین گوشی و کامپیوتر جابه‌جا می‌شود؛ از همان‌جا ادامه بده که رها کردی.</p></div>
+          <span class="f-arrow" aria-hidden="true">⟶</span>
         </article>
-        <article class="card-f">
-          <div class="ic" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M8 11l4 4 4-4"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg></div>
-          <h3>دانلود و تماشای آفلاین</h3>
-          <p>روی اندروید هر فیلم یا قسمت را روی گوشی ذخیره کن — با توقف و ادامه‌ی دانلود — و بدون اینترنت تماشا کن.</p>
+        <article class="feat-row">
+          <span class="f-no mono">08</span>
+          <div class="f-body"><h3>دانلود و تماشای آفلاین</h3><p>روی اندروید هر فیلم یا قسمت را روی گوشی ذخیره کن — با توقف و ادامه‌ی دانلود — و بدون اینترنت تماشا کن.</p></div>
+          <span class="f-arrow" aria-hidden="true">⟶</span>
         </article>
       </div>
     </div>
   </section>
 
-  <!-- ═══════════ SCREENSHOTS ═══════════ -->
+  <!-- ═══════════ SCREENSHOTS / FIGURES ═══════════ -->
   <section id="shots" class="sec alt" aria-label="نماهایی از برنامه">
-    <div class="wrap">
-      <p class="eyebrow">نمای برنامه</p>
-      <h2>یک تور کوتاه در <span class="red">فریم</span></h2>
-      <p class="sec-lead">ظاهری که برای تماشا طراحی شده: تیره، شیک و کاملاً فارسی — روی هر صفحه‌ای که باز می‌کنی.</p>
+    <div class="wrap-wide">
+      <div class="browse-head">
+        <div>
+          <p class="kicker"><span class="dash" aria-hidden="true"></span><span class="kicker-mono">FIGURES — INSIDE FRAME</span></p>
+          <h2>یک تور کوتاه در <span class="red">فریم</span></h2>
+        </div>
+      </div>
 
       <div class="shots">
         <figure class="shot">
           <img loading="lazy" src="assets/title-desktop.webp" width="1280" height="764" alt="صفحه‌ی جزئیات فیلم در فریم با دکمه‌ی پخش، امتیاز IMDb و انتخاب کیفیت">
-          <figcaption><b>صفحه‌ی فیلم</b><span>اطلاعات کامل، امتیاز، کیفیت‌ها و پخش با یک کلیک</span></figcaption>
+          <figcaption class="mono">FIG. 01 — صفحه‌ی فیلم · اطلاعات کامل، امتیاز، کیفیت‌ها</figcaption>
         </figure>
         <figure class="shot">
           <img loading="lazy" src="assets/rankings-desktop.webp" width="1280" height="764" alt="رنک‌بندی فیلم و سریال فریم بر اساس امتیاز IMDb">
-          <figcaption><b>رنک‌بندی‌ها</b><span>برترین‌های فیلم و سریال، همیشه به‌روز</span></figcaption>
+          <figcaption class="mono">FIG. 02 — رنک‌بندی‌ها · برترین‌ها، همیشه به‌روز</figcaption>
         </figure>
       </div>
       <div class="shots-mobile">
         <figure class="shot-m">
           <img loading="lazy" src="assets/home-mobile.webp" width="647" height="1400" alt="نسخه‌ی اندروید فریم — صفحه‌ی خانه با نوار پایین">
-          <figcaption><b>اندروید</b><span>روان و لمسی</span></figcaption>
+          <figcaption class="mono">FIG. 03 — اندروید</figcaption>
         </figure>
         <figure class="shot-m">
           <img loading="lazy" src="assets/mylist-mobile.webp" width="647" height="1400" alt="لیست من در نسخه‌ی اندروید فریم — علاقه‌مندی‌ها و آمار">
-          <figcaption><b>لیست من</b><span>همه‌چیز مرتب و شخصی</span></figcaption>
+          <figcaption class="mono">FIG. 04 — لیست من</figcaption>
         </figure>
       </div>
     </div>
   </section>
 
-  <!-- ═══════════ DARKROOM ═══════════ -->
-  <section class="sec" aria-label="تاریک‌خانه">
-    <div class="wrap dark">
+  <!-- ═══════════ DARKROOM (paper) ═══════════ -->
+  <section id="darkroom" class="sec paper" aria-label="تاریک‌خانه">
+    <div class="wrap-wide dark-in">
       <div class="dark-txt">
-        <p class="eyebrow">تاریک‌خانه</p>
+        <p class="kicker"><span class="dash dark-dash" aria-hidden="true"></span><span class="kicker-mono">DARKROOM — SHARE CARDS</span></p>
         <h2>علاقه‌ات را <span class="red">قاب کن</span></h2>
-        <p>
-          از فیلم‌ها و سریال‌هایی که دوستشان داری، کارت اشتراک‌گذاری بساز: کارت فیلم با نظر و امتیاز خودت،
-          کارت کلکسیون با ۶ قالب آماده، و «دیوار کلکسیون‌ها» برای دیدن ساخته‌های بقیه و اضافه‌کردنشان با یک لمس
-          به مجموعه‌های خودت. خروجی حرفه‌ای، آماده‌ی استوری و پست.
-        </p>
+        <p>از فیلم‌ها و سریال‌هایی که دوستشان داری، کارت اشتراک‌گذاری بساز: کارت فیلم با نظر و امتیاز خودت، کارت کلکسیون با قالب‌های آماده، و «دیوار کلکسیون‌ها» برای دیدن ساخته‌های بقیه. خروجی حرفه‌ای، آماده‌ی استوری و پست.</p>
         <ul class="ticks">
+          <li>هشت قالب ادیتوریال: اسپات‌لایت، نوار فیلم، مجله، بلیت…</li>
           <li>کارت فیلم با نظر شخصی و امتیاز ستاره‌ای</li>
-          <li>کارت کلکسیون با ۶ قالب آماده</li>
           <li>دیوار کلکسیون‌های عمومی کاربران</li>
         </ul>
+        <a class="btn-ink" href="#download">توی فریم امتحانش کن</a>
       </div>
-      <figure class="dark-shot">
-        <img loading="lazy" src="assets/darkroom-desktop.webp" width="1280" height="764" alt="تاریک‌خانه‌ی فریم — ساخت کارت اشتراک‌گذاری از فیلم بریکینگ بد">
+      <figure class="dark-shot" aria-hidden="true">
+        <div class="dr-card">
+          <div class="dr-head mono"><span>NO. 07</span><span>FRAME DARKROOM</span></div>
+          <div class="dr-sheet" id="dr-sheet"></div>
+          <div class="dr-foot mono"><b>شاهکارهای سینما</b><span>MADE WITH FRAME</span></div>
+        </div>
+        <figcaption class="mono dr-cap">نمونه‌ی واقعی قالب «شیت» — ساخته‌شده در تاریک‌خانه</figcaption>
       </figure>
     </div>
   </section>
 
-  <!-- ═══════════ DOWNLOAD ═══════════ -->
-  <section id="download" class="sec alt" aria-label="دانلود فریم">
-    <div class="wrap">
-      <p class="eyebrow">دانلود</p>
-      <h2>همه‌جا <span class="red">همراهته</span></h2>
-      <p class="sec-lead">همه‌ی نسخه‌ها رایگان‌اند. فایل‌ها مستقیم از گیت‌هاب دریافت می‌شوند و برنامه خودش نسخه‌ی جدید را نصب می‌کند.</p>
+  <!-- ═══════════ DOWNLOAD / TICKETS ═══════════ -->
+  <section id="download" class="sec" aria-label="دانلود فریم">
+    <div class="wrap-wide">
+      <div class="browse-head">
+        <div>
+          <p class="kicker"><span class="dash" aria-hidden="true"></span><span class="kicker-mono">ADMIT ONE — FREE DOWNLOAD</span></p>
+          <h2>همه‌جا <span class="red">همراهته</span></h2>
+          <p class="browse-count">همه‌ی نسخه‌ها رایگان‌اند. فایل‌ها مستقیم از گیت‌هاب دریافت می‌شوند و برنامه خودش نسخه‌ی جدید را نصب می‌کند. آخرین نسخه: <b id="ver">v0.75.0</b></p>
+        </div>
+      </div>
 
       <div class="dl-grid">
         <a class="dl" id="dl-win" href="https://github.com/pvwvuow/frame/releases/download/v0.75.0/Frame-0.75.0-win-x64-setup.exe" rel="noopener" data-asset="win-x64-setup.exe">
-          <span class="dl-ic" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M3 5.5l7-1v7H3v-6zm8-1.2L21 3v8.5h-10V4.3zM3 12.5h7v7l-7-1v-6zm8 0h10V21l-10-1.3v-7.2z"/></svg></span>
-          <b>ویندوز</b><span>۱۰ و ۱۱ · نصبی و پرتابل · ~140MB</span><em class="go">دانلود →</em>
+          <span class="dl-top mono"><i>TKT-01</i><i>WINDOWS</i></span>
+          <b>ویندوز</b><span>۱۰ و ۱۱ · نصبی و پرتابل · ~140MB</span>
+          <em class="go">دانلود ⟶</em>
         </a>
         <a class="dl" id="dl-mac" href="https://github.com/pvwvuow/frame/releases/download/v0.75.0/Frame-0.75.0-mac-arm64.dmg" rel="noopener" data-asset="mac-arm64.dmg">
-          <span class="dl-ic" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M16.5 12.5c0-2.4 2-3.5 2.1-3.6-1.1-1.7-2.9-1.9-3.5-1.9-1.5-.2-2.9.9-3.7.9-.8 0-1.9-.9-3.2-.9-1.6 0-3.1 1-4 2.4-1.7 2.9-.4 7.3 1.2 9.7.8 1.2 1.8 2.5 3.1 2.4 1.2 0 1.7-.8 3.2-.8s1.9.8 3.2.8c1.3 0 2.2-1.2 3-2.4.9-1.4 1.3-2.7 1.3-2.8-.1 0-2.6-1-2.7-3.8zM14 5.4c.7-.8 1.1-1.9 1-3-1 0-2.1.7-2.8 1.5-.6.7-1.2 1.9-1 2.9 1.1.1 2.2-.5 2.8-1.4z"/></svg></span>
-          <b>مک</b><span>Apple Silicon و Intel · ~171MB</span><em class="go">دانلود →</em>
+          <span class="dl-top mono"><i>TKT-02</i><i>MACOS</i></span>
+          <b>مک</b><span>Apple Silicon و Intel · ~171MB</span>
+          <em class="go">دانلود ⟶</em>
         </a>
         <a class="dl" id="dl-linux" href="https://github.com/pvwvuow/frame/releases/download/v0.75.0/Frame-0.75.0-linux-x86_64.AppImage" rel="noopener" data-asset="AppImage">
-          <span class="dl-ic" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2c.5 2.5-.7 3.6-2.4 3.4C7.6 5.2 6.6 6.3 6.9 8c-2.2.2-2.9 1.4-2 3-1.6 1.2-1.3 2.6.2 3.7-.7 1.7.2 2.8 1.9 2.8.1 1.8 1.4 2.4 2.9 1.9.9 1.5 2.2 1.6 3.1.4.3.5.8.8 1.5.9-.5-2.5.7-3.6 2.4-3.4 2 .2 3-1 2.6-2.6 2.2-.2 2.9-1.4 2-3 1.6-1.2 1.3-2.6-.2-3.7.7-1.7-.2-2.8-1.9-2.8-.1-1.8-1.4-2.4-2.9-1.9C15.6 1.9 14.3 1.8 13.4 3c-.3-.5-.8-.8-1.4-1z"/><circle cx="10" cy="9.5" r=".8" fill="currentColor"/><circle cx="14" cy="9.5" r=".8" fill="currentColor"/><path d="M10.5 12.5c1 .8 2 .8 3 0"/></svg></span>
-          <b>لینوکس</b><span>AppImage و deb · ~175MB</span><em class="go">دانلود →</em>
+          <span class="dl-top mono"><i>TKT-03</i><i>LINUX</i></span>
+          <b>لینوکس</b><span>AppImage و deb · ~175MB</span>
+          <em class="go">دانلود ⟶</em>
         </a>
         <a class="dl" id="dl-android" href="https://github.com/pvwvuow/frame/releases/download/v0.75.0/Frame-0.75.0-android.apk" rel="noopener" data-asset="android.apk">
-          <span class="dl-ic" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M17.6 9.5l1.2-2.1a.4.4 0 0 0-.7-.4l-1.2 2.1A7.4 7.4 0 0 0 12 8.1c-1.8 0-3.5.4-4.9 1l-1.2-2.1a.4.4 0 0 0-.7.4l1.2 2.1A7.3 7.3 0 0 0 2.8 15h18.4a7.3 7.3 0 0 0-3.6-5.5zM7.5 13a.9.9 0 1 1 0-1.8.9.9 0 0 1 0 1.8zm9 0a.9.9 0 1 1 0-1.8.9.9 0 0 1 0 1.8z"/></svg></span>
-          <b>اندروید</b><span>۷ به بالا · APK · ~24MB</span><em class="go">دانلود →</em>
+          <span class="dl-top mono"><i>TKT-04</i><i>ANDROID</i></span>
+          <b>اندروید</b><span>۷ به بالا · APK · ~24MB</span>
+          <em class="go">دانلود ⟶</em>
         </a>
       </div>
-
-      <p class="hero-ver" style="text-align:center;margin-top:1.2rem">آخرین نسخه: <b id="ver">v0.75.0</b> · ویندوز · مک · لینوکس · اندروید ۷+</p>
 
       <div class="note">
         <p><b>به‌روزرسانی خودکار:</b> نسخه‌ی دسکتاپ خودش آپدیت‌های کم‌حجم را دانلود و نصب می‌کند؛ در اندروید بیشتر نسخه‌ها «درجا» و بی‌صدا به‌روز می‌شوند — بدون نصب مجدد و بدون از دست رفتن داده‌هایت.</p>
@@ -353,50 +402,54 @@
 
   <!-- ═══════════ VIP ═══════════ -->
   <section id="vip" class="sec vip" aria-label="اشتراک VIP">
-    <div class="wrap vip-in">
+    <div class="wrap-wide vip-in">
       <div class="vip-txt">
-        <p class="eyebrow gold">👑 اشتراک VIP</p>
+        <p class="kicker"><span class="dash" aria-hidden="true"></span><span class="kicker-mono">VIP — UNLIMITED SCREENING</span></p>
         <h2>پخش <span class="gold">نامحدود</span> همه‌ی عناوین</h2>
         <p>با کد اشتراک VIP، همه‌ی فیلم‌ها و سریال‌ها روی همه‌ی دستگاه‌هایت بدون محدودیت پخش می‌شوند؛ مادام‌العمر هم دارد و هرگز تمدید دستی لازم نیست. کد از داخل برنامه در بخش VIP فعال می‌شود — و بدون حساب هم می‌توانی تماشا کنی.</p>
       </div>
       <div class="vip-cards" aria-hidden="true">
-        <span class="vip-chipx">۱ ماهه</span>
-        <span class="vip-chipx">۳ ماهه</span>
-        <span class="vip-chipx">۶ ماهه</span>
-        <span class="vip-chipx">۱ ساله</span>
-        <span class="vip-chipx gold-b">مادام‌العمر</span>
+        <span class="vip-x">۱ ماهه</span>
+        <span class="vip-x">۳ ماهه</span>
+        <span class="vip-x">۶ ماهه</span>
+        <span class="vip-x">۱ ساله</span>
+        <span class="vip-x gold-b">مادام‌العمر</span>
       </div>
     </div>
   </section>
 
-  <!-- ═══════════ FAQ ═══════════ -->
+  <!-- ═══════════ FAQ / Q&A ═══════════ -->
   <section id="faq" class="sec alt" aria-label="پرسش‌های پرتکرار">
     <div class="wrap narrow">
-      <p class="eyebrow">پرسش‌های پرتکرار</p>
-      <h2>سؤالی که احتمالاً <span class="red">داری</span></h2>
+      <div class="browse-head">
+        <div>
+          <p class="kicker"><span class="dash" aria-hidden="true"></span><span class="kicker-mono">Q&amp;A — BEFORE YOU ASK</span></p>
+          <h2>سؤالی که احتمالاً <span class="red">داری</span></h2>
+        </div>
+      </div>
 
       <details class="qa" open>
-        <summary>فریم چیست؟</summary>
+        <summary><span class="mono q-no">Q1</span>فریم چیست؟</summary>
         <p>فریم یک اپلیکیشن سینمای آنلاین و خانگی است؛ هزاران فیلم و سریال با دوبله و زیرنویس فارسی در یک برنامه‌ی زیبا برای ویندوز، مک، لینوکس و اندروید. آرشیو شخصی، لیست تماشا، کلکسیون‌سازی، تاریک‌خانه و همگام‌سازی ابری هم دارد.</p>
       </details>
       <details class="qa">
-        <summary>فریم رایگان است؟</summary>
+        <summary><span class="mono q-no">Q2</span>فریم رایگان است؟</summary>
         <p>بله. دانلود و استفاده از فریم رایگان است. اشتراک VIP فقط برای پخش نامحدود همه‌ی عناوین است و با کد اشتراک از داخل برنامه فعال می‌شود.</p>
       </details>
       <details class="qa">
-        <summary>چرا فریم در گوگل‌پلی منتشر نمی‌شود؟</summary>
+        <summary><span class="mono q-no">Q3</span>چرا فریم در گوگل‌پلی منتشر نمی‌شود؟</summary>
         <p>فریم مستقیم از گیت‌هاب توزیع می‌شود تا به‌روزرسانی‌های دلتایی سبک بدون واسطه‌ی استور ممکن باشد. هشدار اندروید برای برنامه‌های خارج از استور طبیعی است و به معنی وجود ویروس نیست؛ فایل رسمی همیشه از صفحه‌ی Releases گیت‌هاب فریم دریافت می‌شود.</p>
       </details>
       <details class="qa">
-        <summary>فریم روی چه دستگاه‌هایی اجرا می‌شود؟</summary>
+        <summary><span class="mono q-no">Q4</span>فریم روی چه دستگاه‌هایی اجرا می‌شود؟</summary>
         <p>ویندوز ۱۰ و ۱۱، مک با تراشه‌ی Apple Silicon و Intel، لینوکس (AppImage و deb) و اندروید ۷ به بالا.</p>
       </details>
       <details class="qa">
-        <summary>بدون ساخت حساب هم می‌شود استفاده کرد؟</summary>
+        <summary><span class="mono q-no">Q5</span>بدون ساخت حساب هم می‌شود استفاده کرد؟</summary>
         <p>بله؛ بدون حساب هم می‌توانی تماشا کنی و داده‌ها روی همان دستگاه می‌مانند. با حساب رایگان، علاقه‌مندی‌ها، لیست تماشا، امتیازها، کلکسیون‌ها، تاریخچه و ادامه‌ی تماشا بین همه‌ی دستگاه‌هایت همگام می‌شود.</p>
       </details>
       <details class="qa">
-        <summary>به‌روزرسانی فریم چطور انجام می‌شود؟</summary>
+        <summary><span class="mono q-no">Q6</span>به‌روزرسانی فریم چطور انجام می‌شود؟</summary>
         <p>خود برنامه نسخه‌ی جدید را چک می‌کند؛ در دسکتاپ فقط تغییرات (دلتای کم‌حجم) دانلود و نصب می‌شود و در اندروید بیشتر نسخه‌ها به‌صورت درجا و بی‌صدا نصب می‌شوند. برای نسخه‌های سیستمی، APK جدید دانلود و پنجره‌ی نصب باز می‌شود.</p>
       </details>
     </div>
@@ -404,32 +457,33 @@
 
   <!-- ═══════════ CTA ═══════════ -->
   <section class="cta" aria-label="شروع تماشا">
-    <div class="wrap cta-in">
-      <h2>حالا برو یه <span class="red">پاپ‌کورن</span> بگیر 🍿</h2>
+    <div class="wrap-wide cta-in">
+      <p class="mono cta-k">FINAL CUT — START TONIGHT</p>
+      <h2>حالا برو یه پاپ‌کورن بگیر<b class="red">.</b></h2>
       <p>فریم را رایگان نصب کن و در همان دقیقه‌ی اول شروع به تماشا کن.</p>
-      <a class="btn btn-red btn-lg" href="#download">دانلود رایگان فریم</a>
+      <a class="btn-red btn-xl" href="#download">دانلود رایگان فریم</a>
     </div>
   </section>
 
 </main>
 
 <footer class="foot">
-  <div class="wrap foot-in">
+  <div class="wrap-wide foot-in">
     <div class="foot-brand">
-      <span class="brand-mark brand-mark-sm" aria-hidden="true">F</span>
+      <span class="brand-mark" aria-hidden="true"></span>
       <div>
-        <b>فریم — سینمای آنلاین</b>
-        <span>هزاران فیلم و سریال، با زیرنویس فارسی، همه‌جا همراهت.</span>
+        <b>فریم<b class="red">.</b> — سینمای آنلاین</b>
+        <span class="mono">MADE WITH FRAME — FOR CINEMA LOVERS</span>
       </div>
     </div>
-    <nav class="foot-links" aria-label="پیوندهای پایین صفحه">
+    <nav class="foot-links mono" aria-label="پیوندهای پایین صفحه">
       <a href="#browse">برترین‌ها</a>
       <a href="#features">امکانات</a>
       <a href="#download">دانلود</a>
       <a href="#faq">پرسش‌ها</a>
-      <a href="https://github.com/pvwvuow/frame/releases" rel="noopener">Releases در گیت‌هاب</a>
+      <a href="https://github.com/pvwvuow/frame/releases" rel="noopener">GITHUB RELEASES</a>
     </nav>
-    <p class="foot-copy">© ۱۴۰۵ فریم · ساخته‌شده با ❤️ برای سینمادوست‌ها</p>
+    <p class="foot-copy mono">© ۱۴۰۵ FRAME · ALL FRAMES RESERVED</p>
   </div>
 </footer>
 
@@ -438,18 +492,19 @@
   <div class="modal-backdrop" data-close></div>
   <div class="modal-panel">
     <button class="modal-close" type="button" data-close aria-label="بستن پیش‌نمایش">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
     </button>
     <div class="modal-poster"><img id="modal-img" alt="" width="342" height="513"></div>
     <div class="modal-info">
+      <p class="mono modal-k" id="modal-k">QUICK PREVIEW</p>
       <h3 id="modal-title"></h3>
       <p class="modal-en" id="modal-en"></p>
       <p class="modal-meta" id="modal-meta"></p>
       <div class="modal-badges" id="modal-badges"></div>
       <p class="modal-cta-line">تماشای کامل فقط داخل فریم — رایگان برای همه‌ی پلتفرم‌ها.</p>
       <div class="modal-actions">
-        <a class="btn btn-red" href="#download" data-close>دانلود فریم</a>
-        <button class="btn btn-ghost" type="button" data-close>بستن</button>
+        <a class="btn-red" href="#download" data-close>دانلود فریم</a>
+        <button class="btn-outline" type="button" data-close>بستن</button>
       </div>
     </div>
   </div>
