@@ -1,13 +1,13 @@
-/* Frame landing v3 — editorial edition.
+/* Frame landing v4 — soft streaming edition.
  * 1) release links from the public GitHub API (unchanged behaviour);
- * 2) live catalog: search + filters + poster grid over docs/browse.json;
- * 3) darkroom-flavored extras: film-strip marquee, live collection
- *    templates (3×3 poster collages), mini darkroom sheet sample.
+ * 2) hero: rotating featured titles with soft crossfades (bg blur + poster + info);
+ * 3) feed rows: horizontal smooth carousels over docs/browse.json (1600 titles);
+ * 4) quick-preview modal, reveal-on-scroll, glass nav state.
  */
 (function () {
   "use strict";
 
-  /* ═══════════════ 1) release links ═══════════════ */
+  /* ═══════════════ 1) release links (unchanged) ═══════════════ */
   var API = "https://api.github.com/repos/pvwvuow/frame/releases/latest";
   var FALLBACK = "https://github.com/pvwvuow/frame/releases/latest";
 
@@ -65,32 +65,9 @@
       .catch(function () {});
   }
 
-  /* ═══════════════ shared helpers ═══════════════ */
   if (!("fetch" in window)) return;
 
-  var PAGE = 30;
-  var TOTAL_LIBRARY = 19271;
-
-  var grid = document.getElementById("grid");
-  var moreBtn = document.getElementById("more");
-  var emptyBox = document.getElementById("empty");
-  var countEl = document.getElementById("browse-count");
-  var titleEl = document.getElementById("browse-title");
-  var qInput = document.getElementById("q");
-  var searchForm = document.getElementById("search-form");
-  var typeWrap = document.getElementById("type-chips");
-  var sortWrap = document.getElementById("sort-chips");
-  var genreWrap = document.getElementById("genre-chips");
-  var quickWrap = document.getElementById("quick-genres");
-  var yearSel = document.getElementById("year-sel");
-  var ratingSel = document.getElementById("rating-sel");
-  var navSearch = document.getElementById("nav-search");
-
-  if (!grid) return;
-
-  var DATA = [];
-  var state = { q: "", type: "all", genre: "همه", sort: "rating", y0: 0, y1: 9999, minR: 0, shown: PAGE };
-
+  /* ═══════════════ shared helpers ═══════════════ */
   function faNum(n) { return String(n).replace(/\d/g, function (d) { return "۰۱۲۳۴۵۶۷۸۹"[+d]; }); }
   function faGroup(n) { return Number(n).toLocaleString("fa-IR"); }
   function typeFa(p) { return p === "series" ? "سریال" : "فیلم"; }
@@ -100,160 +77,69 @@
       return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
     });
   }
-  function norm(s) { return String(s || "").toLowerCase().trim(); }
-
   var STAR_SVG = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l2.9 6.1 6.6.8-4.9 4.6 1.3 6.5L12 16.8 6.1 20l1.3-6.5L2.5 8.9l6.6-.8z"/></svg>';
   var PLAY_SVG = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="8 5 19 12 8 19 8 5"/></svg>';
+  var CHEV_R = '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg>';
+  var CHEV_L = '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>';
 
-  /* ── filtering core ── */
-  function matchCore(t, o) {
-    if (o.genre && o.genre !== "همه" && (t.g || []).indexOf(o.genre) === -1) return false;
-    if (o.y0 != null && (t.y < o.y0 || t.y > o.y1)) return false;
-    if (o.minR && t.r < o.minR) return false;
-    if (o.q) {
-      var q = norm(o.q);
-      if (norm(t.t).indexOf(q) === -1 && norm(t.e).indexOf(q) === -1) return false;
-    }
-    return true;
-  }
-  function byRating(a, b) { return b.r - a.r || b.y - a.y; }
-  function filtered(opts) {
-    opts = opts || {};
-    var out = [];
-    for (var i = 0; i < DATA.length; i++) {
-      var t = DATA[i];
-      if (!opts.ignoreType && state.type !== "all" && t.p !== state.type) continue;
-      if (!matchCore(t, { genre: state.genre, y0: state.y0, y1: state.y1, minR: state.minR, q: state.q })) continue;
-      out.push(t);
-    }
-    if (opts.ignoreType) return out;
-    if (state.sort === "rating") out.sort(byRating);
-    else if (state.sort === "newest") out.sort(function (a, b) { return b.y - a.y || b.r - a.r; });
-    else out.sort(function (a, b) { return a.y - b.y || b.r - a.r; });
-    return out;
-  }
+  /* ═══════════════ glass nav state ═══════════════ */
+  var nav = document.getElementById("nav");
+  function navState() { if (nav) nav.classList.toggle("scrolled", (window.scrollY || 0) > 24); }
+  navState();
+  window.addEventListener("scroll", navState, { passive: true });
 
-  /* ── tags builder ── */
-  function tag(label, val, active, extra) {
-    return '<button type="button" class="tag' + (active ? " on" : "") + '" data-v="' + esc(val) + '"' + (extra || "") + ">" + label + "</button>";
-  }
-  function topGenres(list, n) {
-    var freq = {};
-    list.forEach(function (t) { (t.g || []).forEach(function (g) { freq[g] = (freq[g] || 0) + 1; }); });
-    return Object.keys(freq).sort(function (a, b) { return freq[b] - freq[a] || (a < b ? -1 : 1); }).slice(0, n);
-  }
-
-  function buildControls() {
-    var visible = filtered({ ignoreType: true });
-    var cMovie = 0, cSeries = 0;
-    visible.forEach(function (t) { if (t.p === "series") cSeries++; else cMovie++; });
-    typeWrap.innerHTML =
-      tag("همه <span class=" + '"n"' + ">" + faGroup(cMovie + cSeries) + "</span>", "all", state.type === "all") +
-      tag("فیلم <span class=" + '"n"' + ">" + faGroup(cMovie) + "</span>", "movie", state.type === "movie") +
-      tag("سریال <span class=" + '"n"' + ">" + faGroup(cSeries) + "</span>", "series", state.type === "series");
-
-    sortWrap.innerHTML =
-      tag("برترین امتیاز", "rating", state.sort === "rating") +
-      tag("جدیدترین", "newest", state.sort === "newest") +
-      tag("قدیمی‌ترین", "oldest", state.sort === "oldest");
-
-    var gs = topGenres(DATA, 16);
-    genreWrap.innerHTML = tag("همه", "همه", state.genre === "همه") +
-      gs.map(function (g) { return tag(esc(g), g, state.genre === g); }).join("");
-
-    if (!yearSel.options.length) {
-      [["0-9999", "همه‌ی سال‌ها"], ["2025-9999", "۲۰۲۵ به بعد"], ["2020-2024", "۲۰۲۰ تا ۲۰۲۴"],
-       ["2010-2019", "۲۰۱۰ تا ۲۰۱۹"], ["2000-2009", "۲۰۰۰ تا ۲۰۰۹"], ["0-1999", "قبل از ۲۰۰۰"]]
-        .forEach(function (o) { var op = document.createElement("option"); op.value = o[0]; op.textContent = o[1]; yearSel.appendChild(op); });
-      [["0", "هر امتیازی"], ["7", "امتیاز +۷"], ["8", "امتیاز +۸"], ["9", "امتیاز +۹"]]
-        .forEach(function (o) { var op = document.createElement("option"); op.value = o[0]; op.textContent = o[1]; ratingSel.appendChild(op); });
-    }
-
-    if (!quickWrap.childNodes.length) {
-      quickWrap.innerHTML = gs.slice(0, 8).map(function (g) {
-        return tag(esc(g), g, false, ' data-quick="1"');
-      }).join("");
-    }
-  }
-
-  /* ── card rendering ── */
-  function cardHtml(t) {
-    var g = (t.g || []).slice(0, 1).join("");
-    var meta = typeFa(t.p) + " · " + faNum(t.y || "") + (g ? " · " + esc(g) : "");
-    return '<article class="card">' +
-      '<button type="button" class="poster" data-i="' + t.i + '" aria-label="پیش‌نمایش ' + esc(t.t || t.e) + '">' +
-        (t.q ? '<span class="badge badge-q">' + esc(t.q) + "</span>" : "") +
-        (t.r ? '<span class="badge badge-r">' + STAR_SVG + t.r + "</span>" : "") +
-        '<img loading="lazy" decoding="async" src="' + coverUrl(t.i) + '" alt="پوستر ' + esc(t.t || t.e) + '" width="300" height="450">' +
-        '<span class="ph" hidden>' + PLAY_SVG + "</span>" +
-      "</button>" +
-      "<h3>" + esc(t.t || t.e) + "</h3>" +
-      '<p class="meta">' + meta + "</p>" +
-      "</article>";
-  }
-  function hookImgFallback(scope) {
-    var imgs = scope.querySelectorAll(".poster img");
-    Array.prototype.forEach.call(imgs, function (img) {
-      img.addEventListener("error", function () {
-        img.remove();
-        var ph = img.parentNode.querySelector(".ph");
-        if (ph) ph.hidden = false;
-      });
+  /* ═══════════════ reveal on scroll ═══════════════ */
+  (function () {
+    var els = [].slice.call(document.querySelectorAll(".reveal"));
+    if (!("IntersectionObserver" in window)) { els.forEach(function (e) { e.classList.add("in"); }); return; }
+    // gentle stagger inside the same parent grid
+    els.forEach(function (e) {
+      var parent = e.parentElement;
+      if (parent) {
+        var sibs = parent.querySelectorAll(":scope > .reveal");
+        var idx = [].indexOf.call(sibs, e);
+        if (idx > 0) e.style.transitionDelay = Math.min(idx * 70, 350) + "ms";
+      }
     });
-  }
-  function render() {
-    var list = filtered();
-    var slice = list.slice(0, state.shown);
+    var io = new IntersectionObserver(function (ents) {
+      ents.forEach(function (en) {
+        if (en.isIntersecting) { en.target.classList.add("in"); io.unobserve(en.target); }
+      });
+    }, { rootMargin: "0px 0px -8% 0px", threshold: .08 });
+    els.forEach(function (e) { io.observe(e); });
+  })();
 
-    if (state.q) {
-      titleEl.innerHTML = "نتایج برای «" + esc(state.q) + "»";
-      countEl.textContent = faGroup(list.length) + " عنوان پیدا شد · از میان ۱٬۶۰۰ عنوان منتخب این صفحه";
-    } else {
-      titleEl.innerHTML = "برترین‌های فریم<b class=" + '"red"' + ">.</b>";
-      countEl.textContent = faGroup(list.length) + " عنوان منتخب از " + faGroup(TOTAL_LIBRARY) + " عنوان کتابخانه";
-    }
-
-    var frag = document.createElement("div");
-    frag.innerHTML = slice.map(cardHtml).join("");
-    hookImgFallback(frag);
-    grid.innerHTML = "";
-    while (frag.firstChild) grid.appendChild(frag.firstChild);
-
-    emptyBox.hidden = list.length !== 0;
-    grid.style.display = list.length ? "" : "none";
-    moreBtn.hidden = list.length <= state.shown;
-    moreBtn.textContent = "نمایش " + faGroup(Math.min(PAGE, list.length - state.shown)) + " عنوان بیشتر (از " + faGroup(list.length) + ")";
-    buildControls();
-  }
-
-  /* ── preview modal ── */
+  /* ═══════════════ modal ═══════════════ */
   var modal = document.getElementById("modal");
-  var modalImg = document.getElementById("modal-img");
-  var modalTitle = document.getElementById("modal-title");
-  var modalEn = document.getElementById("modal-en");
-  var modalMeta = document.getElementById("modal-meta");
-  var modalBadges = document.getElementById("modal-badges");
+  var mImg = document.getElementById("modal-img");
+  var mPh = modal.querySelector(".modal-ph");
+  var mTitle = document.getElementById("modal-title");
+  var mEn = document.getElementById("modal-en");
+  var mMeta = document.getElementById("modal-meta");
+  var mBadges = document.getElementById("modal-badges");
   var lastFocus = null;
 
   function openModal(t) {
     lastFocus = document.activeElement;
-    modalImg.src = coverUrl(t.i);
-    modalImg.alt = "پوستر " + (t.t || t.e);
-    modalTitle.textContent = t.t || t.e;
-    modalEn.textContent = (t.e && t.e !== t.t) ? t.e : "";
-    var g = (t.g || []).join(" · ");
-    modalMeta.textContent = typeFa(t.p) + " · " + faNum(t.y || "") + (g ? " · " + g : "");
-    var b = "";
-    if (t.r) b += '<span class="b-rate">IMDb ' + t.r + "</span>";
-    if (t.q) b += "<span>" + esc(t.q) + "</span>";
-    modalBadges.innerHTML = b;
+    mTitle.textContent = t.t || t.e || "";
+    mEn.textContent = t.e || "";
+    mMeta.textContent = typeFa(t.p) + " · " + faNum(t.y || "") + " · " + (t.g || []).join("، ");
+    mBadges.innerHTML =
+      (t.r ? '<span class="m-rate">' + STAR_SVG.replace('viewBox', 'width="11" height="11" style="vertical-align:-1px" viewBox') + " " + t.r + "</span>" : "") +
+      (t.q ? "<span>" + esc(t.q) + "</span>" : "") +
+      "<span>" + typeFa(t.p) + "</span>";
+    mPh.hidden = true;
+    mImg.style.display = "";
+    mImg.src = coverUrl(t.i);
+    mImg.alt = "پوستر " + (t.t || t.e || "");
+    mImg.onerror = function () { mImg.style.display = "none"; mPh.hidden = false; };
     modal.hidden = false;
-    document.body.style.overflow = "hidden";
+    document.body.classList.add("modal-open");
     modal.querySelector(".modal-close").focus();
   }
   function closeModal() {
     modal.hidden = true;
-    document.body.style.overflow = "";
+    document.body.classList.remove("modal-open");
     if (lastFocus && lastFocus.focus) lastFocus.focus();
   }
   modal.addEventListener("click", function (e) {
@@ -263,191 +149,224 @@
     if (e.key === "Escape" && !modal.hidden) closeModal();
   });
 
-  /* ── delegated events ── */
-  document.addEventListener("click", function (e) {
-    var el;
-
-    el = e.target.closest(".poster");
-    if (el) {
-      var tt = el.getAttribute("data-i");
-      for (var i = 0; i < DATA.length; i++) {
-        if (DATA[i].i === tt) { openModal(DATA[i]); break; }
-      }
-      return;
-    }
-
-    el = e.target.closest("#type-chips .tag");
-    if (el) { state.type = el.getAttribute("data-v"); state.shown = PAGE; render(); return; }
-    el = e.target.closest("#sort-chips .tag");
-    if (el) { state.sort = el.getAttribute("data-v"); state.shown = PAGE; render(); return; }
-    el = e.target.closest("#genre-chips .tag");
-    if (el) { state.genre = el.getAttribute("data-v"); state.shown = PAGE; render(); return; }
-
-    el = e.target.closest("#quick-genres .tag");
-    if (el) {
-      state.genre = el.getAttribute("data-v");
-      state.shown = PAGE;
-      render();
-      var b = document.getElementById("browse");
-      if (b) window.scrollTo({ top: b.offsetTop - 70, behavior: "smooth" });
-      return;
-    }
-
-    // collection card → apply its seed as filters
-    el = e.target.closest(".coll-card");
-    if (el) {
-      var seed = COLLECTION_TEMPLATES[+el.getAttribute("data-k")] || null;
-      if (seed) {
-        state.type = seed.kind;
-        state.genre = seed.genre || "همه";
-        state.minR = seed.minRating || 0;
-        state.sort = seed.sort || "rating";
-        state.q = ""; qInput.value = "";
-        state.y0 = 0; state.y1 = 9999; yearSel.value = "0-9999"; ratingSel.value = "0";
-        state.shown = PAGE;
-        render();
-        var bb = document.getElementById("browse");
-        if (bb) window.scrollTo({ top: bb.offsetTop - 70, behavior: "smooth" });
-      }
-      return;
-    }
-
-    if (e.target.closest("#nav-search")) {
-      window.scrollTo({ top: 0, behavior: "smooth" });
-      setTimeout(function () { qInput.focus(); }, 250);
-      return;
-    }
-    if (e.target.closest("#more")) { state.shown += PAGE; render(); }
-  });
-
-  var deb = null;
-  qInput.addEventListener("input", function () {
-    clearTimeout(deb);
-    deb = setTimeout(function () { state.q = qInput.value; state.shown = PAGE; render(); }, 220);
-  });
-  searchForm.addEventListener("submit", function (e) {
-    e.preventDefault();
-    clearTimeout(deb);
-    state.q = qInput.value;
-    state.shown = PAGE;
-    render();
-  });
-  yearSel.addEventListener("change", function () {
-    var p = yearSel.value.split("-");
-    state.y0 = +p[0]; state.y1 = +p[1];
-    state.shown = PAGE; render();
-  });
-  ratingSel.addEventListener("change", function () {
-    state.minR = +ratingSel.value;
-    state.shown = PAGE; render();
-  });
-
-  /* ═══════════════ 3) darkroom extras ═══════════════ */
-
-  /* film-strip marquee: top-rated modern titles, duplicated for a seamless loop */
-  function buildStrip() {
-    var track = document.getElementById("strip-track");
-    if (!track) return;
-    var picks = DATA.filter(function (t) { return t.y >= 1995; }).sort(byRating).slice(0, 16);
-    var one = picks.map(function (t) {
-      return '<figure><img loading="lazy" decoding="async" src="' + coverUrl(t.i) + '" width="236" height="354" alt=""></figure>';
-    }).join("");
-    track.innerHTML = one + one; /* duplicate → translateX(-50%) loops seamlessly */
-    Array.prototype.forEach.call(track.querySelectorAll("img"), function (img) {
-      img.addEventListener("error", function () { img.style.visibility = "hidden"; });
+  /* ═══════════════ card factory ═══════════════ */
+  function cardHtml(t) {
+    var g = (t.g || []).slice(0, 1).join("");
+    var meta = typeFa(t.p) + " · " + faNum(t.y || "") + (g ? " · " + esc(g) : "");
+    return '<button type="button" class="p-card" data-i="' + t.i + '" aria-label="پیش‌نمایش ' + esc(t.t || t.e) + '">' +
+      '<span class="p-frame">' +
+        (t.q ? '<span class="badge badge-q">' + esc(t.q) + "</span>" : "") +
+        (t.r ? '<span class="badge badge-r">' + STAR_SVG + " " + t.r + "</span>" : "") +
+        '<img loading="lazy" decoding="async" src="' + coverUrl(t.i) + '" alt="پوستر ' + esc(t.t || t.e) + '" width="300" height="450">' +
+        '<span class="ph" hidden>' + PLAY_SVG + "</span>" +
+        '<span class="p-play">' + PLAY_SVG + "</span>" +
+      "</span>" +
+      '<span class="p-title">' + esc(t.t || t.e) + "</span>" +
+      '<span class="p-meta">' + meta + "</span>" +
+    "</button>";
+  }
+  function bindCards(root, data) {
+    root.querySelectorAll(".p-card").forEach(function (b) {
+      b.addEventListener("click", function () {
+        var t = data.filter(function (x) { return x.i === b.dataset.i; })[0];
+        if (t) openModal(t);
+      });
+      var img = b.querySelector("img");
+      var ph = b.querySelector(".ph");
+      img.addEventListener("error", function () { img.style.display = "none"; ph.hidden = false; });
     });
   }
 
-  /* live collection templates (same seeds as the app's قالب‌های آماده) */
-  var COLLECTION_TEMPLATES = [
-    { name: "شاهکارهای سینما", desc: "بالاترین امتیازهای تاریخ سینما", kind: "movie", minRating: 8.4, sort: "rating" },
-    { name: "ترسناک برای شب", desc: "وقتی دل‌تا دلِ تاریکی می‌خواهد", kind: "movie", genre: "ترسناک", sort: "rating" },
-    { name: "کمدی حال‌خوب", desc: "برای شب‌های سبک و خنده‌دار", kind: "movie", genre: "کمدی", sort: "rating" },
-    { name: "علمی‌تخیلی ذهن‌گیر", desc: "دنیاهای بزرگ، ایده‌های بزرگ‌تر", kind: "movie", genre: "علمی‌تخیلی", sort: "rating" },
-    { name: "عاشقانه دونه‌دونه", desc: "احساسی، لطیف و به‌یادماندنی", kind: "movie", genre: "عاشقانه", sort: "rating" },
-    { name: "اکشن نفس‌گیر", desc: "آدرنالین خالص، اول تا آخر", kind: "movie", genre: "اکشن", sort: "rating" },
-    { name: "معمایی و جنایی", desc: "برای ذهن‌های کنجکاو", kind: "movie", genre: "معمایی", sort: "rating" },
-    { name: "سریال‌های ضروری", desc: "سریال‌هایی که باید دید", kind: "series", sort: "rating" }
+  /* ═══════════════ skeleton row ═══════════════ */
+  function skRow() {
+    var s = "";
+    for (var k = 0; k < 10; k++) s += '<span class="sk-card"><span class="sk-img"></span><span class="sk-line"></span><span class="sk-line w2"></span></span>';
+    return s;
+  }
+
+  /* ═══════════════ hero rotation ═══════════════ */
+  var heroData = [];
+  var heroIdx = 0, heroTimer = null, slideToggle = false;
+  var sA = document.getElementById("slide-a"), sB = document.getElementById("slide-b");
+  var hA = document.getElementById("hf-a"), hB = document.getElementById("hf-b");
+  var hfTitle = document.getElementById("hf-title");
+  var hfEn = document.getElementById("hf-en");
+  var hfMeta = document.getElementById("hf-meta");
+  var hfRank = document.getElementById("hf-rank");
+  var hfThumbs = document.getElementById("hf-thumbs");
+  var hfInfo = document.querySelector(".hf-info");
+
+  function heroPaint(i, first) {
+    var t = heroData[i];
+    if (!t) return;
+    var url = coverUrl(t.i);
+    slideToggle = !slideToggle;
+    var showS = slideToggle ? sB : sA, hideS = slideToggle ? sA : sB;
+    showS.style.backgroundImage = 'url("' + url + '")';
+    showS.classList.add("on");
+    hideS.classList.remove("on");
+
+    var showI = slideToggle ? hB : hA, hideI = slideToggle ? hA : hB;
+    showI.src = url;
+    showI.alt = "پوستر " + (t.t || t.e || "");
+    showI.classList.add("on");
+    hideI.classList.remove("on");
+
+    if (first) {
+      hfTitle.textContent = t.t || t.e || "";
+      hfEn.textContent = t.e || "";
+      hfMeta.innerHTML =
+        (t.r ? '<span class="star">★ ' + t.r + "</span>" : "") +
+        "<span>" + typeFa(t.p) + " · " + faNum(t.y || "") + "</span>" +
+        (t.g || []).slice(0, 2).map(function (x) { return "<span>" + esc(x) + "</span>"; }).join("") +
+        (t.q ? "<span>" + esc(t.q) + "</span>" : "");
+      hfRank.innerHTML = "<b>#" + faNum(i + 1) + "</b> داغ امروز";
+    } else {
+      hfInfo.classList.add("fade-out");
+      setTimeout(function () {
+        hfTitle.textContent = t.t || t.e || "";
+        hfEn.textContent = t.e || "";
+        hfMeta.innerHTML =
+          (t.r ? '<span class="star">★ ' + t.r + "</span>" : "") +
+          "<span>" + typeFa(t.p) + " · " + faNum(t.y || "") + "</span>" +
+          (t.g || []).slice(0, 2).map(function (x) { return "<span>" + esc(x) + "</span>"; }).join("") +
+          (t.q ? "<span>" + esc(t.q) + "</span>" : "");
+        hfRank.innerHTML = "<b>#" + faNum(i + 1) + "</b> داغ امروز";
+        hfInfo.classList.remove("fade-out");
+      }, 320);
+    }
+    [].forEach.call(hfThumbs.children, function (b, k) { b.classList.toggle("on", k === i); });
+  }
+  function heroGo(i) { heroIdx = (i + heroData.length) % heroData.length; heroPaint(heroIdx, false); }
+  function heroStart() {
+    if (heroTimer || heroData.length < 2) return;
+    heroTimer = setInterval(function () { heroGo(heroIdx + 1); }, 6500);
+  }
+  function heroStop() { if (heroTimer) { clearInterval(heroTimer); heroTimer = null; } }
+
+  function buildHero(data) {
+    // curated, recognizable showpieces first (all verified present in the catalog)
+    var CURATED = ["tt0468569", "tt0903747", "tt0816692", "tt0944947", "tt1375666", "tt7286456", "tt0068646", "tt4574334"];
+    var byId = {};
+    data.forEach(function (t) { byId[t.i] = t; });
+    heroData = CURATED.filter(function (id) { return byId[id]; }).map(function (id) { return byId[id]; });
+    if (heroData.length < 6) {
+      var pool = data.filter(function (t) { return t.r >= 8.5 && (t.g || []).indexOf("مستند") === -1 && (t.t || "").length >= 4; });
+      pool.sort(function (a, b) { return b.r - a.r || b.y - a.y; });
+      pool.forEach(function (t) { if (heroData.length < 6 && heroData.indexOf(t) === -1) heroData.push(t); });
+    }
+    if (!heroData.length) return;
+    // preload first
+    var im = new Image();
+    im.onload = function () { heroPaint(0, true); };
+    im.onerror = function () {
+      heroData.splice(0, 1);
+      if (heroData.length) { var im2 = new Image(); im2.onload = function () { heroPaint(0, true); }; im2.src = coverUrl(heroData[0].i); }
+    };
+    im.src = coverUrl(heroData[0].i);
+
+    hfThumbs.innerHTML = heroData.map(function (t) {
+      return '<button type="button" aria-label="نمایش ' + esc(t.t || t.e) + '"><img src="' + coverUrl(t.i) + '" alt="" width="92" height="138" loading="lazy"></button>';
+    }).join("");
+    [].forEach.call(hfThumbs.children, function (b, k) {
+      b.addEventListener("click", function () { heroGo(k); heroStart(); });
+    });
+
+    var hero = document.getElementById("hero");
+    hero.addEventListener("mouseenter", heroStop);
+    hero.addEventListener("mouseleave", heroStart);
+    document.addEventListener("visibilitychange", function () { document.hidden ? heroStop() : heroStart(); });
+    heroStart();
+  }
+
+  /* ═══════════════ feed rows ═══════════════ */
+  var ROWS = [
+    { id: "trend", title: "داغ‌ترین‌های فریم", fn: function (d) { return d.slice().sort(function (a, b) { return b.r - a.r || b.y - a.y; }).slice(0, 28); } },
+    { id: "new", title: "تازه‌های سینما", fn: function (d) { return d.filter(function (t) { return t.p === "movie"; }).sort(function (a, b) { return b.y - a.y || b.r - a.r; }).slice(0, 28); } },
+    { id: "series", title: "سریال‌های برتر", fn: function (d) { return d.filter(function (t) { return t.p === "series"; }).sort(function (a, b) { return b.r - a.r || b.y - a.y; }).slice(0, 28); } },
+    { id: "action", title: "اکشن و ماجراجویی", fn: function (d) { return d.filter(function (t) { return (t.g || []).indexOf("اکشن") !== -1 || (t.g || []).indexOf("ماجراجویی") !== -1; }).sort(function (a, b) { return b.r - a.r; }).slice(0, 28); } },
+    { id: "comedy", title: "کمدی‌های خوش‌حال‌کننده", fn: function (d) { return d.filter(function (t) { return (t.g || []).indexOf("کمدی") !== -1; }).sort(function (a, b) { return b.r - a.r; }).slice(0, 28); } },
+    { id: "anim", title: "انیمیشن و خانوادگی", fn: function (d) { return d.filter(function (t) { return (t.g || []).indexOf("انیمیشن") !== -1 || (t.g || []).indexOf("خانوادگی") !== -1; }).sort(function (a, b) { return b.r - a.r; }).slice(0, 28); } },
+    { id: "scifi", title: "علمی‌تخیلی و فانتزی", fn: function (d) { return d.filter(function (t) { return (t.g || []).indexOf("علمی\u200cتخیلی") !== -1 || (t.g || []).indexOf("فانتزی") !== -1; }).sort(function (a, b) { return b.r - a.r; }).slice(0, 28); } },
+    { id: "thrill", title: "ترسناک و معمایی", fn: function (d) { return d.filter(function (t) { return (t.g || []).indexOf("ترسناک") !== -1 || (t.g || []).indexOf("معمایی") !== -1; }).sort(function (a, b) { return b.r - a.r; }).slice(0, 28); } }
   ];
 
-  function seedFilter(tpl) {
-    var rows = [];
-    for (var i = 0; i < DATA.length; i++) {
-      var t = DATA[i];
-      if (t.p !== tpl.kind) continue;
-      if (tpl.genre && (t.g || []).indexOf(tpl.genre) === -1) continue;
-      if (tpl.minRating && t.r < tpl.minRating) continue;
-      rows.push(t);
-    }
-    rows.sort(byRating);
-    return rows;
-  }
-  function seedRows(tpl, n) {
-    var rows = seedFilter(tpl);
-    if (rows.length < n) {
-      /* top up with same-kind best rated so collages never look broken */
-      for (var j = 0; j < DATA.length && rows.length < n; j++) {
-        var t2 = DATA[j];
-        if (t2.p === tpl.kind && rows.indexOf(t2) === -1) rows.push(t2);
-      }
-    }
-    return rows.slice(0, n);
+  function buildRowSkeleton(cfg) {
+    var block = document.createElement("div");
+    block.className = "row-block";
+    block.innerHTML =
+      '<div class="row-head"><h2>' + esc(cfg.title) + '</h2><span class="row-count" hidden></span>' +
+      '<div class="row-nav">' +
+        '<button type="button" data-dir="next" aria-label="بعدی">' + CHEV_L + "</button>" +
+        '<button type="button" data-dir="prev" aria-label="قبلی">' + CHEV_R + "</button>" +
+      "</div></div>" +
+      '<div class="row-wrap show-s"><div class="row">' + skRow() + "</div></div>";
+    return block;
   }
 
-  function buildCollections() {
-    var row = document.getElementById("coll-row");
-    if (!row) return;
-    row.innerHTML = COLLECTION_TEMPLATES.map(function (tpl, k) {
-      var nine = seedRows(tpl, 9);
-      var cells = "";
-      for (var i = 0; i < 9; i++) {
-        var t = nine[i];
-        if (t) cells += '<img loading="lazy" decoding="async" src="' + coverUrl(t.i) + '" width="180" height="270" alt="">';
-        else cells += '<span class="tile-empty"></span>';
+  function fillRow(block, cfg, data) {
+    var row = block.querySelector(".row");
+    var wrap = block.querySelector(".row-wrap");
+    var items = cfg.fn(data);
+    if (!items.length) { block.remove(); return; }
+    row.innerHTML = items.map(cardHtml).join("");
+    bindCards(row, data);
+    var cnt = block.querySelector(".row-count");
+    cnt.hidden = false;
+    cnt.textContent = faGroup(items.length) + " عنوان";
+
+    var prev = block.querySelector('[data-dir="prev"]');
+    var next = block.querySelector('[data-dir="next"]');
+    function step(dir) {
+      var w = row.clientWidth * .78;
+      row.scrollBy({ left: dir * w, behavior: "smooth" });
+    }
+    next.addEventListener("click", function () { step(-1); });
+    prev.addEventListener("click", function () { step(1); });
+    function edge() {
+      var max = row.scrollWidth - row.clientWidth;
+      var pos = Math.abs(row.scrollLeft);
+      wrap.classList.toggle("show-s", pos > 8);
+      wrap.classList.toggle("show-e", pos < max - 8);
+    }
+    edge();
+    row.addEventListener("scroll", edge, { passive: true });
+    window.addEventListener("resize", edge);
+  }
+
+  var rowsEl = document.getElementById("rows");
+  var rowBlocks = [];
+
+  ROWS.forEach(function (cfg) {
+    var b = buildRowSkeleton(cfg);
+    rowsEl.appendChild(b);
+    rowBlocks.push({ cfg: cfg, el: b, done: false });
+  });
+
+  var DATA_CACHE = null;
+  function renderVisible() {
+    if (!DATA_CACHE) return;
+    rowBlocks.forEach(function (rb) {
+      if (rb.done) return;
+      var r = rb.el.getBoundingClientRect();
+      if (r.top < window.innerHeight * 1.6 && r.bottom > -200) {
+        rb.done = true;
+        fillRow(rb.el, rb.cfg, DATA_CACHE);
       }
-      var count = seedFilter(tpl).length;
-      return '<button type="button" class="coll-card" data-k="' + k + '">' +
-        '<span class="coll-head"><h3>' + tpl.name + "</h3>" +
-        '<span class="mono">' + faGroup(count) + " " + (tpl.kind === "series" ? "سریال" : "فیلم") + "</span></span>" +
-        '<span class="coll-sheet">' + cells + "</span>" +
-        '<span class="coll-desc">' + tpl.desc + "</span>" +
-        '<span class="coll-foot"><span class="mono">FRAME COLLECTION</span><span class="f-arrow" aria-hidden="true">⟵</span></span>' +
-        "</button>";
-    }).join("");
-    Array.prototype.forEach.call(row.querySelectorAll("img"), function (img) {
-      img.addEventListener("error", function () {
-        var ph = document.createElement("span");
-        ph.className = "tile-empty";
-        img.replaceWith(ph);
-      });
     });
   }
 
-  /* mini darkroom sheet sample in the paper section */
-  function buildDrSheet() {
-    var el = document.getElementById("dr-sheet");
-    if (!el) return;
-    var six = DATA.slice().sort(byRating).slice(0, 6);
-    el.innerHTML = six.map(function (t) {
-      return '<img loading="lazy" decoding="async" src="' + coverUrl(t.i) + '" width="180" height="270" alt="">';
-    }).join("");
-    Array.prototype.forEach.call(el.querySelectorAll("img"), function (img) {
-      img.addEventListener("error", function () { img.style.visibility = "hidden"; });
-    });
-  }
-
-  /* ── boot ── */
   fetch("browse.json")
-    .then(function (r) { if (!r.ok) throw 0; return r.json(); })
-    .then(function (d) {
-      DATA = (d && d.titles) || [];
-      buildControls();
-      render();
-      buildStrip();
-      buildCollections();
-      buildDrSheet();
+    .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+    .then(function (json) {
+      DATA_CACHE = json.titles || [];
+      buildHero(DATA_CACHE);
+      renderVisible();
+      window.addEventListener("scroll", renderVisible, { passive: true });
+      window.addEventListener("resize", renderVisible);
     })
     .catch(function () {
-      countEl.textContent = "بارگذاری کتابخانه ناموفق بود — صفحه را دوباره باز کن.";
+      // data failed: drop skeletons, keep the marketing page intact
+      rowBlocks.forEach(function (rb) { rb.el.remove(); });
     });
 })();
