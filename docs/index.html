@@ -7,7 +7,7 @@
 <meta name="description" content="فریم، سینمای آنلاین شماست؛ بیش از ۱۹ هزار فیلم و سریال را همین‌جا جستجو کن و با فریم تماشا کن — کیفیت تا 4K، دوبله و زیرنویس فارسی، دانلود آفلاین و همگام‌سازی ابری. رایگان برای ویندوز، مک، لینوکس و اندروید.">
 <meta name="keywords" content="فریم, اپلیکیشن فریم, Frame, دانلود فیلم, تماشای آنلاین فیلم, جستجوی فیلم, فیلم و سریال, زیرنویس فارسی, دوبله فارسی, سینمای آنلاین, سینمای خانگی, دانلود اپلیکیشن فیلم اندروید, تماشای سریال, فریم اندروید, اپ تماشای فیلم">
 <meta name="robots" content="index, follow, max-image-preview:large">
-<meta name="theme-color" content="#0a0c15">
+<meta name="theme-color" content="#070810">
 <link rel="canonical" href="https://pvwvuow.github.io/frame/">
 <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
 <link rel="apple-touch-icon" href="assets/icon-192.png">
@@ -102,7 +102,6 @@
 </head>
 <body>
 
-<!-- ═══════════ NAV (glass) ═══════════ -->
 <header class="nav" id="nav">
   <div class="wrap nav-in">
     <a class="brand" href="#top" aria-label="فریم — صفحه‌ی اصلی">
@@ -113,8 +112,8 @@
     </a>
     <nav class="nav-links" aria-label="ناوبری اصلی">
       <a href="#rows">برترین‌ها</a>
+      <a href="#browse">مرور کتابخانه</a>
       <a href="#features">امکانات</a>
-      <a href="#shots">نمای اپ</a>
       <a href="#faq">پرسش‌ها</a>
     </nav>
     <div class="nav-actions">
@@ -126,46 +125,44 @@
 
 <main id="top">
 
-  <!-- ═══════════ HERO / FEATURED CROSSFADE ═══════════ -->
+  <!-- ═══════════ HERO — تمیز و بی‌اسلایدشو ═══════════ -->
   <section class="hero" id="hero" aria-label="سینمای آنلاین فریم">
-    <div class="hero-bg" aria-hidden="true">
-      <div class="hero-slide" id="slide-a"></div>
-      <div class="hero-slide" id="slide-b"></div>
-      <div class="hero-veil"></div>
-    </div>
+    <div class="hero-wall" id="hero-wall" aria-hidden="true"></div>
+    <div class="hero-veil" aria-hidden="true"></div>
 
     <div class="wrap hero-in">
-      <div class="hero-txt">
-        <p class="hero-chip reveal"><span class="dot" aria-hidden="true"></span>اپلیکیشن رایگانِ سینمای آنلاین</p>
-        <h1 class="reveal">دنیای فیلم و سریال، <span class="grad">در جیب تو</span></h1>
-        <p class="lead reveal">بیش از <b>۱۹ هزار فیلم و سریال</b> با دوبله و زیرنویس فارسی؛ کیفیت تا <b>4K</b>، تماشای آفلاین و همگام‌سازی ابری — رایگان برای ویندوز، مک، لینوکس و اندروید.</p>
-        <div class="hero-actions reveal">
-          <a class="btn btn-grad btn-lg" href="#download">دانلود رایگان فریم</a>
-          <a class="btn btn-glass btn-lg" href="#rows">مرور برترین‌ها
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M19 12l-7 7-7-7"/></svg>
-          </a>
-        </div>
-        <ul class="hero-stats reveal" aria-label="آمار کتابخانه‌ی فریم">
-          <li><b>۱۹٬۲۷۱</b><span>عنوان آماده</span></li>
-          <li><b>4K</b><span>بهترین کیفیت</span></li>
-          <li><b>۱۰۸٬۰۰۰+</b><span>قسمت سریال</span></li>
-          <li><b>۱۰۰٪</b><span>رایگان</span></li>
-        </ul>
+      <p class="hero-chip reveal"><span class="dot" aria-hidden="true"></span>اپلیکیشن رایگانِ سینمای آنلاین</p>
+      <h1 class="reveal">هر فیلم و سریالی که می‌خواهی، <span class="grad">همین‌جا آماده است</span></h1>
+      <p class="lead reveal">بیش از <b>۱۹ هزار عنوان</b> با دوبله و زیرنویس فارسی؛ کیفیت تا <b>4K</b>، دانلود آفلاین و همگام‌سازی ابری — رایگان برای ویندوز، مک، لینوکس و اندروید.</p>
+
+      <form class="search reveal" id="search" role="search" autocomplete="off">
+        <span class="search-ic" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.2-3.2"/></svg>
+        </span>
+        <input id="search-in" type="search" placeholder="جستجوی فیلم یا سریال… مثلاً «بریکینگ بد»" aria-label="جستجو در کتابخانه‌ی فریم" enterkeyhint="search">
+        <button class="search-go" type="submit" aria-label="جستجو">جستجو</button>
+        <div class="search-drop" id="search-drop" hidden></div>
+      </form>
+
+      <div class="hero-chips reveal" aria-label="دسته‌های پرطرفدار">
+        <button type="button" class="chip" data-genre="اکشن">اکشن</button>
+        <button type="button" class="chip" data-genre="کمدی">کمدی</button>
+        <button type="button" class="chip" data-genre="درام">درام</button>
+        <button type="button" class="chip" data-genre="علمی‌تخیلی">علمی‌تخیلی</button>
+        <button type="button" class="chip" data-genre="ترسناک">ترسناک</button>
+        <button type="button" class="chip" data-genre="انیمیشن">انیمیشن</button>
+        <button type="button" class="chip" data-type="series" data-sort="rating">سریال‌های برتر</button>
+        <button type="button" class="chip" data-type="movie" data-sort="new">تازه‌های سینما</button>
       </div>
 
-      <div class="hero-featured reveal" id="hero-featured" aria-label="برگزیده‌ی کتابخانه">
-        <p class="hf-label"><span class="dot" aria-hidden="true"></span>داغِ الان در فریم</p>
-        <figure class="hf-card">
-          <img class="hf-img on" id="hf-a" alt="" width="300" height="450">
-          <img class="hf-img" id="hf-b" alt="" width="300" height="450">
-          <span class="hf-rank" id="hf-rank"></span>
-        </figure>
-        <div class="hf-info">
-          <h2 class="hf-title" id="hf-title"></h2>
-          <p class="hf-en" id="hf-en"></p>
-          <p class="hf-meta" id="hf-meta"></p>
-        </div>
-        <div class="hf-thumbs" id="hf-thumbs" role="group" aria-label="انتخاب برگزیده"></div>
+      <div class="hero-cta reveal">
+        <a class="btn btn-grad btn-lg" href="#download">دانلود رایگان فریم</a>
+        <ul class="hero-stats" aria-label="آمار کتابخانه‌ی فریم">
+          <li><b>۱۹٬۲۷۱</b><span>عنوان</span></li>
+          <li><b>۱۰۸٬۰۰۰+</b><span>قسمت سریال</span></li>
+          <li><b>4K</b><span>کیفیت</span></li>
+          <li><b>۱۰۰٪</b><span>رایگان</span></li>
+        </ul>
       </div>
     </div>
   </section>
@@ -173,7 +170,66 @@
   <!-- ═══════════ FEED ROWS ═══════════ -->
   <section id="rows" class="rows" aria-label="فید برترین‌های کتابخانه"></section>
 
-  <!-- ═══════════ FEATURES ═══════════ -->
+  <!-- ═══════════ BROWSE — مرور کامل کتابخانه ═══════════ -->
+  <section id="browse" class="sec" aria-label="مرور کامل کتابخانه">
+    <div class="wrap">
+      <div class="sec-head reveal">
+        <p class="sec-kicker">مرور کتابخانه</p>
+        <h2>کل کتابخانه، <span class="grad">یک‌جا</span></h2>
+        <p class="sec-sub">منتخبِ برترین‌های فریم — با جستجو، فیلتر نوع و ژانر و ترتیب دلخواه بگرد.</p>
+      </div>
+
+      <div class="toolbar reveal" id="toolbar">
+        <div class="tb-search">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.2-3.2"/></svg>
+          <input id="tb-q" type="search" placeholder="جستجو در نتایج…" aria-label="جستجو در کتابخانه">
+        </div>
+        <div class="tb-pills" role="group" aria-label="نوع">
+          <button type="button" class="tb-pill on" data-type="">همه</button>
+          <button type="button" class="tb-pill" data-type="movie">فیلم</button>
+          <button type="button" class="tb-pill" data-type="series">سریال</button>
+        </div>
+        <div class="tb-selects">
+          <div class="tb-select">
+            <select id="tb-genre" aria-label="ژانر">
+              <option value="">همه‌ی ژانرها</option>
+            </select>
+          </div>
+          <div class="tb-select">
+            <select id="tb-sort" aria-label="ترتیب">
+              <option value="rating">بالاترین امتیاز</option>
+              <option value="new">جدیدترین</option>
+              <option value="old">قدیمی‌ترین</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <p class="tb-count" id="tb-count" aria-live="polite"></p>
+      <div class="grid" id="grid">
+        <span class="gsk"></span><span class="gsk"></span><span class="gsk"></span><span class="gsk"></span>
+        <span class="gsk"></span><span class="gsk"></span><span class="gsk"></span><span class="gsk"></span>
+        <span class="gsk"></span><span class="gsk"></span><span class="gsk"></span><span class="gsk"></span>
+      </div>
+      <div class="grid-empty" id="grid-empty" hidden>
+        <p class="ge-ic" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.2-3.2M8.5 11h5"/></svg>
+        </p>
+        <p>چیزی مطابق این فیلترها پیدا نشد.</p>
+        <button type="button" class="btn btn-glass" id="grid-reset">حذف فیلترها</button>
+      </div>
+      <div class="grid-more" id="grid-more" hidden><span class="spin" aria-hidden="true"></span></div>
+      <div class="grid-end" id="grid-end" hidden>
+        <p class="ge-ic" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="26" height="26" fill="currentColor" aria-hidden="true"><polygon points="8 5 19 12 8 19 8 5"/></svg>
+        </p>
+        <p><b>۱٬۶۰۰</b> عنوان دیگر این‌جا تمام نمی‌شود — کل کتابخانه با جستجو و فیلتر کامل، داخل خود فریم است.</p>
+        <a class="btn btn-grad" href="#download">دانلود فریم و دیدن همه</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════ FEATURES — بنتو ═══════════ -->
   <section id="features" class="sec" aria-label="امکانات فریم">
     <div class="wrap">
       <div class="sec-head reveal">
@@ -181,46 +237,42 @@
         <h2>هر چیزی که از یک سینمای خانگی <span class="grad">انتظار داری</span></h2>
         <p class="sec-sub">فریم فقط پلیر نیست؛ یک سینمای کامل است که همه‌چیزش برای تو طراحی شده.</p>
       </div>
-      <div class="feat-grid">
-        <article class="feat reveal">
+      <div class="bento">
+        <article class="feat feat-lg reveal">
+          <div class="feat-collage" aria-hidden="true">
+            <img src="covers-web/tt0/tt0468569.webp" alt="" width="150" height="225" loading="lazy">
+            <img src="covers-web/tt0/tt0903747.webp" alt="" width="150" height="225" loading="lazy">
+            <img src="covers-web/tt0/tt0816692.webp" alt="" width="150" height="225" loading="lazy">
+            <img src="covers-web/tt0/tt0944947.webp" alt="" width="150" height="225" loading="lazy">
+          </div>
           <span class="feat-ic" aria-hidden="true"><svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M8 4v16M16 4v16M3 9h18M3 15h18"/></svg></span>
           <h3>کتابخانه‌ی بزرگ</h3>
-          <p>بیش از ۱۹ هزار فیلم و سریال؛ جستجوی زنده، فیلتر ژانر و سال و رنک‌بندی‌های به‌روز بر اساس امتیاز IMDb.</p>
+          <p>بیش از ۱۹ هزار فیلم و سریال؛ جستجوی زنده، فیلتر ژانر و سال و رنک‌بندی‌های به‌روز بر اساس امتیاز IMDb — از کلاسیک‌ها تا تازه‌ترین‌ها.</p>
         </article>
         <article class="feat reveal">
           <span class="feat-ic" aria-hidden="true"><svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polygon points="10 8.5 16 12 10 15.5 10 8.5" fill="currentColor" stroke="none"/></svg></span>
           <h3>پخش‌کننده‌ی حرفه‌ای</h3>
-          <p>ادامه‌ی تماشا از همان ثانیه‌ای که رها کردی، پرش ±۱۰ ثانیه‌ای، انتخاب کیفیت تا 4K و رفتن خودکار به قسمت بعد.</p>
+          <p>ادامه‌ی تماشا از همان ثانیه، پرش ±۱۰ ثانیه‌ای، کیفیت تا 4K و رفتن خودکار به قسمت بعد.</p>
         </article>
         <article class="feat reveal">
           <span class="feat-ic" aria-hidden="true"><svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="5" width="19" height="14" rx="3"/><path d="M6.5 15h5M14.5 15h3M6.5 11.5h3M12.5 11.5h5"/></svg></span>
           <h3>دوبله و زیرنویس فارسی</h3>
-          <p>نسخه‌های دوبله‌شده با نشان مشخص می‌شوند؛ زیرنویس فارسی با فونت و اندازه‌ی قابل تنظیم — حتی زیرنویس چسبیده‌ی داخل فایل.</p>
+          <p>نسخه‌های دوبله با نشان مشخص؛ زیرنویس با فونت و اندازه‌ی قابل تنظیم، حتی زیرنویس چسبیده‌ی داخل فایل.</p>
         </article>
         <article class="feat reveal">
           <span class="feat-ic" aria-hidden="true"><svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20.5s-7.5-4.6-9.3-9A5.2 5.2 0 0 1 12 6.6a5.2 5.2 0 0 1 9.3 4.9c-1.8 4.4-9.3 9-9.3 9z"/></svg></span>
-          <h3>لیست من</h3>
-          <p>علاقه‌مندی‌ها، لیست تماشا، وضعیت تماشا و امتیازدهی شخصی برای هر عنوان — همه‌چیز مرتب و همیشه همراهت.</p>
-        </article>
-        <article class="feat reveal">
-          <span class="feat-ic" aria-hidden="true"><svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M3 13l9 5 9-5"/></svg></span>
-          <h3>کلکسیون‌سازی</h3>
-          <p>هر چند عنوان که دوست داری را یک‌جا جمع کن؛ با قالب‌های آماده در چند ثانیه مجموعه بساز و به تاریک‌خانه بفرست.</p>
-        </article>
-        <article class="feat reveal">
-          <span class="feat-ic" aria-hidden="true"><svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="4"/><circle cx="9" cy="9" r="2"/><path d="M21 15l-4.5-4.5L7 20"/></svg></span>
-          <h3>تاریک‌خانه</h3>
-          <p>برای فیلم موردعلاقه‌ات نظر بنویس و از آن پوستری حرفه‌ای برای استوری و پست بساز؛ شاهکارهایت را قاب کن.</p>
-        </article>
-        <article class="feat reveal">
-          <span class="feat-ic" aria-hidden="true"><svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M7 18a4.5 4.5 0 0 1-.4-9A6 6 0 0 1 18.3 10 4 4 0 0 1 17.5 18z"/></svg></span>
-          <h3>همگام‌سازی ابری</h3>
-          <p>لیست، امتیازها، کلکسیون‌ها، تاریخچه و ادامه‌ی تماشا بین گوشی و کامپیوتر جابه‌جا می‌شود؛ از همان‌جا ادامه بده که رها کردی.</p>
+          <h3>لیست من و همگام‌سازی</h3>
+          <p>علاقه‌مندی‌ها، لیست تماشا و امتیاز شخصی — و همگام‌سازی ابری همه‌چیز بین گوشی و کامپیوتر.</p>
         </article>
         <article class="feat reveal">
           <span class="feat-ic" aria-hidden="true"><svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7.5 11L12 15.5 16.5 11M4 19.5h16"/></svg></span>
           <h3>دانلود و تماشای آفلاین</h3>
-          <p>روی اندروید هر فیلم یا قسمت را روی گوشی ذخیره کن — با توقف و ادامه‌ی دانلود — و بدون اینترنت تماشا کن.</p>
+          <p>روی اندروید هر فیلم یا قسمت را ذخیره کن — با توقف و ادامه‌ی دانلود — و بدون اینترنت تماشا کن.</p>
+        </article>
+        <article class="feat reveal">
+          <span class="feat-ic" aria-hidden="true"><svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M3 13l9 5 9-5"/></svg></span>
+          <h3>کلکسیون‌سازی</h3>
+          <p>هر چند عنوان که دوست داری را یک‌جا جمع کن؛ با قالب‌های آماده در چند ثانیه مجموعه بساز.</p>
         </article>
       </div>
     </div>
@@ -413,6 +465,7 @@
     </div>
     <nav class="foot-links" aria-label="پیوندهای پایین صفحه">
       <a href="#rows">برترین‌ها</a>
+      <a href="#browse">مرور کتابخانه</a>
       <a href="#features">امکانات</a>
       <a href="#download">دانلود</a>
       <a href="#faq">پرسش‌ها</a>

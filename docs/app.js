@@ -1,11 +1,13 @@
-/* Frame landing v4 — soft streaming edition.
+/* Frame landing v5 — clean professional edition.
  * 1) release links from the public GitHub API (unchanged behaviour);
- * 2) hero: rotating featured titles with soft crossfades (bg blur + poster + info);
- * 3) feed rows: horizontal smooth carousels over docs/browse.json (1600 titles);
- * 4) quick-preview modal, reveal-on-scroll, glass nav state.
+ * 2) hero: static poster wall + live search dropdown over docs/browse.json;
+ * 3) feed rows: horizontal snap carousels with "view all" → library browser;
+ * 4) library browser: type/genre/sort filters + infinite grid;
+ * 5) quick-preview modal, reveal-on-scroll, glass nav state.
  */
 (function () {
   "use strict";
+  document.documentElement.classList.add("js");
 
   /* ═══════════════ 1) release links (unchanged) ═══════════════ */
   var API = "https://api.github.com/repos/pvwvuow/frame/releases/latest";
@@ -77,10 +79,18 @@
       return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
     });
   }
+  function norm(s) {
+    return String(s == null ? "" : s).toLowerCase()
+      .replace(/[يى]/g, "ی").replace(/ك/g, "ک")
+      .replace(/[أإآ]/g, "ا")
+      .replace(/[\u200c\u064b-\u0652]/g, "")
+      .replace(/\s+/g, " ").trim();
+  }
   var STAR_SVG = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l2.9 6.1 6.6.8-4.9 4.6 1.3 6.5L12 16.8 6.1 20l1.3-6.5L2.5 8.9l6.6-.8z"/></svg>';
   var PLAY_SVG = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="8 5 19 12 8 19 8 5"/></svg>';
   var CHEV_R = '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg>';
   var CHEV_L = '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>';
+  var CHEV_S = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg>';
 
   /* ═══════════════ glass nav state ═══════════════ */
   var nav = document.getElementById("nav");
@@ -92,7 +102,6 @@
   (function () {
     var els = [].slice.call(document.querySelectorAll(".reveal"));
     if (!("IntersectionObserver" in window)) { els.forEach(function (e) { e.classList.add("in"); }); return; }
-    // gentle stagger inside the same parent grid
     els.forEach(function (e) {
       var parent = e.parentElement;
       if (parent) {
@@ -124,9 +133,10 @@
     mTitle.textContent = t.t || t.e || "";
     mEn.textContent = t.e || "";
     mMeta.textContent = typeFa(t.p) + " · " + faNum(t.y || "") + " · " + (t.g || []).join("، ");
+    var mq = t.q ? String(t.q).split(",").pop().trim() : "";
     mBadges.innerHTML =
       (t.r ? '<span class="m-rate">' + STAR_SVG.replace('viewBox', 'width="11" height="11" style="vertical-align:-1px" viewBox') + " " + t.r + "</span>" : "") +
-      (t.q ? "<span>" + esc(t.q) + "</span>" : "") +
+      (mq ? "<span>" + esc(mq) + "</span>" : "") +
       "<span>" + typeFa(t.p) + "</span>";
     mPh.hidden = true;
     mImg.style.display = "";
@@ -150,13 +160,21 @@
   });
 
   /* ═══════════════ card factory ═══════════════ */
-  function cardHtml(t) {
+  function fadeImg(img) {
+    if (img.complete && img.naturalWidth > 0) { img.classList.add("ld"); return; }
+    img.addEventListener("load", function () { img.classList.add("ld"); }, { once: true });
+  }
+  function cardHtml(t, rank) {
     var g = (t.g || []).slice(0, 1).join("");
     var meta = typeFa(t.p) + " · " + faNum(t.y || "") + (g ? " · " + esc(g) : "");
+    var q = t.q ? String(t.q).split(",").pop().trim() : "";
     return '<button type="button" class="p-card" data-i="' + t.i + '" aria-label="پیش‌نمایش ' + esc(t.t || t.e) + '">' +
       '<span class="p-frame">' +
-        (t.q ? '<span class="badge badge-q">' + esc(t.q) + "</span>" : "") +
-        (t.r ? '<span class="badge badge-r">' + STAR_SVG + " " + t.r + "</span>" : "") +
+        '<span class="badges">' +
+          (q ? '<span class="badge badge-q">' + esc(q) + "</span>" : "") +
+          (t.r ? '<span class="badge badge-r">' + STAR_SVG + " " + t.r + "</span>" : "") +
+        "</span>" +
+        (rank ? '<span class="p-rank">' + faNum(rank) + "</span>" : "") +
         '<img loading="lazy" decoding="async" src="' + coverUrl(t.i) + '" alt="پوستر ' + esc(t.t || t.e) + '" width="300" height="450">' +
         '<span class="ph" hidden>' + PLAY_SVG + "</span>" +
         '<span class="p-play">' + PLAY_SVG + "</span>" +
@@ -165,130 +183,176 @@
       '<span class="p-meta">' + meta + "</span>" +
     "</button>";
   }
-  function bindCards(root, data) {
+  function bindCards(root) {
     root.querySelectorAll(".p-card").forEach(function (b) {
-      b.addEventListener("click", function () {
-        var t = data.filter(function (x) { return x.i === b.dataset.i; })[0];
-        if (t) openModal(t);
-      });
+      var t = BY_ID[b.dataset.i];
+      if (t) b.addEventListener("click", function () { openModal(t); });
       var img = b.querySelector("img");
       var ph = b.querySelector(".ph");
-      img.addEventListener("error", function () { img.style.display = "none"; ph.hidden = false; });
+      img.addEventListener("error", function () { img.style.display = "none"; ph.hidden = false; }, { once: true });
+      fadeImg(img);
     });
   }
 
-  /* ═══════════════ skeleton row ═══════════════ */
+  /* skeleton row */
   function skRow() {
     var s = "";
     for (var k = 0; k < 10; k++) s += '<span class="sk-card"><span class="sk-img"></span><span class="sk-line"></span><span class="sk-line w2"></span></span>';
     return s;
   }
 
-  /* ═══════════════ hero rotation ═══════════════ */
-  var heroData = [];
-  var heroIdx = 0, heroTimer = null, slideToggle = false;
-  var sA = document.getElementById("slide-a"), sB = document.getElementById("slide-b");
-  var hA = document.getElementById("hf-a"), hB = document.getElementById("hf-b");
-  var hfTitle = document.getElementById("hf-title");
-  var hfEn = document.getElementById("hf-en");
-  var hfMeta = document.getElementById("hf-meta");
-  var hfRank = document.getElementById("hf-rank");
-  var hfThumbs = document.getElementById("hf-thumbs");
-  var hfInfo = document.querySelector(".hf-info");
+  /* ═══════════════ data boot ═══════════════ */
+  var DATA = [];
+  var BY_ID = {};
 
-  function heroPaint(i, first) {
-    var t = heroData[i];
-    if (!t) return;
-    var url = coverUrl(t.i);
-    slideToggle = !slideToggle;
-    var showS = slideToggle ? sB : sA, hideS = slideToggle ? sA : sB;
-    showS.style.backgroundImage = 'url("' + url + '")';
-    showS.classList.add("on");
-    hideS.classList.remove("on");
-
-    var showI = slideToggle ? hB : hA, hideI = slideToggle ? hA : hB;
-    showI.src = url;
-    showI.alt = "پوستر " + (t.t || t.e || "");
-    showI.classList.add("on");
-    hideI.classList.remove("on");
-
-    if (first) {
-      hfTitle.textContent = t.t || t.e || "";
-      hfEn.textContent = t.e || "";
-      hfMeta.innerHTML =
-        (t.r ? '<span class="star">★ ' + t.r + "</span>" : "") +
-        "<span>" + typeFa(t.p) + " · " + faNum(t.y || "") + "</span>" +
-        (t.g || []).slice(0, 2).map(function (x) { return "<span>" + esc(x) + "</span>"; }).join("") +
-        (t.q ? "<span>" + esc(t.q) + "</span>" : "");
-      hfRank.innerHTML = "<b>#" + faNum(i + 1) + "</b> داغ امروز";
-    } else {
-      hfInfo.classList.add("fade-out");
-      setTimeout(function () {
-        hfTitle.textContent = t.t || t.e || "";
-        hfEn.textContent = t.e || "";
-        hfMeta.innerHTML =
-          (t.r ? '<span class="star">★ ' + t.r + "</span>" : "") +
-          "<span>" + typeFa(t.p) + " · " + faNum(t.y || "") + "</span>" +
-          (t.g || []).slice(0, 2).map(function (x) { return "<span>" + esc(x) + "</span>"; }).join("") +
-          (t.q ? "<span>" + esc(t.q) + "</span>" : "");
-        hfRank.innerHTML = "<b>#" + faNum(i + 1) + "</b> داغ امروز";
-        hfInfo.classList.remove("fade-out");
-      }, 320);
-    }
-    [].forEach.call(hfThumbs.children, function (b, k) { b.classList.toggle("on", k === i); });
-  }
-  function heroGo(i) { heroIdx = (i + heroData.length) % heroData.length; heroPaint(heroIdx, false); }
-  function heroStart() {
-    if (heroTimer || heroData.length < 2) return;
-    heroTimer = setInterval(function () { heroGo(heroIdx + 1); }, 6500);
-  }
-  function heroStop() { if (heroTimer) { clearInterval(heroTimer); heroTimer = null; } }
-
-  function buildHero(data) {
-    // curated, recognizable showpieces first (all verified present in the catalog)
-    var CURATED = ["tt0468569", "tt0903747", "tt0816692", "tt0944947", "tt1375666", "tt7286456", "tt0068646", "tt4574334"];
-    var byId = {};
-    data.forEach(function (t) { byId[t.i] = t; });
-    heroData = CURATED.filter(function (id) { return byId[id]; }).map(function (id) { return byId[id]; });
-    if (heroData.length < 6) {
-      var pool = data.filter(function (t) { return t.r >= 8.5 && (t.g || []).indexOf("مستند") === -1 && (t.t || "").length >= 4; });
-      pool.sort(function (a, b) { return b.r - a.r || b.y - a.y; });
-      pool.forEach(function (t) { if (heroData.length < 6 && heroData.indexOf(t) === -1) heroData.push(t); });
-    }
-    if (!heroData.length) return;
-    // preload first
-    var im = new Image();
-    im.onload = function () { heroPaint(0, true); };
-    im.onerror = function () {
-      heroData.splice(0, 1);
-      if (heroData.length) { var im2 = new Image(); im2.onload = function () { heroPaint(0, true); }; im2.src = coverUrl(heroData[0].i); }
-    };
-    im.src = coverUrl(heroData[0].i);
-
-    hfThumbs.innerHTML = heroData.map(function (t) {
-      return '<button type="button" aria-label="نمایش ' + esc(t.t || t.e) + '"><img src="' + coverUrl(t.i) + '" alt="" width="92" height="138" loading="lazy"></button>';
+  /* ═══════════════ hero poster wall (static, decorative) ═══════════════ */
+  function buildWall() {
+    var wall = document.getElementById("hero-wall");
+    if (!wall || !DATA.length) return;
+    var pool = DATA.filter(function (t) { return t.r >= 7.6; });
+    pool.sort(function (a, b) { return (b.y - a.y) || (b.r - a.r); });
+    var picks = pool.slice(0, 40);
+    // spread picks across the pool so the wall looks varied, not a top-40 clump
+    var out = [];
+    var step = Math.max(1, Math.floor(picks.length / 30));
+    for (var k = 0; k < picks.length && out.length < 30; k += step) out.push(picks[k]);
+    wall.innerHTML = out.map(function (t) {
+      return '<img loading="lazy" decoding="async" src="' + coverUrl(t.i) + '" alt="" width="300" height="450">';
     }).join("");
-    [].forEach.call(hfThumbs.children, function (b, k) {
-      b.addEventListener("click", function () { heroGo(k); heroStart(); });
+    wall.querySelectorAll("img").forEach(function (img) {
+      img.addEventListener("error", function () { img.style.visibility = "hidden"; }, { once: true });
     });
-
-    var hero = document.getElementById("hero");
-    hero.addEventListener("mouseenter", heroStop);
-    hero.addEventListener("mouseleave", heroStart);
-    document.addEventListener("visibilitychange", function () { document.hidden ? heroStop() : heroStart(); });
-    heroStart();
   }
+
+  /* ═══════════════ hero live search ═══════════════ */
+  var searchForm = document.getElementById("search");
+  var searchIn = document.getElementById("search-in");
+  var drop = document.getElementById("search-drop");
+  var sdItems = [], sdSel = -1, sdTimer = null;
+
+  function searchMatch(q) {
+    var nq = norm(q);
+    if (nq.length < 2) return [];
+    var starts = [], mid = [];
+    for (var k = 0; k < DATA.length && (starts.length < 8 || mid.length < 8); k++) {
+      var t = DATA[k];
+      var nt = norm(t.t), ne = norm(t.e);
+      var hitS = (nt && nt.indexOf(nq) === 0) || (ne && ne.indexOf(nq) === 0);
+      var hitM = (nt && nt.indexOf(nq) > 0) || (ne && ne.indexOf(nq) > 0);
+      if (hitS && starts.length < 8) starts.push(t);
+      else if (hitM && mid.length < 8) mid.push(t);
+    }
+    return starts.concat(mid).slice(0, 8);
+  }
+  function sdItemHtml(t) {
+    return '<button type="button" class="sd-item" data-i="' + t.i + '">' +
+      '<img loading="lazy" src="' + coverUrl(t.i) + '" alt="" width="44" height="66">' +
+      '<span class="sd-t"><b>' + esc(t.t || t.e) + "</b>" +
+      "<small>" + esc(t.e || "") + (t.y ? " · " + t.y : "") + "</small></span>" +
+      (t.r ? '<span class="sd-r">' + STAR_SVG + " " + t.r + "</span>" : "") +
+    "</button>";
+  }
+  function renderDrop(q) {
+    var hits = searchMatch(q);
+    sdItems = hits;
+    sdSel = -1;
+    if (!hits.length) {
+      drop.innerHTML = '<p class="sd-hint">' +
+        (norm(q).length < 2 ? "حداقل ۲ حرف بنویس…" : "چیزی برای «" + esc(q) + "» پیدا نشد.") + "</p>";
+      drop.hidden = false;
+      return;
+    }
+    drop.innerHTML = hits.map(sdItemHtml).join("") +
+      '<button type="button" class="sd-all">دیدن همه‌ی نتایج «' + esc(q) + "» " + CHEV_S + "</button>";
+    drop.hidden = false;
+    drop.querySelectorAll(".sd-item").forEach(function (b) {
+      b.addEventListener("click", function () {
+        var t = BY_ID[b.dataset.i];
+        sdClose();
+        if (t) openModal(t);
+      });
+    });
+    drop.querySelector(".sd-all").addEventListener("click", function () {
+      sdClose();
+      goBrowse({ q: searchIn.value });
+    });
+  }
+  function sdClose() { drop.hidden = true; sdItems = []; sdSel = -1; }
+  searchIn.addEventListener("input", function () {
+    clearTimeout(sdTimer);
+    var q = searchIn.value;
+    if (norm(q).length < 2) { sdClose(); return; }
+    sdTimer = setTimeout(function () { renderDrop(q); }, 170);
+  });
+  searchIn.addEventListener("focus", function () {
+    if (norm(searchIn.value).length >= 2 && sdItems.length) drop.hidden = false;
+  });
+  searchIn.addEventListener("keydown", function (e) {
+    if (drop.hidden) return;
+    var items = drop.querySelectorAll(".sd-item");
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      sdSel = e.key === "ArrowDown" ? Math.min(sdSel + 1, items.length - 1) : Math.max(sdSel - 1, 0);
+      items.forEach(function (el, k) { el.classList.toggle("sel", k === sdSel); });
+    } else if (e.key === "Enter" && sdSel > -1 && items[sdSel]) {
+      e.preventDefault();
+      items[sdSel].click();
+    } else if (e.key === "Escape") {
+      sdClose();
+    }
+  });
+  searchForm.addEventListener("submit", function (e) {
+    e.preventDefault();
+    sdClose();
+    searchIn.blur();
+    goBrowse({ q: searchIn.value });
+  });
+  document.addEventListener("click", function (e) {
+    if (!searchForm.contains(e.target)) sdClose();
+  });
 
   /* ═══════════════ feed rows ═══════════════ */
+  /* globally famous tt-ids (verified present in the catalog) — used to make
+   * the “داغ‌ترین‌ها” row instantly recognizable, then rating fills the rest */
+  var KNOWN = ["tt0903747","tt0944947","tt1375666","tt0468569","tt0816692","tt4574334","tt7286456","tt0068646",
+    "tt6751668","tt2582802","tt0111161","tt0137523","tt0133093","tt0110912","tt0114369","tt0080684","tt0076759",
+    "tt0167260","tt0120737","tt0109830","tt0050083","tt0073486","tt0108052","tt0102926","tt0107290","tt0068646",
+    "tt7366338","tt10919420","tt3581920","tt5753856","tt7660850","tt2085059","tt0386676","tt0108778","tt1475582",
+    "tt2560140","tt5491994","tt0185906","tt3032476","tt2442560","tt5180504","tt1520211","tt2707408","tt2861424",
+    "tt4158110","tt11126994","tt13443470","tt6468322","tt0417299","tt4154796","tt4154756","tt0848228","tt1630029",
+    "tt0499549","tt0910970","tt2380307","tt0382932","tt0317705","tt0435761","tt1853728","tt0361748","tt0407887",
+    "tt1345836","tt0372784","tt0993846","tt3659388","tt2582802","tt2267998","tt1130884","tt0209144","tt0338013"];
   var ROWS = [
-    { id: "trend", title: "داغ‌ترین‌های فریم", fn: function (d) { return d.slice().sort(function (a, b) { return b.r - a.r || b.y - a.y; }).slice(0, 28); } },
-    { id: "new", title: "تازه‌های سینما", fn: function (d) { return d.filter(function (t) { return t.p === "movie"; }).sort(function (a, b) { return b.y - a.y || b.r - a.r; }).slice(0, 28); } },
-    { id: "series", title: "سریال‌های برتر", fn: function (d) { return d.filter(function (t) { return t.p === "series"; }).sort(function (a, b) { return b.r - a.r || b.y - a.y; }).slice(0, 28); } },
-    { id: "action", title: "اکشن و ماجراجویی", fn: function (d) { return d.filter(function (t) { return (t.g || []).indexOf("اکشن") !== -1 || (t.g || []).indexOf("ماجراجویی") !== -1; }).sort(function (a, b) { return b.r - a.r; }).slice(0, 28); } },
-    { id: "comedy", title: "کمدی‌های خوش‌حال‌کننده", fn: function (d) { return d.filter(function (t) { return (t.g || []).indexOf("کمدی") !== -1; }).sort(function (a, b) { return b.r - a.r; }).slice(0, 28); } },
-    { id: "anim", title: "انیمیشن و خانوادگی", fn: function (d) { return d.filter(function (t) { return (t.g || []).indexOf("انیمیشن") !== -1 || (t.g || []).indexOf("خانوادگی") !== -1; }).sort(function (a, b) { return b.r - a.r; }).slice(0, 28); } },
-    { id: "scifi", title: "علمی‌تخیلی و فانتزی", fn: function (d) { return d.filter(function (t) { return (t.g || []).indexOf("علمی\u200cتخیلی") !== -1 || (t.g || []).indexOf("فانتزی") !== -1; }).sort(function (a, b) { return b.r - a.r; }).slice(0, 28); } },
-    { id: "thrill", title: "ترسناک و معمایی", fn: function (d) { return d.filter(function (t) { return (t.g || []).indexOf("ترسناک") !== -1 || (t.g || []).indexOf("معمایی") !== -1; }).sort(function (a, b) { return b.r - a.r; }).slice(0, 28); } }
+    { id: "trend", title: "داغ‌ترین‌های فریم", ranked: true, all: { sort: "rating" },
+      fn: function (d) {
+        var byId = {};
+        d.forEach(function (t) { byId[t.i] = t; });
+        var out = [];
+        KNOWN.forEach(function (id) {
+          var t = byId[id];
+          if (t && out.length < 28 && out.indexOf(t) === -1) out.push(t);
+        });
+        if (out.length < 28) {
+          d.slice().sort(function (a, b) { return b.r - a.r || b.y - a.y; }).forEach(function (t) {
+            if (out.length < 28 && out.indexOf(t) === -1) out.push(t);
+          });
+        }
+        return out;
+      } },
+    { id: "new", title: "تازه‌های سینما", all: { type: "movie", sort: "new" },
+      fn: function (d) { return d.filter(function (t) { return t.p === "movie" && t.r >= 6.8; }).sort(function (a, b) { return b.y - a.y || b.r - a.r; }).slice(0, 28); } },
+    { id: "series", title: "سریال‌های برتر", all: { type: "series", sort: "rating" },
+      fn: function (d) { return d.filter(function (t) { return t.p === "series"; }).sort(function (a, b) { return b.r - a.r || b.y - a.y; }).slice(0, 28); } },
+    { id: "action", title: "اکشن و ماجراجویی", all: { genre: "اکشن" },
+      fn: function (d) { return d.filter(function (t) { return (t.g || []).indexOf("اکشن") !== -1 || (t.g || []).indexOf("ماجراجویی") !== -1; }).sort(function (a, b) { return b.r - a.r; }).slice(0, 28); } },
+    { id: "comedy", title: "کمدی‌های خوش‌حال‌کننده", all: { genre: "کمدی" },
+      fn: function (d) { return d.filter(function (t) { return (t.g || []).indexOf("کمدی") !== -1; }).sort(function (a, b) { return b.r - a.r; }).slice(0, 28); } },
+    { id: "anim", title: "انیمیشن و خانوادگی", all: { genre: "انیمیشن" },
+      fn: function (d) { return d.filter(function (t) { return (t.g || []).indexOf("انیمیشن") !== -1 || (t.g || []).indexOf("خانوادگی") !== -1; }).sort(function (a, b) { return b.r - a.r; }).slice(0, 28); } },
+    { id: "scifi", title: "علمی‌تخیلی و فانتزی", all: { genre: "علمی‌تخیلی" },
+      fn: function (d) { return d.filter(function (t) { return (t.g || []).indexOf("علمی\u200cتخیلی") !== -1 || (t.g || []).indexOf("فانتزی") !== -1; }).sort(function (a, b) { return b.r - a.r; }).slice(0, 28); } },
+    { id: "thrill", title: "ترسناک و معمایی", all: { genre: "ترسناک" },
+      fn: function (d) { return d.filter(function (t) { return (t.g || []).indexOf("ترسناک") !== -1 || (t.g || []).indexOf("معمایی") !== -1; }).sort(function (a, b) { return b.r - a.r; }).slice(0, 28); } }
   ];
 
   function buildRowSkeleton(cfg) {
@@ -296,21 +360,25 @@
     block.className = "row-block";
     block.innerHTML =
       '<div class="row-head"><h2>' + esc(cfg.title) + '</h2><span class="row-count" hidden></span>' +
+      '<a class="row-all" href="#browse" data-row="' + cfg.id + '">مشاهده همه ' + CHEV_S + "</a>" +
       '<div class="row-nav">' +
         '<button type="button" data-dir="next" aria-label="بعدی">' + CHEV_L + "</button>" +
         '<button type="button" data-dir="prev" aria-label="قبلی">' + CHEV_R + "</button>" +
       "</div></div>" +
-      '<div class="row-wrap show-s"><div class="row">' + skRow() + "</div></div>";
+      '<div class="row-wrap show-e"><div class="row">' + skRow() + "</div></div>";
     return block;
   }
 
-  function fillRow(block, cfg, data) {
+  /* each title appears in at most one row — later rows stay fresh */
+  var USED = {};
+  function fillRow(block, cfg) {
     var row = block.querySelector(".row");
     var wrap = block.querySelector(".row-wrap");
-    var items = cfg.fn(data);
+    var items = cfg.fn(DATA).filter(function (t) { return !USED[t.i]; });
     if (!items.length) { block.remove(); return; }
-    row.innerHTML = items.map(cardHtml).join("");
-    bindCards(row, data);
+    items.forEach(function (t) { USED[t.i] = 1; });
+    row.innerHTML = items.map(function (t, k) { return cardHtml(t, cfg.ranked ? k + 1 : 0); }).join("");
+    bindCards(row);
     var cnt = block.querySelector(".row-count");
     cnt.hidden = false;
     cnt.textContent = faGroup(items.length) + " عنوان";
@@ -331,42 +399,174 @@
     }
     edge();
     row.addEventListener("scroll", edge, { passive: true });
-    window.addEventListener("resize", edge);
   }
 
   var rowsEl = document.getElementById("rows");
   var rowBlocks = [];
-
   ROWS.forEach(function (cfg) {
     var b = buildRowSkeleton(cfg);
     rowsEl.appendChild(b);
     rowBlocks.push({ cfg: cfg, el: b, done: false });
   });
-
-  var DATA_CACHE = null;
-  function renderVisible() {
-    if (!DATA_CACHE) return;
+  function renderVisibleRows() {
+    if (!DATA.length) return;
     rowBlocks.forEach(function (rb) {
       if (rb.done) return;
       var r = rb.el.getBoundingClientRect();
       if (r.top < window.innerHeight * 1.6 && r.bottom > -200) {
         rb.done = true;
-        fillRow(rb.el, rb.cfg, DATA_CACHE);
+        fillRow(rb.el, rb.cfg);
       }
     });
   }
+  rowsEl.addEventListener("click", function (e) {
+    var a = e.target.closest(".row-all");
+    if (!a) return;
+    e.preventDefault();
+    var cfg = ROWS.filter(function (x) { return x.id === a.dataset.row; })[0];
+    if (cfg) goBrowse(cfg.all || {});
+  });
 
+  /* ═══════════════ library browser ═══════════════ */
+  var grid = document.getElementById("grid");
+  var gridMore = document.getElementById("grid-more");
+  var gridEmpty = document.getElementById("grid-empty");
+  var gridReset = document.getElementById("grid-reset");
+  var gridEnd = document.getElementById("grid-end");
+  var tbCount = document.getElementById("tb-count");
+  var tbQ = document.getElementById("tb-q");
+  var tbGenre = document.getElementById("tb-genre");
+  var tbSort = document.getElementById("tb-sort");
+  var tbPills = [].slice.call(document.querySelectorAll(".tb-pill"));
+  var PAGE = 30, CAP = 120;
+  var state = { q: "", type: "", genre: "", sort: "rating" };
+  var shown = 0, current = [], busy = false;
+
+  /* genre options: most frequent first */
+  function fillGenres() {
+    var counts = {};
+    DATA.forEach(function (t) { (t.g || []).forEach(function (g) { counts[g] = (counts[g] || 0) + 1; }); });
+    Object.keys(counts).sort(function (a, b) { return counts[b] - counts[a]; }).slice(0, 18).forEach(function (g) {
+      var o = document.createElement("option");
+      o.value = g; o.textContent = g + " (" + faGroup(counts[g]) + ")";
+      tbGenre.appendChild(o);
+    });
+  }
+  function filtered() {
+    var nq = norm(state.q);
+    var out = DATA.filter(function (t) {
+      if (state.type && t.p !== state.type) return false;
+      if (state.genre && (t.g || []).indexOf(state.genre) === -1) return false;
+      if (nq) {
+        var nt = norm(t.t), ne = norm(t.e);
+        if (nt.indexOf(nq) === -1 && ne.indexOf(nq) === -1) return false;
+      }
+      return true;
+    });
+    if (state.sort === "rating") out.sort(function (a, b) { return b.r - a.r || b.y - a.y; });
+    else if (state.sort === "new") out.sort(function (a, b) { return b.y - a.y || b.r - a.r; });
+    else out.sort(function (a, b) { return a.y - b.y || b.r - a.r; });
+    return out;
+  }
+  function gridPage() {
+    busy = true;
+    var slice = current.slice(shown, Math.min(shown + PAGE, CAP));
+    var frag = document.createElement("div");
+    frag.innerHTML = slice.map(function (t) { return cardHtml(t, 0); }).join("");
+    while (frag.firstChild) grid.appendChild(frag.firstChild);
+    bindCards(grid);
+    shown += slice.length;
+    busy = false;
+    var cap = Math.min(current.length, CAP);
+    gridMore.hidden = shown >= cap;
+    gridEnd.hidden = !(shown >= cap && current.length > CAP);
+    if (!gridEnd.hidden) {
+      var n = gridEnd.querySelector("b");
+      if (n) n.textContent = faGroup(current.length);
+    }
+  }
+  function renderGrid() {
+    current = filtered();
+    shown = 0;
+    grid.innerHTML = "";
+    gridEmpty.hidden = current.length > 0;
+    gridMore.hidden = true;
+    gridEnd.hidden = true;
+    tbCount.innerHTML = current.length
+      ? "<b>" + faGroup(current.length) + "</b> عنوان پیدا شد" + (current.length > CAP ? " — ۱۲۰ تای برتر این‌جاست" : "")
+      : "";
+    if (current.length) gridPage();
+  }
+  function syncToolbar() {
+    tbQ.value = state.q;
+    tbGenre.value = state.genre;
+    tbSort.value = state.sort;
+    tbPills.forEach(function (p) { p.classList.toggle("on", p.dataset.type === state.type); });
+  }
+  function goBrowse(patch) {
+    Object.keys(patch).forEach(function (k) {
+      if (k in state) state[k] = patch[k] == null ? "" : patch[k];
+    });
+    syncToolbar();
+    renderGrid();
+    var top = document.getElementById("browse").getBoundingClientRect().top + (window.scrollY || 0) - 70;
+    if (Math.abs((window.scrollY || 0) - top) > 40) {
+      window.scrollTo({ top: top, behavior: "smooth" });
+    }
+  }
+  tbPills.forEach(function (p) {
+    p.addEventListener("click", function () { state.type = p.dataset.type; syncToolbar(); renderGrid(); });
+  });
+  tbGenre.addEventListener("change", function () { state.genre = tbGenre.value; renderGrid(); });
+  tbSort.addEventListener("change", function () { state.sort = tbSort.value; renderGrid(); });
+  var tqTimer = null;
+  tbQ.addEventListener("input", function () {
+    clearTimeout(tqTimer);
+    tqTimer = setTimeout(function () { state.q = tbQ.value; renderGrid(); }, 200);
+  });
+  gridReset.addEventListener("click", function () { goBrowse({ q: "", type: "", genre: "", sort: "rating" }); });
+  if ("IntersectionObserver" in window) {
+    var moreIO = new IntersectionObserver(function (ents) {
+      ents.forEach(function (en) {
+        if (en.isIntersecting && !busy && shown < current.length) gridPage();
+      });
+    }, { rootMargin: "700px 0px" });
+    moreIO.observe(gridMore);
+  } else {
+    window.addEventListener("scroll", function () {
+      if (!busy && shown < current.length && gridMore.getBoundingClientRect().top < window.innerHeight * 1.5) gridPage();
+    }, { passive: true });
+  }
+
+  /* hero chips → browse */
+  document.querySelectorAll(".hero-chips .chip").forEach(function (c) {
+    c.addEventListener("click", function () {
+      var patch = {};
+      if (c.dataset.genre) patch.genre = c.dataset.genre;
+      if (c.dataset.type) patch.type = c.dataset.type;
+      if (c.dataset.sort) patch.sort = c.dataset.sort;
+      goBrowse(patch);
+    });
+  });
+
+  /* ═══════════════ boot ═══════════════ */
   fetch("browse.json")
     .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
     .then(function (json) {
-      DATA_CACHE = json.titles || [];
-      buildHero(DATA_CACHE);
-      renderVisible();
-      window.addEventListener("scroll", renderVisible, { passive: true });
-      window.addEventListener("resize", renderVisible);
+      DATA = json.titles || [];
+      DATA.forEach(function (t) { BY_ID[t.i] = t; });
+      buildWall();
+      fillGenres();
+      renderVisibleRows();
+      renderGrid();
+      window.addEventListener("scroll", renderVisibleRows, { passive: true });
+      window.addEventListener("resize", renderVisibleRows);
     })
     .catch(function () {
       // data failed: drop skeletons, keep the marketing page intact
       rowBlocks.forEach(function (rb) { rb.el.remove(); });
+      rowsEl.style.display = "none";
+      tbCount.textContent = "";
     });
 })();
+
