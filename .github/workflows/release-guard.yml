@@ -1,0 +1,47 @@
+name: release-guard
+
+# بعد از هر ریلیز بررسی می‌کند که «اپ الکترون» واقعاً برای هر چهار پلتفرم
+# ساخته و روی ریلیز آپلود شده است. اگر چیزی کم باشد، ران قرمز می‌شود و یک
+# ایشو باز/به‌روزرسانی می‌شود تا هیچ‌وقت ریلیز ناقص بی‌صدا رد نشود.
+on:
+  release:
+    types: [published]
+  schedule:
+    - cron: "41 5 * * *" # روزانه 05:41 UTC — پشتیبان
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "تگی که باید بررسی شود (خالی = آخرین ریلیز)"
+        required: false
+        default: ""
+      force:
+        description: "اعمال حتی اگر ریلیز کامل است (فقط برای تست)"
+        required: false
+        default: "false"
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: release-guard
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Verify Electron artifacts
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Check every desktop artifact landed on the release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GUARD_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.event.release.tag_name }}
+          REPORT_ISSUE: "1"
+        run: python3 scripts/verify_release.py
