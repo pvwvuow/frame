@@ -58,7 +58,7 @@ nsis:
   createDesktopShortcut: true
   createStartMenuShortcut: true
   shortcutName: Frame
-  language: 1065
+  # electron-builder زبان فارسی (fa_IR) ندارد؛ پیش‌فرض en_US تا بیلد نشکند
   multiLanguageInstaller: false
   uninstallDisplayName: Frame
 
