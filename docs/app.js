@@ -1,9 +1,9 @@
-/* Frame landing v6 — Netflix-grade product landing.
- * 1) release links + version from the public GitHub API (baked by update_site.py anyway);
+/* Frame landing v7 — minimal product page (intro + download).
+ * 1) release links + version (unchanged contract, also feeds .js-ver pills);
  * 2) glass nav state;
- * 3) reveal-on-scroll;
- * 4) Top-10 row arrows (native snap scroll, RTL-aware).
- * No carousels, no autoplay, no heavy catalog — this page is intro + download.
+ * 3) reveal-on-scroll (staggered in hero);
+ * 4) platform-aware hero CTA.
+ * No catalog, no carousels — this page only introduces the app.
  */
 (function () {
   "use strict";
@@ -24,8 +24,13 @@
   }
   function applyRelease(rel) {
     var tag = rel.tag_name || "";
-    var verEl = document.getElementById("ver");
-    if (verEl && tag) verEl.textContent = tag;
+    if (tag) {
+      var verEl = document.getElementById("ver");
+      if (verEl) verEl.textContent = tag;
+      [].slice.call(document.querySelectorAll(".js-ver")).forEach(function (el) {
+        el.textContent = tag;
+      });
+    }
 
     var map = {
       "dl-win": "win-x64-setup.exe",
@@ -68,7 +73,7 @@
   navState();
   window.addEventListener("scroll", navState, { passive: true });
 
-  /* ═══════════ 3) reveal on scroll ═══════════ */
+  /* ═══════════ 3) reveal on scroll (staggered in hero) ═══════════ */
   (function () {
     var els = [].slice.call(document.querySelectorAll(".reveal"));
     if (!("IntersectionObserver" in window)) { els.forEach(function (e) { e.classList.add("in"); }); return; }
@@ -77,7 +82,7 @@
       if (parent) {
         var sibs = parent.querySelectorAll(":scope > .reveal");
         var idx = [].indexOf.call(sibs, e);
-        if (idx > 0) e.style.transitionDelay = Math.min(idx * 80, 320) + "ms";
+        if (idx > 0) e.style.setProperty("--i", Math.min(idx, 6));
       }
     });
     var io = new IntersectionObserver(function (ents) {
@@ -88,17 +93,23 @@
     els.forEach(function (e) { io.observe(e); });
   })();
 
-  /* ═══════════ 4) Top-10 row arrows (RTL: forward = negative scrollLeft) ═══════════ */
-  var row = document.getElementById("tp-row");
-  var nextBtn = document.getElementById("tp-next");
-  var prevBtn = document.getElementById("tp-prev");
-  function step(dir) {
-    if (!row) return;
-    var w = Math.max(row.clientWidth * .8, 320);
-    row.parentElement.scrollBy({ left: dir * w, behavior: "smooth" });
-  }
-  if (row && nextBtn && prevBtn) {
-    nextBtn.addEventListener("click", function () { step(-1); });
-    prevBtn.addEventListener("click", function () { step(1); });
-  }
+  /* ═══════════ 4) platform-aware hero CTA ═══════════ */
+  (function () {
+    var cta = document.getElementById("cta-main");
+    if (!cta) return;
+    var ua = navigator.userAgent || "";
+    var target = null, label = null;
+    if (/Android/i.test(ua)) { target = "dl-android"; label = "دانلود برای اندروید"; }
+    else if (/Windows/i.test(ua)) { target = "dl-win"; label = "دانلود برای ویندوز"; }
+    else if (/Mac OS X|Macintosh/i.test(ua) && !/iPhone|iPad/i.test(ua)) { target = "dl-mac"; label = "دانلود برای مک"; }
+    else if (/Linux/i.test(ua) && !/Android/i.test(ua)) { target = "dl-linux"; label = "دانلود برای لینوکس"; }
+    if (target && label) {
+      cta.href = "#" + target;
+      cta.setAttribute("data-plain", label);
+      /* keep the arrow svg */
+      var svg = cta.querySelector("svg");
+      cta.textContent = label;
+      if (svg) cta.appendChild(svg);
+    }
+  })();
 })();
