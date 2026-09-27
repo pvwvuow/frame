@@ -7,11 +7,10 @@
 <meta name="description" content="فریم، سینمای خانگی شماست؛ بیش از ۱۹ هزار فیلم و سریال با دوبله و زیرنویس فارسی، کیفیت تا 4K، دانلود آفلاین و همگام‌سازی ابری. رایگان برای اندروید، ویندوز، مک و لینوکس.">
 <meta name="keywords" content="فریم, اپلیکیشن فریم, Frame, دانلود فیلم, تماشای آنلاین فیلم, فیلم و سریال, زیرنویس فارسی, دوبله فارسی, سینمای آنلاین, سینمای خانگی, دانلود اپلیکیشن فیلم اندروید, تماشای سریال, فریم اندروید, اپ تماشای فیلم">
 <meta name="robots" content="index, follow, max-image-preview:large">
-<meta name="theme-color" content="#08080b">
+<meta name="theme-color" content="#070709">
 <link rel="canonical" href="https://pvwvuow.github.io/frame/">
 <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
 <link rel="apple-touch-icon" href="assets/icon-192.png">
-
 <!-- Open Graph -->
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="فریم — سینمای خانگی">
@@ -28,11 +27,10 @@
 <meta name="twitter:title" content="فریم | سینمای خانگی — تماشای فیلم و سریال با زیرنویس فارسی">
 <meta name="twitter:description" content="بیش از ۱۹ هزار فیلم و سریال با کیفیت تا 4K — رایگان برای اندروید، ویندوز، مک و لینوکس.">
 <meta name="twitter:image" content="https://pvwvuow.github.io/frame/assets/og-cover.jpg">
-
 <link rel="preload" href="fonts/Estedad-FD-Black.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="preload" href="fonts/Vazirmatn-Regular.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="fonts/Vazirmatn-SemiBold.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="fonts/Estedad-FD-SemiBold.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="style.css">
-
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
@@ -103,7 +101,43 @@
 <body id="top">
 <a class="skip" href="#download">پرش به دانلود</a>
 
-<!-- ═══════════ NAV ═══════════ -->
+<!-- STYLE.CSS MAP
+  01 TOKENS   : --ink #070709, --ink-800/#0e0e12, --ink-700/#16161c, --muted #a1a1aa, --brand #e50914, --brand-glow, --gold #f5b81b, glass tokens (bg rgba 20,20,28,.58 + border rgba 255,255,255,.12 + blur 36px + rim/sheen gradients), radii, fonts Estedad/Vazir/Space
+  02 BASE/RESET + RTL + fonts preload + scrollbar + selection + focus-visible + wrap + reveal (.reveal/.in + stagger --i + prefers-reduced-motion)
+  03 NAV      : fixed glass pill #nav (.scrolled bg rgba 12,12,18,.72 blur), brand mark, glass strip .nav-strip (rounded-full border-white/10 bg-white/5), active .is-active red pill + glow 0 0 18px, .ver-pill, .btn (red / white pill / glass)
+  04 GHOST LAYER : .ghost-layer fixed -z-10, .ghost slots (oval mask, tilt ±3deg, blur 3-5px, opacity .08-.16, revealDelays 0-13s, radial ink fade)
+  05 HERO CINEMA : .cinema (82vh) — .curtain L/R (CSS gradients + SVG folds), .stage-board (ink gradient + dust + grain + vignette), .glass-plate (poster-wrap with rim gradient border + blur + sheen + base shadow), .chips, .ch-title/meta/desc, .glass-cta pills, .slides auto-rotate (opacity + transform), .mobile-hero stack
+  06 STATS / OUTLINE NUMERALS : .stats grid + .outline-num (-webkit-text-stroke, transparent fill)
+  07 SCREENSHOT WINDOW : .app-window glass frame (ring-1 + blur + inner gradient), browser chrome dots, screenshot img with aspect-ratio containment
+  08 POSTER ROWS : .row-head, .poster-grid, .card (aspect 2/3, rounded-xl ring-white/5, hover lift + shadow + ring-white/14 + scale 1.05, quality chip, rating amber chip, caption, progress bar), .row--trending with outline numerals behind
+  09 BENTO FEATURES : .bento grid, .b-card glass variant (hover border-brand)
+  10 DOWNLOAD : .dl-grid (4 cards), .dl (+ #dl-* ids), .steps, .note, .guide details/summary
+  11 VIP MATTE-GLASS : .vip-matte (rounded-3xl ring-white/15 bg-white/.07 backdrop-blur-30 saturate-150 + ink gradient + min-h 300px)
+  12 FAQ / CTA-FINAL / FOOTER : .qa details, .cta-panel glass glow, .foot
+  13 RESPONSIVE : 360→1920 fluid, hero stacks <920px, nav links hide <640px, poster rows horizontal scroll on mobile
+  14 MOTION : ken-burns, ghost drift, dust float — all disabled under prefers-reduced-motion
+-->
+
+<!-- GHOST POSTER AMBIENT LAYER -->
+<div class="ghost-layer" id="ghost-layer" aria-hidden="true">
+  <div class="ghost ghost--1" style="--l:3%;--t:6%;--w:340px;--tilt:-3deg;--blur:3px;--o:.12;--d:13s;--dl:-3s"><img src="covers-web/tt0/tt0816692.webp" alt="" width="300" height="450" loading="lazy" decoding="async"></div>
+  <div class="ghost ghost--2" style="--l:78%;--t:4%;--w:300px;--tilt:2deg;--blur:4px;--o:.10;--d:18s;--dl:-9s"><img src="covers-web/tt1/tt1375666.webp" alt="" width="300" height="450" loading="lazy" decoding="async"></div>
+  <div class="ghost ghost--3" style="--l:40%;--t:10%;--w:260px;--tilt:3deg;--blur:5px;--o:.08;--d:11s;--dl:-14s"><img src="covers-web/tt0/tt0111161.webp" alt="" width="300" height="450" loading="lazy" decoding="async"></div>
+  <div class="ghost ghost--4" style="--l:62%;--t:22%;--w:360px;--tilt:-2deg;--blur:3px;--o:.14;--d:21s;--dl:-6s"><img src="covers-web/tt0/tt0944947.webp" alt="" width="300" height="450" loading="lazy" decoding="async"></div>
+  <div class="ghost ghost--5" style="--l:12%;--t:30%;--w:380px;--tilt:4deg;--blur:3px;--o:.15;--d:15s;--dl:-11s"><img src="covers-web/tt0/tt0468569.webp" alt="" width="300" height="450" loading="lazy" decoding="async"></div>
+  <div class="ghost ghost--6" style="--l:85%;--t:34%;--w:320px;--tilt:-3deg;--blur:4px;--o:.11;--d:23s;--dl:-2s"><img src="covers-web/tt6/tt6751668.webp" alt="" width="300" height="450" loading="lazy" decoding="async"></div>
+  <div class="ghost ghost--7" style="--l:34%;--t:42%;--w:280px;--tilt:2deg;--blur:5px;--o:.09;--d:12s;--dl:-8s"><img src="covers-web/tt4/tt4574334.webp" alt="" width="300" height="450" loading="lazy" decoding="async"></div>
+  <div class="ghost ghost--8" style="--l:55%;--t:52%;--w:370px;--tilt:-4deg;--blur:3px;--o:.13;--d:19s;--dl:-13s"><img src="covers-web/tt7/tt7286456.webp" alt="" width="300" height="450" loading="lazy" decoding="async"></div>
+  <div class="ghost ghost--9" style="--l:5%;--t:58%;--w:300px;--tilt:3deg;--blur:4px;--o:.11;--d:14s;--dl:-5s"><img src="covers-web/tt0/tt0903747.webp" alt="" width="300" height="450" loading="lazy" decoding="async"></div>
+  <div class="ghost ghost--10" style="--l:80%;--t:64%;--w:400px;--tilt:-2deg;--blur:3px;--o:.16;--d:22s;--dl:-10s"><img src="covers-web/tt0/tt0816692.webp" alt="" width="300" height="450" loading="lazy" decoding="async"></div>
+  <div class="ghost ghost--11" style="--l:28%;--t:72%;--w:340px;--tilt:2deg;--blur:5px;--o:.10;--d:16s;--dl:-16s"><img src="covers-web/tt0/tt0468569.webp" alt="" width="300" height="450" loading="lazy" decoding="async"></div>
+  <div class="ghost ghost--12" style="--l:60%;--t:80%;--w:280px;--tilt:-3deg;--blur:4px;--o:.12;--d:20s;--dl:-7s"><img src="covers-web/tt0/tt0111161.webp" alt="" width="300" height="450" loading="lazy" decoding="async"></div>
+  <div class="ghost ghost--13" style="--l:10%;--t:86%;--w:370px;--tilt:3deg;--blur:3px;--o:.14;--d:24s;--dl:-12s"><img src="covers-web/tt1/tt1375666.webp" alt="" width="300" height="450" loading="lazy" decoding="async"></div>
+  <div class="ghost ghost--14" style="--l:88%;--t:88%;--w:270px;--tilt:-2deg;--blur:5px;--o:.09;--d:17s;--dl:-4s"><img src="covers-web/tt7/tt7286456.webp" alt="" width="300" height="450" loading="lazy" decoding="async"></div>
+  <div class="ghost-fade" aria-hidden="true"></div>
+</div>
+
+<!-- NAV -->
 <header class="nav" id="nav">
   <div class="wrap nav-in">
     <a class="brand" href="#top" aria-label="فریم — صفحه‌ی اصلی">
@@ -112,123 +146,237 @@
       </span>
       <span class="brand-name">فریم</span>
     </a>
-    <nav class="nav-links" aria-label="ناوبری اصلی">
+    <nav class="nav-strip" aria-label="ناوبری اصلی">
       <a href="#features">امکانات</a>
       <a href="#download">دانلود</a>
       <a href="#faq">پرسش‌ها</a>
     </nav>
     <div class="nav-actions">
-      <span class="ver-pill js-ver" aria-label="آخرین نسخه">v0.75.0</span>
-      <a class="btn btn-red btn-sm" href="#download">دانلود رایگان</a>
+      <span class="ver-pill js-ver" id="ver-top" aria-label="آخرین نسخه">v0.76.7</span>
+      <a class="btn btn-white btn-sm" href="#download">دانلود رایگان</a>
     </div>
   </div>
 </header>
 
 <main>
 
-<!-- ═══════════ HERO ═══════════ -->
-<section class="hero" aria-label="معرفی فریم">
-  <div class="hero-glow" aria-hidden="true"></div>
-  <div class="wrap hero-grid">
+<!-- CINEMA HERO — 82vh stage -->
+<section class="cinema" aria-label="فریم — سینمای خانگی" aria-roledescription="carousel">
+  <!-- curtains -->
+  <div class="curtain curtain--r" aria-hidden="true"><span class="curtain-pane"></span><span class="curtain-shadow"></span></div>
+  <div class="curtain curtain--l" aria-hidden="true"><span class="curtain-pane"></span><span class="curtain-shadow"></span></div>
+  <!-- stage -->
+  <div class="stage-board" aria-hidden="true">
+    <div class="stage-glow"></div>
+    <div class="stage-vignette"></div>
+    <div class="stage-grain"></div>
+    <div class="stage-dust" id="stage-dust"></div>
+    <div class="stage-fade-side"></div>
+    <div class="stage-fade-bottom"></div>
+  </div>
 
-    <div class="hero-copy">
-      <p class="chip reveal"><span class="dot" aria-hidden="true"></span>اپلیکیشن رایگانِ سینمای خانگی</p>
-      <h1 class="reveal">تمامِ سینما،<br>در یک <b class="red">فریم</b>.</h1>
-      <p class="lead reveal">بیش از <b>۱۹ هزار</b> فیلم و سریال با دوبله و زیرنویس فارسی، کیفیت تا <b>۴K</b> و همگام‌سازی بین همه‌ی دستگاه‌هایت — در یک اپلیکیشنِ سریع و ساده. رایگان.</p>
+  <!-- design plate + slides -->
+  <div class="wrap cinema-grid">
+    <div class="cinema-copy">
+      <!-- SLIDES — real titles, auto-rotating -->
+      <div class="slides" id="cinema-slides" aria-live="polite">
+        <!-- slide 1 -->
+        <div class="slide is-active" data-poster="covers-web/tt0/tt0816692.webp">
+          <div class="chips">
+            <span class="chip chip--red">پیشنهاد ما</span>
+            <span class="chip chip--glass">4K</span>
+            <span class="chip chip--glass">۱۵+</span>
+          </div>
+          <h2 class="ch-title">میان‌ستاره‌ای</h2>
+          <p class="ch-sub">Interstellar</p>
+          <div class="ch-meta">
+            <span class="ch-rating"><svg viewBox="0 0 24 24" width="12" height="12" fill="#f5b81b" aria-hidden="true"><path d="M12 2.5l2.4 4.9 5.4.8-3.9 3.8.9 5.4L12 14.9 7.2 17.4l.9-5.4L4.2 8.2l5.4-.8z"/></svg> ۸٫۷</span>
+            <span>۲۰۱۴</span><span class="dot">·</span><span>۲س ۴۹د</span><span class="dot">·</span><span>علمی-تخیلی، ماجراجویی</span>
+          </div>
+          <p class="ch-desc">گروهی از کاوشگران از طریق یک کرم‌چاله به فراتر از کهکشان سفر می‌کنند تا آینده‌ی بشریت را نجات دهند؛ حماسه‌ای از نولان درباره‌ی عشق، زمان و گرانش.</p>
+        </div>
+        <!-- slide 2 -->
+        <div class="slide" data-poster="covers-web/tt1/tt1375666.webp">
+          <div class="chips">
+            <span class="chip chip--red">پیشنهاد ما</span>
+            <span class="chip chip--glass">4K</span>
+            <span class="chip chip--glass">۱۳+</span>
+          </div>
+          <h2 class="ch-title">تلقین</h2>
+          <p class="ch-sub">Inception</p>
+          <div class="ch-meta">
+            <span class="ch-rating"><svg viewBox="0 0 24 24" width="12" height="12" fill="#f5b81b" aria-hidden="true"><path d="M12 2.5l2.4 4.9 5.4.8-3.9 3.8.9 5.4L12 14.9 7.2 17.4l.9-5.4L4.2 8.2l5.4-.8z"/></svg> ۸٫۸</span>
+            <span>۲۰۱۰</span><span class="dot">·</span><span>۲س ۲۸د</span><span class="dot">·</span><span>اکشن، علمی-تخیلی</span>
+          </div>
+          <p class="ch-desc">سارقی که رازهای دیگران را از رؤیاهایشان می‌دزدد، مأموریتی وارونه می‌گیرد: کاشتن یک ایده به جای دزدیدنش.</p>
+        </div>
+        <!-- slide 3 -->
+        <div class="slide" data-poster="covers-web/tt0/tt0111161.webp">
+          <div class="chips">
+            <span class="chip chip--red">کلاسیک</span>
+            <span class="chip chip--glass">Full HD</span>
+            <span class="chip chip--glass">۱۶+</span>
+          </div>
+          <h2 class="ch-title">رستگاری در شاوشنگ</h2>
+          <p class="ch-sub">The Shawshank Redemption</p>
+          <div class="ch-meta">
+            <span class="ch-rating"><svg viewBox="0 0 24 24" width="12" height="12" fill="#f5b81b" aria-hidden="true"><path d="M12 2.5l2.4 4.9 5.4.8-3.9 3.8.9 5.4L12 14.9 7.2 17.4l.9-5.4L4.2 8.2l5.4-.8z"/></svg> ۹٫۳</span>
+            <span>۱۹۹۴</span><span class="dot">·</span><span>۲س ۲۲د</span><span class="dot">·</span><span>درام</span>
+          </div>
+          <p class="ch-desc">امید می‌تواند حتی دیوارهای بلندترین زندان‌ها را هم فرو بریزد؛ داستانی ماندگار درباره‌ی دوستی و رهایی.</p>
+        </div>
+      </div>
+
+      <p class="cinema-kicker reveal">اپلیکیشن رایگانِ سینمای خانگی</p>
+      <h1 class="cinema-lead reveal">تمامِ سینما، در یک <b class="red">فریم</b>. بیش از <b>۱۹ هزار</b> فیلم و سریال با دوبله و زیرنویس فارسی، کیفیت تا <b>۴K</b> و همگام‌سازی بین همه‌ی دستگاه‌هایت.</h1>
       <div class="cta-row reveal">
-        <a class="btn btn-red btn-xl" id="cta-main" href="#download">
+        <a class="btn btn-white btn-xl" id="cta-main" href="#download">
           دانلود رایگان فریم
           <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
         </a>
-        <a class="btn btn-line btn-xl" href="#features">چرا فریم؟</a>
+        <a class="btn btn-glass btn-xl" href="#inside">ببین داخلش چیه</a>
       </div>
       <p class="micro reveal">بدون تبلیغ · بدون نیاز به حساب · نصب در یک دقیقه</p>
-    </div>
-
-    <div class="hero-visual reveal" aria-hidden="true">
-      <div class="phone-scene">
-        <div class="phone">
-          <span class="notch"></span>
-          <div class="screen">
-            <div class="s-status">
-              <span>۲۰:۲۶</span>
-              <span class="s-sig">
-                <svg viewBox="0 0 24 24" width="34" height="12" fill="currentColor"><rect x="0" y="7" width="3" height="5" rx="1"/><rect x="5" y="5" width="3" height="7" rx="1"/><rect x="10" y="3" width="3" height="9" rx="1"/><rect x="16" y="3.5" width="8" height="7" rx="2" fill="none" stroke="currentColor" stroke-width="1.2"/><rect x="18" y="5.5" width="4" height="3" rx="1"/></svg>
-              </span>
-            </div>
-            <div class="s-head">
-              <span class="s-brand">
-                <svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M4 2h16a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zm2.2 3.2v13.6h2.3v-5.5h5.9v5.5h2.3V5.2h-2.3v5.4H8.5V5.2H6.2z"/></svg>
-                فریم
-              </span>
-              <span class="s-search">
-                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4-4"/></svg>
-              </span>
-            </div>
-            <div class="s-banner">
-              <img src="covers-web/tt0/tt0816692.webp" alt="" width="300" height="450" loading="eager">
-              <div class="s-bn-in">
-                <span class="s-4k">4K</span>
-                <b>میان‌ستاره‌ای</b>
-                <span class="s-meta">۲۰۱۴ · ماجراجویی · <i>★</i> ۸٫۷</span>
-              </div>
-              <span class="s-play">
-                <svg viewBox="0 0 24 24" width="11" height="11" fill="currentColor"><polygon points="8 5.5 18 12 8 18.5"/></svg>
-              </span>
-            </div>
-            <div class="s-row">
-              <div class="s-row-h"><b>ادامه‌ی تماشا</b><span>همه</span></div>
-              <div class="s-cont">
-                <figure><img src="covers-web/tt0/tt0903747.webp" alt="" loading="lazy"><i style="width:62%"></i></figure>
-                <figure><img src="covers-web/tt0/tt0468569.webp" alt="" loading="lazy"><i style="width:28%"></i></figure>
-              </div>
-            </div>
-            <div class="s-row">
-              <div class="s-row-h"><b>محبوب‌ها</b><span>همه</span></div>
-              <div class="s-pop">
-                <img src="covers-web/tt0/tt0944947.webp" alt="" loading="lazy">
-                <img src="covers-web/tt1/tt1375666.webp" alt="" loading="lazy">
-                <img src="covers-web/tt7/tt7286456.webp" alt="" loading="lazy">
-              </div>
-            </div>
-            <div class="s-tab">
-              <span class="on">
-                <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5L12 3l9 7.5"/><path d="M5.5 9.5V20a1 1 0 0 0 1 1h11a1 1 0 0 0 1-1V9.5"/></svg>
-                خانه
-              </span>
-              <span>
-                <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4-4"/></svg>
-                جستجو
-              </span>
-              <span>
-                <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4h12v17l-6-4-6 4z"/></svg>
-                لیست من
-              </span>
-              <span>
-                <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="8.5" r="4"/><path d="M4.5 20a7.5 7.5 0 0 1 15 0"/></svg>
-                پروفایل
-              </span>
-            </div>
-          </div>
-        </div>
-        <span class="chip-float f1">کیفیت تا 4K</span>
-        <span class="chip-float f2">۱۹٬۰۰۰+ عنوان</span>
-        <span class="chip-float f3">همگام‌سازی ابری</span>
+      <div class="slide-dots" role="tablist" aria-label="اسلایدهای ویژه">
+        <button class="slide-dot is-on" role="tab" aria-selected="true" aria-label="اسلاید ۱"></button>
+        <button class="slide-dot" role="tab" aria-selected="false" aria-label="اسلاید ۲"></button>
+        <button class="slide-dot" role="tab" aria-selected="false" aria-label="اسلاید ۳"></button>
       </div>
     </div>
-  </div>
 
-  <div class="wrap">
-    <ul class="stats reveal" aria-label="آمار فریم در یک نگاه">
-      <li><b>۱۹٬۲۷۱</b><span>فیلم و سریال</span></li>
-      <li><b>۴K</b><span>بالاترین کیفیت پخش</span></li>
-      <li><b>۴</b><span>پلتفرم — گوشی و کامپیوتر</span></li>
-      <li><b>۱۰۰٪</b><span>رایگان برای شروع</span></li>
-    </ul>
+    <div class="cinema-visual reveal" aria-hidden="true">
+      <div class="glass-plate">
+        <div class="glass-plate-rim"></div>
+        <div class="glass-plate-sheen"></div>
+        <img id="cinema-poster" src="covers-web/tt0/tt0816692.webp" alt="" width="300" height="450" decoding="async" fetchpriority="high">
+        <div class="glass-plate-tint"></div>
+        <div class="glass-plate-base"></div>
+        <div class="glass-plate-glass"></div>
+      </div>
+    </div>
   </div>
 </section>
 
-<!-- ═══════════ FEATURES — bento ═══════════ -->
+<!-- STATS STRIP with outline numerals accent -->
+<div class="wrap">
+  <ul class="stats reveal" aria-label="آمار فریم در یک نگاه">
+    <li><span class="outline-num" aria-hidden="true">۱</span><b>۱۹٬۲۷۱</b><span>فیلم و سریال</span></li>
+    <li><span class="outline-num" aria-hidden="true">۲</span><b>۴K</b><span>بالاترین کیفیت پخش</span></li>
+    <li><span class="outline-num" aria-hidden="true">۳</span><b>۴</b><span>پلتفرم — گوشی و کامپیوتر</span></li>
+    <li><span class="outline-num" aria-hidden="true">۴</span><b>۱۰۰٪</b><span>رایگان برای شروع</span></li>
+  </ul>
+</div>
+
+<!-- ghost gate sentinel -->
+<div id="home-ghost-gate" aria-hidden="true" style="height:1px"></div>
+
+<!-- INSIDE THE APP — real screenshots in glass window -->
+<section id="inside" class="sec" aria-label="نمای داخل برنامه">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <p class="kicker">داخل برنامه</p>
+      <h2>همان فریمِ واقعی، <span class="red">بدون روتوش</span></h2>
+      <p class="sec-sub">این‌ها اسکرین‌شاتِ مستقیمِ خودِ اپ هستند — نه ماک‌آپِ گرافیکی. تاریک، خلوت، سینمایی.</p>
+    </div>
+
+    <div class="app-window reveal">
+      <div class="app-window-bar" aria-hidden="true">
+        <span class="win-dot" style="--c:#ff5f56"></span><span class="win-dot" style="--c:#ffbd2e"></span><span class="win-dot" style="--c:#27c93f"></span>
+        <span class="win-title">فریم — خانه</span>
+      </div>
+      <img src="assets/home-desktop.webp" alt="نمای خانه‌ی اپ فریم روی دسکتاپ — ردیف پوسترها و هیروی سینمایی" width="1440" height="860" loading="lazy" decoding="async">
+    </div>
+
+    <div class="shots-grid">
+      <figure class="shot-card reveal">
+        <img src="assets/darkroom-desktop.webp" alt="تاریک‌خانه — استودیوی ساخت پوستر اشتراک‌گذاری" width="1280" height="764" loading="lazy" decoding="async">
+        <figcaption><b>تاریک‌خانه</b><span>پوستر اشتراک‌گذاری بساز — با قالب‌های آماده</span></figcaption>
+      </figure>
+      <figure class="shot-card reveal">
+        <img src="assets/rankings-desktop.webp" alt="رتبه‌بندی — برترین فیلم‌ها و سریال‌ها" width="1280" height="764" loading="lazy" decoding="async">
+        <figcaption><b>رتبه‌بندی‌ها</b><span>از IMDb تا محبوب‌ترین‌های فریم</span></figcaption>
+      </figure>
+      <figure class="shot-card reveal">
+        <img src="assets/title-desktop.webp" alt="صفحه‌ی فیلم — اطلاعات، تریلر، بازیگران و پخش" width="1280" height="764" loading="lazy" decoding="async">
+        <figcaption><b>صفحه‌ی عنوان</b><span>همه‌چیزِ یک فیلم در یک نگاه</span></figcaption>
+      </figure>
+      <figure class="shot-card shot-card--mobile reveal">
+        <img src="assets/home-mobile.webp" alt="نمای موبایل فریم" width="647" height="1400" loading="lazy" decoding="async">
+        <figcaption><b>روی موبایل</b><span>همه‌ی سینما در جیب‌ات</span></figcaption>
+      </figure>
+    </div>
+  </div>
+</section>
+
+<!-- POSTER ROWS — trending + newest using real covers -->
+<section class="sec" aria-label="نمونه‌ای از کتابخانه">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <p class="kicker">کتابخانه</p>
+      <h2>چند فریم از <span class="red">۱۹ هزار</span> عنوان</h2>
+    </div>
+
+    <!-- TRENDING with outline numerals -->
+    <div class="row reveal">
+      <div class="row-head">
+        <h3>محبوب‌ترین‌ها</h3>
+        <span>بر اساس امتیاز و تماشا</span>
+      </div>
+      <div class="poster-row poster-row--trending">
+        <div class="poster-slot">
+          <span class="rank-num" aria-hidden="true">۱</span>
+          <a class="card" href="#download" aria-label="میان‌ستاره‌ای — جزئیات">
+            <div class="card-art"><img src="covers-web/tt0/tt0816692.webp" alt="میان‌ستاره‌ای" width="300" height="450" loading="lazy" decoding="async"><span class="q-chip">4K</span><span class="rate-chip"><svg viewBox="0 0 24 24" width="11" height="11" fill="#f5b81b" aria-hidden="true"><path d="M12 2.5l2.4 4.9 5.4.8-3.9 3.8.9 5.4L12 14.9 7.2 17.4l.9-5.4L4.2 8.2l5.4-.8z"/></svg> ۸٫۷</span><span class="play-hint"><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><polygon points="8 5.5 18 12 8 18.5"/></svg></span><div class="card-grad"></div><div class="card-cap"><b>میان‌ستاره‌ای</b><span>۲۰۱۴ · علمی-تخیلی</span></div><div class="card-progress"><i style="width:62%"></i></div></div>
+          </a>
+        </div>
+        <div class="poster-slot">
+          <span class="rank-num" aria-hidden="true">۲</span>
+          <a class="card" href="#download" aria-label="شوالیه تاریکی — جزئیات">
+            <div class="card-art"><img src="covers-web/tt0/tt0468569.webp" alt="شوالیه تاریکی" width="300" height="450" loading="lazy" decoding="async"><span class="q-chip">4K</span><span class="rate-chip"><svg viewBox="0 0 24 24" width="11" height="11" fill="#f5b81b"><path d="M12 2.5l2.4 4.9 5.4.8-3.9 3.8.9 5.4L12 14.9 7.2 17.4l.9-5.4L4.2 8.2l5.4-.8z"/></svg> ۹٫۰</span><div class="card-grad"></div><div class="card-cap"><b>شوالیه تاریکی</b><span>۲۰۰۸ · اکشن</span></div></div>
+          </a>
+        </div>
+        <div class="poster-slot">
+          <span class="rank-num" aria-hidden="true">۳</span>
+          <a class="card" href="#download" aria-label="بازی تاج و تخت — جزئیات">
+            <div class="card-art"><img src="covers-web/tt0/tt0944947.webp" alt="بازی تاج و تخت" width="300" height="450" loading="lazy" decoding="async"><span class="q-chip">4K</span><span class="rate-chip"><svg viewBox="0 0 24 24" width="11" height="11" fill="#f5b81b"><path d="M12 2.5l2.4 4.9 5.4.8-3.9 3.8.9 5.4L12 14.9 7.2 17.4l.9-5.4L4.2 8.2l5.4-.8z"/></svg> ۹٫۲</span><div class="card-grad"></div><div class="card-cap"><b>بازی تاج و تخت</b><span>۲۰۱۱ · فانتزی</span></div></div>
+          </a>
+        </div>
+        <div class="poster-slot">
+          <span class="rank-num" aria-hidden="true">۴</span>
+          <a class="card" href="#download" aria-label="تلقین — جزئیات">
+            <div class="card-art"><img src="covers-web/tt1/tt1375666.webp" alt="تلقین" width="300" height="450" loading="lazy" decoding="async"><span class="q-chip">4K</span><span class="rate-chip"><svg viewBox="0 0 24 24" width="11" height="11" fill="#f5b81b"><path d="M12 2.5l2.4 4.9 5.4.8-3.9 3.8.9 5.4L12 14.9 7.2 17.4l.9-5.4L4.2 8.2l5.4-.8z"/></svg> ۸٫۸</span><div class="card-grad"></div><div class="card-cap"><b>تلقین</b><span>۲۰۱۰ · علمی-تخیلی</span></div></div>
+          </a>
+        </div>
+        <div class="poster-slot">
+          <span class="rank-num" aria-hidden="true">۵</span>
+          <a class="card" href="#download" aria-label="برکینگ بد — جزئیات">
+            <div class="card-art"><img src="covers-web/tt0/tt0903747.webp" alt="برکینگ بد" width="300" height="450" loading="lazy" decoding="async"><span class="q-chip">Full HD</span><span class="rate-chip"><svg viewBox="0 0 24 24" width="11" height="11" fill="#f5b81b"><path d="M12 2.5l2.4 4.9 5.4.8-3.9 3.8.9 5.4L12 14.9 7.2 17.4l.9-5.4L4.2 8.2l5.4-.8z"/></svg> ۹٫۵</span><div class="card-grad"></div><div class="card-cap"><b>برکینگ بد</b><span>۲۰۰۸ · درام</span></div></div>
+          </a>
+        </div>
+        <div class="poster-slot">
+          <span class="rank-num" aria-hidden="true">۶</span>
+          <a class="card" href="#download" aria-label="جنگ ستارگان — جزئیات">
+            <div class="card-art"><img src="covers-web/tt7/tt7286456.webp" alt="جوکر" width="300" height="450" loading="lazy" decoding="async"><span class="q-chip">4K</span><span class="rate-chip"><svg viewBox="0 0 24 24" width="11" height="11" fill="#f5b81b"><path d="M12 2.5l2.4 4.9 5.4.8-3.9 3.8.9 5.4L12 14.9 7.2 17.4l.9-5.4L4.2 8.2l5.4-.8z"/></svg> ۸٫۴</span><div class="card-grad"></div><div class="card-cap"><b>جوکر</b><span>۲۰۱۹ · جنایی</span></div></div>
+          </a>
+        </div>
+      </div>
+    </div>
+
+    <div class="row reveal">
+      <div class="row-head"><h3>تازه‌ها</h3><span>آخرین اضافه‌شده‌ها</span></div>
+      <div class="poster-row">
+        <a class="card" href="#download" aria-label="رستگاری در شاوشنگ"><div class="card-art"><img src="covers-web/tt0/tt0111161.webp" alt="رستگاری در شاوشنگ" width="300" height="450" loading="lazy" decoding="async"><span class="q-chip">Full HD</span><span class="rate-chip"><svg viewBox="0 0 24 24" width="11" height="11" fill="#f5b81b"><path d="M12 2.5l2.4 4.9 5.4.8-3.9 3.8.9 5.4L12 14.9 7.2 17.4l.9-5.4L4.2 8.2l5.4-.8z"/></svg> ۹٫۳</span><div class="card-grad"></div><div class="card-cap"><b>رستگاری در شاوشنگ</b><span>۱۹۹۴ · درام</span></div></div></a>
+        <a class="card" href="#download" aria-label="پاراسایت"><div class="card-art"><img src="covers-web/tt6/tt6751668.webp" alt="انگل" width="300" height="450" loading="lazy" decoding="async"><span class="q-chip">4K</span><span class="rate-chip"><svg viewBox="0 0 24 24" width="11" height="11" fill="#f5b81b"><path d="M12 2.5l2.4 4.9 5.4.8-3.9 3.8.9 5.4L12 14.9 7.2 17.4l.9-5.4L4.2 8.2l5.4-.8z"/></svg> ۸٫۵</span><div class="card-grad"></div><div class="card-cap"><b>انگل</b><span>۲۰۱۹ · کمدی</span></div></div></a>
+        <a class="card" href="#download" aria-label="پدرخوانده"><div class="card-art"><img src="covers-web/tt4/tt4574334.webp" alt="پدرخوانده" width="300" height="450" loading="lazy" decoding="async"><span class="q-chip">Full HD</span><span class="rate-chip"><svg viewBox="0 0 24 24" width="11" height="11" fill="#f5b81b"><path d="M12 2.5l2.4 4.9 5.4.8-3.9 3.8.9 5.4L12 14.9 7.2 17.4l.9-5.4L4.2 8.2l5.4-.8z"/></svg> ۸٫۹</span><div class="card-grad"></div><div class="card-cap"><b>سقوط</b><span>۲۰۱۸ · اکشن</span></div></div></a>
+        <a class="card" href="#download" aria-label="میان‌ستاره‌ای"><div class="card-art"><img src="covers-web/tt0/tt0816692.webp" alt="میان‌ستاره‌ای" width="300" height="450" loading="lazy" decoding="async"><span class="q-chip">4K</span><span class="rate-chip"><svg viewBox="0 0 24 24" width="11" height="11" fill="#f5b81b"><path d="M12 2.5l2.4 4.9 5.4.8-3.9 3.8.9 5.4L12 14.9 7.2 17.4l.9-5.4L4.2 8.2l5.4-.8z"/></svg> ۸٫۷</span><div class="card-grad"></div><div class="card-cap"><b>میان‌ستاره‌ای</b><span>۲۰۱۴ · ماجراجویی</span></div></div></a>
+        <a class="card" href="#download" aria-label="شوالیه تاریکی"><div class="card-art"><img src="covers-web/tt0/tt0468569.webp" alt="شوالیه تاریکی" width="300" height="450" loading="lazy" decoding="async"><span class="q-chip">4K</span><span class="rate-chip"><svg viewBox="0 0 24 24" width="11" height="11" fill="#f5b81b"><path d="M12 2.5l2.4 4.9 5.4.8-3.9 3.8.9 5.4L12 14.9 7.2 17.4l.9-5.4L4.2 8.2l5.4-.8z"/></svg> ۹٫۰</span><div class="card-grad"></div><div class="card-cap"><b>شوالیه تاریکی</b><span>۲۰۰۸ · اکشن</span></div></div></a>
+        <a class="card" href="#download" aria-label="برکینگ بد"><div class="card-art"><img src="covers-web/tt0/tt0903747.webp" alt="برکینگ بد" width="300" height="450" loading="lazy" decoding="async"><span class="q-chip">Full HD</span><span class="rate-chip"><svg viewBox="0 0 24 24" width="11" height="11" fill="#f5b81b"><path d="M12 2.5l2.4 4.9 5.4.8-3.9 3.8.9 5.4L12 14.9 7.2 17.4l.9-5.4L4.2 8.2l5.4-.8z"/></svg> ۹٫۵</span><div class="card-grad"></div><div class="card-cap"><b>برکینگ بد</b><span>۲۰۰۸ · درام</span></div></div></a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FEATURES — bento -->
 <section id="features" class="sec" aria-label="امکانات فریم">
   <div class="wrap">
     <div class="sec-head reveal">
@@ -272,57 +420,45 @@
   </div>
 </section>
 
-<!-- ═══════════ DOWNLOAD ═══════════ -->
+<!-- DOWNLOAD -->
 <section id="download" class="sec" aria-label="دانلود فریم">
   <div class="wrap">
     <div class="sec-head reveal">
       <p class="kicker">دانلود</p>
       <h2>یک دقیقه تا <span class="red">اولین تماشا</span></h2>
-      <p class="sec-sub">همه‌ی نسخه‌ها رایگان‌اند و مستقیم از گیت‌هاب دریافت می‌شوند · آخرین نسخه: <b id="ver">v0.76.7</b></p>
+      <p class="sec-sub">همه‌ی نسخه‌ها رایگان‌اند و مستقیم از گیت‌هاب دریافت می‌شوند · آخرین نسخه: <b id="ver" class="js-ver">v0.76.7</b></p>
     </div>
-
     <div class="dl-grid">
       <a class="dl" id="dl-android" href="https://github.com/pvwvuow/frame/releases/download/v0.76.7/Frame-0.76.7-android.apk" rel="noopener" data-asset="android.apk">
         <span class="dl-badge">پیشنهاد ما</span>
         <span class="dl-ic" aria-hidden="true"><svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M7 9h10v7.5a1.5 1.5 0 0 1-1.5 1.5H15v2.5a1.25 1.25 0 0 1-2.5 0V18h-1v2.5a1.25 1.25 0 0 1-2.5 0V18h-.5A1.5 1.5 0 0 1 7 16.5V9zm-3.2.5a1.2 1.2 0 0 1 2.4 0v5a1.2 1.2 0 0 1-2.4 0v-5zm14 0a1.2 1.2 0 0 1 2.4 0v5a1.2 1.2 0 0 1-2.4 0v-5zM8.6 3.3a.5.5 0 0 1 .7-.2l1.3.9a5.6 5.6 0 0 1 2.8 0l1.3-.9a.5.5 0 0 1 .6.8l-1 .7a5.5 5.5 0 0 1 1.6 2.4H7.9A5.5 5.5 0 0 1 9.6 4.7l-1-.7a.5.5 0 0 1 0-.7zm1.1 3a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5zm4.6 0a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5z"/></svg></span>
         <b>اندروید</b><span>۷ به بالا · APK · ~24MB</span>
-        <em class="go">دانلود مستقیم
-          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
-        </em>
+        <em class="go">دانلود مستقیم <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"/></svg></em>
       </a>
       <a class="dl" id="dl-win" href="https://github.com/pvwvuow/frame/releases/download/v0.76.7/Frame-0.76.7-win-x64-setup.exe" rel="noopener" data-asset="win-x64-setup.exe">
         <span class="dl-ic" aria-hidden="true"><svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M3 5.5l7.5-1v7H3v-6zm0 13v-6h7.5v7L3 18.5zM11.5 4.3L21 3v8.5h-9.5v-7.2zm0 15.4v-7.2H21V21l-9.5-1.3z"/></svg></span>
         <b>ویندوز</b><span>۱۰ و ۱۱ · نصبی و پرتابل · ~140MB</span>
-        <em class="go">دانلود مستقیم
-          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
-        </em>
+        <em class="go">دانلود مستقیم <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"/></svg></em>
       </a>
       <a class="dl" id="dl-mac" href="https://github.com/pvwvuow/frame/releases/download/v0.76.7/Frame-0.76.7-mac-arm64.dmg" rel="noopener" data-asset="mac-arm64.dmg">
         <span class="dl-ic" aria-hidden="true"><svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M16.4 12.7c0-2.2 1.8-3.3 1.9-3.3-1-1.5-2.6-1.7-3.2-1.7-1.4-.1-2.7.8-3.3.8-.7 0-1.8-.8-2.9-.8-1.5 0-2.9.9-3.7 2.2-1.6 2.7-.4 6.8 1.1 9 .8 1.1 1.7 2.3 2.8 2.3 1.1 0 1.6-.7 2.9-.7s1.8.7 2.9.7 2-1.1 2.7-2.2c.9-1.3 1.2-2.5 1.2-2.6 0 0-2.4-.9-2.4-3.7zM14.3 5.6c.6-.7 1-1.7.9-2.7-.9 0-1.9.6-2.5 1.3-.6.6-1 1.7-.9 2.6 1 .1 2-.5 2.5-1.2z"/></svg></span>
         <b>مک</b><span>Apple Silicon و Intel · ~171MB</span>
-        <em class="go">دانلود مستقیم
-          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
-        </em>
+        <em class="go">دانلود مستقیم <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"/></svg></em>
       </a>
       <a class="dl" id="dl-linux" href="https://github.com/pvwvuow/frame/releases/download/v0.76.7/Frame-0.76.7-linux-x86_64.AppImage" rel="noopener" data-asset="AppImage">
         <span class="dl-ic" aria-hidden="true"><svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M12 2c2 0 3.2 1.5 3.2 3.6 0 1.5.7 2.6 1.7 3.9 1 1.4 2.1 2.9 2.1 5.2 0 .9-.2 1.8-.6 2.5.3.6.6 1.3.6 2 0 .9-.5 1.5-1.4 1.5-.6 0-1.2-.2-1.8-.4-.6.3-1.2.4-1.8.4-1.6 0-1.6-.7-2-.7s-.4.7-2 .7c-.6 0-1.2-.1-1.8-.4-.6.2-1.2.4-1.8.4-.9 0-1.4-.6-1.4-1.5 0-.7.3-1.4.6-2A5.6 5.6 0 0 1 5 14.7c0-2.3 1.1-3.8 2.1-5.2C8.1 8.2 8.8 7.1 8.8 5.6 8.8 3.5 10 2 12 2zm-1.7 6.2c-.4 0-.7.4-.7.9s.3.9.7.9.7-.4.7-.9-.3-.9-.7-.9zm3.4 0c-.4 0-.7.4-.7.9s.3.9.7.9.7-.4.7-.9-.3-.9-.7-.9z"/></svg></span>
         <b>لینوکس</b><span>AppImage و deb · ~175MB</span>
-        <em class="go">دانلود مستقیم
-          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
-        </em>
+        <em class="go">دانلود مستقیم <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"/></svg></em>
       </a>
     </div>
-
     <ol class="steps reveal" aria-label="سه قدم تا تماشا">
       <li><span class="st-n" aria-hidden="true">۱</span><div><b>دانلود کن</b><span>فایل مخصوص دستگاهت را بگیر — سبک و مستقیم.</span></div></li>
       <li><span class="st-n" aria-hidden="true">۲</span><div><b>نصب کن</b><span>در اندروید اگر هشدار دیدی، اجازه‌ی نصب را بده.</span></div></li>
       <li><span class="st-n" aria-hidden="true">۳</span><div><b>تماشا کن</b><span>جستجو کن، کیفیت را انتخاب کن — بدون حساب هم کار می‌کند.</span></div></li>
     </ol>
-
     <div class="note reveal">
       <p><b>به‌روزرسانی خودکار:</b> نسخه‌ی دسکتاپ خودش آپدیت‌های کم‌حجم را دانلود و نصب می‌کند؛ در اندروید بیشتر نسخه‌ها «درجا» و بی‌صدا به‌روز می‌شوند — بدون نصب مجدد و بدون از دست رفتن داده‌هایت.</p>
     </div>
-
     <details class="guide reveal">
       <summary>راهنمای نصب اندروید (درباره‌ی هشدارها)</summary>
       <ol>
@@ -335,27 +471,32 @@
   </div>
 </section>
 
-<!-- ═══════════ VIP ═══════════ -->
+<!-- VIP — matte-glass slab -->
 <section id="vip" class="sec" aria-label="اشتراک VIP">
   <div class="wrap">
-    <div class="vip-panel reveal">
-      <div class="vip-txt">
-        <p class="kicker">اشتراک VIP</p>
-        <h2>پخش <span class="red">نامحدود</span> همه‌ی عناوین</h2>
-        <p>با کد اشتراک VIP، همه‌ی فیلم‌ها و سریال‌ها روی همه‌ی دستگاه‌هایت بدون محدودیت پخش می‌شوند؛ مادام‌العمر هم دارد و هرگز تمدید دستی لازم نیست. کد از داخل برنامه در بخش VIP فعال می‌شود.</p>
-      </div>
-      <div class="vip-pills" aria-hidden="true">
-        <span>۱ ماهه</span>
-        <span>۳ ماهه</span>
-        <span>۶ ماهه</span>
-        <span>۱ ساله</span>
-        <span class="hot-pill">مادام‌العمر</span>
+    <div class="vip-matte reveal">
+      <img src="covers-web/tt1/tt1375666.webp" alt="" aria-hidden="true" width="300" height="450" loading="lazy" decoding="async" class="vip-matte-art">
+      <div class="vip-matte-blur" aria-hidden="true"></div>
+      <div class="vip-matte-ink" aria-hidden="true"></div>
+      <div class="vip-matte-content">
+        <div class="vip-txt">
+          <span class="vip-badge">اشتراک VIP</span>
+          <h2>پخش <span class="red">نامحدود</span> همه‌ی عناوین</h2>
+          <p>با کد اشتراک VIP، همه‌ی فیلم‌ها و سریال‌ها روی همه‌ی دستگاه‌هایت بدون محدودیت پخش می‌شوند؛ مادام‌العمر هم دارد و هرگز تمدید دستی لازم نیست. کد از داخل برنامه در بخش VIP فعال می‌شود.</p>
+          <div class="vip-ctas">
+            <a class="btn btn-white" href="#download">فعال‌سازی در برنامه</a>
+            <a class="btn btn-glass" href="#faq">بیشتر بدان</a>
+          </div>
+        </div>
+        <div class="vip-pills" aria-hidden="true">
+          <span>۱ ماهه</span><span>۳ ماهه</span><span>۶ ماهه</span><span>۱ ساله</span><span class="hot-pill">مادام‌العمر</span>
+        </div>
       </div>
     </div>
   </div>
 </section>
 
-<!-- ═══════════ FAQ ═══════════ -->
+<!-- FAQ -->
 <section id="faq" class="sec" aria-label="پرسش‌های پرتکرار">
   <div class="wrap narrow">
     <div class="sec-head reveal">
@@ -389,10 +530,11 @@
   </div>
 </section>
 
-<!-- ═══════════ FINAL CTA ═══════════ -->
+<!-- FINAL CTA — matte-glass -->
 <section class="sec cta-final" aria-label="شروع تماشا">
   <div class="wrap">
     <div class="cta-panel reveal">
+      <div class="cta-panel-glow" aria-hidden="true"></div>
       <h2>امشب چی ببینیم؟</h2>
       <p>فریم را رایگان نصب کن و در همان دقیقه‌ی اول شروع کن به تماشا.</p>
       <a class="btn btn-red btn-xl" href="#download">

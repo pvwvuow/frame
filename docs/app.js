@@ -113,3 +113,101 @@
     }
   })();
 })();
+/* 5) cinema hero — auto-rotate slides + poster sync + dots */
+(function(){
+  var slidesWrap=document.getElementById('cinema-slides');
+  var poster=document.getElementById('cinema-poster');
+  if(!slidesWrap||!poster) return;
+  var slides=[].slice.call(slidesWrap.querySelectorAll('.slide'));
+  var dots=[].slice.call(document.querySelectorAll('.slide-dot'));
+  if(slides.length<2) return;
+  var idx=0; var timer=null; var reduced=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function show(n){
+    idx=(n+slides.length)%slides.length;
+    slides.forEach(function(s,i){ s.classList.toggle('is-active', i===idx); });
+    dots.forEach(function(d,i){
+      var on=i===idx;
+      d.classList.toggle('is-on', on);
+      d.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+    var p=slides[idx].getAttribute('data-poster');
+    if(p) poster.src=p;
+  }
+  function next(){ show(idx+1); }
+  function start(){ if(reduced) return; stop(); timer=setInterval(next, 5200); }
+  function stop(){ if(timer){ clearInterval(timer); timer=null; } }
+  dots.forEach(function(d,i){
+    d.addEventListener('click', function(){ show(i); start(); });
+  });
+  slidesWrap.addEventListener('mouseenter', stop);
+  slidesWrap.addEventListener('mouseleave', start);
+  slidesWrap.addEventListener('focusin', stop);
+  slidesWrap.addEventListener('focusout', start);
+  document.addEventListener('visibilitychange', function(){ if(document.hidden) stop(); else start(); });
+  show(0); start();
+})();
+/* 6) ghost ambient layer — gate + subtle parallax */
+(function(){
+  var layer=document.getElementById('ghost-layer');
+  var gate=document.getElementById('home-ghost-gate');
+  if(!layer) return;
+  // one-by-one reveal: respect --dl stagger already via CSS animation-delay
+  // gate: show layer after hero scrolled past a bit
+  function setVisible(on){ layer.classList.toggle('is-visible', !!on); }
+  if('IntersectionObserver' in window && gate){
+    var io=new IntersectionObserver(function(ents){
+      var e=ents[0];
+      // when gate is above viewport, show ghosts
+      setVisible(!e.isIntersecting || e.boundingClientRect.top < 80);
+    }, {rootMargin:'-18% 0px -72% 0px', threshold:0});
+    io.observe(gate);
+    // initial: hidden until scroll
+    setVisible(false);
+  } else {
+    setVisible(true);
+  }
+  // subtle parallax on scroll (rAF, respects reduced-motion)
+  var reduced=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if(reduced) return;
+  var ticking=false;
+  function parallax(){
+    var y=window.scrollY||0;
+    var off=Math.min(y*0.06, 120);
+    layer.style.transform='translateY('+ (off*0.5) +'px)';
+    // per-ghost micro offset
+    var ghosts=layer.querySelectorAll('.ghost');
+    for(var i=0;i<ghosts.length;i++){
+      var g=ghosts[i];
+      var depth=(i%3+1)*0.04;
+      g.style.translate='0 '+ (off*depth) +'px';
+    }
+    ticking=false;
+  }
+  window.addEventListener('scroll', function(){
+    if(!ticking){ ticking=true; requestAnimationFrame(parallax); }
+  }, {passive:true});
+})();
+/* 7) stage dust particles + FAQ single-open nicety */
+(function(){
+  var dust=document.getElementById('stage-dust');
+  if(dust && !window.matchMedia('(prefers-reduced-motion: reduce)').matches){
+    var frag=document.createDocumentFragment();
+    for(var i=0;i<18;i++){
+      var s=document.createElement('i');
+      s.style.left=(Math.random()*100)+'%';
+      s.style.top=(Math.random()*100)+'%';
+      s.style.animationDuration=(9+Math.random()*14)+'s';
+      s.style.animationDelay=(-Math.random()*14)+'s';
+      s.style.opacity=(0.2+Math.random()*0.45).toFixed(2);
+      frag.appendChild(s);
+    }
+    dust.appendChild(frag);
+  }
+  // details: keep only one QA open at a time (optional polish)
+  var qas=[].slice.call(document.querySelectorAll('.qa'));
+  qas.forEach(function(d){
+    d.addEventListener('toggle', function(){
+      if(d.open) qas.forEach(function(o){ if(o!==d) o.open=false; });
+    });
+  });
+})();
